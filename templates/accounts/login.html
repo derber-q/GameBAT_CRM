@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Вход · GameBAT CRM{% endblock %}
+{% block page_class %}login-page{% endblock %}
+{% block content %}
+<section class="login-card">
+  <div class="login-brand"><span class="brand-mark brand-mark-large">GB</span><div><h1>GameBAT CRM</h1><p>Внутренняя система учёта</p></div></div>
+  {% if form.errors %}<div class="alert alert-error">Неверный логин или пароль.</div>{% endif %}
+  <form method="post" class="stacked-form">
+    {% csrf_token %}
+    <input type="hidden" name="next" value="{{ next }}">
+    <div class="field"><label for="id_username">Логин</label>{{ form.username }}</div>
+    <div class="field"><label for="id_password">Пароль</label>{{ form.password }}</div>
+    <button class="button button-wide" type="submit">Войти</button>
+  </form>
+</section>
+{% endblock %}

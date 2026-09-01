@@ -1,0 +1,5 @@
+{% extends "base.html" %}
+{% block title %}Доступ запрещён · GameBAT CRM{% endblock %}
+{% block content %}
+<section class="empty-state"><span class="empty-code">403</span><h1>Доступ запрещён</h1><p>У вас нет доступа к этому разделу.</p><a class="button" href="{% url 'core:home' %}">На главную</a></section>
+{% endblock %}

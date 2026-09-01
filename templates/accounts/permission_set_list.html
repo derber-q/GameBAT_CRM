@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% block title %}Наборы прав · GameBAT CRM{% endblock %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">Администрирование</p><h1>Наборы прав</h1><p class="muted">Стандартные группы Django с объединяемыми разрешениями.</p></div><a class="button" href="{% url 'accounts:permission_set_create' %}">Создать набор</a></div>
+<section class="panel table-panel"><div class="table-scroll"><table><thead><tr><th>Название</th><th>Описание</th><th>Количество прав</th><th></th></tr></thead><tbody>{% for group in groups %}<tr><td>{{ group.name }}</td><td>{{ group.gamebat_metadata.description|default:"—" }}</td><td>{{ group.permissions.count }}</td><td class="actions-cell"><a class="table-action" href="{% url 'accounts:permission_set_edit' group.pk %}">Изменить</a><form method="post" action="{% url 'accounts:permission_set_delete' group.pk %}" onsubmit="return confirm('Удалить набор прав?')">{% csrf_token %}<button class="table-action danger-link" type="submit">Удалить</button></form></td></tr>{% empty %}<tr><td colspan="4" class="empty-cell">Наборов прав пока нет.</td></tr>{% endfor %}</tbody></table></div></section>
+{% endblock %}

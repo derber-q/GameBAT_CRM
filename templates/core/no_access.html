@@ -1,0 +1,4 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="empty-state"><span class="empty-code">GB</span><h1>Права ещё не назначены</h1><p>Обратитесь к администратору, чтобы получить доступ к рабочим разделам.</p><a class="button button-secondary" href="{% url 'accounts:password_change' %}">Сменить пароль</a></section>
+{% endblock %}

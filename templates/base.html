@@ -1,0 +1,45 @@
+{% load static %}
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}GameBAT CRM{% endblock %}</title>
+  <link rel="stylesheet" href="{% static 'css/gamebat.css' %}">
+  <script src="{% static 'js/app.js' %}" defer></script>
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+  {% if user.is_authenticated %}
+    <header class="topbar">
+      <a class="brand" href="{% url 'core:home' %}"><span class="brand-mark">GB</span><span>GameBAT <b>CRM</b></span></a>
+      <nav class="main-nav" aria-label="Основная навигация">
+        {% if nav.warehouse %}<a class="{% if request.resolver_match.namespace == 'catalog' %}active{% endif %}" href="{% url 'catalog:warehouse' %}">Склад</a>{% endif %}
+        {% if nav.supplies %}<a class="{% if request.resolver_match.namespace == 'supplies' %}active{% endif %}" href="{% url 'supplies:list' %}">Приход</a>{% endif %}
+        {% if nav.consignment %}<a class="{% if request.resolver_match.namespace == 'consignment' %}active{% endif %}" href="{% url 'consignment:list' %}">Реализация</a>{% endif %}
+        {% if nav.suppliers %}<a class="{% if request.resolver_match.namespace == 'partners' %}active{% endif %}" href="{% url 'partners:list' %}">Поставщики</a>{% endif %}
+        {% if nav.users %}<a class="{% if request.resolver_match.namespace == 'accounts' and 'user' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'accounts:user_list' %}">Пользователи</a>{% endif %}
+      </nav>
+      <div class="rates" aria-label="Курсы валют">
+        <span>USD/RUB <b>{{ currency_rates.USD_RUB|default_if_none:"—" }}</b></span>
+        <span>AED/RUB <b>{{ currency_rates.AED_RUB|default_if_none:"—" }}</b></span>
+        <span>USD/AED <b>{{ currency_rates.USD_AED|default_if_none:"—" }}</b></span>
+      </div>
+      <div class="session-tools">
+        <span class="clock"><b id="gb-date">—</b><span id="gb-time">—</span></span>
+        {% if nav.admin %}<a class="button button-ghost button-small" href="{% url 'admin:index' %}">Админ-панель</a>{% endif %}
+        <a class="username" href="{% url 'accounts:password_change' %}">{{ user.username }}</a>
+        <form method="post" action="{% url 'accounts:logout' %}">{% csrf_token %}<button class="link-button" type="submit">Выйти</button></form>
+      </div>
+    </header>
+  {% endif %}
+  <main class="page {% block page_class %}{% endblock %}">
+    {% if messages %}
+      <div class="messages" aria-live="polite">
+        {% for message in messages %}<div class="alert alert-{{ message.tags|default:'info' }}">{{ message }}</div>{% endfor %}
+      </div>
+    {% endif %}
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

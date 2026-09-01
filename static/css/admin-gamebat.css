@@ -1,0 +1,43 @@
+:root {
+  --primary: #334660;
+  --secondary: #2c879b;
+  --accent: #37a7ba;
+  --primary-fg: #ffffff;
+  --body-fg: #45576c;
+  --body-bg: #f4f4f4;
+  --body-quiet-color: #7b8999;
+  --header-color: #ffffff;
+  --header-branding-color: #ffffff;
+  --header-bg: #334660;
+  --header-link-color: #ffffff;
+  --breadcrumbs-fg: #ffffff;
+  --breadcrumbs-link-fg: #ffffff;
+  --breadcrumbs-bg: #3c4e66;
+  --link-fg: #2c879b;
+  --link-hover-color: #236f80;
+  --hairline-color: #dce5e7;
+  --border-color: #dce5e7;
+  --button-bg: #2c879b;
+  --button-hover-bg: #236f80;
+  --default-button-bg: #2c879b;
+  --default-button-hover-bg: #236f80;
+  --close-button-bg: #4b5c71;
+  --delete-button-bg: #c94f55;
+  --selected-bg: rgba(44, 135, 155, .10);
+  --selected-row: rgba(44, 135, 155, .06);
+}
+html { color-scheme: light; }
+body { font-family: Inter, "Segoe UI", Arial, sans-serif; }
+#header { box-shadow: 0 2px 8px rgba(38,57,78,.16); }
+#branding #site-name { align-items: center; display: flex; }
+#branding #site-name a { align-items: center; display: flex; font-weight: 700; gap: 9px; }
+.gb-admin-mark { align-items: center; background: #2c879b; border: 1px solid rgba(255,255,255,.5); border-radius: 6px; display: inline-flex; font-size: 10px; height: 28px; justify-content: center; width: 28px; }
+#nav-global { margin-left: auto; }
+.gb-back-link { border: 1px solid rgba(255,255,255,.3); border-radius: 4px; color: #ffffff; padding: 7px 10px; }
+.module, .inline-group { border: 1px solid #dce5e7; border-radius: 6px; box-shadow: 0 2px 10px rgba(51,70,96,.06); overflow: hidden; }
+.module h2, .module caption, .inline-group h2 { background: #3c4e66; }
+div.breadcrumbs { border: 0; }
+input, textarea, select, .vTextField { border-color: #dce5e7; border-radius: 4px; }
+input:focus, textarea:focus, select:focus { border-color: #37a7ba; box-shadow: 0 0 0 3px rgba(44,135,155,.18); outline: 0; }
+.button, input[type=submit], input[type=button], .submit-row input, a.button { border-radius: 4px; }
+#changelist table thead th { background: #f8fafb; }

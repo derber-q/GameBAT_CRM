@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} · GameBAT CRM{% endblock %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">Реализация</p><h1>{{ title }}</h1></div><a class="button button-secondary" href="{% url 'consignment:list' %}">Назад</a></div>
+<section class="panel form-panel"><form method="post" class="stacked-form product-operation-form" data-autocomplete-url="{% url 'supplies:autocomplete' %}">{% csrf_token %}{% if form.non_field_errors %}<div class="alert alert-error">{{ form.non_field_errors }}</div>{% endif %}{% for field in form %}{% if not field.is_hidden %}<div class="field {% if field.errors %}field-error{% endif %}"><label for="{{ field.id_for_label }}">{{ field.label }}</label>{% if field.name == 'product_search' %}<div class="autocomplete-wrap">{{ field }}<div class="suggestions" role="listbox"></div></div>{% else %}{{ field }}{% endif %}{% for error in field.errors %}<span class="error-text">{{ error }}</span>{% endfor %}</div>{% else %}{{ field }}{% endif %}{% endfor %}<div class="form-actions"><button class="button" type="submit">Выполнить операцию</button><a class="button button-secondary" href="{% url 'consignment:list' %}">Отмена</a></div></form></section>
+{% endblock %}

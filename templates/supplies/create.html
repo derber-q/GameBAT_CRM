@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Новая поставка · GameBAT CRM{% endblock %}
+{% block extra_head %}<script src="{% static 'js/supply.js' %}" defer></script>{% endblock %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">Приёмка товара</p><h1>Новая поставка</h1><p class="muted">Расходы распределятся поровну по каждой физической единице.</p></div><a class="button button-secondary" href="{% url 'supplies:list' %}">К истории</a></div>
+<form method="post" id="supply-form" data-autocomplete-url="{% url 'supplies:autocomplete' %}">{% csrf_token %}
+  <section class="panel"><div class="section-heading"><div><span class="step-number">1</span><h2>Товарные позиции</h2></div><button class="button button-secondary button-small" type="button" id="add-line">+ Добавить товар</button></div><div class="table-scroll"><table class="editable-table"><thead><tr><th>Товар</th><th>Поставщик</th><th>Количество</th><th>Себестоимость единицы</th><th></th></tr></thead><tbody id="supply-lines"></tbody></table></div></section>
+  <section class="panel"><div class="section-heading"><div><span class="step-number">2</span><h2>Дополнительные расходы</h2></div><button class="button button-secondary button-small" type="button" id="add-expense">+ Добавить расход</button></div><div class="table-scroll"><table class="editable-table"><thead><tr><th>Название расхода</th><th>Стоимость</th><th></th></tr></thead><tbody id="expense-lines"></tbody></table></div></section>
+  <div class="submit-bar"><div><b>Поставка будет принята одной операцией</b><span>При ошибке изменения полностью откатятся.</span></div><button class="button button-large" type="submit">Принять поставку</button></div>
+</form>
+{{ suppliers|json_script:"supplier-data" }}
+{% endblock %}
