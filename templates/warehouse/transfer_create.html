@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}Новое перемещение · GameBAT CRM{% endblock %}
+{% block content %}
+<div class="page-heading">
+  <div>
+    <p class="eyebrow">Склад {{ source.name }}</p>
+    <h1>Создать перемещение</h1>
+    <p class="muted">Укажите количество напротив товаров, которые нужно переместить.</p>
+  </div>
+  {% if can_view_source %}
+    <a class="button button-secondary" href="{% url 'warehouse:detail' source.pk %}">Назад</a>
+  {% elif can_view_transfers %}
+    <a class="button button-secondary" href="{% url 'warehouse:transfer_list' %}">Назад</a>
+  {% endif %}
+</div>
+
+<form method="post">
+  {% csrf_token %}
+  <section class="panel form-panel">
+    {% if form.non_field_errors %}<div class="alert alert-error">{{ form.non_field_errors }}</div>{% endif %}
+    <div class="field {% if form.destination_warehouse.errors %}field-error{% endif %}">
+      <label for="{{ form.destination_warehouse.id_for_label }}">{{ form.destination_warehouse.label }}</label>
+      {{ form.destination_warehouse }}
+      {% for error in form.destination_warehouse.errors %}<span class="error-text">{{ error }}</span>{% endfor %}
+    </div>
+  </section>
+
+  {% for group, rows in cd_groups %}
+    <section class="panel inventory-section">
+      <div class="section-heading">
+        <div><span class="category-tag">CD</span><h2>{{ group.name }}</h2></div>
+        <span class="count">{{ rows|length }} поз.</span>
+      </div>
+      <div class="table-scroll">
+        <table class="transfer-stock-table">
+          <thead><tr><th>ID</th><th>Название</th><th>Артикул</th><th>CUSA/PPSA</th><th class="numeric">На складе</th><th class="numeric">Переместить</th></tr></thead>
+          <tbody>
+            {% for row in rows %}
+              <tr>
+                <td class="mono">{{ row.product.id }}</td><td class="strong">{{ row.product.name }}</td>
+                <td class="mono">{{ row.product.sku }}</td><td>{{ row.product.cusa_ppsa_code|default:"—" }}</td>
+                <td class="numeric stock-number">{{ row.quantity }}</td>
+                <td class="numeric transfer-quantity-cell">
+                  <input type="number" name="line_cd_{{ row.product.id }}" min="1" max="{{ row.quantity }}" step="1" value="{{ row.requested_quantity }}" placeholder="0" aria-label="Количество для перемещения: {{ row.product.name }}">
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  {% endfor %}
+
+  {% for group, rows in tech_groups %}
+    <section class="panel inventory-section">
+      <div class="section-heading">
+        <div><span class="category-tag category-tag-tech">TECH</span><h2>{{ group.name }}</h2></div>
+        <span class="count">{{ rows|length }} поз.</span>
+      </div>
+      <div class="table-scroll">
+        <table class="transfer-stock-table">
+          <thead><tr><th>ID</th><th>Название</th><th>Бренд</th><th>Артикул</th><th class="numeric">На складе</th><th class="numeric">Переместить</th></tr></thead>
+          <tbody>
+            {% for row in rows %}
+              <tr>
+                <td class="mono">{{ row.product.id }}</td><td class="strong">{{ row.product.name }}</td>
+                <td>{{ row.product.brand.name }}</td><td class="mono">{{ row.product.sku }}</td>
+                <td class="numeric stock-number">{{ row.quantity }}</td>
+                <td class="numeric transfer-quantity-cell">
+                  <input type="number" name="line_tech_{{ row.product.id }}" min="1" max="{{ row.quantity }}" step="1" value="{{ row.requested_quantity }}" placeholder="0" aria-label="Количество для перемещения: {{ row.product.name }}">
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  {% endfor %}
+
+  {% if not cd_groups and not tech_groups %}
+    <section class="empty-state"><span class="empty-code">0</span><h2>На складе нет товаров</h2><p>Для перемещения нужен положительный физический остаток.</p></section>
+  {% else %}
+    <div class="submit-bar">
+      <div><b>Состав фиксируется после создания</b><span>Товар спишется со склада-отправителя сразу.</span></div>
+      <button class="button button-large" type="submit">Создать перемещение</button>
+    </div>
+  {% endif %}
+</form>
+{% endblock %}

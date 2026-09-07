@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}Номенклатура · GameBAT CRM{% endblock %}
+{% block content %}
+<div class="page-heading">
+  <div>
+    <p class="eyebrow">Глобальный каталог</p>
+    <h1>Номенклатура</h1>
+    <p class="muted">Все карточки CD и техники независимо от текущих остатков.</p>
+  </div>
+</div>
+
+<section class="panel nomenclature-search">
+  <form method="get" role="search">
+    <div class="field">
+      <label for="nomenclature-query">Поиск по названию, артикулу, штрихкоду или CUSA/PPSA</label>
+      <div class="search-row">
+        <input id="nomenclature-query" type="search" name="q" value="{{ query }}" placeholder="Введите название или идентификатор">
+        <button class="button" type="submit">Найти</button>
+        {% if query %}<a class="button button-secondary" href="{% url 'nomenclature:list' %}">Сбросить</a>{% endif %}
+      </div>
+    </div>
+  </form>
+</section>
+
+{% for platform, products in cd_groups %}
+  <section class="panel inventory-section">
+    <div class="section-heading">
+      <div><span class="category-tag">CD</span><h2>{{ platform.name }}</h2></div>
+      <span class="count">{{ products|length }} поз.</span>
+    </div>
+    <div class="table-scroll">
+      <table class="nomenclature-table">
+        <thead><tr><th>ID</th><th>Название</th><th>Артикул</th><th>CUSA/PPSA</th><th>Платформа</th><th></th></tr></thead>
+        <tbody>
+          {% for product in products %}
+            <tr>
+              <td class="mono">{{ product.id }}</td>
+              <td><a class="strong" href="{% url 'nomenclature:cd_detail' product.pk %}">{{ product.name }}</a></td>
+              <td class="mono">{{ product.sku|default:"—" }}</td>
+              <td class="mono">{{ product.cusa_ppsa_code|default:"—" }}</td>
+              <td>{{ product.platform.name }}</td>
+              <td><a class="table-action" href="{% url 'nomenclature:cd_detail' product.pk %}">Открыть</a></td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+{% endfor %}
+
+{% for product_type, products in tech_groups %}
+  <section class="panel inventory-section">
+    <div class="section-heading">
+      <div><span class="category-tag category-tag-tech">TECH</span><h2>{{ product_type.name }}</h2></div>
+      <span class="count">{{ products|length }} поз.</span>
+    </div>
+    <div class="table-scroll">
+      <table class="nomenclature-table">
+        <thead><tr><th>ID</th><th>Название</th><th>Артикул</th><th>Бренд</th><th>Тип товара</th><th></th></tr></thead>
+        <tbody>
+          {% for product in products %}
+            <tr>
+              <td class="mono">{{ product.id }}</td>
+              <td><a class="strong" href="{% url 'nomenclature:tech_detail' product.pk %}">{{ product.name }}</a></td>
+              <td class="mono">{{ product.sku|default:"—" }}</td>
+              <td>{{ product.brand.name }}</td>
+              <td>{{ product.product_type.name }}</td>
+              <td><a class="table-action" href="{% url 'nomenclature:tech_detail' product.pk %}">Открыть</a></td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+{% endfor %}
+
+{% if not cd_groups and not tech_groups %}
+  <section class="empty-state">
+    <span class="empty-code">0</span>
+    {% if query %}
+      <h2>Ничего не найдено</h2><p>Измените запрос или сбросьте поиск.</p>
+    {% else %}
+      <h2>Номенклатура пока пуста</h2><p>Товарные карточки ещё не созданы.</p>
+    {% endif %}
+  </section>
+{% endif %}
+{% endblock %}

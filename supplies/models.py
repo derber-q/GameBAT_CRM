@@ -4,6 +4,7 @@ from django.db import models
 
 from catalog.models import CD, Tech
 from partners.models import Supplier
+from warehouse.models import Warehouse
 
 
 class Supply(models.Model):
@@ -12,6 +13,9 @@ class Supply(models.Model):
 
     accepted_at = models.DateTimeField("Принята", auto_now_add=True)
     accepted_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="accepted_supplies", verbose_name="Принял")
+    warehouse = models.ForeignKey(
+        Warehouse, on_delete=models.PROTECT, related_name="supplies", verbose_name="Склад поступления"
+    )
     status = models.CharField("Статус", max_length=20, choices=Status.choices, default=Status.ACCEPTED, editable=False)
     total_units = models.PositiveIntegerField("Физических единиц")
     goods_total_before_expenses = models.DecimalField("Товары до расходов", max_digits=20, decimal_places=2)
@@ -87,6 +91,79 @@ class SupplyTechItem(SupplyItemBase):
             models.CheckConstraint(condition=models.Q(base_line_total__gte=0), name="supply_tech_base_total_nonnegative"),
             models.CheckConstraint(condition=models.Q(final_line_total__gte=0), name="supply_tech_final_total_nonnegative"),
         ]
+
+
+class SupplyCostCalculation(models.Model):
+    """Исторический снимок средневзвешенного расчёта для одного товара."""
+
+    class ProductKind(models.TextChoices):
+        CD = "cd", "CD"
+        TECH = "tech", "Tech"
+
+    supply = models.ForeignKey(
+        Supply, on_delete=models.PROTECT, related_name="cost_calculations", verbose_name="Поставка"
+    )
+    product_kind = models.CharField("Тип товара", max_length=8, choices=ProductKind.choices, editable=False)
+    cd = models.ForeignKey(
+        CD, on_delete=models.PROTECT, related_name="supply_cost_calculations",
+        null=True, blank=True, editable=False, verbose_name="CD",
+    )
+    tech = models.ForeignKey(
+        Tech, on_delete=models.PROTECT, related_name="supply_cost_calculations",
+        null=True, blank=True, editable=False, verbose_name="Техника",
+    )
+    product_name_snapshot = models.CharField("Название товара", max_length=255, editable=False)
+    product_sku_snapshot = models.CharField("Артикул", max_length=100, editable=False)
+    old_owned_quantity = models.PositiveIntegerField("Количество до поставки", editable=False)
+    old_unit_cost = models.DecimalField(
+        "Себестоимость до поставки", max_digits=20, decimal_places=2, editable=False
+    )
+    old_inventory_value = models.DecimalField(
+        "Стоимость остатка до поставки", max_digits=20, decimal_places=6, editable=False
+    )
+    incoming_quantity = models.PositiveIntegerField("Поступило", editable=False)
+    incoming_value = models.DecimalField(
+        "Стоимость поступления с расходами", max_digits=20, decimal_places=6, editable=False
+    )
+    resulting_quantity = models.PositiveIntegerField("Количество после поставки", editable=False)
+    resulting_value = models.DecimalField(
+        "Общая стоимость после поставки", max_digits=20, decimal_places=6, editable=False
+    )
+    resulting_unit_cost = models.DecimalField(
+        "Новая себестоимость", max_digits=20, decimal_places=2, editable=False
+    )
+
+    class Meta:
+        ordering = ("id",)
+        verbose_name = "расчёт себестоимости поставки"
+        verbose_name_plural = "расчёты себестоимости поставок"
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(product_kind="cd", cd__isnull=False, tech__isnull=True)
+                    | models.Q(product_kind="tech", cd__isnull=True, tech__isnull=False)
+                ),
+                name="supply_cost_calculation_exact_product",
+            ),
+            models.UniqueConstraint(
+                fields=("supply", "cd"), condition=models.Q(cd__isnull=False),
+                name="unique_supply_cd_cost_calculation",
+            ),
+            models.UniqueConstraint(
+                fields=("supply", "tech"), condition=models.Q(tech__isnull=False),
+                name="unique_supply_tech_cost_calculation",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(incoming_quantity__gt=0), name="supply_cost_incoming_quantity_positive"
+            ),
+        ]
+
+    @property
+    def product(self):
+        return self.cd if self.product_kind == self.ProductKind.CD else self.tech
+
+    def __str__(self):
+        return f"{self.supply}: {self.product_name_snapshot}"
 
 
 class SupplyExpense(models.Model):

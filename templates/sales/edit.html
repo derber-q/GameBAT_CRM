@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Изменить {{ sale.visible_id }} · GameBAT CRM{% endblock %}
+{% block extra_head %}<script src="{% static 'js/stock-lines.js' %}" defer></script>{% endblock %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">Неоплаченная постоплата</p><h1>Изменить {{ sale.visible_id }}</h1><p class="muted">Существующие позиции сохранят историческую цену; новые получат текущую {{ sale.get_price_type_display|lower }} цену.</p></div>{% if perms.sales.view_sale_detail or user.is_superuser %}<a class="button button-secondary" href="{% url 'sales:detail' sale.pk %}">Назад</a>{% endif %}</div>
+{{ initial_items|json_script:"initial-sale-items" }}
+<form method="post" class="stock-lines-form" data-autocomplete-url="{% url 'supplies:autocomplete' %}" data-warehouse-id="{{ sale.warehouse_id }}" data-initial-items-id="initial-sale-items">{% csrf_token %}<section class="panel"><div class="section-heading"><div><span class="step-number">1</span><h2>Товарные позиции</h2></div><button class="button button-secondary button-small add-stock-line" type="button">+ Добавить товар</button></div><div class="table-scroll"><table class="editable-table"><thead><tr><th>Товар</th><th>Количество</th><th></th></tr></thead><tbody class="stock-lines"></tbody></table></div></section><div class="submit-bar"><div><b>Изменения применяются одной операцией</b><span>Разница автоматически спишется со склада или вернётся на него.</span></div><button class="button button-large" type="submit">Сохранить состав</button></div></form>
+{% endblock %}

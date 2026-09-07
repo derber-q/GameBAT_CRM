@@ -30,8 +30,12 @@ INSTALLED_APPS = [
     "accounts",
     "catalog",
     "partners",
+    "warehouse",
     "supplies",
     "consignment",
+    "pricing",
+    "sales",
+    "cash",
 ]
 
 MIDDLEWARE = [

@@ -1,6 +1,24 @@
 {% extends "base.html" %}
 {% block title %}Реализация · GameBAT CRM{% endblock %}
 {% block content %}
-<div class="page-heading"><div><p class="eyebrow">Товар на площадках</p><h1>Реализация</h1><p class="muted">Текущие остатки и потенциальное вознаграждение GameBAT.</p></div><div class="heading-actions">{% if perms.consignment.return_stock or user.is_superuser %}<a class="button button-secondary" href="{% url 'consignment:return' %}">Снять товар</a>{% endif %}{% if perms.consignment.transfer_stock or user.is_superuser %}<a class="button" href="{% url 'consignment:transfer' %}">Передать товар</a>{% endif %}</div></div>
-{% for platform, rows in platforms %}<section class="panel inventory-section"><div class="section-heading"><div><span class="category-tag">Площадка</span><h2>{{ platform.name }}</h2></div><span class="count">{{ rows|length }} поз.</span></div><div class="table-scroll"><table><thead><tr><th>Тип</th><th>Название</th><th>Артикул</th><th class="numeric">Количество</th><th class="numeric">Вознаграждение / ед.</th><th class="numeric">Потенциально</th></tr></thead><tbody>{% for row in rows %}<tr><td><span class="badge">{{ row.type }}</span></td><td class="strong">{{ row.name }}</td><td class="mono">{{ row.sku }}</td><td class="numeric stock-number">{{ row.quantity }}</td><td class="numeric">{{ row.reward }}</td><td class="numeric strong">{{ row.potential }}</td></tr>{% empty %}<tr><td colspan="6" class="empty-cell">На площадке нет товаров.</td></tr>{% endfor %}</tbody></table></div></section>{% empty %}<section class="empty-state"><span class="empty-code">0</span><h2>Площадки не созданы</h2><p>Добавьте площадки реализации через административную панель.</p></section>{% endfor %}
+<div class="page-heading">
+  <div><p class="eyebrow">Товар на площадках</p><h1>Реализация</h1><p class="muted">Остатки и суммы, которые GameBAT получает после продажи товара.</p></div>
+  <div class="heading-actions">
+    {% if perms.consignment.return_stock or user.is_superuser %}<a class="button button-secondary" href="{% url 'consignment:return' %}">Снять товар</a>{% endif %}
+    {% if perms.consignment.transfer_stock or user.is_superuser %}<a class="button" href="{% url 'consignment:transfer' %}">Передать товары</a>{% endif %}
+  </div>
+</div>
+{% for platform, rows in platforms %}
+<section class="panel inventory-section">
+  <div class="section-heading"><div><span class="category-tag">Площадка</span><h2>{{ platform.name }}</h2></div><span class="count">{{ rows|length }} поз.</span></div>
+  <div class="table-scroll"><table class="consignment-stock-table">
+    <thead><tr><th>Тип</th><th>Название</th><th>Артикул</th><th>Склад-источник</th><th class="numeric">Количество</th><th class="numeric">Себестоимость</th><th class="numeric">GameBAT получает / ед.</th><th class="numeric">Всего к получению</th>{% if can_record_sale %}<th></th>{% endif %}</tr></thead>
+    <tbody>{% for row in rows %}<tr>
+      <td><span class="badge">{{ row.type }}</span></td><td class="strong">{{ row.name }}</td><td class="mono">{{ row.sku }}</td><td>{{ row.warehouse.name }}</td>
+      <td class="numeric stock-number">{{ row.quantity }}</td><td class="numeric">{{ row.cost|floatformat:2 }} ₽</td><td class="numeric">{{ row.receivable|floatformat:2 }} ₽</td><td class="numeric strong">{{ row.potential|floatformat:2 }} ₽</td>
+      {% if can_record_sale %}<td><a class="button button-small" href="{% url 'consignment:sale' row.product_kind row.stock_id %}">Товар реализован</a></td>{% endif %}
+    </tr>{% empty %}<tr><td colspan="{% if can_record_sale %}9{% else %}8{% endif %}" class="empty-cell">На площадке нет товаров.</td></tr>{% endfor %}</tbody>
+  </table></div>
+</section>
+{% empty %}<section class="empty-state"><span class="empty-code">0</span><h2>Площадки не созданы</h2><p>Добавьте площадки реализации через административную панель.</p></section>{% endfor %}
 {% endblock %}

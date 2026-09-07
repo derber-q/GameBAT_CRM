@@ -1,7 +1,35 @@
 {% extends "base.html" %}
 {% block title %}Поставка №{{ supply.id }} · GameBAT CRM{% endblock %}
 {% block content %}
-<div class="page-heading"><div><p class="eyebrow">Историческая запись</p><h1>Поставка №{{ supply.id }}</h1><p class="muted">{{ supply.accepted_at|date:"d.m.Y H:i" }} · {{ supply.accepted_by.full_name|default:supply.accepted_by.username }} · {{ supply.get_status_display }}</p></div><a class="button button-secondary" href="{% url 'supplies:list' %}">К истории</a></div>
+<div class="page-heading"><div><p class="eyebrow">Историческая запись</p><h1>Поставка №{{ supply.id }}</h1><p class="muted">Склад {{ supply.warehouse.name }} · {{ supply.accepted_at|date:"d.m.Y H:i" }} · {{ supply.accepted_by.full_name|default:supply.accepted_by.username }} · {{ supply.get_status_display }}</p></div><a class="button button-secondary" href="{% url 'supplies:list' %}">К истории</a></div>
 <section class="panel inventory-section"><div class="section-heading"><h2>Товарные позиции</h2><span class="count">{{ position_count }} поз.</span></div><div class="table-scroll"><table><thead><tr><th>Тип</th><th>Название</th><th>Артикул</th><th>Поставщик</th><th class="numeric">Кол-во</th><th class="numeric">Закупка / ед.</th><th class="numeric">Расход / ед.</th><th class="numeric">Итого / ед.</th><th class="numeric">Закупка</th><th class="numeric">Итого</th></tr></thead><tbody>{% for row in rows %}<tr><td><span class="badge">{{ row.type }}</span></td><td class="strong">{{ row.name }}</td><td class="mono">{{ row.sku }}</td><td><span class="supplier-badge" style="--supplier-color: {{ row.supplier_color }}">{{ row.supplier }}</span></td><td class="numeric">{{ row.quantity }}</td><td class="numeric">{{ row.purchase }}</td><td class="numeric">{{ row.allocated }}</td><td class="numeric">{{ row.effective }}</td><td class="numeric">{{ row.base_total }}</td><td class="numeric strong">{{ row.final_total }}</td></tr>{% endfor %}</tbody></table></div></section>
 <div class="detail-grid"><section class="panel"><h2>Дополнительные расходы</h2><table><tbody>{% for expense in expenses %}<tr><td>{{ expense.name }}</td><td class="numeric strong">{{ expense.amount }}</td></tr>{% empty %}<tr><td class="empty-cell">Дополнительных расходов нет.</td></tr>{% endfor %}</tbody></table></section><section class="panel summary-card"><h2>Итоги</h2><dl class="summary"><dt>Количество позиций</dt><dd>{{ position_count }}</dd><dt>Физических единиц</dt><dd>{{ supply.total_units }}</dd><dt>Товары до расходов</dt><dd>{{ supply.goods_total_before_expenses }}</dd><dt>Дополнительные расходы</dt><dd>{{ supply.expenses_total }}</dd><dt class="grand">Итоговая стоимость</dt><dd class="grand">{{ supply.grand_total }}</dd></dl></section></div>
+<section class="panel supply-cost-history">
+  <div class="section-heading section-heading-plain">
+    <div><h2>Перерасчёт себестоимости</h2></div>
+    <span class="count">Средневзвешенный расчёт</span>
+  </div>
+  <p class="muted cost-help">В стоимость поступления уже включена доля дополнительных расходов этой поставки.</p>
+  <div class="cost-calculation-list">
+    {% for calculation in cost_calculations %}
+      <article class="cost-calculation-card">
+        <header>
+          <div><span class="badge">{{ calculation.get_product_kind_display }}</span><strong>{{ calculation.product_name_snapshot }}</strong></div>
+          <span class="mono">{{ calculation.product_sku_snapshot|default:"Без артикула" }}</span>
+        </header>
+        <div class="cost-steps">
+          <div><span>Остаток до поставки</span><strong>{{ calculation.old_owned_quantity }} × {{ calculation.old_unit_cost|floatformat:2 }} ₽ = {{ calculation.old_inventory_value|floatformat:2 }} ₽</strong></div>
+          <div><span>Новая партия с расходами</span><strong>{{ calculation.incoming_quantity }} ед. = {{ calculation.incoming_value|floatformat:2 }} ₽</strong></div>
+          <div><span>Общий товар после поставки</span><strong>{{ calculation.resulting_quantity }} ед. на {{ calculation.resulting_value|floatformat:2 }} ₽</strong></div>
+        </div>
+        <div class="cost-result">
+          <span>Формула средней себестоимости</span>
+          <strong>({{ calculation.old_inventory_value|floatformat:2 }} ₽ + {{ calculation.incoming_value|floatformat:2 }} ₽) ÷ {{ calculation.resulting_quantity }} = {{ calculation.resulting_unit_cost|floatformat:2 }} ₽ за единицу</strong>
+        </div>
+      </article>
+    {% empty %}
+      <div class="empty-cell">Для этой старой поставки подробный расчёт не был сохранён.</div>
+    {% endfor %}
+  </div>
+</section>
 {% endblock %}

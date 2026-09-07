@@ -5,6 +5,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}GameBAT CRM{% endblock %}</title>
+  <link rel="icon" href="{% static 'img/gamebat-favicon.ico' %}" sizes="32x32" type="image/x-icon">
   <link rel="stylesheet" href="{% static 'css/gamebat.css' %}">
   <script src="{% static 'js/app.js' %}" defer></script>
   {% block extra_head %}{% endblock %}
@@ -14,10 +15,41 @@
     <header class="topbar">
       <a class="brand" href="{% url 'core:home' %}"><span class="brand-mark">GB</span><span>GameBAT <b>CRM</b></span></a>
       <nav class="main-nav" aria-label="Основная навигация">
-        {% if nav.warehouse %}<a class="{% if request.resolver_match.namespace == 'catalog' %}active{% endif %}" href="{% url 'catalog:warehouse' %}">Склад</a>{% endif %}
+        {% if nav.warehouse %}
+          <div class="nav-dropdown">
+            {% if nav.warehouse_global %}
+              <a class="nav-dropdown-trigger {% if request.resolver_match.namespace == 'catalog' %}active{% elif request.resolver_match.namespace == 'warehouse' and 'transfer' not in request.resolver_match.url_name %}active{% endif %}" href="{% url 'catalog:warehouse' %}" aria-haspopup="true">Склад</a>
+            {% elif nav.warehouse_details and nav_warehouses %}
+              <a class="nav-dropdown-trigger {% if request.resolver_match.namespace == 'warehouse' and 'transfer' not in request.resolver_match.url_name %}active{% endif %}" href="{% url 'warehouse:detail' nav_warehouses.0.id %}" aria-haspopup="true">Склад</a>
+            {% else %}
+              <a class="nav-dropdown-trigger" href="{% url 'core:home' %}" aria-haspopup="true">Склад</a>
+            {% endif %}
+            <div class="nav-dropdown-menu">
+              {% if nav.warehouse_global %}<a href="{% url 'catalog:warehouse' %}">Общие остатки</a>{% endif %}
+              {% if nav.warehouse_details %}{% for warehouse in nav_warehouses %}<a href="{% url 'warehouse:detail' warehouse.id %}">Склад {{ warehouse.name }}</a>{% endfor %}{% endif %}
+              {% if nav.transfers %}<a href="{% url 'warehouse:transfer_list' %}">Перемещения</a>{% endif %}
+            </div>
+          </div>
+        {% endif %}
+        {% if nav.nomenclature %}<a class="{% if request.resolver_match.namespace == 'nomenclature' %}active{% endif %}" href="{% url 'nomenclature:list' %}">Номенклатура</a>{% endif %}
+        {% if nav.transfers %}<a class="{% if request.resolver_match.namespace == 'warehouse' and 'transfer' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'warehouse:transfer_list' %}">Перемещения</a>{% endif %}
+        {% if nav.cash and nav_warehouses %}
+          {% if nav_warehouses|length == 1 %}
+            <a class="{% if request.resolver_match.namespace == 'cash' %}active{% endif %}" href="{% url 'cash:register' nav_warehouses.0.id %}">Касса</a>
+          {% else %}
+            <div class="nav-dropdown">
+              <a class="nav-dropdown-trigger {% if request.resolver_match.namespace == 'cash' %}active{% endif %}" href="{% url 'cash:register' nav_warehouses.0.id %}" aria-haspopup="true">Касса</a>
+              <div class="nav-dropdown-menu">
+                {% for warehouse in nav_warehouses %}<a href="{% url 'cash:register' warehouse.id %}">Касса {{ warehouse.name }}</a>{% endfor %}
+              </div>
+            </div>
+          {% endif %}
+        {% endif %}
         {% if nav.supplies %}<a class="{% if request.resolver_match.namespace == 'supplies' %}active{% endif %}" href="{% url 'supplies:list' %}">Приход</a>{% endif %}
         {% if nav.consignment %}<a class="{% if request.resolver_match.namespace == 'consignment' %}active{% endif %}" href="{% url 'consignment:list' %}">Реализация</a>{% endif %}
         {% if nav.suppliers %}<a class="{% if request.resolver_match.namespace == 'partners' %}active{% endif %}" href="{% url 'partners:list' %}">Поставщики</a>{% endif %}
+        {% if nav.pricing %}<a class="{% if request.resolver_match.namespace == 'pricing' %}active{% endif %}" href="{% url 'pricing:list' %}">Ценообразование</a>{% endif %}
+        {% if nav.sales %}<a class="{% if request.resolver_match.namespace == 'sales' %}active{% endif %}" href="{% url 'sales:list' %}">Продажа</a>{% endif %}
         {% if nav.users %}<a class="{% if request.resolver_match.namespace == 'accounts' and 'user' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'accounts:user_list' %}">Пользователи</a>{% endif %}
       </nav>
       <div class="rates" aria-label="Курсы валют">

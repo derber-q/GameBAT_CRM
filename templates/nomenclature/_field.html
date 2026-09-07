@@ -1,0 +1,9 @@
+<div class="field {% if field.errors %}field-error{% endif %} {% if field.field.disabled %}field-readonly{% endif %}">
+  <label for="{{ field.id_for_label }}">
+    {{ field.label }}
+    {% if field.field.disabled %}<span class="badge">Только чтение</span>{% endif %}
+  </label>
+  {{ field }}
+  {% if field.help_text %}<small>{{ field.help_text }}</small>{% endif %}
+  {% for error in field.errors %}<span class="error-text">{{ error }}</span>{% endfor %}
+</div>

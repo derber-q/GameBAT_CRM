@@ -1,6 +1,7 @@
 {% extends "admin/base.html" %}
 {% load static %}
 {% block title %}{{ title }} | GameBAT CRM{% endblock %}
+{% block extrahead %}{{ block.super }}<link rel="icon" href="{% static 'img/gamebat-favicon.ico' %}" sizes="32x32" type="image/x-icon">{% endblock %}
 {% block dark-mode-vars %}{% endblock %}
 {% block extrastyle %}{{ block.super }}<link rel="stylesheet" href="{% static 'css/admin-gamebat.css' %}">{% endblock %}
 {% block branding %}<div id="site-name"><a href="{% url 'admin:index' %}"><span class="gb-admin-mark">GB</span> GameBAT CRM</a></div>{% endblock %}

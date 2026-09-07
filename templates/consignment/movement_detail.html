@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}{{ movement.action_label }} · GameBAT CRM{% endblock %}
+{% block content %}
+<div class="page-heading">
+  <div><p class="eyebrow">Неизменяемая операция реализации</p><h1>{{ movement.action_label }}</h1><p class="muted">Операция, из-за которой изменились остатки товаров.</p></div>
+  <a class="button button-secondary" href="{% url 'consignment:list' %}">К реализации</a>
+</div>
+<section class="panel">
+  <div class="detail-grid">
+    <dl class="details">
+      <dt>Дата и время</dt><dd>{{ movement.created_at|date:"d.m.Y H:i" }}</dd>
+      <dt>Выполнил</dt><dd>{{ movement.created_by.full_name|default:movement.created_by.username }} (CRM)</dd>
+      <dt>Операция</dt><dd>{{ movement.get_operation_type_display }}</dd>
+      <dt>Площадка</dt><dd>{{ movement.platform.name }}</dd>
+      <dt>Склад</dt><dd>{{ movement.warehouse.name }}</dd>
+    </dl>
+    <dl class="details"><dt>Позиций</dt><dd>{{ movement.position_count }}</dd><dt>Единиц</dt><dd>{{ movement.total_units }}</dd></dl>
+  </div>
+</section>
+<section class="panel table-panel"><div class="section-heading"><h2>Товарные позиции</h2><span class="count">{{ movement.position_count }}</span></div><div class="table-scroll"><table>
+  <thead><tr><th>Тип</th><th>Товар</th><th>Артикул</th><th class="numeric">Количество</th><th class="numeric">GameBAT получает / ед.</th><th class="numeric">Склад до</th><th class="numeric">Склад после</th><th class="numeric">На реализации до</th><th class="numeric">На реализации после</th></tr></thead>
+  <tbody>{% for item in movement.items.all %}<tr><td><span class="badge">{{ item.get_product_kind_display }}</span></td><td class="strong">{{ item.product_name_snapshot }}</td><td class="mono">{{ item.product_sku_snapshot }}</td><td class="numeric">{{ item.quantity }}</td><td class="numeric">{{ item.receivable_per_unit|floatformat:2 }} ₽</td><td class="numeric">{{ item.warehouse_quantity_before }}</td><td class="numeric">{{ item.warehouse_quantity_after }}</td><td class="numeric">{{ item.consignment_quantity_before }}</td><td class="numeric">{{ item.consignment_quantity_after }}</td></tr>{% endfor %}</tbody>
+</table></div></section>
+{% endblock %}

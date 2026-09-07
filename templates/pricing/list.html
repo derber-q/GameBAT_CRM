@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Ценообразование · GameBAT CRM{% endblock %}
+{% block content %}
+<div class="page-heading">
+  <div>
+    <p class="eyebrow">Текущие цены</p>
+    <h1>Ценообразование</h1>
+    <p class="muted">Себестоимость рассчитывается поставками; продажные и поставщицкие цены управляются отдельно.</p>
+  </div>
+</div>
+
+{% for group, rows in cd_groups %}
+  <section class="panel inventory-section">
+    <div class="section-heading"><div><span class="category-tag">CD</span><h2>{{ group.name }}</h2></div><span class="count">{{ rows|length }} поз.</span></div>
+    {% include "pricing/_price_table.html" with rows=rows %}
+  </section>
+{% endfor %}
+
+{% for group, rows in tech_groups %}
+  <section class="panel inventory-section">
+    <div class="section-heading"><div><span class="category-tag category-tag-tech">TECH</span><h2>{{ group.name }}</h2></div><span class="count">{{ rows|length }} поз.</span></div>
+    {% include "pricing/_price_table.html" with rows=rows %}
+  </section>
+{% endfor %}
+
+{% if not cd_groups and not tech_groups %}
+  <section class="empty-state"><span class="empty-code">0</span><h2>Номенклатура пока не создана</h2><p>Добавьте товары через административную панель.</p></section>
+{% endif %}
+{% endblock %}

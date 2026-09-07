@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Перемещение №{{ transfer.id }} · GameBAT CRM{% endblock %}
+{% block content %}
+<div class="page-heading">
+  <div><p class="eyebrow">Межскладская операция</p><h1>Перемещение №{{ transfer.id }}</h1><p class="muted">{{ transfer.source_warehouse.name }} → {{ transfer.destination_warehouse.name }}</p></div>
+  <a class="button button-secondary" href="{% url 'warehouse:transfer_list' %}">К списку</a>
+</div>
+<div class="detail-grid">
+  <section class="panel">
+    <h2>Состояние</h2>
+    <dl class="details"><dt>Статус</dt><dd>{{ transfer.get_status_display }}</dd><dt>Создал</dt><dd>{{ transfer.created_by.full_name|default:transfer.created_by.username }}</dd><dt>Дата создания</dt><dd>{{ transfer.created_at|date:"d.m.Y H:i" }}</dd><dt>Обновлено</dt><dd>{{ transfer.updated_at|date:"d.m.Y H:i" }}</dd></dl>
+    {% if next_action %}<form method="post" action="{% url 'warehouse:transfer_advance' transfer.pk %}" class="status-action">{% csrf_token %}<input type="hidden" name="next_status" value="{{ next_action.0 }}"><button class="button" type="submit">{{ next_action.1 }}</button></form>{% endif %}
+  </section>
+  <section class="panel summary-card">
+    <h2>Итоги</h2>
+    <dl class="summary"><dt>Позиций</dt><dd>{{ transfer.position_count }}</dd><dt>Физических единиц</dt><dd>{{ transfer.total_units }}</dd><dt>Откуда</dt><dd>{{ transfer.source_warehouse.name }}</dd><dt>Куда</dt><dd>{{ transfer.destination_warehouse.name }}</dd></dl>
+  </section>
+</div>
+
+{% for group, rows in cd_groups %}
+  <section class="panel inventory-section">
+    <div class="section-heading"><div><span class="category-tag">CD</span><h2>{{ group.name }}</h2></div><span class="count">{{ rows|length }} поз.</span></div>
+    <div class="table-scroll"><table><thead><tr><th>ID</th><th>Название</th><th>Артикул</th><th class="numeric">Количество</th></tr></thead><tbody>{% for row in rows %}<tr><td class="mono">{{ row.product.id }}</td><td class="strong">{{ row.product.name }}</td><td class="mono">{{ row.product.sku }}</td><td class="numeric stock-number">{{ row.quantity }}</td></tr>{% endfor %}</tbody></table></div>
+  </section>
+{% endfor %}
+
+{% for group, rows in tech_groups %}
+  <section class="panel inventory-section">
+    <div class="section-heading"><div><span class="category-tag category-tag-tech">TECH</span><h2>{{ group.name }}</h2></div><span class="count">{{ rows|length }} поз.</span></div>
+    <div class="table-scroll"><table><thead><tr><th>ID</th><th>Название</th><th>Бренд</th><th>Артикул</th><th class="numeric">Количество</th></tr></thead><tbody>{% for row in rows %}<tr><td class="mono">{{ row.product.id }}</td><td class="strong">{{ row.product.name }}</td><td>{{ row.product.brand.name }}</td><td class="mono">{{ row.product.sku }}</td><td class="numeric stock-number">{{ row.quantity }}</td></tr>{% endfor %}</tbody></table></div>
+  </section>
+{% endfor %}
+{% endblock %}

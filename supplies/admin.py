@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Supply, SupplyCDItem, SupplyExpense, SupplyTechItem
+from .models import Supply, SupplyCDItem, SupplyCostCalculation, SupplyExpense, SupplyTechItem
 from partners.admin import SupplierDetailAdminMixin
 
 
@@ -17,8 +17,8 @@ class HistoricalAdmin(admin.ModelAdmin):
 
 @admin.register(Supply)
 class SupplyAdmin(HistoricalAdmin):
-    list_display = ("id", "accepted_at", "accepted_by", "total_units", "expenses_total", "grand_total", "status")
-    list_filter = ("status", "accepted_at")
+    list_display = ("id", "accepted_at", "warehouse", "accepted_by", "total_units", "expenses_total", "grand_total", "status")
+    list_filter = ("status", "warehouse", "accepted_at")
     search_fields = ("id", "accepted_by__username", "accepted_by__full_name")
 
 
@@ -40,3 +40,17 @@ class SupplyTechItemAdmin(SupplierDetailAdminMixin, HistoricalAdmin):
 class SupplyExpenseAdmin(HistoricalAdmin):
     list_display = ("supply", "name", "amount")
     search_fields = ("name",)
+
+
+@admin.register(SupplyCostCalculation)
+class SupplyCostCalculationAdmin(HistoricalAdmin):
+    list_display = (
+        "supply", "product_name_snapshot", "old_owned_quantity", "incoming_quantity", "resulting_unit_cost"
+    )
+    list_filter = ("product_kind",)
+    search_fields = ("product_name_snapshot", "product_sku_snapshot")
+    readonly_fields = (
+        "supply", "product_kind", "cd", "tech", "product_name_snapshot", "product_sku_snapshot",
+        "old_owned_quantity", "old_unit_cost", "old_inventory_value", "incoming_quantity",
+        "incoming_value", "resulting_quantity", "resulting_value", "resulting_unit_cost",
+    )

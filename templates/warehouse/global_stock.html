@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Общие остатки · GameBAT CRM{% endblock %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">Все склады</p><h1>Общие остатки</h1><p class="muted">Физические остатки, реализация и товары в пути.</p></div>{% if perms.warehouse.view_transfers or user.is_superuser %}<a class="button button-secondary" href="{% url 'warehouse:transfer_list' %}">Перемещения</a>{% endif %}</div>
+
+{% for group, group_rows in cd_groups %}
+  <section class="panel inventory-section">
+    <div class="section-heading">
+      <div><span class="category-tag">CD</span><h2>{{ group.name }}</h2></div>
+      <span class="count">{{ group_rows|length }} поз.</span>
+    </div>
+    {% include "warehouse/_global_stock_table.html" %}
+  </section>
+{% endfor %}
+
+{% for group, group_rows in tech_groups %}
+  <section class="panel inventory-section">
+    <div class="section-heading">
+      <div><span class="category-tag category-tag-tech">TECH</span><h2>{{ group.name }}</h2></div>
+      <span class="count">{{ group_rows|length }} поз.</span>
+    </div>
+    {% include "warehouse/_global_stock_table.html" %}
+  </section>
+{% endfor %}
+
+{% if not rows %}
+  <section class="empty-state">
+    <span class="empty-code">0</span><h2>Номенклатура пока не создана</h2>
+    <p>Добавьте товары через административную панель.</p>
+  </section>
+{% endif %}
+{% endblock %}

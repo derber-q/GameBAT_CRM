@@ -9,10 +9,50 @@
     if (time) time.textContent = new Intl.DateTimeFormat("ru-RU", { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(now);
   }
 
-  function attachAutocomplete({ input, typeInput, idInput, suggestions, endpoint }) {
+  function attachAutocomplete({ input, typeInput, idInput, suggestions, endpoint, warehouseId, warehouseInput }) {
     if (!input || !typeInput || !idInput || !suggestions || !endpoint) return;
     let timer;
-    const close = () => { suggestions.classList.remove("open"); suggestions.replaceChildren(); };
+    const host = suggestions.parentElement;
+
+    // Подсказки переносятся в body, чтобы таблица с горизонтальным overflow
+    // не обрезала список и не создавала внутреннюю вертикальную прокрутку.
+    const positionSuggestions = () => {
+      if (!suggestions.classList.contains("open")) return;
+      const rect = input.getBoundingClientRect();
+      const viewportPadding = 8;
+      const width = Math.min(rect.width, window.innerWidth - viewportPadding * 2);
+      const left = Math.max(
+        viewportPadding,
+        Math.min(rect.left, window.innerWidth - width - viewportPadding),
+      );
+      const desiredHeight = Math.min(250, suggestions.scrollHeight);
+      const spaceBelow = window.innerHeight - rect.bottom - viewportPadding;
+      const spaceAbove = rect.top - viewportPadding;
+      const openAbove = spaceBelow < Math.min(160, desiredHeight) && spaceAbove > spaceBelow;
+      const maxHeight = Math.max(80, Math.min(250, openAbove ? spaceAbove : spaceBelow));
+
+      suggestions.style.left = `${left}px`;
+      suggestions.style.width = `${width}px`;
+      suggestions.style.maxHeight = `${maxHeight}px`;
+      suggestions.style.top = openAbove
+        ? `${Math.max(viewportPadding, rect.top - Math.min(desiredHeight, maxHeight) - 4)}px`
+        : `${rect.bottom + 4}px`;
+    };
+    const open = () => {
+      if (suggestions.parentElement !== document.body) document.body.append(suggestions);
+      suggestions.classList.add("autocomplete-portal", "open");
+      positionSuggestions();
+    };
+    const close = () => {
+      suggestions.classList.remove("open", "autocomplete-portal");
+      suggestions.removeAttribute("style");
+      suggestions.replaceChildren();
+      if (host.isConnected) {
+        if (suggestions.parentElement !== host) host.append(suggestions);
+      } else {
+        suggestions.remove();
+      }
+    };
     input.addEventListener("input", () => {
       typeInput.value = "";
       idInput.value = "";
@@ -21,7 +61,9 @@
       if (query.length < 2) return close();
       timer = setTimeout(async () => {
         try {
-          const response = await fetch(`${endpoint}?q=${encodeURIComponent(query)}`, { headers: { "X-Requested-With": "XMLHttpRequest" } });
+          const selectedWarehouse = warehouseInput ? warehouseInput.value : warehouseId;
+          const warehouseQuery = selectedWarehouse ? `&warehouse=${encodeURIComponent(selectedWarehouse)}` : "";
+          const response = await fetch(`${endpoint}?q=${encodeURIComponent(query)}${warehouseQuery}`, { headers: { "X-Requested-With": "XMLHttpRequest" } });
           if (!response.ok) return close();
           const payload = await response.json();
           suggestions.replaceChildren();
@@ -42,15 +84,18 @@
             });
             suggestions.append(option);
           });
-          suggestions.classList.toggle("open", payload.results.length > 0);
+          if (payload.results.length > 0) open();
+          else close();
         } catch (_) {
           close();
         }
       }, 180);
     });
     document.addEventListener("click", (event) => {
-      if (!suggestions.parentElement.contains(event.target)) close();
+      if (!input.contains(event.target) && !suggestions.contains(event.target)) close();
     });
+    window.addEventListener("resize", positionSuggestions);
+    document.addEventListener("scroll", positionSuggestions, true);
   }
 
   updateClock();
@@ -63,6 +108,7 @@
       idInput: form.querySelector("#id_product_id"),
       suggestions: form.querySelector(".suggestions"),
       endpoint: form.dataset.autocompleteUrl,
+      warehouseInput: form.querySelector("#id_warehouse"),
     });
   });
 

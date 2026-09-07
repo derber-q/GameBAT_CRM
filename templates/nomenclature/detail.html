@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}{{ product.name }} · Номенклатура · GameBAT CRM{% endblock %}
+{% block content %}
+<div class="page-heading">
+  <div>
+    <p class="eyebrow">Номенклатура · {{ product_kind_label }}</p>
+    <h1>{{ product.name }}</h1>
+    <p class="muted">Карточка товара и неизменяемая история её редактирования.</p>
+  </div>
+  <a class="button button-secondary" href="{% url 'nomenclature:list' %}">К списку</a>
+</div>
+
+<form method="post" class="product-card-form">
+  {% csrf_token %}
+  {{ form.version }}
+  {% if form.non_field_errors %}<div class="alert alert-error">{{ form.non_field_errors }}</div>{% endif %}
+  {% for section in form_sections %}
+    <section class="panel product-form-section">
+      <h2>{{ section.title }}</h2>
+      <div class="product-form-grid">
+        {% for field in section.fields %}{% include "nomenclature/_field.html" with field=field %}{% endfor %}
+      </div>
+    </section>
+  {% endfor %}
+  <section class="panel">
+    <div class="section-heading section-heading-plain"><div><h2>Системная информация</h2></div></div>
+    <div class="detail-grid product-system-grid">
+      <dl class="details">
+        <dt>ID</dt><dd class="mono">{{ product.id }}</dd>
+        <dt>Средняя себестоимость</dt><dd>{{ product.cost|floatformat:2 }} ₽</dd>
+        <dt>Всего на складах</dt><dd>{{ warehouse_total }}</dd>
+        <dt>На реализации</dt><dd>{{ consignment_total }}</dd>
+        <dt>В перемещении</dt><dd>{{ transit_total }}</dd>
+      </dl>
+      <div class="table-scroll">
+        <table class="warehouse-stock-editor">
+          <thead><tr><th>Склад</th><th class="numeric">Остаток</th></tr></thead>
+          <tbody>
+            {% for field in stock_fields %}
+              <tr class="{% if field.errors %}field-error{% endif %}">
+                <td><label for="{{ field.id_for_label }}">{{ field.label }}</label>{% if field.field.disabled %}<span class="badge">Только чтение</span>{% endif %}</td>
+                <td class="numeric">{{ field }}{% for error in field.errors %}<span class="error-text">{{ error }}</span>{% endfor %}</td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="2" class="empty-cell">Складов пока нет.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+  {% if form.can_edit %}
+    <div class="form-actions product-save-actions"><button class="button button-large" type="submit">Сохранить изменения</button></div>
+  {% endif %}
+</form>
+
+<section class="panel audit-history">
+  <div class="section-heading section-heading-plain"><div><h2>История изменений</h2></div><span class="count">{{ event_page.paginator.count }} событий</span></div>
+  <div class="table-scroll">
+    <table class="audit-table">
+      <thead><tr><th>Дата и время</th><th>Кто изменил</th><th>Документ / действие</th><th>Изменения</th></tr></thead>
+      <tbody>
+        {% for event in event_page %}
+          <tr>
+            <td class="audit-date">{{ event.created_at|date:"d.m.Y H:i" }}</td>
+            <td class="audit-executor">{{ event.executor_display }}</td>
+            <td class="audit-action">
+              {% if event.action_url %}<a href="{{ event.action_url }}">{{ event.action_label }}</a>{% else %}—{% endif %}
+            </td>
+            <td>
+              <div class="audit-changes">
+                {% for change in event.field_changes.all %}
+                  <div class="audit-change">
+                    <strong>{{ change.field_label }}</strong>
+                    <span class="audit-old">{{ change.old_value|default:"—" }}</span>
+                    <span class="audit-arrow">→</span>
+                    <span class="audit-new">{{ change.new_value|default:"—" }}</span>
+                  </div>
+                {% endfor %}
+              </div>
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="4" class="empty-cell">Изменений карточки пока нет.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if event_page.has_other_pages %}
+    <nav class="pagination" aria-label="Страницы истории">
+      {% if event_page.has_previous %}<a class="button button-secondary button-small" href="?page={{ event_page.previous_page_number }}">Назад</a>{% endif %}
+      <span>Страница {{ event_page.number }} из {{ event_page.paginator.num_pages }}</span>
+      {% if event_page.has_next %}<a class="button button-secondary button-small" href="?page={{ event_page.next_page_number }}">Вперёд</a>{% endif %}
+    </nav>
+  {% endif %}
+</section>
+{% endblock %}

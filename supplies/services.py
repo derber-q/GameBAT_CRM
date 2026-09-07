@@ -6,10 +6,17 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP, localcontext
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
+from django.db.models import Sum
 
-from catalog.models import CD, Tech
+from catalog.audit import field_change, record_product_changes, stock_change
+from catalog.models import CD, ProductChangeEvent, Tech
 from partners.models import Supplier
-from .models import Supply, SupplyCDItem, SupplyExpense, SupplyTechItem
+from consignment.models import CDConsignmentStock, TechConsignmentStock
+from warehouse.models import (
+    CDWarehouseStock, CDWarehouseTransferItem, TechWarehouseStock, TechWarehouseTransferItem,
+    Warehouse, WarehouseTransfer,
+)
+from .models import Supply, SupplyCDItem, SupplyCostCalculation, SupplyExpense, SupplyTechItem
 
 logger = logging.getLogger("gamebat.business")
 CENT = Decimal("0.01")
@@ -77,7 +84,36 @@ def _normalise_expenses(raw_expenses):
     return expenses
 
 
-def accept_supply(*, accepted_by, lines, expenses=()):
+def _old_owned_quantity(product_type, product_id):
+    """Считает все единицы GameBAT без двойного учёта склада, реализации и transit."""
+    if product_type == "cd":
+        stock_model, consignment_model, transfer_item_model, product_field = (
+            CDWarehouseStock, CDConsignmentStock, CDWarehouseTransferItem, "cd"
+        )
+    else:
+        stock_model, consignment_model, transfer_item_model, product_field = (
+            TechWarehouseStock, TechConsignmentStock, TechWarehouseTransferItem, "tech"
+        )
+    warehouse_total = stock_model.objects.filter(**{f"{product_field}_id": product_id}).aggregate(
+        total=Sum("quantity")
+    )["total"] or 0
+    consignment_total = consignment_model.objects.filter(**{f"{product_field}_id": product_id}).aggregate(
+        total=Sum("quantity")
+    )["total"] or 0
+    transit_total = transfer_item_model.objects.filter(
+        **{
+            f"{product_field}_id": product_id,
+            "transfer__status__in": (
+                WarehouseTransfer.Status.CREATED,
+                WarehouseTransfer.Status.ASSEMBLED,
+                WarehouseTransfer.Status.SHIPPED,
+            ),
+        }
+    ).aggregate(total=Sum("quantity"))["total"] or 0
+    return warehouse_total + consignment_total + transit_total
+
+
+def accept_supply(*, accepted_by, warehouse_id, lines, expenses=()):
     """Принимает поставку целиком и пересчитывает среднюю стоимость товаров.
 
     Расходы делятся на физические единицы, а вес старого товара включает и
@@ -90,6 +126,10 @@ def accept_supply(*, accepted_by, lines, expenses=()):
 
     try:
         with transaction.atomic():
+            try:
+                warehouse = Warehouse.objects.select_for_update().get(pk=warehouse_id)
+            except (Warehouse.DoesNotExist, TypeError, ValueError) as exc:
+                raise ValidationError("Выберите склад поступления.") from exc
             cd_ids = {line.product_id for line in prepared_lines if line.product_type == "cd"}
             tech_ids = {line.product_id for line in prepared_lines if line.product_type == "tech"}
             supplier_ids = {line.supplier_id for line in prepared_lines}
@@ -111,6 +151,7 @@ def accept_supply(*, accepted_by, lines, expenses=()):
                 )
                 supply = Supply.objects.create(
                     accepted_by=accepted_by,
+                    warehouse=warehouse,
                     total_units=total_units,
                     goods_total_before_expenses=goods_total.quantize(CENT, rounding=ROUND_HALF_UP),
                     expenses_total=expenses_total.quantize(CENT, rounding=ROUND_HALF_UP),
@@ -152,18 +193,73 @@ def accept_supply(*, accepted_by, lines, expenses=()):
                 SupplyCDItem.objects.bulk_create(cd_items)
                 SupplyTechItem.objects.bulk_create(tech_items)
 
+                cost_calculations = []
                 for key, addition in inventory_additions.items():
                     product = products[key]
-                    old_owned_quantity = product.quantity + product.quantity_on_consignment
+                    old_owned_quantity = _old_owned_quantity(*key)
                     new_quantity = addition["quantity"]
-                    new_average = (
-                        (Decimal(old_owned_quantity) * product.cost + addition["value"])
-                        / Decimal(old_owned_quantity + new_quantity)
+                    old_cost = product.cost
+                    old_inventory_value = Decimal(old_owned_quantity) * old_cost
+                    resulting_quantity = old_owned_quantity + new_quantity
+                    resulting_value = old_inventory_value + addition["value"]
+                    new_average = resulting_value / Decimal(resulting_quantity)
+                    product.cost = new_average.quantize(CENT, rounding=ROUND_HALF_UP)
+                    # Старые импортированные карточки могут иметь пустые обязательные
+                    # идентификаторы. Приход меняет только себестоимость и не должен
+                    # блокироваться из-за, например, незаполненного штрихкода.
+                    product.full_clean(exclude=[
+                        field.name for field in product._meta.fields if field.name != "cost"
+                    ])
+                    product.save(update_fields=("cost",))
+                    product_type, product_id = key
+                    cost_calculations.append(SupplyCostCalculation(
+                        supply=supply,
+                        product_kind=product_type,
+                        product_name_snapshot=product.name,
+                        product_sku_snapshot=product.sku,
+                        old_owned_quantity=old_owned_quantity,
+                        old_unit_cost=old_cost,
+                        old_inventory_value=old_inventory_value.quantize(UNIT, rounding=ROUND_HALF_UP),
+                        incoming_quantity=new_quantity,
+                        incoming_value=addition["value"].quantize(UNIT, rounding=ROUND_HALF_UP),
+                        resulting_quantity=resulting_quantity,
+                        resulting_value=resulting_value.quantize(UNIT, rounding=ROUND_HALF_UP),
+                        resulting_unit_cost=product.cost,
+                        **{product_type: product},
+                    ))
+                    stock_model = CDWarehouseStock if product_type == "cd" else TechWarehouseStock
+                    product_field = "cd" if product_type == "cd" else "tech"
+                    stock = stock_model.objects.select_for_update().filter(
+                        warehouse=warehouse, **{f"{product_field}_id": product_id}
+                    ).first()
+                    if stock is None:
+                        stock = stock_model(warehouse=warehouse, **{f"{product_field}_id": product_id})
+                    old_stock_quantity = stock.quantity
+                    stock.quantity += new_quantity
+                    stock.full_clean()
+                    stock.save()
+                    changes = [stock_change(
+                        warehouse=warehouse,
+                        old_quantity=old_stock_quantity,
+                        new_quantity=stock.quantity,
+                    )]
+                    if old_cost != product.cost:
+                        changes.append(field_change(
+                            field_name="cost",
+                            field_label="Средняя себестоимость",
+                            old_value=f"{old_cost:.2f}",
+                            new_value=f"{product.cost:.2f}",
+                        ))
+                    record_product_changes(
+                        actor=accepted_by,
+                        instance=product,
+                        source=ProductChangeEvent.Source.CRM,
+                        action_kind=ProductChangeEvent.ActionKind.SUPPLY,
+                        action_object_id=supply.pk,
+                        action_label=f"Поставка №{supply.pk}",
+                        changes=changes,
                     )
-                    product.quantity += new_quantity
-                    product.cost = new_average.quantize(UNIT, rounding=ROUND_HALF_UP)
-                    product.full_clean()
-                    product.save(update_fields=("quantity", "cost"))
+                SupplyCostCalculation.objects.bulk_create(cost_calculations)
 
             logger.info(
                 "Поставка принята: user_id=%s supply_id=%s units=%s",

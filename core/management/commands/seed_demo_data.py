@@ -15,6 +15,7 @@ from core.models import CurrencyRate
 from partners.models import SalesPlatform, Supplier
 from supplies.models import Supply
 from supplies.services import accept_supply
+from warehouse.models import Warehouse
 
 
 class Command(BaseCommand):
@@ -42,7 +43,7 @@ class Command(BaseCommand):
         """Обновляет описание демо-товара, не повреждая рассчитанные остатки."""
         product = model.objects.filter(sku=sku).first()
         if product is None:
-            return model.objects.create(sku=sku, quantity=0, cost=0, **defaults)
+            return model.objects.create(sku=sku, cost=0, **defaults)
         for field, value in defaults.items():
             setattr(product, field, value)
         product.save(update_fields=tuple(defaults))
@@ -71,6 +72,7 @@ class Command(BaseCommand):
         admin.phone_1 = admin.phone_1 or "+7 999 100-00-01"
         admin.telegram = admin.telegram or "@gamebat_admin"
         admin.save(update_fields=("full_name", "email", "phone_1", "telegram"))
+        warehouse, _ = Warehouse.objects.get_or_create(name="Варфоломеева 265")
 
         # Внутренние курсы задаются вручную и не используют внешние API.
         for pair, rate in (
@@ -296,7 +298,9 @@ class Command(BaseCommand):
                 cd_items__product__sku=marker_sku
             ).exists() or Supply.objects.filter(tech_items__product__sku=marker_sku).exists()
             if not marker_exists:
-                supply = accept_supply(accepted_by=accepted_by, lines=lines, expenses=expenses)
+                supply = accept_supply(
+                    accepted_by=accepted_by, warehouse_id=warehouse.pk, lines=lines, expenses=expenses
+                )
                 Supply.objects.filter(pk=supply.pk).update(accepted_at=timezone.now() - timedelta(days=days_ago))
 
         transfer_specs = (
@@ -309,14 +313,14 @@ class Command(BaseCommand):
             (sales_platforms["online"], "cd", cds["spider"], 2, "800"),
             (sales_platforms["online"], "tech", tech["headset"], 3, "650"),
         )
-        for platform, product_type, product, quantity, reward in transfer_specs:
+        for platform, product_type, product, quantity, receivable in transfer_specs:
             stock_model = CDConsignmentStock if product_type == "cd" else TechConsignmentStock
             product_field = "cd" if product_type == "cd" else "tech"
             stock = stock_model.objects.filter(platform=platform, **{product_field: product}).first()
             if stock is None or stock.quantity == 0:
                 transfer_to_consignment(
-                    actor=admin, platform_id=platform.pk, product_type=product_type,
-                    product_id=product.pk, quantity=quantity, reward_per_unit=reward,
+                    actor=admin, warehouse_id=warehouse.pk, platform_id=platform.pk, product_type=product_type,
+                    product_id=product.pk, quantity=quantity, receivable_per_unit=receivable,
                 )
 
         self.stdout.write(self.style.SUCCESS("Демонстрационные данные созданы."))

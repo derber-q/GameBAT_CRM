@@ -3,8 +3,11 @@
   const form = document.getElementById("supply-form");
   if (!form) return;
   const suppliers = JSON.parse(document.getElementById("supplier-data").textContent);
+  const initialLines = JSON.parse(document.getElementById("initial-supply-lines").textContent);
+  const initialExpenses = JSON.parse(document.getElementById("initial-expense-lines").textContent);
   const lines = document.getElementById("supply-lines");
   const expenses = document.getElementById("expense-lines");
+  const warehouse = document.getElementById("id_warehouse");
 
   function removeButton(row) {
     const cell = document.createElement("td");
@@ -19,22 +22,26 @@
     return cell;
   }
 
-  function addProductLine() {
+  function addProductLine(value = {}) {
     const row = document.createElement("tr");
     const productCell = document.createElement("td");
     const wrap = document.createElement("div");
     wrap.className = "autocomplete-wrap";
     const search = document.createElement("input");
     search.type = "text";
+    search.name = "product_search";
     search.placeholder = "Начните вводить название товара...";
     search.autocomplete = "off";
     search.required = true;
+    search.value = value.label || "";
     const type = document.createElement("input");
     type.type = "hidden";
     type.name = "product_type";
+    type.value = value.product_type || "";
     const id = document.createElement("input");
     id.type = "hidden";
     id.name = "product_id";
+    id.value = value.product_id || "";
     const suggestionBox = document.createElement("div");
     suggestionBox.className = "suggestions";
     wrap.append(search, type, id, suggestionBox);
@@ -54,6 +61,7 @@
       option.textContent = supplier.label;
       supplierSelect.append(option);
     });
+    supplierSelect.value = value.supplier_id || "";
     supplierCell.append(supplierSelect);
 
     const quantityCell = document.createElement("td");
@@ -63,6 +71,7 @@
     quantity.min = "1";
     quantity.step = "1";
     quantity.required = true;
+    quantity.value = value.quantity || "";
     quantityCell.append(quantity);
 
     const costCell = document.createElement("td");
@@ -72,21 +81,23 @@
     cost.min = "0";
     cost.step = "0.000001";
     cost.required = true;
+    cost.value = value.purchase_unit_cost || "";
     costCell.append(cost);
 
     row.append(productCell, supplierCell, quantityCell, costCell, removeButton(row));
     lines.append(row);
-    window.GameBAT.attachAutocomplete({ input: search, typeInput: type, idInput: id, suggestions: suggestionBox, endpoint: form.dataset.autocompleteUrl });
-    search.focus();
+    window.GameBAT.attachAutocomplete({ input: search, typeInput: type, idInput: id, suggestions: suggestionBox, endpoint: form.dataset.autocompleteUrl, warehouseInput: warehouse });
+    if (!value.label) search.focus();
   }
 
-  function addExpenseLine() {
+  function addExpenseLine(value = {}) {
     const row = document.createElement("tr");
     const nameCell = document.createElement("td");
     const name = document.createElement("input");
     name.type = "text";
     name.name = "expense_name";
     name.placeholder = "Например, доставка";
+    name.value = value.name || "";
     nameCell.append(name);
     const amountCell = document.createElement("td");
     const amount = document.createElement("input");
@@ -94,6 +105,7 @@
     amount.name = "expense_amount";
     amount.min = "0";
     amount.step = "0.01";
+    amount.value = value.amount || "";
     amountCell.append(amount);
     row.append(nameCell, amountCell, removeButton(row));
     expenses.append(row);
@@ -108,6 +120,6 @@
       window.alert("Выберите существующий товар из списка.");
     }
   });
-  addProductLine();
-  addExpenseLine();
+  (initialLines.length ? initialLines : [{}]).forEach(addProductLine);
+  (initialExpenses.length ? initialExpenses : [{}]).forEach(addExpenseLine);
 })();

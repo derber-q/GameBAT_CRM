@@ -4,6 +4,7 @@ from django.urls import reverse
 from accounts.models import User
 from catalog.models import Brand, CD, Platform, ProductType, Tech
 from partners.models import SalesPlatform, Supplier
+from warehouse.models import Warehouse
 
 
 class InternalPageSmokeTests(TestCase):
@@ -21,11 +22,23 @@ class InternalPageSmokeTests(TestCase):
         SalesPlatform.objects.create(
             name="Площадка", address="Адрес", legal_entity="ООО Площадка", phone_1="+70000000001"
         )
+        self.warehouse = Warehouse.objects.get(name="Варфоломеева 265")
+        Warehouse.objects.create(name="Резервный склад")
         self.client.force_login(self.admin)
 
     def test_primary_get_pages_render(self):
         urls = (
             reverse("catalog:warehouse"),
+            reverse("warehouse:global_stock"),
+            reverse("warehouse:detail", args=(self.warehouse.pk,)),
+            reverse("warehouse:transfer_list"),
+            reverse("warehouse:transfer_start"),
+            reverse("warehouse:transfer_create", args=(self.warehouse.pk,)),
+            reverse("cash:register", args=(self.warehouse.pk,)),
+            reverse("cash:deposit", args=(self.warehouse.pk,)),
+            reverse("pricing:list"),
+            reverse("sales:list"),
+            reverse("sales:create"),
             reverse("partners:list"),
             reverse("partners:create"),
             reverse("supplies:list"),
