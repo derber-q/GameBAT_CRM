@@ -21,7 +21,8 @@ class WarehouseTransferTests(TestCase):
         brand = Brand.objects.create(name="Sony")
         self.product_type = ProductType.objects.create(name="Консоль")
         self.cd = CD.objects.create(
-            platform=self.platform, name="Игра", sku="CD-1", barcode="1", cost=100
+            platform=self.platform, name="Игра", sku="CD-1", barcode="00000001",
+            cusa_ppsa_code="PPSA-10001", cost=100,
         )
         self.tech = Tech.objects.create(
             brand=brand, product_type=self.product_type,
@@ -130,14 +131,8 @@ class WarehouseTransferTests(TestCase):
         )
 
         future_response = self.client.get(reverse("warehouse:detail", args=(future_warehouse.pk,)))
-        self.assertEqual(
-            [group.name for group, _ in future_response.context["cd_groups"]],
-            ["PS5", "Xbox Series"],
-        )
-        self.assertEqual(
-            [group.name for group, _ in future_response.context["tech_groups"]],
-            ["Аксессуары", "Консоль"],
-        )
+        self.assertEqual(future_response.context["cd_groups"], [])
+        self.assertEqual(future_response.context["tech_groups"], [])
 
         create_response = self.client.get(reverse("warehouse:transfer_create", args=(self.source.pk,)))
         self.assertEqual(
@@ -164,6 +159,107 @@ class WarehouseTransferTests(TestCase):
             [group.name for group, _ in detail_response.context["tech_groups"]],
             ["Аксессуары", "Консоль"],
         )
+
+    def test_stock_tables_follow_interface_contract(self):
+        self.client.force_login(self.user)
+        global_response = self.client.get(reverse("warehouse:global_stock"))
+        self.assertContains(
+            global_response,
+            '<th>ID</th><th>Артикул</th><th>Название</th>'
+            '<th class="numeric-center">Всего на складах</th>'
+            '<th class="numeric-center">На реализации</th>'
+            '<th class="numeric-center">В перемещении</th>',
+            html=True,
+        )
+        self.assertNotContains(
+            global_response,
+            f'<th class="numeric"><a href="{reverse("warehouse:detail", args=(self.source.pk,))}">'
+            f'{self.source.name}</a></th>',
+            html=True,
+        )
+
+        detail_response = self.client.get(reverse("warehouse:detail", args=(self.source.pk,)))
+        self.assertContains(
+            detail_response,
+            '<th>ID</th><th>Артикул</th><th>Название</th>'
+            '<th class="numeric-center">CUSA/PPSA</th>'
+            '<th class="numeric-center">Количество</th>',
+            html=True,
+        )
+        self.assertContains(
+            detail_response,
+            '<th>ID</th><th>Артикул</th><th>Название</th><th>Бренд</th>'
+            '<th class="numeric-center">Количество</th>',
+            html=True,
+        )
+        self.assertNotContains(detail_response, "Касса склада")
+        self.assertNotContains(detail_response, "<th>На реализации</th>", html=True)
+
+    def test_stock_search_uses_all_supported_fields_and_keeps_groups(self):
+        self.cd.name = "NS2 Elden Ring Tarnished Edition"
+        self.cd.sku = "OLD-CD-0143"
+        self.cd.barcode = "0004600000143"
+        self.cd.cusa_ppsa_code = "PPSA-ELDEN-143"
+        self.cd.save()
+        self.tech.name = "ИГРОВАЯ Приставка"
+        self.tech.save(update_fields=("name",))
+        self.client.force_login(self.user)
+        urls = (
+            reverse("warehouse:global_stock"),
+            reverse("warehouse:detail", args=(self.source.pk,)),
+        )
+
+        for url in urls:
+            for query in ("elden", "0143", "PPSA-ELDEN", "0004600000143", str(self.cd.pk)):
+                with self.subTest(url=url, query=query):
+                    response = self.client.get(url, {"search": query})
+                    self.assertContains(response, self.cd.name)
+                    self.assertEqual([group.name for group, _ in response.context["cd_groups"]], ["PS5"])
+
+            unicode_response = self.client.get(url, {"search": "игровая приставка"})
+            self.assertContains(unicode_response, self.tech.name)
+            self.assertEqual(
+                [group.name for group, _ in unicode_response.context["tech_groups"]], ["Консоль"]
+            )
+
+            empty_response = self.client.get(url, {"search": "NO-SUCH-PRODUCT"})
+            self.assertContains(empty_response, "Ничего не найдено")
+            self.assertEqual(empty_response.context["cd_groups"], [])
+            self.assertEqual(empty_response.context["tech_groups"], [])
+            self.assertEqual(empty_response.context["query"], "NO-SUCH-PRODUCT")
+
+    def test_warehouse_hides_zero_local_stock_even_if_another_warehouse_has_stock(self):
+        other_cd = CD.objects.create(
+            platform=self.platform, name="Товар другого склада", sku="ONLY-OTHER", barcode="0099"
+        )
+        other_tech = Tech.objects.create(
+            brand=self.tech.brand, product_type=self.product_type,
+            name="Техника другого склада", sku="TECH-ONLY-OTHER", barcode="0100",
+        )
+        CDWarehouseStock.objects.create(warehouse=self.destination, cd=other_cd, quantity=9)
+        TechWarehouseStock.objects.create(warehouse=self.destination, tech=other_tech, quantity=5)
+        CDWarehouseStock.objects.create(warehouse=self.source, cd=other_cd, quantity=0)
+        TechWarehouseStock.objects.create(warehouse=self.source, tech=other_tech, quantity=0)
+        self.client.force_login(self.user)
+
+        source_response = self.client.get(reverse("warehouse:detail", args=(self.source.pk,)))
+        self.assertNotContains(source_response, other_cd.name)
+        self.assertNotContains(source_response, other_tech.name)
+
+        destination_response = self.client.get(reverse("warehouse:detail", args=(self.destination.pk,)))
+        self.assertContains(destination_response, other_cd.name)
+        self.assertContains(destination_response, other_tech.name)
+
+        search_response = self.client.get(
+            reverse("warehouse:detail", args=(self.source.pk,)), {"search": "ONLY-OTHER"}
+        )
+        self.assertEqual(search_response.context["cd_groups"], [])
+        self.assertEqual(search_response.context["tech_groups"], [])
+        self.assertContains(search_response, "Ничего не найдено")
+
+        nomenclature_response = self.client.get(reverse("nomenclature:list"))
+        self.assertContains(nomenclature_response, other_cd.name)
+        self.assertContains(nomenclature_response, other_tech.name)
 
     def test_transfer_table_ignores_blank_quantities(self):
         self.client.force_login(self.user)

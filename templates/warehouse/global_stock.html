@@ -1,7 +1,8 @@
 {% extends "base.html" %}
-{% block title %}Общие остатки · GameBAT CRM{% endblock %}
+{% block title %}Общие остатки · ReSOURCE{% endblock %}
 {% block content %}
 <div class="page-heading"><div><p class="eyebrow">Все склады</p><h1>Общие остатки</h1><p class="muted">Физические остатки, реализация и товары в пути.</p></div>{% if perms.warehouse.view_transfers or user.is_superuser %}<a class="button button-secondary" href="{% url 'warehouse:transfer_list' %}">Перемещения</a>{% endif %}</div>
+{% include "warehouse/_inventory_search.html" %}
 
 {% for group, group_rows in cd_groups %}
   <section class="panel inventory-section">
@@ -25,8 +26,9 @@
 
 {% if not rows %}
   <section class="empty-state">
-    <span class="empty-code">0</span><h2>Номенклатура пока не создана</h2>
-    <p>Добавьте товары через административную панель.</p>
+    <span class="empty-code">0</span>
+    {% if query %}<h2>Ничего не найдено</h2><p>Измените запрос или сбросьте поиск.</p>
+    {% else %}<h2>Номенклатура пока не создана</h2><p>Добавьте товары через административную панель.</p>{% endif %}
   </section>
 {% endif %}
 {% endblock %}

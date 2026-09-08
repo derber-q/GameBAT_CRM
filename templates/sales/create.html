@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% load static %}
-{% block title %}Новая продажа · GameBAT CRM{% endblock %}
+{% block title %}Новая продажа · ReSOURCE{% endblock %}
 {% block extra_head %}<script src="{% static 'js/stock-lines.js' %}" defer></script>{% endblock %}
 {% block content %}
 <div class="page-heading"><div><p class="eyebrow">Списание с конкретного склада</p><h1>Новая продажа</h1><p class="muted">Цена каждой позиции сохранится в истории продажи.</p></div>{% if can_view_sales %}<a class="button button-secondary" href="{% url 'sales:list' %}">Назад</a>{% endif %}</div>

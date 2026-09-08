@@ -16,8 +16,8 @@ def gamebat_admin_permission(request):
 
 admin.site.has_permission = gamebat_admin_permission
 admin.site.login_form = GameBATAdminAuthenticationForm
-admin.site.site_header = "GameBAT CRM — администрирование"
-admin.site.site_title = "GameBAT CRM"
+admin.site.site_header = "ReSOURCE — администрирование"
+admin.site.site_title = "ReSOURCE"
 admin.site.index_title = "Управление данными"
 
 urlpatterns = [

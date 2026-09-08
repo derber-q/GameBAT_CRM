@@ -163,6 +163,7 @@ def supply_detail(request, pk):
 )
 def product_autocomplete(request):
     query = request.GET.get("q", "").strip()
+    include_cost = request.user.is_superuser or request.user.has_perm("consignment.transfer_stock")
     try:
         warehouse_id = int(request.GET.get("warehouse")) if request.GET.get("warehouse") else None
     except (TypeError, ValueError):
@@ -184,9 +185,11 @@ def product_autocomplete(request):
         results.extend({
             "type": "cd", "id": item.pk,
             "label": f"CD — {item.name} — {item.platform.name}", "available": cd_available.get(item.pk, 0),
+            "cost": f"{item.cost:.2f}" if include_cost else None,
         } for item in cds)
         results.extend({
             "type": "tech", "id": item.pk,
             "label": f"Tech — {item.name} — {item.product_type.name}", "available": tech_available.get(item.pk, 0),
+            "cost": f"{item.cost:.2f}" if include_cost else None,
         } for item in tech)
     return JsonResponse({"results": results[:20]})

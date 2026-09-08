@@ -27,8 +27,25 @@ def _totals(model, product_field):
     )
 
 
+def _filter_products(products, query, *, include_cusa=False):
+    """Фильтрует товары с Unicode-регистронезависимостью, которой не даёт SQLite LIKE."""
+    if not query:
+        return products
+    needle = query.casefold()
+    numeric_id = int(query) if query.isdecimal() and len(query) <= 19 else None
+    matching_ids = []
+    for product in products:
+        values = [product.name, product.sku, product.barcode]
+        if include_cusa:
+            values.append(product.cusa_ppsa_code)
+        if product.pk == numeric_id or any(needle in (value or "").casefold() for value in values):
+            matching_ids.append(product.pk)
+    return products.filter(pk__in=matching_ids)
+
+
 def _warehouse_stock_groups(
-    warehouse, *, include_cd=True, include_tech=True, only_available=False, requested_quantities=None
+    warehouse, *, include_cd=True, include_tech=True, only_available=False, requested_quantities=None,
+    query="",
 ):
     """Группирует номенклатуру склада одинаково для остатков и перемещения."""
     requested_quantities = requested_quantities or {}
@@ -45,6 +62,7 @@ def _warehouse_stock_groups(
 
     if include_cd:
         products = CD.objects.select_related("platform").order_by("platform__name", "name", "id")
+        products = _filter_products(products, query, include_cusa=True)
         if only_available:
             products = products.filter(pk__in=[pk for pk, quantity in cd_quantities.items() if quantity > 0])
         for product in products:
@@ -59,6 +77,7 @@ def _warehouse_stock_groups(
         products = Tech.objects.select_related("brand", "product_type").order_by(
             "product_type__name", "name", "id"
         )
+        products = _filter_products(products, query)
         if only_available:
             products = products.filter(pk__in=[pk for pk, quantity in tech_quantities.items() if quantity > 0])
         for product in products:
@@ -72,7 +91,7 @@ def _warehouse_stock_groups(
     return list(cd_groups.items()), list(tech_groups.items())
 
 
-def global_stock_context(*, include_cd=True, include_tech=True):
+def global_stock_context(*, include_cd=True, include_tech=True, query=""):
     warehouses = list(Warehouse.objects.all())
     cd_stocks = {
         (row.warehouse_id, row.cd_id): row.quantity
@@ -103,6 +122,7 @@ def global_stock_context(*, include_cd=True, include_tech=True):
     tech_groups = defaultdict(list)
     if include_cd:
         products = CD.objects.select_related("platform").order_by("platform__name", "name", "id")
+        products = _filter_products(products, query, include_cusa=True)
         for product in products:
             quantities = [cd_stocks.get((warehouse.pk, product.pk), 0) for warehouse in warehouses]
             row = {
@@ -122,6 +142,7 @@ def global_stock_context(*, include_cd=True, include_tech=True):
         products = Tech.objects.select_related("brand", "product_type").order_by(
             "product_type__name", "name", "id"
         )
+        products = _filter_products(products, query)
         for product in products:
             quantities = [tech_stocks.get((warehouse.pk, product.pk), 0) for warehouse in warehouses]
             row = {
@@ -142,15 +163,18 @@ def global_stock_context(*, include_cd=True, include_tech=True):
         "rows": rows,
         "cd_groups": list(cd_groups.items()),
         "tech_groups": list(tech_groups.items()),
+        "query": query,
     }
 
 
 @permission_required_any("warehouse.view_global_stock", "catalog.view_cd", "catalog.view_tech")
 def global_stock(request):
     full_access = request.user.is_superuser or request.user.has_perm("warehouse.view_global_stock")
+    query = request.GET.get("search", "").strip()
     context = global_stock_context(
         include_cd=full_access or request.user.has_perm("catalog.view_cd"),
         include_tech=full_access or request.user.has_perm("catalog.view_tech"),
+        query=query,
     )
     context["can_view_warehouse_details"] = (
         request.user.is_superuser
@@ -164,6 +188,7 @@ def global_stock(request):
 @permission_required_any("warehouse.view_warehouse_stock", "catalog.view_cd", "catalog.view_tech")
 def warehouse_detail(request, pk):
     warehouse = get_object_or_404(Warehouse, pk=pk)
+    query = request.GET.get("search", "").strip()
     can_view_cd = request.user.is_superuser or request.user.has_perm("catalog.view_cd") or request.user.has_perm(
         "warehouse.view_warehouse_stock"
     )
@@ -171,20 +196,14 @@ def warehouse_detail(request, pk):
         "warehouse.view_warehouse_stock"
     )
     cd_groups, tech_groups = _warehouse_stock_groups(
-        warehouse, include_cd=can_view_cd, include_tech=can_view_tech
+        warehouse, include_cd=can_view_cd, include_tech=can_view_tech,
+        only_available=True, query=query,
     )
-    cash_register = None
-    can_view_cash_register = request.user.is_superuser or request.user.has_perm("cash.view_cash_register")
-    can_view_cash_history = request.user.is_superuser or request.user.has_perm("cash.view_cash_history")
-    if can_view_cash_register or can_view_cash_history:
-        cash_register = warehouse.cash_register
     return render(request, "warehouse/detail.html", {
         "warehouse": warehouse,
         "cd_groups": cd_groups,
         "tech_groups": tech_groups,
-        "cash_register": cash_register,
-        "can_view_cash_register": can_view_cash_register,
-        "can_view_cash_history": can_view_cash_history,
+        "query": query,
         "can_view_global": (
             request.user.is_superuser
             or request.user.has_perm("warehouse.view_global_stock")

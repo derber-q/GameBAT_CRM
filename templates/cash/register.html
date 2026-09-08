@@ -1,7 +1,78 @@
 {% extends "base.html" %}
-{% block title %}Касса {{ warehouse.name }} · GameBAT CRM{% endblock %}
+{% block title %}Денежные хранилища {{ warehouse.name }} · ReSOURCE{% endblock %}
 {% block content %}
-<div class="page-heading"><div><p class="eyebrow">Склад {{ warehouse.name }}</p><h1>Касса</h1><p class="muted">Учёт только физической наличности.</p></div><div class="heading-actions">{% if perms.cash.collect_cash or user.is_superuser %}<a class="button button-secondary" href="{% url 'cash:collect' warehouse.pk %}">Инкассировать</a>{% endif %}{% if perms.cash.deposit_cash or user.is_superuser %}<a class="button" href="{% url 'cash:deposit' warehouse.pk %}">Внести наличные</a>{% endif %}</div></div>
-{% if can_view_balance %}<section class="panel cash-summary"><div><p class="eyebrow">Текущий баланс</p><h2>{{ register.balance }} ₽</h2></div>{% if perms.warehouse.view_warehouse_stock or perms.catalog.view_cd or perms.catalog.view_tech or user.is_superuser %}<a class="button button-secondary" href="{% url 'warehouse:detail' warehouse.pk %}">Вернуться на склад</a>{% endif %}</section>{% endif %}
-{% if perms.cash.view_cash_history or user.is_superuser %}<section class="panel table-panel"><div class="section-heading"><h2>Журнал операций</h2></div><div class="table-scroll"><table><thead><tr><th>Дата</th><th>Операция</th><th>Комментарий</th><th>Сотрудник</th><th>Продажа</th><th class="numeric">Сумма</th></tr></thead><tbody>{% for transaction in transactions %}<tr><td>{{ transaction.created_at|date:"d.m.Y H:i" }}</td><td>{{ transaction.get_operation_type_display }}</td><td>{{ transaction.comment }}</td><td>{{ transaction.created_by.full_name|default:transaction.created_by.username }}</td><td>{% if transaction.sale %}{% if perms.sales.view_sale_detail or user.is_superuser %}<a href="{% url 'sales:detail' transaction.sale.pk %}">{{ transaction.sale.visible_id }}</a>{% else %}{{ transaction.sale.visible_id }}{% endif %}{% else %}—{% endif %}</td><td class="numeric {% if transaction.operation_type == 'collection' %}danger-text{% else %}strong{% endif %}">{% if transaction.operation_type == 'collection' %}−{% else %}+{% endif %}{{ transaction.amount }}</td></tr>{% empty %}<tr><td colspan="6" class="empty-cell">Операций пока нет.</td></tr>{% endfor %}</tbody></table></div></section>{% endif %}
+<div class="page-heading">
+  <div>
+    <p class="eyebrow">Склад {{ warehouse.name }}</p>
+    <h1>Касса и сейф</h1>
+    <p class="muted">Раздельный учёт физической наличности и единый журнал операций.</p>
+  </div>
+  {% if perms.warehouse.view_warehouse_stock or perms.catalog.view_cd or perms.catalog.view_tech or user.is_superuser %}<a class="button button-secondary" href="{% url 'warehouse:detail' warehouse.pk %}">Вернуться на склад</a>{% endif %}
+</div>
+
+{% if can_view_cash_balance or can_view_safe %}
+<section class="cash-storage-grid">
+  {% if can_view_cash_balance %}
+  <article class="panel cash-storage-card">
+    <div>
+      <p class="eyebrow">Касса</p>
+      <h2>{{ register.balance }} ₽</h2>
+      <p class="muted">Наличные для текущих расчётов и оплат продаж.</p>
+    </div>
+    <div class="cash-storage-actions">
+      {% if perms.cash.deposit_cash or user.is_superuser %}<a class="button" href="{% url 'cash:deposit' warehouse.pk %}">Внести</a>{% endif %}
+      {% if perms.cash.collect_cash or user.is_superuser %}<a class="button button-secondary" href="{% url 'cash:collect' warehouse.pk %}">Инкассировать</a>{% endif %}
+      {% if perms.cash.transfer_cash_to_safe or user.is_superuser %}<a class="button button-secondary" href="{% url 'cash:cash_to_safe' warehouse.pk %}">Передать в сейф</a>{% endif %}
+    </div>
+  </article>
+  {% endif %}
+
+  {% if can_view_safe %}
+  <article class="panel cash-storage-card cash-storage-card-safe">
+    <div>
+      <p class="eyebrow">Сейф</p>
+      <h2>{{ safe.balance }} ₽</h2>
+      <p class="muted">Отдельное защищённое хранилище наличных склада.</p>
+    </div>
+    <div class="cash-storage-actions">
+      {% if perms.cash.deposit_safe or user.is_superuser %}<a class="button" href="{% url 'cash:safe_deposit' warehouse.pk %}">Внести</a>{% endif %}
+      {% if perms.cash.collect_safe or user.is_superuser %}<a class="button button-secondary" href="{% url 'cash:safe_collect' warehouse.pk %}">Инкассировать</a>{% endif %}
+      {% if not can_view_cash_balance and perms.cash.transfer_cash_to_safe %}<a class="button button-secondary" href="{% url 'cash:cash_to_safe' warehouse.pk %}">Принять из кассы</a>{% endif %}
+      {% if perms.cash.transfer_safe_to_cash or user.is_superuser %}<a class="button button-secondary" href="{% url 'cash:safe_to_cash' warehouse.pk %}">Передать в кассу</a>{% endif %}
+    </div>
+  </article>
+  {% endif %}
+</section>
+{% endif %}
+
+{% if can_view_total %}
+<section class="panel cash-total">
+  <span>Всего наличных на складе</span>
+  <strong>{{ total_balance }} ₽</strong>
+</section>
+{% endif %}
+
+{% if can_view_history %}
+<section class="panel table-panel">
+  <div class="section-heading"><h2>Общий журнал денежных операций</h2></div>
+  <div class="table-scroll">
+    <table class="cash-journal-table">
+      <thead><tr><th>Дата</th><th>Операция</th><th>Откуда → куда</th><th>Комментарий</th><th>Сотрудник</th><th>Продажа</th><th class="numeric">Сумма</th></tr></thead>
+      <tbody>
+        {% for transaction in transactions %}
+        <tr>
+          <td class="audit-date">{{ transaction.created_at|date:"d.m.Y H:i" }}</td>
+          <td class="strong">{{ transaction.get_operation_type_display }}</td>
+          <td><span class="money-route">{{ transaction.source_label }} <b>→</b> {{ transaction.destination_label }}</span></td>
+          <td>{{ transaction.comment }}</td>
+          <td>{{ transaction.created_by.full_name|default:transaction.created_by.username }}</td>
+          <td>{% if transaction.sale %}{% if perms.sales.view_sale_detail or user.is_superuser %}<a href="{% url 'sales:detail' transaction.sale.pk %}">{{ transaction.sale.visible_id }}</a>{% else %}{{ transaction.sale.visible_id }}{% endif %}{% else %}—{% endif %}</td>
+          <td class="numeric {% if transaction.is_outflow %}danger-text{% elif not transaction.is_internal_transfer %}strong{% endif %}">{% if transaction.is_outflow %}−{% elif not transaction.is_internal_transfer %}+{% endif %}{{ transaction.amount }}</td>
+        </tr>
+        {% empty %}<tr><td colspan="7" class="empty-cell">Операций пока нет.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
 {% endblock %}

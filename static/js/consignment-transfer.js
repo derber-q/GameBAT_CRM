@@ -54,6 +54,15 @@
     quantity.value = value.quantity || "";
     quantityCell.append(quantity);
 
+    const costCell = document.createElement("td");
+    costCell.className = "readonly-money";
+    const showCost = (result) => {
+      costCell.textContent = result && result.cost !== null && result.cost !== ""
+        ? `${result.cost} ₽`
+        : "—";
+    };
+    showCost(value);
+
     const amountCell = document.createElement("td");
     const amount = document.createElement("input");
     amount.type = "number";
@@ -65,7 +74,7 @@
     amount.value = value.receivable_per_unit || "";
     amountCell.append(amount);
 
-    row.append(productCell, quantityCell, amountCell, removeButton(row));
+    row.append(productCell, quantityCell, costCell, amountCell, removeButton(row));
     lines.append(row);
     window.GameBAT.attachAutocomplete({
       input: search,
@@ -74,6 +83,7 @@
       suggestions: suggestionBox,
       endpoint: form.dataset.autocompleteUrl,
       warehouseInput: warehouse,
+      onSelect: showCost,
     });
     if (!value.label) search.focus();
   }

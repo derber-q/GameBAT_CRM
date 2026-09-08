@@ -3,32 +3,22 @@
     <thead>
       <tr>
         <th>ID</th>
-        <th>Товар</th>
         <th>Артикул</th>
-        {% for warehouse in warehouses %}
-          <th class="numeric">
-            {% if can_view_warehouse_details %}
-              <a href="{% url 'warehouse:detail' warehouse.pk %}">{{ warehouse.name }}</a>
-            {% else %}
-              {{ warehouse.name }}
-            {% endif %}
-          </th>
-        {% endfor %}
-        <th class="numeric">Всего на складах</th>
-        <th class="numeric">На реализации</th>
-        <th class="numeric">В перемещении</th>
+        <th>Название</th>
+        <th class="numeric-center">Всего на складах</th>
+        <th class="numeric-center">На реализации</th>
+        <th class="numeric-center">В перемещении</th>
       </tr>
     </thead>
     <tbody>
       {% for row in group_rows %}
         <tr>
           <td class="mono">{{ row.id }}</td>
-          <td class="strong">{{ row.name }}</td>
           <td class="mono">{{ row.sku }}</td>
-          {% for quantity in row.quantities %}<td class="numeric">{{ quantity }}</td>{% endfor %}
-          <td class="numeric stock-number">{{ row.warehouse_total }}</td>
-          <td class="numeric">{{ row.consignment }}</td>
-          <td class="numeric">{{ row.transit }}</td>
+          <td class="strong">{{ row.name }}</td>
+          <td class="numeric-center stock-number">{{ row.warehouse_total }}</td>
+          <td class="numeric-center">{{ row.consignment }}</td>
+          <td class="numeric-center">{{ row.transit }}</td>
         </tr>
       {% endfor %}
     </tbody>

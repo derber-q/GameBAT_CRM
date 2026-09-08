@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% load static %}
-{% block title %}Передать на реализацию · GameBAT CRM{% endblock %}
-{% block extra_head %}<script src="{% static 'js/consignment-transfer.js' %}" defer></script>{% endblock %}
+{% block title %}Передать на реализацию · ReSOURCE{% endblock %}
+{% block extra_head %}<script src="{% static 'js/consignment-transfer.js' %}?v=resource-ui-3" defer></script>{% endblock %}
 {% block content %}
 <div class="page-heading">
   <div>
@@ -29,7 +29,7 @@
     </div>
     <div class="table-scroll">
       <table class="editable-table consignment-transfer-table">
-        <thead><tr><th>Товар</th><th>Количество</th><th>Магазин получает за единицу</th><th></th></tr></thead>
+        <thead><tr><th>Товар</th><th>Количество</th><th class="numeric">Себестоимость</th><th>Магазин получает за единицу</th><th></th></tr></thead>
         <tbody id="consignment-lines"></tbody>
       </table>
     </div>

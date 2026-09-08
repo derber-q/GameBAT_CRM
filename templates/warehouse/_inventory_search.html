@@ -1,0 +1,12 @@
+<section class="panel search-panel">
+  <form method="get" role="search">
+    <div class="field">
+      <label for="inventory-search">Поиск по названию, ID, артикулу, CUSA/PPSA или штрихкоду</label>
+      <div class="search-row">
+        <input id="inventory-search" type="search" name="search" value="{{ query }}" placeholder="Введите название или идентификатор товара">
+        <button class="button" type="submit">Найти</button>
+        {% if query %}<a class="button button-secondary" href="{{ request.path }}">Сбросить</a>{% endif %}
+      </div>
+    </div>
+  </form>
+</section>

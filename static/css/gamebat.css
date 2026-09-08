@@ -15,6 +15,10 @@
   --gb-warning: #d99a27;
   --gb-danger: #c94f55;
   --gb-focus: rgba(44, 135, 155, 0.2);
+  --gb-sale-nav-bg: #7f2636;
+  --gb-sale-nav-hover: #943246;
+  --gb-sale-nav-active: #651d2a;
+  --gb-sale-nav-focus: rgba(232, 148, 163, .5);
   --gb-radius: 7px;
   --gb-shadow: 0 2px 12px rgba(51, 70, 96, 0.08);
   --gb-font: Inter, "Segoe UI", Arial, sans-serif;
@@ -28,15 +32,20 @@ a:hover { color: var(--gb-primary-hover); }
 button, input, select, textarea { color: inherit; font: inherit; }
 
 .topbar { align-items: stretch; background: var(--gb-nav-bg); box-shadow: 0 2px 8px rgba(38, 57, 78, .18); color: var(--gb-surface); display: flex; min-height: 66px; position: sticky; top: 0; z-index: 100; }
-.brand { align-items: center; color: var(--gb-surface); display: flex; font-size: 16px; gap: 10px; letter-spacing: .2px; min-width: 205px; padding: 0 20px; }
+.brand { align-items: center; color: var(--gb-surface); display: flex; font-size: 16px; gap: 10px; letter-spacing: .2px; min-width: 165px; padding: 0 18px; }
 .brand:hover { color: var(--gb-surface); }
 .brand b { color: var(--gb-primary-light); }
 .brand-mark { align-items: center; background: var(--gb-primary); border: 2px solid rgba(255,255,255,.45); border-radius: 8px; color: var(--gb-surface); display: inline-flex; font-size: 11px; font-weight: 800; height: 32px; justify-content: center; letter-spacing: -.5px; width: 32px; }
 .brand-mark-large { border-radius: 12px; font-size: 18px; height: 50px; width: 50px; }
 .main-nav { display: flex; }
-.main-nav a { align-items: center; border-bottom: 3px solid transparent; color: rgba(255,255,255,.75); display: flex; font-size: 13px; font-weight: 600; padding: 0 16px; }
+.main-nav a { align-items: center; border-bottom: 3px solid transparent; color: rgba(255,255,255,.75); display: flex; font-size: 13px; font-weight: 600; padding: 0 11px; }
 .main-nav a:hover { background: var(--gb-nav-bg-secondary); color: var(--gb-surface); }
 .main-nav a.active { background: var(--gb-nav-bg-secondary); border-bottom-color: var(--gb-primary-light); color: var(--gb-surface); }
+.main-nav a:focus-visible { box-shadow: inset 0 0 0 3px var(--gb-focus); color: var(--gb-surface); outline: 0; }
+.main-nav .nav-sale { background: var(--gb-sale-nav-bg); color: var(--gb-surface); }
+.main-nav .nav-sale:hover { background: var(--gb-sale-nav-hover); }
+.main-nav .nav-sale:focus-visible { background: var(--gb-sale-nav-hover); box-shadow: inset 0 0 0 3px var(--gb-sale-nav-focus); }
+.main-nav .nav-sale.active { background: var(--gb-sale-nav-active); border-bottom-color: #e394a3; }
 .nav-dropdown { display: flex; position: relative; }
 .nav-dropdown-trigger::after { content: "▾"; font-size: 10px; margin-left: 7px; }
 .nav-dropdown-menu { background: var(--gb-nav-bg-secondary); border: 1px solid rgba(255,255,255,.12); box-shadow: 0 10px 24px rgba(38,57,78,.24); display: none; left: 0; min-width: 230px; position: absolute; top: 100%; z-index: 110; }
@@ -89,6 +98,7 @@ td { border-bottom: 1px solid var(--gb-border); padding: 11px 12px; vertical-ali
 tbody tr:last-child td { border-bottom: 0; }
 tbody tr:hover { background: rgba(220,229,231,.2); }
 .numeric { font-variant-numeric: tabular-nums; text-align: right; }
+.numeric-center { font-variant-numeric: tabular-nums; text-align: center; }
 .mono { font-family: Consolas, "SFMono-Regular", monospace; font-size: 12px; }
 .strong { color: var(--gb-text-strong); font-weight: 650; }
 .stock-number { color: var(--gb-primary-hover); font-size: 15px; font-weight: 750; }
@@ -141,8 +151,21 @@ input:focus, select:focus, textarea:focus { border-color: var(--gb-primary-light
 .submit-bar span { color: rgba(255,255,255,.7); font-size: 12px; }
 .cash-summary { align-items: center; display: flex; justify-content: space-between; }
 .cash-summary h2 { font-size: 24px; margin: 3px 0; }
+.cash-storage-grid { display: grid; gap: 16px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.cash-storage-card { display: flex; flex-direction: column; justify-content: space-between; min-height: 190px; }
+.cash-storage-card h2 { color: var(--gb-primary-hover); font-size: 28px; margin: 4px 0 8px; }
+.cash-storage-card-safe { border-top: 3px solid var(--gb-nav-soft); }
+.cash-storage-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 20px; }
+.cash-total { align-items: center; display: flex; justify-content: space-between; }
+.cash-total span { color: var(--gb-text-muted); font-weight: 650; }
+.cash-total strong { color: var(--gb-text-strong); font-size: 20px; }
+.cash-journal-table { min-width: 1100px; }
+.money-route { white-space: nowrap; }
+.money-route b { color: var(--gb-primary); margin: 0 4px; }
 .status-action { margin-top: 18px; }
-.global-stock-table { min-width: 1200px; }
+.global-stock-table { min-width: 760px; }
+.warehouse-detail-table { min-width: 700px; }
+.readonly-money { color: var(--gb-text-strong); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
 .transfer-stock-table { min-width: 900px; }
 .transfer-quantity-cell { width: 150px; }
 .transfer-quantity-cell input[type="number"] { min-width: 100px; width: 110px; }
@@ -154,7 +177,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--gb-primary-light
 .price-row-fields { align-items: center; display: grid; gap: 8px; grid-template-columns: repeat(3, 110px) auto; }
 .price-readonly { display: inline-block; min-width: 110px; text-align: right; }
 .danger-text { color: var(--gb-danger); }
-.nomenclature-search form { margin: 0; }
+.nomenclature-search form, .search-panel form { margin: 0; }
 .search-row { align-items: center; display: flex; gap: 8px; }
 .search-row input { flex: 1; }
 .nomenclature-table { min-width: 850px; }
@@ -224,12 +247,16 @@ input:focus, select:focus, textarea:focus { border-color: var(--gb-primary-light
 .login-brand h1 { color: var(--gb-text-strong); font-size: 22px; margin: 0; }
 .login-brand p { color: var(--gb-text-muted); margin: 3px 0 0; }
 
-@media (max-width: 1280px) {
+@media (max-width: 1500px) {
   .rates { display: none; }
-  .main-nav a { padding: 0 12px; }
+}
+
+@media (max-width: 1280px) {
+  .main-nav a { padding: 0 9px; }
 }
 
 @media (max-width: 760px) {
+  .cash-storage-grid { grid-template-columns: 1fr; }
   .cost-steps { grid-template-columns: 1fr; }
   .cost-steps div { border-bottom: 1px solid var(--gb-border); border-right: 0; }
   .cost-steps div:last-child { border-bottom: 0; }

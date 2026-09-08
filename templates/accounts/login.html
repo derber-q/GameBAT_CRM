@@ -1,9 +1,9 @@
 {% extends "base.html" %}
-{% block title %}Вход · GameBAT CRM{% endblock %}
+{% block title %}Вход · ReSOURCE{% endblock %}
 {% block page_class %}login-page{% endblock %}
 {% block content %}
 <section class="login-card">
-  <div class="login-brand"><span class="brand-mark brand-mark-large">GB</span><div><h1>GameBAT CRM</h1><p>Внутренняя система учёта</p></div></div>
+  <div class="login-brand"><span class="brand-mark brand-mark-large">RS</span><div><h1>ReSOURCE</h1><p>Внутренняя система учёта</p></div></div>
   {% if form.errors %}<div class="alert alert-error">Неверный логин или пароль.</div>{% endif %}
   <form method="post" class="stacked-form">
     {% csrf_token %}

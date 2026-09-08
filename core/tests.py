@@ -36,6 +36,11 @@ class InternalPageSmokeTests(TestCase):
             reverse("warehouse:transfer_create", args=(self.warehouse.pk,)),
             reverse("cash:register", args=(self.warehouse.pk,)),
             reverse("cash:deposit", args=(self.warehouse.pk,)),
+            reverse("cash:collect", args=(self.warehouse.pk,)),
+            reverse("cash:safe_deposit", args=(self.warehouse.pk,)),
+            reverse("cash:safe_collect", args=(self.warehouse.pk,)),
+            reverse("cash:cash_to_safe", args=(self.warehouse.pk,)),
+            reverse("cash:safe_to_cash", args=(self.warehouse.pk,)),
             reverse("pricing:list"),
             reverse("sales:list"),
             reverse("sales:create"),
@@ -60,3 +65,30 @@ class InternalPageSmokeTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertNotContains(response, "admin/js/theme.js")
         self.assertNotContains(response, "theme-toggle")
+
+    def test_navigation_brand_order_and_warehouse_dropdown(self):
+        response = self.client.get(reverse("warehouse:global_stock"))
+        html = response.content.decode()
+        nav_html = html[html.index('<nav class="main-nav"'):html.index("</nav>")]
+        labels = (
+            "Продажа", "Касса", "Номенклатура", "Склад", "Приход",
+            "Перемещения", "Реализация", "Ценообразование", "Поставщики", "Пользователи",
+        )
+        positions = [nav_html.index(f">{label}</a>") for label in labels]
+
+        self.assertEqual(positions, sorted(positions))
+        self.assertContains(response, '<span>Re<b>SOURCE</b></span>', html=True)
+        self.assertNotContains(response, "GameBAT CRM")
+        self.assertContains(response, 'class="nav-sale')
+        self.assertContains(response, 'data-rate-symbol="USDT/RUB"')
+        self.assertContains(response, 'data-rate-symbol="AED/RUB"')
+        self.assertContains(response, 'data-rate-symbol="USD/AED"')
+
+        warehouse_trigger = nav_html.index(">Склад</a>")
+        menu_start = nav_html.index('<div class="nav-dropdown-menu">', warehouse_trigger)
+        menu_end = nav_html.index("</div>", menu_start)
+        warehouse_menu = nav_html[menu_start:menu_end]
+        self.assertIn(">Общие остатки</a>", warehouse_menu)
+        self.assertIn("Склад Варфоломеева 265", warehouse_menu)
+        self.assertIn("Склад Резервный склад", warehouse_menu)
+        self.assertNotIn(">Перемещения</a>", warehouse_menu)

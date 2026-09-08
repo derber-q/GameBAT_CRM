@@ -9,7 +9,7 @@
     if (time) time.textContent = new Intl.DateTimeFormat("ru-RU", { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(now);
   }
 
-  function attachAutocomplete({ input, typeInput, idInput, suggestions, endpoint, warehouseId, warehouseInput }) {
+  function attachAutocomplete({ input, typeInput, idInput, suggestions, endpoint, warehouseId, warehouseInput, onSelect }) {
     if (!input || !typeInput || !idInput || !suggestions || !endpoint) return;
     let timer;
     const host = suggestions.parentElement;
@@ -56,6 +56,7 @@
     input.addEventListener("input", () => {
       typeInput.value = "";
       idInput.value = "";
+      if (onSelect) onSelect(null);
       clearTimeout(timer);
       const query = input.value.trim();
       if (query.length < 2) return close();
@@ -80,6 +81,7 @@
               input.value = result.label;
               typeInput.value = result.type;
               idInput.value = result.id;
+              if (onSelect) onSelect(result);
               close();
             });
             suggestions.append(option);
@@ -98,8 +100,42 @@
     document.addEventListener("scroll", positionSuggestions, true);
   }
 
+  function initExchangeRates() {
+    const elements = [...document.querySelectorAll("[data-rate-symbol]")];
+    if (!elements.length) return;
+
+    const refresh = async () => {
+      try {
+        const response = await fetch("/api/exchange-rates/", {
+          cache: "no-store",
+          headers: { "Accept": "application/json", "X-Requested-With": "XMLHttpRequest" },
+        });
+        if (!response.ok) return;
+        const payload = await response.json();
+        if (!payload || payload.available === false || typeof payload.rates !== "object") return;
+        elements.forEach((element) => {
+          const output = element.querySelector("b");
+          const value = payload.rates[element.dataset.rateSymbol]?.value;
+          if (!output) return;
+          const numeric = Number(value);
+          output.textContent = value !== null && value !== "" && Number.isFinite(numeric)
+            ? numeric.toFixed(2)
+            : "—";
+        });
+      } catch (_) {
+        // Сохраняем последнее успешно показанное значение до следующей попытки.
+      }
+    };
+
+    refresh();
+    if (!window.__gamebatExchangeRateTimer) {
+      window.__gamebatExchangeRateTimer = window.setInterval(refresh, 15000);
+    }
+  }
+
   updateClock();
   setInterval(updateClock, 1000);
+  initExchangeRates();
 
   document.querySelectorAll(".product-operation-form").forEach((form) => {
     attachAutocomplete({

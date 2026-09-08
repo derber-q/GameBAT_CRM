@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Номенклатура · GameBAT CRM{% endblock %}
+{% block title %}Номенклатура · ReSOURCE{% endblock %}
 {% block content %}
 <div class="page-heading">
   <div>
@@ -30,15 +30,14 @@
     </div>
     <div class="table-scroll">
       <table class="nomenclature-table">
-        <thead><tr><th>ID</th><th>Название</th><th>Артикул</th><th>CUSA/PPSA</th><th>Платформа</th><th></th></tr></thead>
+        <thead><tr><th>ID</th><th>Артикул</th><th>Название</th><th>CUSA/PPSA</th><th></th></tr></thead>
         <tbody>
           {% for product in products %}
             <tr>
               <td class="mono">{{ product.id }}</td>
-              <td><a class="strong" href="{% url 'nomenclature:cd_detail' product.pk %}">{{ product.name }}</a></td>
               <td class="mono">{{ product.sku|default:"—" }}</td>
+              <td><a class="strong" href="{% url 'nomenclature:cd_detail' product.pk %}">{{ product.name }}</a></td>
               <td class="mono">{{ product.cusa_ppsa_code|default:"—" }}</td>
-              <td>{{ product.platform.name }}</td>
               <td><a class="table-action" href="{% url 'nomenclature:cd_detail' product.pk %}">Открыть</a></td>
             </tr>
           {% endfor %}
@@ -56,15 +55,14 @@
     </div>
     <div class="table-scroll">
       <table class="nomenclature-table">
-        <thead><tr><th>ID</th><th>Название</th><th>Артикул</th><th>Бренд</th><th>Тип товара</th><th></th></tr></thead>
+        <thead><tr><th>ID</th><th>Артикул</th><th>Название</th><th>Бренд</th><th></th></tr></thead>
         <tbody>
           {% for product in products %}
             <tr>
               <td class="mono">{{ product.id }}</td>
-              <td><a class="strong" href="{% url 'nomenclature:tech_detail' product.pk %}">{{ product.name }}</a></td>
               <td class="mono">{{ product.sku|default:"—" }}</td>
+              <td><a class="strong" href="{% url 'nomenclature:tech_detail' product.pk %}">{{ product.name }}</a></td>
               <td>{{ product.brand.name }}</td>
-              <td>{{ product.product_type.name }}</td>
               <td><a class="table-action" href="{% url 'nomenclature:tech_detail' product.pk %}">Открыть</a></td>
             </tr>
           {% endfor %}

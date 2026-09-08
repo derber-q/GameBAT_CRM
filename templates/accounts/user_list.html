@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Пользователи · GameBAT CRM{% endblock %}
+{% block title %}Пользователи · ReSOURCE{% endblock %}
 {% block content %}
 <div class="page-heading"><div><p class="eyebrow">Администрирование</p><h1>Пользователи</h1><p class="muted">Учётные записи, роли и доступ к разделам CRM.</p></div><div class="heading-actions"><a class="button button-secondary" href="{% url 'accounts:permission_sets' %}">Наборы прав</a><a class="button" href="{% url 'accounts:user_create' %}">Создать пользователя</a></div></div>
 <section class="panel table-panel"><div class="table-scroll"><table><thead><tr><th>ID</th><th>Логин</th><th>Ф.И.О.</th><th>Роль</th><th>Телефон</th><th>Email</th><th>Статус</th><th></th></tr></thead><tbody>

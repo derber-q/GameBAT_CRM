@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% load static %}
-{% block title %}Изменить {{ sale.visible_id }} · GameBAT CRM{% endblock %}
+{% block title %}Изменить {{ sale.visible_id }} · ReSOURCE{% endblock %}
 {% block extra_head %}<script src="{% static 'js/stock-lines.js' %}" defer></script>{% endblock %}
 {% block content %}
 <div class="page-heading"><div><p class="eyebrow">Неоплаченная постоплата</p><h1>Изменить {{ sale.visible_id }}</h1><p class="muted">Существующие позиции сохранят историческую цену; новые получат текущую {{ sale.get_price_type_display|lower }} цену.</p></div>{% if perms.sales.view_sale_detail or user.is_superuser %}<a class="button button-secondary" href="{% url 'sales:detail' sale.pk %}">Назад</a>{% endif %}</div>

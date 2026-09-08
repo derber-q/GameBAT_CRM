@@ -86,6 +86,24 @@ class NomenclatureListTests(NomenclatureDataMixin, TestCase):
             response = self.client.get(reverse("nomenclature:list"), {"q": query})
             self.assertContains(response, expected)
 
+    def test_tables_keep_groups_but_remove_duplicate_columns(self):
+        response = self.client.get(reverse("nomenclature:list"))
+
+        self.assertContains(
+            response,
+            '<th>ID</th><th>Артикул</th><th>Название</th><th>CUSA/PPSA</th><th></th>',
+            html=True,
+        )
+        self.assertContains(
+            response,
+            '<th>ID</th><th>Артикул</th><th>Название</th><th>Бренд</th><th></th>',
+            html=True,
+        )
+        self.assertNotContains(response, "<th>Платформа</th>", html=True)
+        self.assertNotContains(response, "<th>Тип товара</th>", html=True)
+        self.assertContains(response, f"<h2>{self.ps5.name}</h2>", html=True)
+        self.assertContains(response, f"<h2>{self.console_type.name}</h2>", html=True)
+
 
 class NomenclatureSecurityTests(NomenclatureDataMixin, TestCase):
     def setUp(self):

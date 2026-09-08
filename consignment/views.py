@@ -46,7 +46,8 @@ def _submitted_transfer_lines(post):
 
         product_id = value(product_ids)
         label = value(labels)
-        if not label and product_id:
+        product = None
+        if product_id:
             model = CD if product_type == "cd" else Tech if product_type == "tech" else None
             try:
                 product = model.objects.select_related(
@@ -54,7 +55,7 @@ def _submitted_transfer_lines(post):
                 ).get(pk=product_id) if model else None
             except (CD.DoesNotExist, Tech.DoesNotExist, ValueError):
                 product = None
-            if product:
+            if product and not label:
                 group = product.platform.name if product_type == "cd" else product.product_type.name
                 label = f"{'CD' if product_type == 'cd' else 'Tech'} — {product.name} — {group}"
         rows.append({
@@ -63,6 +64,7 @@ def _submitted_transfer_lines(post):
             "label": label,
             "quantity": value(quantities),
             "receivable_per_unit": value(amounts),
+            "cost": f"{product.cost:.2f}" if product else "",
         })
     return rows
 

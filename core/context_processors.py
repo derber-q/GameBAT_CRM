@@ -1,4 +1,3 @@
-from .models import CurrencyRate
 from django.db.utils import OperationalError, ProgrammingError
 
 from warehouse.models import Warehouse
@@ -6,10 +5,8 @@ from warehouse.models import Warehouse
 
 def crm_header(request):
     """Единый контекст шапки без каких-либо внешних сетевых запросов."""
-    rates = {choice.value: None for choice in CurrencyRate.Pair}
     warehouses = []
     try:
-        rates.update(dict(CurrencyRate.objects.values_list("pair", "rate")))
         warehouses = list(Warehouse.objects.values("id", "name"))
     except (OperationalError, ProgrammingError):
         # До применения первой миграции таблицы ещё может не быть.
@@ -35,9 +32,9 @@ def crm_header(request):
         user.is_superuser
         or user.has_perm("cash.view_cash_register")
         or user.has_perm("cash.view_cash_history")
+        or user.has_perm("cash.view_safe")
     )
     return {
-        "currency_rates": rates,
         "nav_warehouses": warehouses,
         "nav": {
             "warehouse": warehouse_global_access or warehouse_details_access,

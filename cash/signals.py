@@ -3,11 +3,12 @@ from django.dispatch import receiver
 
 from warehouse.models import Warehouse
 
-from .models import CashRegister
+from .models import CashRegister, Safe
 
 
 @receiver(post_save, sender=Warehouse, dispatch_uid="cash.ensure_register_for_warehouse")
 def ensure_cash_register(sender, instance, raw=False, **kwargs):
-    """Создаёт нулевую кассу вместе со складом и восстанавливает пропущенную связь."""
+    """Создаёт нулевые хранилища наличных вместе со складом."""
     if not raw:
         CashRegister.objects.get_or_create(warehouse=instance)
+        Safe.objects.get_or_create(warehouse=instance)

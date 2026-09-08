@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ target.username }} · GameBAT CRM{% endblock %}
+{% block title %}{{ target.username }} · ReSOURCE{% endblock %}
 {% block content %}
 <div class="page-heading"><div><p class="eyebrow">Пользователь #{{ target.id }}</p><h1>{{ target.full_name|default:target.username }}</h1><p class="muted">{{ target.role_label }} · {% if target.is_active %}активен{% else %}заблокирован{% endif %}</p></div><div class="heading-actions"><a class="button button-secondary" href="{% url 'accounts:password_reset' target.pk %}">Сбросить пароль</a><a class="button" href="{% url 'accounts:user_update' target.pk %}">Редактировать</a></div></div>
 <div class="detail-grid"><section class="panel"><h2>Контактные данные</h2><dl class="details"><dt>Логин</dt><dd>{{ target.username }}</dd><dt>Ф.И.О.</dt><dd>{{ target.full_name|default:"—" }}</dd><dt>Телефоны</dt><dd>{{ target.phone_1|default:"—" }}{% if target.phone_2 %}<br>{{ target.phone_2 }}{% endif %}{% if target.phone_3 %}<br>{{ target.phone_3 }}{% endif %}</dd><dt>Email</dt><dd>{{ target.email|default:"—" }}</dd><dt>Telegram</dt><dd>{{ target.telegram|default:"—" }}</dd><dt>Документ</dt><dd>{% if target.verification_document %}<a href="{% url 'accounts:verification_document' target.pk %}">Открыть защищённый файл</a>{% else %}—{% endif %}</dd></dl></section>
