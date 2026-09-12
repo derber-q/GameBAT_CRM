@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% block title %}Подборка №{{ batch.pk }} · ReSOURCE{% endblock %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">Заказы поставщикам</p><h1>Подборка №{{ batch.pk }}</h1><p class="muted">{{ batch.created_at|date:"d.m.Y H:i" }} · исходные заказы: {% for order in batch.source_orders.all %}#{{ order.pk }}{% if not forloop.last %}, {% endif %}{% endfor %}</p></div><a class="button button-secondary" href="{% url 'orders:list' %}">К заказам</a></div>
+{% for supplier, lines in supplier_groups %}<section class="panel table-panel"><div class="section-heading"><h2>{{ supplier.name }}</h2><span class="supplier-badge" style="--supplier-color: {{ supplier.highlight_color }}">{{ supplier.letter }}</span></div><div class="table-scroll"><table><thead><tr><th>Товар</th><th>Артикул</th><th class="numeric">Количество</th>{% if can_view_supplier_prices %}<th class="numeric">Цена AED snapshot</th>{% endif %}</tr></thead><tbody>{% for line in lines %}<tr><td>{{ line.product_name_snapshot }}</td><td class="mono">{{ line.article_snapshot }}</td><td class="numeric strong">{{ line.quantity }}</td>{% if can_view_supplier_prices %}<td class="numeric">{{ line.supplier_price_aed_snapshot }}</td>{% endif %}</tr>{% endfor %}</tbody></table></div></section>{% endfor %}
+{% endblock %}

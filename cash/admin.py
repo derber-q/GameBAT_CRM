@@ -33,10 +33,12 @@ class SafeAdmin(admin.ModelAdmin):
 class CashTransactionAdmin(admin.ModelAdmin):
     list_display = (
         "cash_register", "operation_type", "source_label", "destination_label",
-        "amount", "created_by", "created_at", "sale",
+        "amount", "created_by", "created_at", "sale", "customer_order",
     )
     list_filter = ("operation_type", "cash_register__warehouse")
-    search_fields = ("comment", "created_by__username", "sale__visible_id", "operation_key")
+    search_fields = (
+        "comment", "created_by__username", "sale__visible_id", "customer_order__recipient", "operation_key"
+    )
     date_hierarchy = "created_at"
 
     def has_add_permission(self, request):

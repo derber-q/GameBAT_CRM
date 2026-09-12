@@ -17,7 +17,10 @@ class HistoricalAdmin(admin.ModelAdmin):
 
 @admin.register(Supply)
 class SupplyAdmin(HistoricalAdmin):
-    list_display = ("id", "accepted_at", "warehouse", "accepted_by", "total_units", "expenses_total", "grand_total", "status")
+    list_display = (
+        "id", "accepted_at", "warehouse", "accepted_by", "total_units", "expenses_total",
+        "grand_total", "status", "cancelled_at", "cancelled_by",
+    )
     list_filter = ("status", "warehouse", "accepted_at")
     search_fields = ("id", "accepted_by__username", "accepted_by__full_name")
 

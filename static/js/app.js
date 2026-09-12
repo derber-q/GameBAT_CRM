@@ -53,6 +53,48 @@
         suggestions.remove();
       }
     };
+    const selectResult = (result) => {
+      input.value = result.label;
+      typeInput.value = result.type;
+      idInput.value = result.id;
+      if (onSelect) onSelect(result);
+      close();
+    };
+    const loadSuggestions = async (query) => {
+      try {
+        const selectedWarehouse = warehouseInput ? warehouseInput.value : warehouseId;
+        const warehouseQuery = selectedWarehouse ? `&warehouse=${encodeURIComponent(selectedWarehouse)}` : "";
+        const response = await fetch(`${endpoint}?q=${encodeURIComponent(query)}${warehouseQuery}`, { headers: { "X-Requested-With": "XMLHttpRequest" } });
+        if (!response.ok || input.value.trim() !== query) return close();
+        const payload = await response.json();
+        const exactBarcodeMatches = payload.results.filter(
+          (result) => String(result.barcode || "").trim() === query,
+        );
+        if (exactBarcodeMatches.length === 1) {
+          selectResult(exactBarcodeMatches[0]);
+          return;
+        }
+        suggestions.replaceChildren();
+        payload.results.forEach((result) => {
+          const option = document.createElement("button");
+          option.type = "button";
+          option.className = "suggestion";
+          const label = document.createElement("span");
+          label.textContent = result.label;
+          const available = document.createElement("small");
+          available.textContent = result.barcode
+            ? `Штрихкод: ${result.barcode} · На складе: ${result.available}`
+            : `На складе: ${result.available}`;
+          option.append(label, available);
+          option.addEventListener("click", () => selectResult(result));
+          suggestions.append(option);
+        });
+        if (payload.results.length > 0) open();
+        else close();
+      } catch (_) {
+        close();
+      }
+    };
     input.addEventListener("input", () => {
       typeInput.value = "";
       idInput.value = "";
@@ -60,38 +102,15 @@
       clearTimeout(timer);
       const query = input.value.trim();
       if (query.length < 2) return close();
-      timer = setTimeout(async () => {
-        try {
-          const selectedWarehouse = warehouseInput ? warehouseInput.value : warehouseId;
-          const warehouseQuery = selectedWarehouse ? `&warehouse=${encodeURIComponent(selectedWarehouse)}` : "";
-          const response = await fetch(`${endpoint}?q=${encodeURIComponent(query)}${warehouseQuery}`, { headers: { "X-Requested-With": "XMLHttpRequest" } });
-          if (!response.ok) return close();
-          const payload = await response.json();
-          suggestions.replaceChildren();
-          payload.results.forEach((result) => {
-            const option = document.createElement("button");
-            option.type = "button";
-            option.className = "suggestion";
-            const label = document.createElement("span");
-            label.textContent = result.label;
-            const available = document.createElement("small");
-            available.textContent = `На складе: ${result.available}`;
-            option.append(label, available);
-            option.addEventListener("click", () => {
-              input.value = result.label;
-              typeInput.value = result.type;
-              idInput.value = result.id;
-              if (onSelect) onSelect(result);
-              close();
-            });
-            suggestions.append(option);
-          });
-          if (payload.results.length > 0) open();
-          else close();
-        } catch (_) {
-          close();
-        }
-      }, 180);
+      timer = setTimeout(() => loadSuggestions(query), 180);
+    });
+    input.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" || idInput.value) return;
+      const query = input.value.trim();
+      if (query.length < 2) return;
+      event.preventDefault();
+      clearTimeout(timer);
+      loadSuggestions(query);
     });
     document.addEventListener("click", (event) => {
       if (!input.contains(event.target) && !suggestions.contains(event.target)) close();
@@ -145,6 +164,65 @@
       suggestions: form.querySelector(".suggestions"),
       endpoint: form.dataset.autocompleteUrl,
       warehouseInput: form.querySelector("#id_warehouse"),
+    });
+  });
+
+  document.querySelectorAll("[data-table-filter]").forEach((input) => {
+    const body = document.getElementById(input.dataset.tableFilter);
+    if (!body) return;
+    input.addEventListener("input", () => {
+      const query = input.value.trim().toLocaleLowerCase("ru-RU");
+      body.querySelectorAll("tr").forEach((row) => {
+        row.hidden = Boolean(query) && !row.textContent.toLocaleLowerCase("ru-RU").includes(query);
+      });
+    });
+  });
+
+  document.querySelectorAll("[data-product-filters]").forEach((form) => {
+    const platform = form.querySelector('[data-product-filter="platform"]');
+    const brand = form.querySelector('[data-product-filter="brand"]');
+    const productType = form.querySelector('[data-product-filter="product_type"]');
+    if (!platform || !brand || !productType) return;
+
+    const syncFilters = (changed) => {
+      if (changed === platform && platform.value) {
+        brand.value = "";
+        productType.value = "";
+      } else if ((changed === brand || changed === productType) && changed.value) {
+        platform.value = "";
+      }
+      const hasPlatform = Boolean(platform.value);
+      const hasTechFilter = Boolean(brand.value || productType.value);
+      platform.disabled = hasTechFilter;
+      brand.disabled = hasPlatform;
+      productType.disabled = hasPlatform;
+    };
+
+    [platform, brand, productType].forEach((select) => {
+      select.addEventListener("change", () => syncFilters(select));
+    });
+    syncFilters(null);
+  });
+
+  document.querySelectorAll("[data-collapse-toggle]").forEach((button) => {
+    const content = document.getElementById(button.getAttribute("aria-controls"));
+    if (!content) return;
+    button.addEventListener("click", () => {
+      const expanded = button.getAttribute("aria-expanded") === "true";
+      button.setAttribute("aria-expanded", String(!expanded));
+      content.hidden = expanded;
+    });
+  });
+
+  document.querySelectorAll("[data-dialog-open]").forEach((button) => {
+    const dialog = document.getElementById(button.dataset.dialogOpen);
+    if (!dialog || typeof dialog.showModal !== "function") return;
+    button.addEventListener("click", () => dialog.showModal());
+    dialog.querySelectorAll("[data-dialog-close]").forEach((closeButton) => {
+      closeButton.addEventListener("click", () => dialog.close());
+    });
+    dialog.addEventListener("click", (event) => {
+      if (event.target === dialog) dialog.close();
     });
   });
 

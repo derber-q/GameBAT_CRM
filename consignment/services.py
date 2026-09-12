@@ -12,6 +12,7 @@ from catalog.models import CD, ProductChangeEvent, Tech
 from partners.models import SalesPlatform
 from sales.models import Sale, SaleCDItem, SaleTechItem
 from warehouse.models import CDWarehouseStock, TechWarehouseStock, Warehouse
+from warehouse.storage_services import clear_storage_locations_if_zero
 from .models import (
     CDConsignmentStock,
     ConsignmentMovement,
@@ -48,6 +49,16 @@ def _positive_receivable(value):
         raise ValidationError("Укажите корректную сумму к получению.") from exc
     if amount <= 0:
         raise ValidationError("Сумма к получению должна быть больше нуля.")
+    return amount
+
+
+def _nonnegative_receivable(value):
+    try:
+        amount = Decimal(str(value)).quantize(CENT, rounding=ROUND_HALF_UP)
+    except (InvalidOperation, TypeError, ValueError) as exc:
+        raise ValidationError("Укажите корректное вознаграждение.") from exc
+    if amount < 0:
+        raise ValidationError("Вознаграждение не может быть отрицательным.")
     return amount
 
 
@@ -201,6 +212,13 @@ def transfer_many_to_consignment(*, actor, warehouse_id, platform_id, lines):
                 ),
             ],
         )
+        clear_storage_locations_if_zero(
+            stock=warehouse_stock,
+            actor=actor,
+            action_kind=ProductChangeEvent.ActionKind.CONSIGNMENT,
+            action_object_id=movement.pk,
+            action_label=movement.action_label,
+        )
     ConsignmentMovementItem.objects.bulk_create(movement_items)
     logger.info(
         "Товары переданы на реализацию: user_id=%s movement_id=%s platform_id=%s positions=%s units=%s",
@@ -232,6 +250,44 @@ def transfer_to_consignment(
         platform_id=platform_id,
         **{f"{product_field}_id": product_id},
     )
+
+
+@transaction.atomic
+def update_consignment_reward(*, actor, product_type, stock_id, value):
+    """Меняет сумму только у активной связки площадка + склад + товар и пишет Product audit."""
+    amount = _nonnegative_receivable(value)
+    product_model, stock_model, _, _, product_field = _configuration(product_type)
+    try:
+        stock = stock_model.objects.select_for_update().select_related(
+            "platform", "warehouse", product_field
+        ).get(pk=stock_id)
+    except stock_model.DoesNotExist as exc:
+        raise ValidationError("Позиция на реализации не найдена.") from exc
+    if stock.quantity <= 0:
+        raise ValidationError("Вознаграждение можно менять только у товара на реализации.")
+    product = product_model.objects.select_for_update().get(pk=getattr(stock, f"{product_field}_id"))
+    old_value = stock.receivable_per_unit
+    if old_value == amount:
+        return stock
+    stock.receivable_per_unit = amount
+    stock.full_clean()
+    stock.save(update_fields=("receivable_per_unit",))
+    record_product_changes(
+        actor=actor,
+        instance=product,
+        source=ProductChangeEvent.Source.CRM,
+        changes=[field_change(
+            field_name=f"consignment_reward_{product_type}_{stock.pk}",
+            field_label=f"Вознаграждение: {stock.platform.name} ({stock.warehouse.name})",
+            old_value=f"{old_value:.2f}",
+            new_value=f"{amount:.2f}",
+        )],
+    )
+    logger.info(
+        "Вознаграждение реализации изменено: user_id=%s platform_id=%s type=%s product_id=%s old=%s new=%s",
+        actor.pk, stock.platform_id, product_type, product.pk, old_value, amount,
+    )
+    return stock
 
 
 @transaction.atomic

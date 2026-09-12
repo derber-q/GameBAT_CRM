@@ -1,0 +1,43 @@
+<section class="panel product-filter-panel">
+  <form method="get" role="search" class="product-filter-form" data-product-filters>
+    <div class="field product-search-field">
+      <label for="product-search">Поиск товара</label>
+      <input id="product-search" type="search" name="search" value="{{ filter_state.search }}" placeholder="Поиск по ID, названию, артикулу, CUSA/PPSA или штрихкоду">
+    </div>
+    {% if show_location_filter %}
+    <div class="field product-location-filter {% if location_filter_error %}field-error{% endif %}">
+      <label for="storage-location-filter">Место хранения</label>
+      <div class="autocomplete-wrap">
+        <input id="storage-location-filter" type="search" name="location" value="{{ location_query }}" placeholder="" autocomplete="off" data-storage-location-autocomplete data-autocomplete-url="{% url 'warehouse:storage_location_autocomplete' warehouse.pk %}">
+        <div class="suggestions storage-location-suggestions" role="listbox"></div>
+      </div>
+      {% if location_filter_error %}<span class="error-text">{{ location_filter_error }}</span>{% endif %}
+    </div>
+    {% endif %}
+    <div class="field">
+      <label for="product-platform">Платформа</label>
+      <select id="product-platform" name="platform" data-product-filter="platform" {% if filter_state.tech_filters_active %}disabled{% endif %}>
+        <option value="">Все платформы</option>
+        {% for option in platform_options %}<option value="{{ option.pk }}" {% if filter_state.platform_id == option.pk %}selected{% endif %}>{{ option.name }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label for="product-brand">Бренд</label>
+      <select id="product-brand" name="brand" data-product-filter="brand" {% if filter_state.platform_id %}disabled{% endif %}>
+        <option value="">Все бренды</option>
+        {% for option in brand_options %}<option value="{{ option.pk }}" {% if filter_state.brand_id == option.pk %}selected{% endif %}>{{ option.name }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label for="product-type">Тип товара</label>
+      <select id="product-type" name="product_type" data-product-filter="product_type" {% if filter_state.platform_id %}disabled{% endif %}>
+        <option value="">Все типы товара</option>
+        {% for option in product_type_options %}<option value="{{ option.pk }}" {% if filter_state.product_type_id == option.pk %}selected{% endif %}>{{ option.name }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="product-filter-actions">
+      <button class="button" type="submit">Применить</button>
+      <a class="button button-secondary" href="{{ request.path }}">Сбросить</a>
+    </div>
+  </form>
+</section>

@@ -7,6 +7,7 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP, localcontext
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import Sum
+from django.utils import timezone
 
 from catalog.audit import field_change, record_product_changes, stock_change
 from catalog.models import CD, ProductChangeEvent, Tech
@@ -16,6 +17,7 @@ from warehouse.models import (
     CDWarehouseStock, CDWarehouseTransferItem, TechWarehouseStock, TechWarehouseTransferItem,
     Warehouse, WarehouseTransfer,
 )
+from warehouse.storage_services import clear_storage_locations_if_zero
 from .models import Supply, SupplyCDItem, SupplyCostCalculation, SupplyExpense, SupplyTechItem
 
 logger = logging.getLogger("gamebat.business")
@@ -36,6 +38,13 @@ class SupplyLineInput:
 class SupplyExpenseInput:
     name: str
     amount: Decimal
+
+
+@dataclass(frozen=True)
+class SupplyCancellationResult:
+    supply: Supply
+    cancelled: bool
+    costs: dict
 
 
 def _decimal(value, label):
@@ -269,3 +278,197 @@ def accept_supply(*, accepted_by, warehouse_id, lines, expenses=()):
     except Exception:
         logger.exception("Ошибка приёмки поставки: user_id=%s", getattr(accepted_by, "pk", None))
         raise
+
+
+def _supply_configuration(product_type):
+    if product_type == "cd":
+        return CD, CDWarehouseStock, SupplyCDItem, "cd"
+    if product_type == "tech":
+        return Tech, TechWarehouseStock, SupplyTechItem, "tech"
+    raise ValidationError("Неизвестный тип товара в поставке.")
+
+
+def _recalculated_cost(*, product_type, product_id, excluded_supply_id):
+    """Повторяет сохранённую moving-average историю, исключая отменённые поставки."""
+    product_filter = {f"{product_type}_id": product_id}
+    calculations = list(
+        SupplyCostCalculation.objects.select_for_update().select_related("supply")
+        .filter(product_kind=product_type, **product_filter)
+        .order_by("supply__accepted_at", "supply_id", "id")
+    )
+    target = next((row for row in calculations if row.supply_id == excluded_supply_id), None)
+    if target is None:
+        raise ValidationError(
+            "Невозможно отменить приход: для товара отсутствует исторический расчёт себестоимости."
+        )
+    first = calculations[0]
+    _, _, item_model, _ = _supply_configuration(product_type)
+    historical_supply_ids = set(
+        item_model.objects.filter(
+            product_id=product_id,
+            supply__accepted_at__gte=first.supply.accepted_at,
+        ).values_list("supply_id", flat=True)
+    )
+    calculation_supply_ids = {row.supply_id for row in calculations}
+    if historical_supply_ids - calculation_supply_ids:
+        raise ValidationError(
+            "Невозможно отменить приход: история себестоимости товара неполна."
+        )
+    replay_quantity = first.old_owned_quantity
+    replay_cost = first.old_unit_cost.quantize(CENT, rounding=ROUND_HALF_UP)
+    original_quantity = first.old_owned_quantity
+    previous_time = None
+
+    for calculation in calculations:
+        if previous_time is not None:
+            cancellation_adjustment = sum(
+                row.incoming_quantity
+                for row in calculations
+                if row.supply.cancelled_at
+                and previous_time < row.supply.cancelled_at <= calculation.supply.accepted_at
+            )
+            replay_quantity += calculation.old_owned_quantity - original_quantity + cancellation_adjustment
+            if replay_quantity < 0:
+                raise ValidationError(
+                    "Невозможно точно пересчитать себестоимость: без отменяемого прихода "
+                    "исторический остаток стал бы отрицательным."
+                )
+        skip = calculation.supply.is_cancelled or calculation.supply_id == excluded_supply_id
+        if not skip:
+            replay_value = Decimal(replay_quantity) * replay_cost + calculation.incoming_value
+            replay_quantity += calculation.incoming_quantity
+            replay_cost = (
+                replay_value / Decimal(replay_quantity)
+            ).quantize(CENT, rounding=ROUND_HALF_UP)
+        original_quantity = calculation.resulting_quantity
+        previous_time = calculation.supply.accepted_at
+    return replay_cost
+
+
+@transaction.atomic
+def cancel_supply(*, actor, supply_id, comment):
+    """Полностью откатывает принятый приход, его stock и moving-average cost."""
+    comment = str(comment or "").strip()
+    if not comment:
+        raise ValidationError("Укажите причину отмены прихода.")
+    supply = Supply.objects.select_for_update().select_related("warehouse").get(pk=supply_id)
+    if supply.is_cancelled:
+        return SupplyCancellationResult(supply=supply, cancelled=False, costs={})
+    if supply.status != Supply.Status.ACCEPTED:
+        raise ValidationError("Отменить можно только принятый приход.")
+    Warehouse.objects.select_for_update().get(pk=supply.warehouse_id)
+
+    aggregated = defaultdict(int)
+    for product_type in ("cd", "tech"):
+        _, _, item_model, product_field = _supply_configuration(product_type)
+        items = list(
+            item_model.objects.select_for_update().select_related("product")
+            .filter(supply=supply).order_by("product_id", "id")
+        )
+        for item in items:
+            aggregated[(product_type, item.product_id)] += item.quantity
+    if not aggregated:
+        raise ValidationError("В приходе нет товарных позиций для отмены.")
+
+    products = {}
+    stocks = {}
+    for product_type in ("cd", "tech"):
+        product_model, stock_model, _, product_field = _supply_configuration(product_type)
+        ids = sorted(product_id for kind, product_id in aggregated if kind == product_type)
+        products.update({
+            (product_type, product.pk): product
+            for product in product_model.objects.select_for_update().filter(pk__in=ids).order_by("pk")
+        })
+        stocks.update({
+            (product_type, getattr(stock, f"{product_field}_id")): stock
+            for stock in stock_model.objects.select_for_update().filter(
+                warehouse_id=supply.warehouse_id, **{f"{product_field}_id__in": ids}
+            ).order_by(product_field)
+        })
+    if len(products) != len(aggregated):
+        raise ValidationError("Один из товаров прихода больше не существует.")
+
+    insufficient = []
+    for key, quantity in aggregated.items():
+        stock = stocks.get(key)
+        if stock is None or stock.quantity < quantity:
+            product = products[key]
+            insufficient.append(
+                f"{product.name}: требуется {quantity}, доступно {stock.quantity if stock else 0}"
+            )
+    if insufficient:
+        logger.warning(
+            "Отмена прихода отклонена: недостаточно товара: user_id=%s supply_id=%s positions=%s",
+            actor.pk, supply.pk, len(insufficient),
+        )
+        raise ValidationError(
+            "Невозможно отменить приход: на складе недостаточно товара для обратного списания. "
+            + "; ".join(insufficient)
+        )
+
+    recalculated_costs = {}
+    for key, product in products.items():
+        product_type, product_id = key
+        recalculated_costs[key] = _recalculated_cost(
+            product_type=product_type,
+            product_id=product_id,
+            excluded_supply_id=supply.pk,
+        )
+
+    for key, quantity in aggregated.items():
+        product = products[key]
+        stock = stocks[key]
+        old_quantity = stock.quantity
+        old_cost = product.cost
+        stock.quantity -= quantity
+        product.cost = recalculated_costs[key]
+        stock.full_clean()
+        product.full_clean(exclude=[
+            field.name for field in product._meta.fields if field.name != "cost"
+        ])
+        stock.save(update_fields=("quantity",))
+        product.save(update_fields=("cost",))
+        changes = [stock_change(
+            warehouse=supply.warehouse,
+            old_quantity=old_quantity,
+            new_quantity=stock.quantity,
+        )]
+        if old_cost != product.cost:
+            changes.append(field_change(
+                field_name="cost",
+                field_label="Средняя себестоимость",
+                old_value=f"{old_cost:.2f}",
+                new_value=f"{product.cost:.2f}",
+            ))
+        record_product_changes(
+            actor=actor,
+            instance=product,
+            source=ProductChangeEvent.Source.CRM,
+            action_kind=ProductChangeEvent.ActionKind.SUPPLY,
+            action_object_id=supply.pk,
+            action_label=f"Отмена поставки №{supply.pk}",
+            changes=changes,
+        )
+        clear_storage_locations_if_zero(
+            stock=stock,
+            actor=actor,
+            action_kind=ProductChangeEvent.ActionKind.SUPPLY,
+            action_object_id=supply.pk,
+            action_label=f"Отмена поставки №{supply.pk}",
+        )
+        logger.info(
+            "Себестоимость после отмены прихода: supply_id=%s type=%s product_id=%s old=%s new=%s",
+            supply.pk, key[0], key[1], old_cost, product.cost,
+        )
+
+    supply.status = Supply.Status.CANCELLED
+    supply.cancelled_at = timezone.now()
+    supply.cancelled_by = actor
+    supply.cancellation_comment = comment
+    supply.full_clean()
+    supply.save(update_fields=("status", "cancelled_at", "cancelled_by", "cancellation_comment"))
+    logger.info(
+        "Приход отменён: user_id=%s supply_id=%s warehouse_id=%s positions=%s units=%s",
+        actor.pk, supply.pk, supply.warehouse_id, len(aggregated), sum(aggregated.values()),
+    )
+    return SupplyCancellationResult(supply=supply, cancelled=True, costs=recalculated_costs)

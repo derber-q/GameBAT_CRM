@@ -181,14 +181,14 @@ class WarehouseTransferTests(TestCase):
         detail_response = self.client.get(reverse("warehouse:detail", args=(self.source.pk,)))
         self.assertContains(
             detail_response,
-            '<th>ID</th><th>Артикул</th><th>Название</th>'
+            '<th>ID</th><th>Артикул</th><th>Место хранения</th><th>Название</th>'
             '<th class="numeric-center">CUSA/PPSA</th>'
             '<th class="numeric-center">Количество</th>',
             html=True,
         )
         self.assertContains(
             detail_response,
-            '<th>ID</th><th>Артикул</th><th>Название</th><th>Бренд</th>'
+            '<th>ID</th><th>Артикул</th><th>Место хранения</th><th>Название</th><th>Бренд</th>'
             '<th class="numeric-center">Количество</th>',
             html=True,
         )

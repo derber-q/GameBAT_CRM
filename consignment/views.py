@@ -2,13 +2,19 @@ from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
+from django.views.decorators.http import require_POST
 
 from catalog.models import CD, Tech
 from core.decorators import permission_required_any
 from partners.models import SalesPlatform
 from .forms import ConsignmentSaleForm, ReturnForm, TransferForm
 from .models import CDConsignmentStock, ConsignmentMovement, TechConsignmentStock
-from .services import record_consignment_sale, return_from_consignment, transfer_many_to_consignment
+from .services import (
+    record_consignment_sale,
+    return_from_consignment,
+    transfer_many_to_consignment,
+    update_consignment_reward,
+)
 
 
 def _can_record_sale(user):
@@ -73,6 +79,9 @@ def _submitted_transfer_lines(post):
 def consignment_list(request):
     platforms = []
     can_record_sale = _can_record_sale(request.user)
+    can_change_reward = request.user.is_superuser or request.user.has_perm(
+        "consignment.change_consignment_reward"
+    )
     for platform in SalesPlatform.objects.all():
         rows = []
         if request.user.is_superuser or request.user.has_perm("consignment.view_cdconsignmentstock"):
@@ -98,7 +107,25 @@ def consignment_list(request):
         )))
     return render(request, "consignment/list.html", {
         "platforms": platforms, "can_record_sale": can_record_sale,
+        "can_change_reward": can_change_reward,
     })
+
+
+@require_POST
+@permission_required_any("consignment.change_consignment_reward")
+def reward_update(request, product_kind, pk):
+    try:
+        update_consignment_reward(
+            actor=request.user,
+            product_type=product_kind,
+            stock_id=pk,
+            value=request.POST.get("receivable_per_unit"),
+        )
+    except ValidationError as exc:
+        messages.error(request, " ".join(exc.messages))
+    else:
+        messages.success(request, "Вознаграждение сохранено.")
+    return redirect("consignment:list")
 
 
 @permission_required_any("consignment.transfer_stock")

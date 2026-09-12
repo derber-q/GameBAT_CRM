@@ -3,7 +3,7 @@ import logging
 from django.contrib import admin
 from django.db import transaction
 
-from .audit import changed_snapshots, product_snapshot, record_product_changes
+from .audit import changed_snapshots, field_change, product_snapshot, record_product_changes
 from .models import (
     Brand,
     CD,
@@ -39,6 +39,26 @@ class ProductAdminMixin:
                 before = product_snapshot(previous, audited_fields)
             super().save_model(request, obj, form, change)
             if before is None:
+                snapshot = product_snapshot(obj, audited_fields)
+                record_product_changes(
+                    actor=request.user,
+                    instance=obj,
+                    changes=[field_change(
+                        field_name="created",
+                        field_label="Товар создан",
+                        old_value="",
+                        new_value="CD" if isinstance(obj, CD) else "Tech",
+                    )] + [
+                        field_change(
+                            field_name=field_name,
+                            field_label=str(obj._meta.get_field(field_name).verbose_name),
+                            old_value="",
+                            new_value=value,
+                        )
+                        for field_name, value in snapshot.items() if value
+                    ],
+                    source=ProductChangeEvent.Source.DJANGO_ADMIN,
+                )
                 return
             changes = changed_snapshots(obj, before, audited_fields)
             try:

@@ -61,10 +61,14 @@ class CashTransaction(models.Model):
         DEPOSIT = "deposit", "Внесение наличных"
         COLLECTION = "collection", "Инкассация"
         SALE_PAYMENT = "sale_payment", "Оплата продажи"
+        SALE_REFUND = "sale_refund", "Возврат по отменённой продаже"
         SAFE_DEPOSIT = "safe_deposit", "Внесение в сейф"
         SAFE_COLLECTION = "safe_collection", "Инкассация из сейфа"
         CASH_TO_SAFE = "cash_to_safe", "Перевод: касса → сейф"
         SAFE_TO_CASH = "safe_to_cash", "Перевод: сейф → касса"
+        CUSTOMER_ORDER_PREPAYMENT = "order_prepayment", "Предоплата закупочного заказа"
+        CUSTOMER_ORDER_REFUND = "order_refund", "Возврат по закупочному заказу"
+        CUSTOMER_ORDER_POSTPAYMENT = "order_postpayment", "Постоплата закупочного заказа"
 
     cash_register = models.ForeignKey(
         CashRegister, on_delete=models.PROTECT, related_name="transactions", verbose_name="Касса"
@@ -82,12 +86,22 @@ class CashTransaction(models.Model):
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="cash_transactions", verbose_name="Провёл"
     )
     created_at = models.DateTimeField("Проведена", auto_now_add=True)
-    sale = models.OneToOneField(
-        "sales.Sale", on_delete=models.PROTECT, related_name="cash_transaction",
-        verbose_name="Продажа", null=True, blank=True,
+    sale = models.ForeignKey(
+        "sales.Sale", on_delete=models.PROTECT, related_name="cash_transactions",
+        verbose_name="Продажа", null=True, blank=True, editable=False,
     )
     operation_key = models.UUIDField(
         "Ключ операции", null=True, blank=True, unique=True, editable=False,
+    )
+    customer_order = models.ForeignKey(
+        "orders.CustomerProcurementOrder", on_delete=models.PROTECT,
+        related_name="cash_transactions", verbose_name="Закупочный заказ",
+        null=True, blank=True, editable=False,
+    )
+    order_adjustment = models.OneToOneField(
+        "orders.OrderAdjustment", on_delete=models.PROTECT,
+        related_name="refund_transaction", verbose_name="Корректировка заказа",
+        null=True, blank=True, editable=False,
     )
 
     class Meta:
@@ -99,7 +113,7 @@ class CashTransaction(models.Model):
             models.CheckConstraint(
                 condition=(
                     models.Q(
-                        operation_type__in=("deposit", "collection", "sale_payment"),
+                        operation_type__in=("deposit", "collection", "sale_payment", "sale_refund"),
                         safe__isnull=True,
                     )
                     | models.Q(
@@ -108,8 +122,48 @@ class CashTransaction(models.Model):
                         ),
                         safe__isnull=False,
                     )
+                    | models.Q(
+                        operation_type__in=("order_prepayment", "order_refund", "order_postpayment"),
+                        safe__isnull=True,
+                        customer_order__isnull=False,
+                    )
                 ),
                 name="cash_transaction_safe_matches_type",
+            ),
+            models.UniqueConstraint(
+                fields=("customer_order",), condition=models.Q(operation_type="order_prepayment"),
+                name="unique_customer_order_prepayment",
+            ),
+            models.UniqueConstraint(
+                fields=("customer_order",), condition=models.Q(operation_type="order_postpayment"),
+                name="unique_customer_order_postpayment",
+            ),
+            models.UniqueConstraint(
+                fields=("sale", "operation_type"),
+                condition=models.Q(
+                    sale__isnull=False,
+                    operation_type__in=("sale_payment", "sale_refund"),
+                ),
+                name="unique_sale_cash_operation_type",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(
+                        operation_type__in=("sale_payment", "sale_refund"), sale__isnull=False,
+                    )
+                    | (
+                        ~models.Q(operation_type__in=("sale_payment", "sale_refund"))
+                        & models.Q(sale__isnull=True)
+                    )
+                ),
+                name="sale_cash_operation_has_sale",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(operation_type="order_refund", order_adjustment__isnull=False)
+                    | (~models.Q(operation_type="order_refund") & models.Q(order_adjustment__isnull=True))
+                ),
+                name="order_refund_has_adjustment",
             ),
         ]
 
@@ -117,7 +171,9 @@ class CashTransaction(models.Model):
     def signed_amount(self):
         return -self.amount if self.operation_type in {
             self.OperationType.COLLECTION,
+            self.OperationType.SALE_REFUND,
             self.OperationType.SAFE_COLLECTION,
+            self.OperationType.CUSTOMER_ORDER_REFUND,
         } else self.amount
 
     @property
@@ -131,7 +187,9 @@ class CashTransaction(models.Model):
     def is_outflow(self):
         return self.operation_type in {
             self.OperationType.COLLECTION,
+            self.OperationType.SALE_REFUND,
             self.OperationType.SAFE_COLLECTION,
+            self.OperationType.CUSTOMER_ORDER_REFUND,
         }
 
     @property
@@ -140,10 +198,14 @@ class CashTransaction(models.Model):
             self.OperationType.DEPOSIT: "Внешнее поступление",
             self.OperationType.COLLECTION: "Касса",
             self.OperationType.SALE_PAYMENT: "Продажа",
+            self.OperationType.SALE_REFUND: "Касса",
             self.OperationType.SAFE_DEPOSIT: "Внешнее поступление",
             self.OperationType.SAFE_COLLECTION: "Сейф",
             self.OperationType.CASH_TO_SAFE: "Касса",
             self.OperationType.SAFE_TO_CASH: "Сейф",
+            self.OperationType.CUSTOMER_ORDER_PREPAYMENT: "Клиент",
+            self.OperationType.CUSTOMER_ORDER_REFUND: "Касса",
+            self.OperationType.CUSTOMER_ORDER_POSTPAYMENT: "Клиент",
         }[self.operation_type]
 
     @property
@@ -152,10 +214,14 @@ class CashTransaction(models.Model):
             self.OperationType.DEPOSIT: "Касса",
             self.OperationType.COLLECTION: "Инкассация",
             self.OperationType.SALE_PAYMENT: "Касса",
+            self.OperationType.SALE_REFUND: "Клиент",
             self.OperationType.SAFE_DEPOSIT: "Сейф",
             self.OperationType.SAFE_COLLECTION: "Инкассация",
             self.OperationType.CASH_TO_SAFE: "Сейф",
             self.OperationType.SAFE_TO_CASH: "Касса",
+            self.OperationType.CUSTOMER_ORDER_PREPAYMENT: "Касса",
+            self.OperationType.CUSTOMER_ORDER_REFUND: "Клиент",
+            self.OperationType.CUSTOMER_ORDER_POSTPAYMENT: "Касса",
         }[self.operation_type]
 
     def __str__(self):

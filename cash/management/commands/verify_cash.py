@@ -17,12 +17,16 @@ class Command(BaseCommand):
                     CashTransaction.OperationType.DEPOSIT,
                     CashTransaction.OperationType.SALE_PAYMENT,
                     CashTransaction.OperationType.SAFE_TO_CASH,
+                    CashTransaction.OperationType.CUSTOMER_ORDER_PREPAYMENT,
+                    CashTransaction.OperationType.CUSTOMER_ORDER_POSTPAYMENT,
                 )
             ).aggregate(total=Sum("amount"))["total"] or Decimal("0")
             outgoing = register.transactions.filter(
                 operation_type__in=(
                     CashTransaction.OperationType.COLLECTION,
+                    CashTransaction.OperationType.SALE_REFUND,
                     CashTransaction.OperationType.CASH_TO_SAFE,
+                    CashTransaction.OperationType.CUSTOMER_ORDER_REFUND,
                 )
             ).aggregate(total=Sum("amount"))["total"] or Decimal("0")
             expected = incoming - outgoing

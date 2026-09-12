@@ -7,28 +7,18 @@
     <h1>Номенклатура</h1>
     <p class="muted">Все карточки CD и техники независимо от текущих остатков.</p>
   </div>
+  {% if can_add_cd or can_add_tech %}<a class="button button-large" href="{% url 'nomenclature:create' %}">Новое наименование</a>{% endif %}
 </div>
 
-<section class="panel nomenclature-search">
-  <form method="get" role="search">
-    <div class="field">
-      <label for="nomenclature-query">Поиск по названию, артикулу, штрихкоду или CUSA/PPSA</label>
-      <div class="search-row">
-        <input id="nomenclature-query" type="search" name="q" value="{{ query }}" placeholder="Введите название или идентификатор">
-        <button class="button" type="submit">Найти</button>
-        {% if query %}<a class="button button-secondary" href="{% url 'nomenclature:list' %}">Сбросить</a>{% endif %}
-      </div>
-    </div>
-  </form>
-</section>
+{% include "catalog/_product_filters.html" %}
 
 {% for platform, products in cd_groups %}
-  <section class="panel inventory-section">
-    <div class="section-heading">
-      <div><span class="category-tag">CD</span><h2>{{ platform.name }}</h2></div>
-      <span class="count">{{ products|length }} поз.</span>
-    </div>
-    <div class="table-scroll">
+  <section class="panel inventory-section collapsible-section">
+    <button class="section-heading section-toggle" type="button" aria-expanded="true" aria-controls="nomenclature-cd-{{ platform.pk }}" data-collapse-toggle>
+      <span class="section-title"><span class="category-tag">CD</span><span class="section-name">{{ platform.name }}</span></span>
+      <span class="section-heading-meta"><span class="count">{{ products|length }} поз.</span><span class="collapse-indicator" aria-hidden="true">▼</span></span>
+    </button>
+    <div id="nomenclature-cd-{{ platform.pk }}" class="collapsible-content table-scroll">
       <table class="nomenclature-table">
         <thead><tr><th>ID</th><th>Артикул</th><th>Название</th><th>CUSA/PPSA</th><th></th></tr></thead>
         <tbody>
@@ -48,12 +38,12 @@
 {% endfor %}
 
 {% for product_type, products in tech_groups %}
-  <section class="panel inventory-section">
-    <div class="section-heading">
-      <div><span class="category-tag category-tag-tech">TECH</span><h2>{{ product_type.name }}</h2></div>
-      <span class="count">{{ products|length }} поз.</span>
-    </div>
-    <div class="table-scroll">
+  <section class="panel inventory-section collapsible-section">
+    <button class="section-heading section-toggle" type="button" aria-expanded="true" aria-controls="nomenclature-tech-{{ product_type.pk }}" data-collapse-toggle>
+      <span class="section-title"><span class="category-tag category-tag-tech">TECH</span><span class="section-name">{{ product_type.name }}</span></span>
+      <span class="section-heading-meta"><span class="count">{{ products|length }} поз.</span><span class="collapse-indicator" aria-hidden="true">▼</span></span>
+    </button>
+    <div id="nomenclature-tech-{{ product_type.pk }}" class="collapsible-content table-scroll">
       <table class="nomenclature-table">
         <thead><tr><th>ID</th><th>Артикул</th><th>Название</th><th>Бренд</th><th></th></tr></thead>
         <tbody>
@@ -75,11 +65,8 @@
 {% if not cd_groups and not tech_groups %}
   <section class="empty-state">
     <span class="empty-code">0</span>
-    {% if query %}
-      <h2>Ничего не найдено</h2><p>Измените запрос или сбросьте поиск.</p>
-    {% else %}
-      <h2>Номенклатура пока пуста</h2><p>Товарные карточки ещё не созданы.</p>
-    {% endif %}
+    {% if filter_state.is_active %}<h2>Товары по заданным параметрам не найдены</h2><p>Измените условия или сбросьте фильтры.</p>
+    {% else %}<h2>Номенклатура пока пуста</h2><p>Товарные карточки ещё не созданы.</p>{% endif %}
   </section>
 {% endif %}
 {% endblock %}

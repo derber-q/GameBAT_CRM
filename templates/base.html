@@ -6,8 +6,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}ReSOURCE{% endblock %}</title>
   <link rel="icon" href="{% static 'img/gamebat-favicon.ico' %}" sizes="32x32" type="image/x-icon">
-  <link rel="stylesheet" href="{% static 'css/gamebat.css' %}?v=resource-ui-4">
-  <script src="{% static 'js/app.js' %}?v=rapira-rates-1" defer></script>
+  <link rel="stylesheet" href="{% static 'css/gamebat.css' %}?v=barcode-sale-3">
+  <script src="{% static 'js/app.js' %}?v=barcode-search-2" defer></script>
   {% block extra_head %}{% endblock %}
 </head>
 <body>
@@ -16,6 +16,7 @@
       <a class="brand" href="{% url 'core:home' %}"><span class="brand-mark">RS</span><span>Re<b>SOURCE</b></span></a>
       <nav class="main-nav" aria-label="Основная навигация">
         {% if nav.sales %}<a class="nav-sale {% if request.resolver_match.namespace == 'sales' %}active{% endif %}" href="{% url 'sales:list' %}">Продажа</a>{% endif %}
+        {% if nav.orders %}<a class="{% if request.resolver_match.namespace == 'orders' %}active{% endif %}" href="{% url 'orders:list' %}">Заказы</a>{% endif %}
         {% if nav.cash and nav_warehouses %}
           {% if nav_warehouses|length == 1 %}
             <a class="{% if request.resolver_match.namespace == 'cash' %}active{% endif %}" href="{% url 'cash:register' nav_warehouses.0.id %}">Касса</a>
@@ -48,6 +49,7 @@
         {% if nav.transfers %}<a class="{% if request.resolver_match.namespace == 'warehouse' and 'transfer' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'warehouse:transfer_list' %}">Перемещения</a>{% endif %}
         {% if nav.consignment %}<a class="{% if request.resolver_match.namespace == 'consignment' %}active{% endif %}" href="{% url 'consignment:list' %}">Реализация</a>{% endif %}
         {% if nav.pricing %}<a class="{% if request.resolver_match.namespace == 'pricing' %}active{% endif %}" href="{% url 'pricing:list' %}">Ценообразование</a>{% endif %}
+        {% if nav.price %}<a class="{% if request.resolver_match.namespace == 'price' %}active{% endif %}" href="{% url 'price:index' %}">Прайс</a>{% endif %}
         {% if nav.suppliers %}<a class="{% if request.resolver_match.namespace == 'partners' %}active{% endif %}" href="{% url 'partners:list' %}">Поставщики</a>{% endif %}
         {% if nav.users %}<a class="{% if request.resolver_match.namespace == 'accounts' and 'user' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'accounts:user_list' %}">Пользователи</a>{% endif %}
       </nav>

@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Новое наименование · ReSOURCE{% endblock %}
+{% block content %}
+<div class="page-heading">
+  <div><p class="eyebrow">Номенклатура</p><h1>Новое наименование</h1><p class="muted">Создаётся только карточка товара. Остаток и себестоимость появятся после прихода.</p></div>
+  <a class="button button-secondary" href="{% url 'nomenclature:list' %}">К списку</a>
+</div>
+
+<section class="panel product-kind-picker">
+  <h2>Выберите тип товара</h2>
+  <div class="heading-actions">
+    {% if can_add_cd %}<a class="button {% if product_kind != 'cd' %}button-secondary{% endif %}" href="{% url 'nomenclature:create' %}?kind=cd">CD</a>{% endif %}
+    {% if can_add_tech %}<a class="button {% if product_kind != 'tech' %}button-secondary{% endif %}" href="{% url 'nomenclature:create' %}?kind=tech">Tech</a>{% endif %}
+  </div>
+</section>
+
+{% if form %}
+<form method="post" class="panel product-create-form">
+  {% csrf_token %}
+  <input type="hidden" name="product_kind" value="{{ product_kind }}">
+  <div class="section-heading section-heading-plain"><div><h2>Карточка {{ product_kind_label }}</h2></div></div>
+  {% if form.non_field_errors %}<div class="alert alert-error">{{ form.non_field_errors }}</div>{% endif %}
+  <div class="product-form-grid">
+    {% for field in form %}{% include "nomenclature/_field.html" with field=field %}{% endfor %}
+  </div>
+  <p class="muted creation-system-note">Складской остаток: 0 · Средняя себестоимость: 0,00 ₽. Эти значения нельзя вводить вручную.</p>
+  <div class="form-actions"><button class="button button-large" type="submit">Создать наименование</button></div>
+</form>
+{% else %}
+<section class="empty-state"><span class="empty-code">+</span><h2>Выберите CD или Tech</h2><p>Форма покажет только разрешённый вам тип товара.</p></section>
+{% endif %}
+{% endblock %}

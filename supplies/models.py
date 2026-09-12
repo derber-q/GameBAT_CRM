@@ -10,6 +10,7 @@ from warehouse.models import Warehouse
 class Supply(models.Model):
     class Status(models.TextChoices):
         ACCEPTED = "accepted", "Принята"
+        CANCELLED = "cancelled", "Отменена"
 
     accepted_at = models.DateTimeField("Принята", auto_now_add=True)
     accepted_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="accepted_supplies", verbose_name="Принял")
@@ -21,21 +22,45 @@ class Supply(models.Model):
     goods_total_before_expenses = models.DecimalField("Товары до расходов", max_digits=20, decimal_places=2)
     expenses_total = models.DecimalField("Дополнительные расходы", max_digits=20, decimal_places=2)
     grand_total = models.DecimalField("Итого", max_digits=20, decimal_places=2)
+    cancelled_at = models.DateTimeField("Отменена", null=True, blank=True, editable=False)
+    cancelled_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="cancelled_supplies",
+        verbose_name="Отменил", null=True, blank=True, editable=False,
+    )
+    cancellation_comment = models.TextField("Причина отмены", blank=True, editable=False)
 
     class Meta:
         ordering = ("-accepted_at", "-id")
         verbose_name = "поставка"
         verbose_name_plural = "поставки"
+        permissions = [("cancel_supply", "Может отменять принятые приходы")]
         constraints = [
             models.CheckConstraint(condition=models.Q(total_units__gt=0), name="supply_total_units_positive"),
             models.CheckConstraint(condition=models.Q(goods_total_before_expenses__gte=0), name="supply_goods_total_nonnegative"),
             models.CheckConstraint(condition=models.Q(expenses_total__gte=0), name="supply_expenses_total_nonnegative"),
             models.CheckConstraint(condition=models.Q(grand_total__gte=0), name="supply_grand_total_nonnegative"),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(
+                        status="accepted", cancelled_at__isnull=True,
+                        cancelled_by__isnull=True, cancellation_comment="",
+                    )
+                    | (
+                        models.Q(status="cancelled", cancelled_at__isnull=False, cancelled_by__isnull=False)
+                        & ~models.Q(cancellation_comment="")
+                    )
+                ),
+                name="supply_cancellation_fields_consistent",
+            ),
         ]
 
     @property
     def item_count(self):
         return self.cd_items.count() + self.tech_items.count()
+
+    @property
+    def is_cancelled(self):
+        return self.status == self.Status.CANCELLED
 
     def __str__(self):
         return f"Поставка №{self.pk}"

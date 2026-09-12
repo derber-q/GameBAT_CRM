@@ -1,7 +1,8 @@
 {% extends "base.html" %}
 {% block title %}Поставка №{{ supply.id }} · ReSOURCE{% endblock %}
 {% block content %}
-<div class="page-heading"><div><p class="eyebrow">Историческая запись</p><h1>Поставка №{{ supply.id }}</h1><p class="muted">Склад {{ supply.warehouse.name }} · {{ supply.accepted_at|date:"d.m.Y H:i" }} · {{ supply.accepted_by.full_name|default:supply.accepted_by.username }} · {{ supply.get_status_display }}</p></div><a class="button button-secondary" href="{% url 'supplies:list' %}">К истории</a></div>
+<div class="page-heading"><div><p class="eyebrow">Историческая запись</p><h1>Поставка №{{ supply.id }} {% if supply.is_cancelled %}<span class="badge badge-danger">Отменена</span>{% endif %}</h1><p class="muted">Склад {{ supply.warehouse.name }} · {{ supply.accepted_at|date:"d.m.Y H:i" }} · {{ supply.accepted_by.full_name|default:supply.accepted_by.username }} · {{ supply.get_status_display }}</p></div><div class="heading-actions">{% if can_cancel %}<button class="button button-danger" type="button" data-dialog-open="supply-cancel-dialog">Отменить приход</button>{% endif %}<a class="button button-secondary" href="{% url 'supplies:list' %}">К истории</a></div></div>
+{% if supply.is_cancelled %}<section class="alert alert-error cancellation-summary"><strong>Приход отменён {{ supply.cancelled_at|date:"d.m.Y H:i" }}</strong><span>Отменил: {{ supply.cancelled_by.full_name|default:supply.cancelled_by.username }}</span><span>Причина: {{ supply.cancellation_comment }}</span></section>{% endif %}
 <section class="panel inventory-section"><div class="section-heading"><h2>Товарные позиции</h2><span class="count">{{ position_count }} поз.</span></div><div class="table-scroll"><table><thead><tr><th>Тип</th><th>Название</th><th>Артикул</th><th>Поставщик</th><th class="numeric">Кол-во</th><th class="numeric">Закупка / ед.</th><th class="numeric">Расход / ед.</th><th class="numeric">Итого / ед.</th><th class="numeric">Закупка</th><th class="numeric">Итого</th></tr></thead><tbody>{% for row in rows %}<tr><td><span class="badge">{{ row.type }}</span></td><td class="strong">{{ row.name }}</td><td class="mono">{{ row.sku }}</td><td><span class="supplier-badge" style="--supplier-color: {{ row.supplier_color }}">{{ row.supplier }}</span></td><td class="numeric">{{ row.quantity }}</td><td class="numeric">{{ row.purchase }}</td><td class="numeric">{{ row.allocated }}</td><td class="numeric">{{ row.effective }}</td><td class="numeric">{{ row.base_total }}</td><td class="numeric strong">{{ row.final_total }}</td></tr>{% endfor %}</tbody></table></div></section>
 <div class="detail-grid"><section class="panel"><h2>Дополнительные расходы</h2><table><tbody>{% for expense in expenses %}<tr><td>{{ expense.name }}</td><td class="numeric strong">{{ expense.amount }}</td></tr>{% empty %}<tr><td class="empty-cell">Дополнительных расходов нет.</td></tr>{% endfor %}</tbody></table></section><section class="panel summary-card"><h2>Итоги</h2><dl class="summary"><dt>Количество позиций</dt><dd>{{ position_count }}</dd><dt>Физических единиц</dt><dd>{{ supply.total_units }}</dd><dt>Товары до расходов</dt><dd>{{ supply.goods_total_before_expenses }}</dd><dt>Дополнительные расходы</dt><dd>{{ supply.expenses_total }}</dd><dt class="grand">Итоговая стоимость</dt><dd class="grand">{{ supply.grand_total }}</dd></dl></section></div>
 <section class="panel supply-cost-history">
@@ -32,4 +33,15 @@
     {% endfor %}
   </div>
 </section>
+{% if can_cancel %}
+<dialog id="supply-cancel-dialog" class="confirmation-dialog" aria-labelledby="supply-cancel-title">
+  <form method="post" action="{% url 'supplies:cancel' supply.pk %}">
+    {% csrf_token %}
+    <h2 id="supply-cancel-title">Отменить приход №{{ supply.pk }}?</h2>
+    <p>Принятые товары будут списаны со склада «{{ supply.warehouse.name }}», а себестоимость будет пересчитана. Это действие нельзя отменить.</p>
+    <div class="field"><label for="supply-cancellation-comment">Причина отмены</label><textarea id="supply-cancellation-comment" name="cancellation_comment" rows="3" required></textarea></div>
+    <div class="dialog-actions"><button class="button button-secondary" type="button" data-dialog-close>Не отменять</button><button class="button button-danger" type="submit">Да, отменить приход</button></div>
+  </form>
+</dialog>
+{% endif %}
 {% endblock %}

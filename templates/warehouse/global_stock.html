@@ -2,32 +2,32 @@
 {% block title %}Общие остатки · ReSOURCE{% endblock %}
 {% block content %}
 <div class="page-heading"><div><p class="eyebrow">Все склады</p><h1>Общие остатки</h1><p class="muted">Физические остатки, реализация и товары в пути.</p></div>{% if perms.warehouse.view_transfers or user.is_superuser %}<a class="button button-secondary" href="{% url 'warehouse:transfer_list' %}">Перемещения</a>{% endif %}</div>
-{% include "warehouse/_inventory_search.html" %}
+{% include "catalog/_product_filters.html" %}
 
 {% for group, group_rows in cd_groups %}
-  <section class="panel inventory-section">
-    <div class="section-heading">
-      <div><span class="category-tag">CD</span><h2>{{ group.name }}</h2></div>
-      <span class="count">{{ group_rows|length }} поз.</span>
-    </div>
-    {% include "warehouse/_global_stock_table.html" %}
+  <section class="panel inventory-section collapsible-section">
+    <button class="section-heading section-toggle" type="button" aria-expanded="true" aria-controls="global-cd-{{ group.pk }}" data-collapse-toggle>
+      <span class="section-title"><span class="category-tag">CD</span><span class="section-name">{{ group.name }}</span></span>
+      <span class="section-heading-meta"><span class="count">{{ group_rows|length }} поз.</span><span class="collapse-indicator" aria-hidden="true">▼</span></span>
+    </button>
+    <div id="global-cd-{{ group.pk }}" class="collapsible-content">{% include "warehouse/_global_stock_table.html" %}</div>
   </section>
 {% endfor %}
 
 {% for group, group_rows in tech_groups %}
-  <section class="panel inventory-section">
-    <div class="section-heading">
-      <div><span class="category-tag category-tag-tech">TECH</span><h2>{{ group.name }}</h2></div>
-      <span class="count">{{ group_rows|length }} поз.</span>
-    </div>
-    {% include "warehouse/_global_stock_table.html" %}
+  <section class="panel inventory-section collapsible-section">
+    <button class="section-heading section-toggle" type="button" aria-expanded="true" aria-controls="global-tech-{{ group.pk }}" data-collapse-toggle>
+      <span class="section-title"><span class="category-tag category-tag-tech">TECH</span><span class="section-name">{{ group.name }}</span></span>
+      <span class="section-heading-meta"><span class="count">{{ group_rows|length }} поз.</span><span class="collapse-indicator" aria-hidden="true">▼</span></span>
+    </button>
+    <div id="global-tech-{{ group.pk }}" class="collapsible-content">{% include "warehouse/_global_stock_table.html" %}</div>
   </section>
 {% endfor %}
 
 {% if not rows %}
   <section class="empty-state">
     <span class="empty-code">0</span>
-    {% if query %}<h2>Ничего не найдено</h2><p>Измените запрос или сбросьте поиск.</p>
+    {% if filter_state.is_active %}<h2>Товары по заданным параметрам не найдены</h2><p>Ничего не найдено. Измените условия или сбросьте фильтры.</p>
     {% else %}<h2>Номенклатура пока не создана</h2><p>Добавьте товары через административную панель.</p>{% endif %}
   </section>
 {% endif %}

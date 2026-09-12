@@ -3,69 +3,58 @@ from collections import defaultdict
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.shortcuts import redirect, render
+from django.urls import reverse
 from django.views.decorators.http import require_POST
 
 from catalog.models import CD, Tech
+from catalog.product_filters import (
+    filter_product_querysets,
+    product_filter_context,
+    product_filter_query_string,
+)
 from core.decorators import permission_required_any
-from partners.models import Supplier
-from .models import SupplierCDPrice, SupplierTechPrice
 from .services import update_product_prices, update_supplier_price
 
 
 def _pricing_destination(request):
     if request.user.is_superuser or request.user.has_perm("pricing.view_pricing"):
-        return redirect("pricing:list")
+        destination = reverse("pricing:list")
+        query_string = product_filter_query_string(request.GET)
+        return redirect(f"{destination}?{query_string}" if query_string else destination)
     return redirect("core:home")
 
 
 @permission_required_any("pricing.view_pricing")
 def pricing_list(request):
-    can_view_supplier = request.user.is_superuser or request.user.has_perm("pricing.view_supplier_prices")
-    full_supplier_access = request.user.is_superuser or request.user.has_perm("partners.view_supplier_details")
-    suppliers = []
-    if can_view_supplier:
-        fields = ("id", "letter", "highlight_color", "name") if full_supplier_access else (
-            "id", "letter", "highlight_color"
-        )
-        suppliers = list(Supplier.objects.order_by("letter").values(*fields))
-        for supplier in suppliers:
-            supplier["label"] = supplier.get("name") or f"[{supplier['letter']}]"
-
-    cd_prices = {(item.cd_id, item.supplier_id): item.price for item in SupplierCDPrice.objects.all()} if can_view_supplier else {}
-    tech_prices = {
-        (item.tech_id, item.supplier_id): item.price for item in SupplierTechPrice.objects.all()
-    } if can_view_supplier else {}
+    filters, filter_context = product_filter_context(request.GET)
+    cds = CD.objects.select_related("platform").order_by("platform__name", "name", "id")
+    tech_items = Tech.objects.select_related("brand", "product_type").order_by(
+        "product_type__name", "name", "id"
+    )
+    cds, tech_items = filter_product_querysets(cds, tech_items, filters)
     cd_groups = defaultdict(list)
-    for product in CD.objects.select_related("platform").order_by("platform__name", "name", "id"):
+    for product in cds:
         cd_groups[product.platform].append({
             "type": "cd",
             "product": product,
-            "supplier_prices": [
-                {"supplier": supplier, "price": cd_prices.get((product.pk, supplier["id"]), 0)}
-                for supplier in suppliers
-            ],
         })
     tech_groups = defaultdict(list)
-    for product in Tech.objects.select_related("brand", "product_type").order_by(
-        "product_type__name", "name", "id"
-    ):
+    for product in tech_items:
         tech_groups[product.product_type].append({
             "type": "tech",
             "product": product,
-            "supplier_prices": [
-                {"supplier": supplier, "price": tech_prices.get((product.pk, supplier["id"]), 0)}
-                for supplier in suppliers
-            ],
         })
-    return render(request, "pricing/list.html", {
-        "cd_groups": cd_groups.items(),
-        "tech_groups": tech_groups.items(),
-        "suppliers": suppliers,
-        "can_change_supplier": request.user.is_superuser or request.user.has_perm("pricing.change_supplier_prices"),
+    context = {
+        "query": filters.search,
+        "cd_groups": list(cd_groups.items()),
+        "tech_groups": list(tech_groups.items()),
+        "filter_query": product_filter_query_string(request.GET),
         "can_change_retail": request.user.is_superuser or request.user.has_perm("pricing.change_retail_price"),
         "can_change_wholesale": request.user.is_superuser or request.user.has_perm("pricing.change_wholesale_price"),
         "can_change_yandex": request.user.is_superuser or request.user.has_perm("pricing.change_yandex_market_price"),
-    })
+    }
+    context.update(filter_context)
+    return render(request, "pricing/list.html", context)
 
 
 @require_POST

@@ -1,7 +1,61 @@
 {% extends "base.html" %}
 {% block title %}{{ sale.visible_id }} · ReSOURCE{% endblock %}
 {% block content %}
-<div class="page-heading"><div><p class="eyebrow">Продажа</p><h1>{{ sale.visible_id }}</h1><p class="muted">{{ sale.created_at|date:"d.m.Y H:i" }} · {{ sale.created_by.full_name|default:sale.created_by.username }}</p></div><div class="heading-actions">{% if sale.is_postpay_editable and perms.sales.edit_unpaid_postpay_sale or sale.is_postpay_editable and user.is_superuser %}<a class="button button-secondary" href="{% url 'sales:edit' sale.pk %}">Изменить состав</a>{% endif %}{% if perms.sales.view_sales or user.is_superuser %}<a class="button button-secondary" href="{% url 'sales:list' %}">К списку</a>{% endif %}</div></div>
-<div class="detail-grid"><section class="panel"><h2>Параметры</h2><dl class="details"><dt>Склад</dt><dd>{{ sale.warehouse.name }}</dd>{% if sale.consignment_platform %}<dt>Площадка реализации</dt><dd>{{ sale.consignment_platform.name }}</dd>{% endif %}<dt>Тип цены</dt><dd>{{ sale.get_price_type_display }}</dd><dt>Тип продажи</dt><dd>{{ sale.get_sale_type_display }}</dd><dt>Способ оплаты</dt><dd>{{ sale.get_payment_method_display }}</dd><dt>Статус заказа</dt><dd>{{ sale.get_order_status_display }}</dd><dt>Статус оплаты</dt><dd>{{ sale.get_payment_status_display }}</dd>{% if sale.completed_at %}<dt>Завершена</dt><dd>{{ sale.completed_at|date:"d.m.Y H:i" }}</dd>{% endif %}{% if cash_transaction %}<dt>Кассовая операция</dt><dd>#{{ cash_transaction.pk }} · {{ cash_transaction.amount }}</dd>{% endif %}</dl><div class="heading-actions status-action">{% if next_status %}<form method="post" action="{% url 'sales:advance' sale.pk %}">{% csrf_token %}<input type="hidden" name="next_status" value="{{ next_status.0 }}"><button class="button button-secondary" type="submit">{{ next_status.1 }}</button></form>{% endif %}{% if sale.payment_status == 'unpaid' and perms.sales.mark_sale_paid or sale.payment_status == 'unpaid' and user.is_superuser %}<form method="post" action="{% url 'sales:mark_paid' sale.pk %}">{% csrf_token %}<button class="button" type="submit">Отметить как оплаченную</button></form>{% endif %}</div></section><section class="panel summary-card"><h2>Итоги</h2><dl class="summary"><dt>Позиций</dt><dd>{{ rows|length }}</dd><dt>Единиц</dt><dd>{{ sale.total_units }}</dd><dt class="grand">Итоговая сумма</dt><dd class="grand">{{ sale.total_amount }}</dd></dl></section></div>
+<div class="page-heading">
+  <div>
+    <p class="eyebrow">Продажа</p>
+    <h1>{{ sale.visible_id }} {% if sale.is_cancelled %}<span class="badge badge-danger">Отменена</span>{% endif %}</h1>
+    <p class="muted">{{ sale.created_at|date:"d.m.Y H:i" }} · {{ sale.created_by.full_name|default:sale.created_by.username }}</p>
+  </div>
+  <div class="heading-actions">
+    {% if sale.is_postpay_editable and perms.sales.edit_unpaid_postpay_sale or sale.is_postpay_editable and user.is_superuser %}<a class="button button-secondary" href="{% url 'sales:edit' sale.pk %}">Изменить состав</a>{% endif %}
+    {% if can_cancel %}<button class="button button-danger" type="button" data-dialog-open="sale-cancel-dialog">Отменить продажу</button>{% endif %}
+    {% if perms.sales.view_sales or user.is_superuser %}<a class="button button-secondary" href="{% url 'sales:list' %}">К списку</a>{% endif %}
+  </div>
+</div>
+
+{% if sale.is_cancelled %}
+<section class="alert alert-error cancellation-summary">
+  <strong>Продажа отменена {{ sale.cancelled_at|date:"d.m.Y H:i" }}</strong>
+  <span>Отменил: {{ sale.cancelled_by.full_name|default:sale.cancelled_by.username }} · Возвращено: {{ sale.refunded_amount }} ₽</span>
+  {% if sale.payment_method == 'bank_account' and sale.refunded_amount %}<span>Безналичная оплата возвращена и зафиксирована в записи продажи; касса не изменялась.</span>{% endif %}
+  <span>Причина: {{ sale.cancellation_comment }}</span>
+</section>
+{% endif %}
+
+<div class="detail-grid">
+  <section class="panel">
+    <h2>Параметры</h2>
+    <dl class="details">
+      <dt>Склад</dt><dd>{{ sale.warehouse.name }}</dd>
+      {% if sale.consignment_platform %}<dt>Площадка реализации</dt><dd>{{ sale.consignment_platform.name }}</dd>{% endif %}
+      <dt>Тип цены</dt><dd>{{ sale.get_price_type_display }}</dd>
+      <dt>Тип продажи</dt><dd>{{ sale.get_sale_type_display }}</dd>
+      <dt>Способ оплаты</dt><dd>{{ sale.get_payment_method_display }}</dd>
+      <dt>Статус заказа</dt><dd>{{ sale.get_order_status_display }}</dd>
+      <dt>Статус оплаты</dt><dd>{{ sale.get_payment_status_display }}</dd>
+      {% if sale.completed_at %}<dt>Завершена</dt><dd>{{ sale.completed_at|date:"d.m.Y H:i" }}</dd>{% endif %}
+      {% for operation in cash_transactions %}<dt>{{ operation.get_operation_type_display }}</dt><dd>#{{ operation.pk }} · {{ operation.signed_amount }} ₽</dd>{% endfor %}
+    </dl>
+    {% if not sale.is_cancelled %}<div class="heading-actions status-action">
+      {% if next_status %}<form method="post" action="{% url 'sales:advance' sale.pk %}">{% csrf_token %}<input type="hidden" name="next_status" value="{{ next_status.0 }}"><button class="button button-secondary" type="submit">{{ next_status.1 }}</button></form>{% endif %}
+      {% if sale.payment_status == 'unpaid' and perms.sales.mark_sale_paid or sale.payment_status == 'unpaid' and user.is_superuser %}<form method="post" action="{% url 'sales:mark_paid' sale.pk %}">{% csrf_token %}<button class="button" type="submit">Отметить как оплаченную</button></form>{% endif %}
+    </div>{% endif %}
+  </section>
+  <section class="panel summary-card"><h2>Итоги</h2><dl class="summary"><dt>Позиций</dt><dd>{{ rows|length }}</dd><dt>Единиц</dt><dd>{{ sale.total_units }}</dd><dt class="grand">Итоговая сумма</dt><dd class="grand">{{ sale.total_amount }}</dd></dl></section>
+</div>
+
 <section class="panel table-panel"><div class="table-scroll"><table><thead><tr><th>Тип</th><th>Название</th><th>Артикул</th><th class="numeric">Количество</th><th class="numeric">Цена единицы</th><th class="numeric">Сумма</th></tr></thead><tbody>{% for row in rows %}<tr><td><span class="badge">{{ row.type }}</span></td><td class="strong">{{ row.name }}</td><td class="mono">{{ row.sku }}</td><td class="numeric">{{ row.quantity }}</td><td class="numeric">{{ row.unit_price }}</td><td class="numeric strong">{{ row.line_total }}</td></tr>{% endfor %}</tbody></table></div></section>
+
+{% if can_cancel %}
+<dialog id="sale-cancel-dialog" class="confirmation-dialog" aria-labelledby="sale-cancel-title">
+  <form method="post" action="{% url 'sales:cancel' sale.pk %}">
+    {% csrf_token %}
+    <h2 id="sale-cancel-title">Отменить продажу {{ sale.visible_id }}?</h2>
+    <p>Товары будут возвращены на склад «{{ sale.warehouse.name }}»{% if sale.payment_status == 'paid' %}, а принятая оплата будет отмечена как возвращённая{% endif %}. Это действие нельзя отменить.</p>
+    <div class="field"><label for="sale-cancellation-comment">Причина отмены</label><textarea id="sale-cancellation-comment" name="cancellation_comment" rows="3" required></textarea></div>
+    <div class="dialog-actions"><button class="button button-secondary" type="button" data-dialog-close>Не отменять</button><button class="button button-danger" type="submit">Да, отменить продажу</button></div>
+  </form>
+</dialog>
+{% endif %}
 {% endblock %}

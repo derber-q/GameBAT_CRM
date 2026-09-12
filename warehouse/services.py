@@ -8,6 +8,7 @@ from django.utils import timezone
 
 from catalog.audit import record_product_changes, stock_change
 from catalog.models import CD, ProductChangeEvent, Tech
+from .storage_services import clear_storage_locations_if_zero
 from .models import (
     CDWarehouseStock,
     CDWarehouseTransferItem,
@@ -118,6 +119,13 @@ def create_transfer(*, actor, source_warehouse_id, destination_warehouse_id, lin
                 old_quantity=old_quantity,
                 new_quantity=stock.quantity,
             )],
+        )
+        clear_storage_locations_if_zero(
+            stock=stock,
+            actor=actor,
+            action_kind=ProductChangeEvent.ActionKind.WAREHOUSE_TRANSFER,
+            action_object_id=transfer.pk,
+            action_label=f"Перемещение №{transfer.pk}",
         )
         if line["product_type"] == "cd":
             cd_items.append(CDWarehouseTransferItem(transfer=transfer, cd=products[key], quantity=line["quantity"]))

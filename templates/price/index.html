@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Прайс · ReSOURCE{% endblock %}
+{% block extra_head %}<script src="{% static 'js/price.js' %}" defer></script>{% endblock %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">Excel-контур ReSOURCE</p><h1>Прайс</h1><p class="muted">Складские прайсы, предложения поставщиков и закупочные цены.</p></div></div>
+<div class="price-section-grid">
+  <section class="panel"><h2>Клиентские складские прайсы</h2><p class="muted">Только положительный остаток выбранного склада и товары с заполненной ценой.</p>
+    {% if can_generate_retail %}<form method="post" action="{% url 'price:retail_export' %}" class="stacked-form" data-retail-export>{% csrf_token %}<div class="field"><label>Склад для розничного прайса</label>{{ warehouse_form.warehouse }}</div><button class="button" type="submit">Скачать розничный XLSX</button><p class="muted" data-retail-result aria-live="polite"></p></form>{% endif %}
+    {% if can_generate_wholesale %}<form method="post" action="{% url 'price:wholesale_export' %}" class="stacked-form price-form-gap">{% csrf_token %}<div class="field"><label>Склад для оптового прайса</label>{{ warehouse_form.warehouse }}</div><button class="button" type="submit">Скачать оптовый XLSX</button></form>{% endif %}
+  </section>
+  <section class="panel"><h2>Прайсы поставщиков</h2><p class="muted">Новая загрузка полностью заменяет текущий снимок выбранного поставщика. Цены — только AED.</p>
+    {% if can_download_supplier %}<a class="button button-secondary" href="{% url 'price:supplier_template' %}">Скачать шаблон поставщика</a>{% endif %}
+    {% if can_upload_supplier %}<form method="post" enctype="multipart/form-data" action="{% url 'price:supplier_upload' %}" class="stacked-form price-form-gap">{% csrf_token %}{% for field in supplier_upload_form %}<div class="field"><label>{{ field.label }}</label>{{ field }}</div>{% endfor %}<button class="button" type="submit">Загрузить прайс</button></form>{% endif %}
+    {% if suppliers %}<div class="supplier-snapshot-list">{% for row in suppliers %}<span class="badge">{{ row.label }}{% if row.price_count != None %}: {{ row.price_count }} цен{% endif %}</span>{% endfor %}</div>{% endif %}
+  </section>
+  <section class="panel"><h2>Закупочный прайс</h2><p class="muted">Лучший поставщик фиксируется по минимальной цене, числу уникальных побед и алфавиту.</p>
+    {% if can_create_procurement %}<form method="post" action="{% url 'price:procurement_create' %}" class="stacked-form">{% csrf_token %}<div class="field"><label>{{ procurement_form.exchange_rate.label }}</label>{{ procurement_form.exchange_rate }}</div><button class="button" type="submit">Создать закупочный прайс</button></form>{% endif %}
+    {% if price_lists %}<div class="price-history"><h3>Последние версии</h3>{% for item in price_lists %}<a href="{% url 'price:procurement_detail' item.pk %}">№{{ item.pk }} · {{ item.created_at|date:"d.m.Y H:i" }} · {{ item.items.count }} поз.</a>{% endfor %}</div>{% endif %}
+  </section>
+  {% if can_change_settings %}<section class="panel"><h2>Данные для прайс-листов</h2><form method="post" enctype="multipart/form-data" action="{% url 'price:settings_update' %}" class="stacked-form">{% csrf_token %}{% for field in settings_form %}<div class="field"><label>{{ field.label }}</label>{{ field }}{% for error in field.errors %}<span class="error-text">{{ error }}</span>{% endfor %}</div>{% endfor %}<button class="button" type="submit">Сохранить данные</button></form></section>{% endif %}
+</div>
+{% endblock %}

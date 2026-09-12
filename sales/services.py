@@ -1,20 +1,29 @@
 """Атомарные продажи, статусы, оплаты и изменение неоплаченной постоплаты."""
 import logging
+from dataclasses import dataclass
 from decimal import Decimal, ROUND_HALF_UP
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
 
-from cash.services import credit_sale_payment
+from cash.services import credit_sale_payment, refund_sale_payment
 from catalog.audit import record_product_changes, stock_change
 from catalog.models import CD, ProductChangeEvent, Tech
 from warehouse.models import CDWarehouseStock, TechWarehouseStock, Warehouse
 from warehouse.services import normalise_product_lines
+from warehouse.storage_services import clear_storage_locations_if_zero
 from .models import Sale, SaleCDItem, SaleTechItem
 
 logger = logging.getLogger("gamebat.business")
 CENT = Decimal("0.01")
+
+
+@dataclass(frozen=True)
+class SaleCancellationResult:
+    sale: Sale
+    cancelled: bool
+    refund_transaction: object | None = None
 
 
 def _configuration(product_type):
@@ -130,6 +139,13 @@ def create_sale(*, actor, warehouse_id, price_type, sale_type, payment_method, l
                 new_quantity=stock.quantity,
             )],
         )
+        clear_storage_locations_if_zero(
+            stock=stock,
+            actor=actor,
+            action_kind=ProductChangeEvent.ActionKind.SALE,
+            action_object_id=sale.pk,
+            action_label=f"Продажа {sale.visible_id}",
+        )
         values = dict(
             sale=sale, quantity=line["quantity"], unit_price=price, line_total=line_total,
             product_name_snapshot=product.name, article_snapshot=product.sku,
@@ -152,6 +168,8 @@ def create_sale(*, actor, warehouse_id, price_type, sale_type, payment_method, l
 @transaction.atomic
 def advance_order_status(*, actor, sale_id, next_status):
     sale = Sale.objects.select_for_update().get(pk=sale_id)
+    if sale.is_cancelled:
+        raise ValidationError("Отменённую продажу изменять нельзя.")
     transitions = {
         Sale.OrderStatus.CREATED: Sale.OrderStatus.ASSEMBLED,
         Sale.OrderStatus.ASSEMBLED: Sale.OrderStatus.SHIPPED,
@@ -171,6 +189,8 @@ def advance_order_status(*, actor, sale_id, next_status):
 @transaction.atomic
 def mark_sale_paid(*, actor, sale_id):
     sale = Sale.objects.select_for_update().select_related("warehouse").get(pk=sale_id)
+    if sale.is_cancelled:
+        raise ValidationError("Отменённую продажу оплачивать нельзя.")
     if sale.payment_status == Sale.PaymentStatus.PAID:
         raise ValidationError("Заказ уже оплачен.")
     if sale.payment_method == Sale.PaymentMethod.CASH_POSTPAY:
@@ -191,6 +211,8 @@ def edit_postpay_sale_items(*, actor, sale_id, lines):
     """Применяет разницы stock одним блоком; существующие строки сохраняют unit_price."""
     prepared = normalise_product_lines(lines)
     sale = Sale.objects.select_for_update().get(pk=sale_id)
+    if sale.is_cancelled:
+        raise ValidationError("Состав отменённой продажи изменять нельзя.")
     if sale.payment_method != Sale.PaymentMethod.CASH_POSTPAY:
         raise ValidationError("Редактировать можно только продажу с наличной постоплатой.")
     if sale.payment_status == Sale.PaymentStatus.PAID:
@@ -241,6 +263,13 @@ def edit_postpay_sale_items(*, actor, sale_id, lines):
                 new_quantity=stock.quantity,
             )],
         )
+        clear_storage_locations_if_zero(
+            stock=stock,
+            actor=actor,
+            action_kind=ProductChangeEvent.ActionKind.SALE,
+            action_object_id=sale.pk,
+            action_label=f"Продажа {sale.visible_id}",
+        )
 
     for key, item in list(existing.items()):
         new_quantity = desired.get(key, 0)
@@ -274,3 +303,86 @@ def edit_postpay_sale_items(*, actor, sale_id, lines):
     sale.save(update_fields=("total_amount", "updated_at"))
     logger.info("Состав продажи изменён: user_id=%s sale_id=%s total=%s", actor.pk, sale.pk, sale.total_amount)
     return sale
+
+
+@transaction.atomic
+def cancel_sale(*, actor, sale_id, comment):
+    """Возвращает товары и фактическую оплату, сохраняя продажу и все исходные строки."""
+    comment = str(comment or "").strip()
+    if not comment:
+        raise ValidationError("Укажите причину отмены продажи.")
+    sale = Sale.objects.select_for_update().select_related("warehouse").get(pk=sale_id)
+    if sale.is_cancelled:
+        return SaleCancellationResult(sale=sale, cancelled=False)
+    Warehouse.objects.select_for_update().get(pk=sale.warehouse_id)
+
+    lines = []
+    locked_items = []
+    for product_type, item_model, product_field in (
+        ("cd", SaleCDItem, "cd"), ("tech", SaleTechItem, "tech")
+    ):
+        items = list(
+            item_model.objects.select_for_update().select_related(product_field)
+            .filter(sale=sale).order_by(product_field)
+        )
+        locked_items.extend((product_type, product_field, item) for item in items)
+        lines.extend({
+            "product_type": product_type,
+            "product_id": getattr(item, f"{product_field}_id"),
+            "quantity": item.quantity,
+        } for item in items)
+    if not lines:
+        raise ValidationError("В продаже нет товарных позиций для возврата.")
+    products, stocks = _locked_inventory(sale.warehouse_id, lines)
+
+    refund_transaction = None
+    refund_amount = Decimal("0.00")
+    if sale.payment_status == Sale.PaymentStatus.PAID:
+        if sale.payment_method in (Sale.PaymentMethod.CASH, Sale.PaymentMethod.CASH_POSTPAY):
+            refund_transaction = refund_sale_payment(
+                sale=sale, actor=actor, comment=f"Отмена {sale.visible_id}: {comment}",
+            )
+            refund_amount = refund_transaction.amount
+        elif sale.payment_method == Sale.PaymentMethod.BANK_ACCOUNT:
+            refund_amount = sale.total_amount
+
+    for product_type, product_field, item in locked_items:
+        key = (product_type, getattr(item, f"{product_field}_id"))
+        product = products[key]
+        stock = stocks.get(key)
+        if stock is None:
+            _, stock_model, _, _ = _configuration(product_type)
+            stock = stock_model(warehouse_id=sale.warehouse_id, **{product_field: product})
+        old_quantity = stock.quantity
+        stock.quantity += item.quantity
+        stock.full_clean()
+        stock.save()
+        record_product_changes(
+            actor=actor,
+            instance=product,
+            source=ProductChangeEvent.Source.CRM,
+            action_kind=ProductChangeEvent.ActionKind.SALE,
+            action_object_id=sale.pk,
+            action_label=f"Отмена продажи {sale.visible_id}",
+            changes=[stock_change(
+                warehouse=sale.warehouse,
+                old_quantity=old_quantity,
+                new_quantity=stock.quantity,
+            )],
+        )
+
+    sale.cancelled_at = timezone.now()
+    sale.cancelled_by = actor
+    sale.cancellation_comment = comment
+    sale.refunded_amount = refund_amount
+    sale.full_clean()
+    sale.save(update_fields=(
+        "cancelled_at", "cancelled_by", "cancellation_comment", "refunded_amount", "updated_at",
+    ))
+    logger.info(
+        "Продажа отменена: user_id=%s sale_id=%s warehouse_id=%s refund=%s payment=%s",
+        actor.pk, sale.pk, sale.warehouse_id, refund_amount, sale.payment_method,
+    )
+    return SaleCancellationResult(
+        sale=sale, cancelled=True, refund_transaction=refund_transaction,
+    )

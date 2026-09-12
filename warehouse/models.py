@@ -1,4 +1,5 @@
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
 
 from catalog.models import CD, Tech
@@ -14,6 +15,7 @@ class Warehouse(models.Model):
         permissions = [
             ("view_global_stock", "Может просматривать общие остатки"),
             ("view_warehouse_stock", "Может просматривать остатки отдельного склада"),
+            ("change_storage_location", "Может изменять места хранения товаров"),
         ]
 
     def __str__(self):
@@ -26,6 +28,64 @@ class WarehouseStockBase(models.Model):
 
     class Meta:
         abstract = True
+
+
+class WarehouseStorageLocation(models.Model):
+    """Каноническое физическое место, уникальное внутри конкретного склада."""
+    warehouse = models.ForeignKey(
+        Warehouse, on_delete=models.CASCADE, related_name="storage_locations", verbose_name="Склад"
+    )
+    room = models.CharField("Помещение", max_length=1)
+    rack = models.PositiveIntegerField("Стеллаж")
+    shelf = models.PositiveIntegerField("Полка")
+    columns = models.JSONField("Столбцы", default=list, blank=True)
+    canonical_value = models.CharField("Каноническое значение", max_length=255, editable=False)
+
+    class Meta:
+        ordering = ("room", "rack", "shelf", "canonical_value", "id")
+        verbose_name = "место хранения на складе"
+        verbose_name_plural = "места хранения на складах"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("warehouse", "canonical_value"), name="unique_storage_location_per_warehouse"
+            ),
+            models.CheckConstraint(condition=models.Q(rack__gt=0), name="storage_location_rack_positive"),
+            models.CheckConstraint(condition=models.Q(shelf__gt=0), name="storage_location_shelf_positive"),
+        ]
+        indexes = [
+            models.Index(fields=("warehouse", "room", "rack", "shelf"), name="storage_location_lookup"),
+        ]
+
+    def _normalise_components(self):
+        from .storage_locations import StorageLocationValue
+
+        try:
+            columns = tuple(sorted({int(value) for value in (self.columns or [])}))
+            value = StorageLocationValue(
+                room=str(self.room or "").upper(), rack=int(self.rack), shelf=int(self.shelf), columns=columns,
+            )
+        except (TypeError, ValueError) as exc:
+            raise ValidationError("Некорректные компоненты места хранения.") from exc
+        if len(value.room) != 1 or not ("A" <= value.room <= "Z"):
+            raise ValidationError({"room": "Укажите одну латинскую букву A–Z."})
+        if value.rack <= 0 or value.shelf <= 0 or any(column <= 0 for column in value.columns):
+            raise ValidationError("Стеллаж, полка и столбцы должны быть положительными целыми числами.")
+        self.room = value.room
+        self.rack = value.rack
+        self.shelf = value.shelf
+        self.columns = list(value.columns)
+        self.canonical_value = value.canonical
+
+    def full_clean(self, *args, **kwargs):
+        self._normalise_components()
+        return super().full_clean(*args, **kwargs)
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.warehouse}: {self.canonical_value}"
 
 
 class CDWarehouseStock(WarehouseStockBase):
@@ -62,6 +122,64 @@ class TechWarehouseStock(WarehouseStockBase):
 
     def __str__(self):
         return f"{self.warehouse}: {self.tech}"
+
+
+class WarehouseStorageAssignmentBase(models.Model):
+    location = models.ForeignKey(
+        WarehouseStorageLocation, on_delete=models.PROTECT, verbose_name="Место хранения"
+    )
+    position = models.PositiveSmallIntegerField("Порядок", default=0)
+
+    class Meta:
+        abstract = True
+        ordering = ("position", "id")
+
+    def clean(self):
+        super().clean()
+        if self.location_id and self.stock_id and self.location.warehouse_id != self.stock.warehouse_id:
+            raise ValidationError("Место хранения и товарный остаток должны относиться к одному складу.")
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+
+class CDWarehouseStorageAssignment(WarehouseStorageAssignmentBase):
+    stock = models.ForeignKey(
+        CDWarehouseStock, on_delete=models.CASCADE, related_name="storage_assignments",
+        verbose_name="Остаток CD",
+    )
+    location = models.ForeignKey(
+        WarehouseStorageLocation, on_delete=models.PROTECT, related_name="cd_assignments",
+        verbose_name="Место хранения",
+    )
+
+    class Meta(WarehouseStorageAssignmentBase.Meta):
+        verbose_name = "размещение CD на складе"
+        verbose_name_plural = "размещения CD на складах"
+        constraints = [
+            models.UniqueConstraint(fields=("stock", "location"), name="unique_cd_stock_storage_location"),
+            models.UniqueConstraint(fields=("stock", "position"), name="unique_cd_stock_storage_position"),
+        ]
+
+
+class TechWarehouseStorageAssignment(WarehouseStorageAssignmentBase):
+    stock = models.ForeignKey(
+        TechWarehouseStock, on_delete=models.CASCADE, related_name="storage_assignments",
+        verbose_name="Остаток Tech",
+    )
+    location = models.ForeignKey(
+        WarehouseStorageLocation, on_delete=models.PROTECT, related_name="tech_assignments",
+        verbose_name="Место хранения",
+    )
+
+    class Meta(WarehouseStorageAssignmentBase.Meta):
+        verbose_name = "размещение техники на складе"
+        verbose_name_plural = "размещения техники на складах"
+        constraints = [
+            models.UniqueConstraint(fields=("stock", "location"), name="unique_tech_stock_storage_location"),
+            models.UniqueConstraint(fields=("stock", "position"), name="unique_tech_stock_storage_position"),
+        ]
 
 
 class WarehouseTransfer(models.Model):

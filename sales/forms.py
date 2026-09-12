@@ -10,7 +10,7 @@ class SaleCreateForm(forms.Form):
     sale_type = forms.ChoiceField(label="Тип продажи", choices=Sale.SaleType.choices)
     payment_method = forms.ChoiceField(label="Способ оплаты", choices=Sale.PaymentMethod.choices)
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, imported_wholesale=False, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["price_type"].choices = [
             choice for choice in Sale.PriceType.choices if choice[0] != Sale.PriceType.CONSIGNMENT
@@ -18,3 +18,10 @@ class SaleCreateForm(forms.Form):
         self.fields["sale_type"].choices = [
             choice for choice in Sale.SaleType.choices if choice[0] != Sale.SaleType.CONSIGNMENT
         ]
+        if imported_wholesale:
+            self.fields["warehouse"].disabled = True
+            self.fields["price_type"].disabled = True
+
+
+class WholesalePriceImportForm(forms.Form):
+    file = forms.FileField(label="Заполненный оптовый XLSX")

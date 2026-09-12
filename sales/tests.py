@@ -211,3 +211,21 @@ class SalesPermissionTests(TestCase):
         self.assertEqual(self.client.post(reverse("sales:edit", args=(999,))).status_code, 403)
         self.assertEqual(self.client.post(reverse("sales:advance", args=(999,))).status_code, 403)
         self.assertEqual(self.client.post(reverse("sales:mark_paid", args=(999,))).status_code, 403)
+
+
+class SalesCreateBarcodeUiTests(TestCase):
+    def test_create_page_explicitly_offers_barcode_search_and_fresh_javascript(self):
+        user = User.objects.create_superuser("barcode-admin", password="StrongAdmin!123")
+        Warehouse.objects.create(name="Склад")
+        self.client.force_login(user)
+
+        response = self.client.get(reverse("sales:create"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Товар / штрихкод")
+        self.assertContains(response, "введите/отсканируйте штрихкод")
+        self.assertContains(response, "Добавить по штрихкоду")
+        self.assertContains(response, 'id="sale-barcode-input"')
+        self.assertContains(response, "data-sale-barcode-add")
+        self.assertContains(response, "stock-lines.js?v=barcode-search-3")
+        self.assertContains(response, "gamebat.css?v=barcode-sale-3")

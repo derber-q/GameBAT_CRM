@@ -1,0 +1,10 @@
+<form method="post" action="{% url 'warehouse:storage_location_update' warehouse.pk product_type row.product.pk %}" class="storage-location-form" data-storage-location-form data-autocomplete-url="{% url 'warehouse:storage_location_autocomplete' warehouse.pk %}">
+  {% csrf_token %}
+  <div class="autocomplete-wrap">
+    <input type="text" name="storage_location" value="{{ row.storage_locations }}" placeholder="" autocomplete="off" aria-label="Место хранения для {{ row.product.name }}" data-storage-location-input>
+    <div class="suggestions storage-location-suggestions" role="listbox"></div>
+  </div>
+  <button class="button button-small" type="submit">Сохранить</button>
+  <span class="storage-location-feedback" data-storage-location-feedback aria-live="polite"></span>
+  <span class="error-text storage-location-error" data-storage-location-error hidden>Некорректный формат места хранения</span>
+</form>

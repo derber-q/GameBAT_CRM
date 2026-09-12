@@ -6,5 +6,6 @@ urlpatterns = [
     path("", views.supply_list, name="list"),
     path("new/", views.supply_create, name="create"),
     path("autocomplete/", views.product_autocomplete, name="autocomplete"),
+    path("<int:pk>/cancel/", views.supply_cancel, name="cancel"),
     path("<int:pk>/", views.supply_detail, name="detail"),
 ]

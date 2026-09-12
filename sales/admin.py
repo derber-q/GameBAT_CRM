@@ -18,10 +18,11 @@ class SaleHistoryAdmin(admin.ModelAdmin):
 class SaleAdmin(SaleHistoryAdmin):
     list_display = (
         "visible_id", "warehouse", "consignment_platform", "sale_type", "payment_method", "order_status",
-        "payment_status", "total_amount", "created_at",
+        "payment_status", "total_amount", "refunded_amount", "cancelled_at", "cancelled_by", "created_at",
     )
     list_filter = (
-        "warehouse", "consignment_platform", "sale_type", "payment_method", "order_status", "payment_status"
+        "warehouse", "consignment_platform", "sale_type", "payment_method", "order_status", "payment_status",
+        "cancelled_at",
     )
     search_fields = ("visible_id", "created_by__username", "created_by__full_name")
     date_hierarchy = "created_at"

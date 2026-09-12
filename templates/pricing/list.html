@@ -5,25 +5,37 @@
   <div>
     <p class="eyebrow">Текущие цены</p>
     <h1>Ценообразование</h1>
-    <p class="muted">Себестоимость рассчитывается поставками; продажные и поставщицкие цены управляются отдельно.</p>
+    <p class="muted">Себестоимость рассчитывается поставками; продажные цены редактируются в таблице.</p>
   </div>
 </div>
 
+{% include "catalog/_product_filters.html" %}
+
 {% for group, rows in cd_groups %}
-  <section class="panel inventory-section">
-    <div class="section-heading"><div><span class="category-tag">CD</span><h2>{{ group.name }}</h2></div><span class="count">{{ rows|length }} поз.</span></div>
-    {% include "pricing/_price_table.html" with rows=rows %}
+  <section class="panel inventory-section collapsible-section">
+    <button class="section-heading section-toggle" type="button" aria-expanded="true" aria-controls="pricing-cd-{{ group.pk }}" data-collapse-toggle>
+      <span class="section-title"><span class="category-tag">CD</span><span class="section-name">{{ group.name }}</span></span>
+      <span class="section-heading-meta"><span class="count">{{ rows|length }} поз.</span><span class="collapse-indicator" aria-hidden="true">▼</span></span>
+    </button>
+    <div id="pricing-cd-{{ group.pk }}" class="collapsible-content">{% include "pricing/_price_table.html" with rows=rows %}</div>
   </section>
 {% endfor %}
 
 {% for group, rows in tech_groups %}
-  <section class="panel inventory-section">
-    <div class="section-heading"><div><span class="category-tag category-tag-tech">TECH</span><h2>{{ group.name }}</h2></div><span class="count">{{ rows|length }} поз.</span></div>
-    {% include "pricing/_price_table.html" with rows=rows %}
+  <section class="panel inventory-section collapsible-section">
+    <button class="section-heading section-toggle" type="button" aria-expanded="true" aria-controls="pricing-tech-{{ group.pk }}" data-collapse-toggle>
+      <span class="section-title"><span class="category-tag category-tag-tech">TECH</span><span class="section-name">{{ group.name }}</span></span>
+      <span class="section-heading-meta"><span class="count">{{ rows|length }} поз.</span><span class="collapse-indicator" aria-hidden="true">▼</span></span>
+    </button>
+    <div id="pricing-tech-{{ group.pk }}" class="collapsible-content">{% include "pricing/_price_table.html" with rows=rows %}</div>
   </section>
 {% endfor %}
 
 {% if not cd_groups and not tech_groups %}
-  <section class="empty-state"><span class="empty-code">0</span><h2>Номенклатура пока не создана</h2><p>Добавьте товары через административную панель.</p></section>
+  <section class="empty-state">
+    <span class="empty-code">0</span>
+    {% if filter_state.is_active %}<h2>Товары по заданным параметрам не найдены</h2><p>Измените условия или сбросьте фильтры.</p>
+    {% else %}<h2>Номенклатура пока не создана</h2><p>Добавьте товары через административную панель.</p>{% endif %}
+  </section>
 {% endif %}
 {% endblock %}

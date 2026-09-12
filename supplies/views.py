@@ -4,18 +4,19 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from django.db.models import Count, Q, Sum
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.views.decorators.http import require_POST
 
 from catalog.models import CD, Tech
 from core.decorators import permission_required_any
 from partners.models import Supplier
 from warehouse.models import CDWarehouseStock, TechWarehouseStock, Warehouse
 from .models import Supply
-from .services import accept_supply
+from .services import accept_supply, cancel_supply
 
 
 @permission_required("supplies.view_supply", raise_exception=True)
 def supply_list(request):
-    supplies = list(Supply.objects.select_related("accepted_by", "warehouse").annotate(
+    supplies = list(Supply.objects.select_related("accepted_by", "warehouse", "cancelled_by").annotate(
         cd_count=Count("cd_items", distinct=True), tech_count=Count("tech_items", distinct=True)
     ))
     for supply in supplies:
@@ -127,7 +128,9 @@ def supply_create(request):
 
 @permission_required("supplies.view_supply", raise_exception=True)
 def supply_detail(request, pk):
-    supply = get_object_or_404(Supply.objects.select_related("accepted_by", "warehouse"), pk=pk)
+    supply = get_object_or_404(
+        Supply.objects.select_related("accepted_by", "warehouse", "cancelled_by"), pk=pk
+    )
     full_supplier_access = request.user.is_superuser or request.user.has_perm("partners.view_supplier_details")
     rows = []
     for item in supply.cd_items.all():
@@ -154,7 +157,30 @@ def supply_detail(request, pk):
         "expenses": supply.expenses.all(),
         "position_count": len(rows),
         "cost_calculations": supply.cost_calculations.select_related("cd", "tech"),
+        "can_cancel": not supply.is_cancelled and (
+            request.user.is_superuser or request.user.has_perm("supplies.cancel_supply")
+        ),
     })
+
+
+@require_POST
+@permission_required("supplies.cancel_supply", raise_exception=True)
+def supply_cancel(request, pk):
+    try:
+        result = cancel_supply(
+            actor=request.user, supply_id=pk, comment=request.POST.get("cancellation_comment"),
+        )
+    except (ValidationError, Supply.DoesNotExist) as exc:
+        messages.error(
+            request,
+            " ".join(exc.messages) if isinstance(exc, ValidationError) else "Приход не найден.",
+        )
+    else:
+        if result.cancelled:
+            messages.success(request, f"Приход №{result.supply.pk} отменён.")
+        else:
+            messages.info(request, "Приход уже был отменён ранее.")
+    return redirect("supplies:detail", pk=pk)
 
 
 @permission_required_any(
@@ -170,8 +196,12 @@ def product_autocomplete(request):
         warehouse_id = None
     results = []
     if len(query) >= 2:
-        cds = CD.objects.filter(Q(name__icontains=query) | Q(sku__icontains=query)).select_related("platform")[:10]
-        tech = Tech.objects.filter(Q(name__icontains=query) | Q(sku__icontains=query)).select_related("product_type")[:10]
+        cds = CD.objects.filter(
+            Q(name__icontains=query) | Q(sku__icontains=query) | Q(barcode__icontains=query)
+        ).select_related("platform")[:10]
+        tech = Tech.objects.filter(
+            Q(name__icontains=query) | Q(sku__icontains=query) | Q(barcode__icontains=query)
+        ).select_related("product_type")[:10]
         cd_available = dict(CDWarehouseStock.objects.filter(
             warehouse_id=warehouse_id
         ).values_list("cd_id", "quantity")) if warehouse_id else dict(
@@ -185,11 +215,13 @@ def product_autocomplete(request):
         results.extend({
             "type": "cd", "id": item.pk,
             "label": f"CD — {item.name} — {item.platform.name}", "available": cd_available.get(item.pk, 0),
+            "barcode": item.barcode,
             "cost": f"{item.cost:.2f}" if include_cost else None,
         } for item in cds)
         results.extend({
             "type": "tech", "id": item.pk,
             "label": f"Tech — {item.name} — {item.product_type.name}", "available": tech_available.get(item.pk, 0),
+            "barcode": item.barcode,
             "cost": f"{item.cost:.2f}" if include_cost else None,
         } for item in tech)
     return JsonResponse({"results": results[:20]})

@@ -6,6 +6,7 @@ from django.urls import reverse
 
 from accounts.models import User
 from warehouse.models import CDWarehouseStock, TechWarehouseStock, Warehouse
+from warehouse.storage_services import update_storage_locations
 from .models import Brand, CD, Platform, ProductChangeEvent, ProductType, Tech
 from .nomenclature_forms import product_version
 from .nomenclature_services import update_product_card
@@ -71,10 +72,12 @@ class NomenclatureListTests(NomenclatureDataMixin, TestCase):
 
         response = self.client.get(reverse("nomenclature:list"))
 
-        self.assertContains(response, new_platform.name)
-        self.assertContains(response, new_type.name)
-        self.assertNotContains(response, empty_platform.name)
-        self.assertNotContains(response, empty_type.name)
+        self.assertIn(new_platform, [group for group, _ in response.context["cd_groups"]])
+        self.assertIn(new_type, [group for group, _ in response.context["tech_groups"]])
+        self.assertNotIn(empty_platform, [group for group, _ in response.context["cd_groups"]])
+        self.assertNotIn(empty_type, [group for group, _ in response.context["tech_groups"]])
+        self.assertIn(empty_platform, response.context["platform_options"])
+        self.assertIn(empty_type, response.context["product_type_options"])
 
     def test_search_uses_name_sku_barcode_and_cusa_ppsa(self):
         for query, expected in (
@@ -101,8 +104,8 @@ class NomenclatureListTests(NomenclatureDataMixin, TestCase):
         )
         self.assertNotContains(response, "<th>Платформа</th>", html=True)
         self.assertNotContains(response, "<th>Тип товара</th>", html=True)
-        self.assertContains(response, f"<h2>{self.ps5.name}</h2>", html=True)
-        self.assertContains(response, f"<h2>{self.console_type.name}</h2>", html=True)
+        self.assertContains(response, f'<span class="section-name">{self.ps5.name}</span>', html=True)
+        self.assertContains(response, f'<span class="section-name">{self.console_type.name}</span>', html=True)
 
 
 class NomenclatureSecurityTests(NomenclatureDataMixin, TestCase):
@@ -361,6 +364,174 @@ class WarehouseStockEditingTests(NomenclatureDataMixin, TestCase):
             CDWarehouseStock.objects.get(warehouse=self.primary_warehouse, cd=self.cd).quantity,
             2,
         )
+
+
+class NomenclatureStorageLocationEditingTests(NomenclatureDataMixin, TestCase):
+    def setUp(self):
+        self.create_products()
+        self.actor = User.objects.create_superuser("location-admin", password="StrongAdmin!123")
+        self.worker = User.objects.create_user("location-editor", password="StrongWorker!123")
+        self.worker.user_permissions.add(permission("view_nomenclature"))
+        self.primary_warehouse = Warehouse.objects.create(name="Основной склад")
+        self.second_warehouse = Warehouse.objects.create(name="Второй склад")
+        self.cd_primary_stock = CDWarehouseStock.objects.create(
+            warehouse=self.primary_warehouse, cd=self.cd, quantity=2,
+        )
+        CDWarehouseStock.objects.create(
+            warehouse=self.second_warehouse, cd=self.cd, quantity=0,
+        )
+        TechWarehouseStock.objects.create(
+            warehouse=self.primary_warehouse, tech=self.tech, quantity=2,
+        )
+        self.client.force_login(self.worker)
+
+    def _post_data(self, product, *, include_stocks=False, **overrides):
+        data = {"version": product_version(product)}
+        stocks = {stock.warehouse_id: stock for stock in product.warehouse_stocks.all()}
+        for warehouse in Warehouse.objects.all():
+            stock = stocks.get(warehouse.pk)
+            data[f"storage_location_{warehouse.pk}"] = ", ".join(
+                assignment.location.canonical_value
+                for assignment in stock.storage_assignments.select_related("location").all()
+            ) if stock is not None else ""
+            if include_stocks:
+                data[f"stock_{warehouse.pk}"] = stock.quantity if stock is not None else 0
+        data.update(overrides)
+        return data
+
+    def _grant_location_permission(self):
+        self.worker.user_permissions.add(
+            permission("change_storage_location", app_label="warehouse")
+        )
+        self.worker = User.objects.get(pk=self.worker.pk)
+        self.client.force_login(self.worker)
+
+    def test_card_shows_each_warehouse_location_without_examples(self):
+        update_storage_locations(
+            actor=self.actor,
+            warehouse_id=self.primary_warehouse.pk,
+            product_type="cd",
+            product_id=self.cd.pk,
+            raw_value=r"A1-2-1\2, A6-3",
+        )
+        response = self.client.get(reverse("nomenclature:cd_detail", args=(self.cd.pk,)))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Место хранения")
+        self.assertContains(response, r"A1-2-1\2, A6-3")
+        self.assertTrue(
+            response.context["form"].fields[
+                f"storage_location_{self.primary_warehouse.pk}"
+            ].disabled
+        )
+        self.assertNotContains(response, 'placeholder="A1-2')
+        autocomplete = self.client.get(
+            reverse(
+                "warehouse:storage_location_autocomplete",
+                args=(self.primary_warehouse.pk,),
+            ),
+            {"q": "A1"},
+        )
+        self.assertEqual(autocomplete.status_code, 200)
+        self.assertEqual(
+            [item["value"] for item in autocomplete.json()["results"]],
+            [r"A1-2-1\2"],
+        )
+
+    def test_permission_controls_location_editing_and_manual_post(self):
+        url = reverse("nomenclature:cd_detail", args=(self.cd.pk,))
+        forbidden = self.client.post(url, {
+            "version": product_version(self.cd),
+            f"storage_location_{self.primary_warehouse.pk}": "A1-2",
+        })
+        self.assertEqual(forbidden.status_code, 200)
+        self.assertContains(forbidden, "Нет права изменять поля")
+        self.assertFalse(self.cd_primary_stock.storage_assignments.exists())
+
+        self._grant_location_permission()
+        response = self.client.post(url, self._post_data(
+            self.cd,
+            **{f"storage_location_{self.primary_warehouse.pk}": r"a1 - 2 - 2 \ 1"},
+        ))
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(
+            self.cd_primary_stock.storage_assignments.get().location.canonical_value,
+            r"A1-2-1\2",
+        )
+        event = self.cd.change_events.order_by("-pk").first()
+        self.assertEqual(event.source, ProductChangeEvent.Source.NOMENCLATURE)
+
+    def test_invalid_location_keeps_previous_value(self):
+        update_storage_locations(
+            actor=self.actor,
+            warehouse_id=self.primary_warehouse.pk,
+            product_type="cd",
+            product_id=self.cd.pk,
+            raw_value="A1-2",
+        )
+        self._grant_location_permission()
+        response = self.client.post(
+            reverse("nomenclature:cd_detail", args=(self.cd.pk,)),
+            self._post_data(
+                self.cd,
+                **{f"storage_location_{self.primary_warehouse.pk}": "A1-2-1,2"},
+            ),
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Некорректный формат места хранения")
+        self.assertEqual(
+            self.cd_primary_stock.storage_assignments.get().location.canonical_value,
+            "A1-2",
+        )
+
+    def test_stock_and_location_can_be_saved_together_and_zero_clears_location(self):
+        self._grant_location_permission()
+        self.worker.user_permissions.add(
+            permission("change_cdwarehousestock", app_label="warehouse")
+        )
+        self.worker = User.objects.get(pk=self.worker.pk)
+        self.client.force_login(self.worker)
+        url = reverse("nomenclature:cd_detail", args=(self.cd.pk,))
+
+        response = self.client.post(url, self._post_data(
+            self.cd,
+            include_stocks=True,
+            **{
+                f"stock_{self.second_warehouse.pk}": 3,
+                f"storage_location_{self.second_warehouse.pk}": "B2-4",
+            },
+        ))
+        self.assertEqual(response.status_code, 302)
+        second_stock = CDWarehouseStock.objects.get(
+            warehouse=self.second_warehouse, cd=self.cd,
+        )
+        self.assertEqual(second_stock.quantity, 3)
+        self.assertEqual(
+            second_stock.storage_assignments.get().location.canonical_value, "B2-4"
+        )
+
+        response = self.client.post(url, self._post_data(
+            self.cd,
+            include_stocks=True,
+            **{f"stock_{self.second_warehouse.pk}": 0},
+        ))
+        self.assertEqual(response.status_code, 302)
+        second_stock.refresh_from_db()
+        self.assertEqual(second_stock.quantity, 0)
+        self.assertFalse(second_stock.storage_assignments.exists())
+
+    def test_tech_card_uses_the_same_location_fields(self):
+        self._grant_location_permission()
+        url = reverse("nomenclature:tech_detail", args=(self.tech.pk,))
+        response = self.client.post(url, self._post_data(
+            self.tech,
+            **{f"storage_location_{self.primary_warehouse.pk}": "C3-5"},
+        ))
+        self.assertEqual(response.status_code, 302)
+        stock = TechWarehouseStock.objects.get(
+            warehouse=self.primary_warehouse, tech=self.tech,
+        )
+        self.assertEqual(stock.storage_assignments.get().location.canonical_value, "C3-5")
 
 
 class ProductAuditTests(NomenclatureDataMixin, TestCase):

@@ -1,6 +1,7 @@
 import uuid
 
 from django.conf import settings
+from django.core.validators import MinValueValidator
 from django.db import models
 
 from catalog.models import CD, Tech
@@ -67,6 +68,16 @@ class Sale(models.Model):
     updated_at = models.DateTimeField("Обновлена", auto_now=True)
     completed_at = models.DateTimeField("Завершена", null=True, blank=True, editable=False)
     total_amount = models.DecimalField("Сумма", max_digits=20, decimal_places=2, default=0, editable=False)
+    cancelled_at = models.DateTimeField("Отменена", null=True, blank=True, editable=False)
+    cancelled_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="cancelled_sales",
+        verbose_name="Отменил", null=True, blank=True, editable=False,
+    )
+    cancellation_comment = models.TextField("Причина отмены", blank=True, editable=False)
+    refunded_amount = models.DecimalField(
+        "Возвращённая сумма", max_digits=20, decimal_places=2, default=0,
+        validators=[MinValueValidator(0)], editable=False,
+    )
 
     class Meta:
         ordering = ("-created_at", "-id")
@@ -80,19 +91,48 @@ class Sale(models.Model):
             ("edit_unpaid_postpay_sale", "Может изменять неоплаченную продажу с постоплатой"),
             ("advance_order_status", "Может менять статус заказа"),
             ("mark_sale_paid", "Может подтверждать оплату продажи"),
+            ("import_wholesale_price", "Может импортировать оптовый XLSX в новую продажу"),
+            ("cancel_sale", "Может отменять продажи"),
         ]
         constraints = [
-            models.CheckConstraint(condition=models.Q(total_amount__gte=0), name="sale_total_nonnegative")
+            models.CheckConstraint(condition=models.Q(total_amount__gte=0), name="sale_total_nonnegative"),
+            models.CheckConstraint(condition=models.Q(refunded_amount__gte=0), name="sale_refund_nonnegative"),
+            models.CheckConstraint(
+                condition=models.Q(refunded_amount__lte=models.F("total_amount")),
+                name="sale_refund_not_above_total",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(
+                        cancelled_at__isnull=True, cancelled_by__isnull=True,
+                        cancellation_comment="", refunded_amount=0,
+                    )
+                    | (
+                        models.Q(cancelled_at__isnull=False, cancelled_by__isnull=False)
+                        & ~models.Q(cancellation_comment="")
+                    )
+                ),
+                name="sale_cancellation_fields_consistent",
+            ),
         ]
 
     @property
     def is_completed(self):
-        return self.order_status == self.OrderStatus.DELIVERED and self.payment_status == self.PaymentStatus.PAID
+        return (
+            not self.is_cancelled
+            and self.order_status == self.OrderStatus.DELIVERED
+            and self.payment_status == self.PaymentStatus.PAID
+        )
+
+    @property
+    def is_cancelled(self):
+        return self.cancelled_at is not None
 
     @property
     def is_postpay_editable(self):
         return (
-            self.payment_method == self.PaymentMethod.CASH_POSTPAY
+            not self.is_cancelled
+            and self.payment_method == self.PaymentMethod.CASH_POSTPAY
             and self.payment_status == self.PaymentStatus.UNPAID
             and self.order_status != self.OrderStatus.DELIVERED
         )

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load l10n %}
 {% block title %}Реализация · ReSOURCE{% endblock %}
 {% block content %}
 <div class="page-heading">
@@ -12,12 +13,13 @@
 <section class="panel inventory-section">
   <div class="section-heading"><div><span class="category-tag">Площадка</span><h2>{{ platform.name }}</h2></div><span class="count">{{ rows|length }} поз.</span></div>
   <div class="table-scroll"><table class="consignment-stock-table">
-    <thead><tr><th>Тип</th><th>Название</th><th>Артикул</th><th>Склад-источник</th><th class="numeric">Количество</th><th class="numeric">Себестоимость</th><th class="numeric">GameBAT получает / ед.</th><th class="numeric">Всего к получению</th>{% if can_record_sale %}<th></th>{% endif %}</tr></thead>
+    <thead><tr><th>Тип</th><th>Название</th><th>Артикул</th><th>Склад-источник</th><th class="numeric">Количество</th><th class="numeric">Себестоимость</th><th class="numeric">Вознаграждение / ед.</th><th class="numeric">Всего к получению</th>{% if can_change_reward %}<th>Изменить вознаграждение</th>{% endif %}{% if can_record_sale %}<th></th>{% endif %}</tr></thead>
     <tbody>{% for row in rows %}<tr>
       <td><span class="badge">{{ row.type }}</span></td><td class="strong">{{ row.name }}</td><td class="mono">{{ row.sku }}</td><td>{{ row.warehouse.name }}</td>
       <td class="numeric stock-number">{{ row.quantity }}</td><td class="numeric">{{ row.cost|floatformat:2 }} ₽</td><td class="numeric">{{ row.receivable|floatformat:2 }} ₽</td><td class="numeric strong">{{ row.potential|floatformat:2 }} ₽</td>
+      {% if can_change_reward %}<td><form method="post" class="inline-reward-form" action="{% url 'consignment:reward_update' row.product_kind row.stock_id %}">{% csrf_token %}<input type="number" name="receivable_per_unit" value="{{ row.receivable|unlocalize }}" min="0" step="0.01" required aria-label="Вознаграждение за единицу для {{ row.name }}"><button class="button button-small" type="submit">Сохранить</button></form></td>{% endif %}
       {% if can_record_sale %}<td><a class="button button-small" href="{% url 'consignment:sale' row.product_kind row.stock_id %}">Товар реализован</a></td>{% endif %}
-    </tr>{% empty %}<tr><td colspan="{% if can_record_sale %}9{% else %}8{% endif %}" class="empty-cell">На площадке нет товаров.</td></tr>{% endfor %}</tbody>
+    </tr>{% empty %}<tr><td colspan="{% if can_change_reward and can_record_sale %}10{% elif can_change_reward or can_record_sale %}9{% else %}8{% endif %}" class="empty-cell">На площадке нет товаров.</td></tr>{% endfor %}</tbody>
   </table></div>
 </section>
 {% empty %}<section class="empty-state"><span class="empty-code">0</span><h2>Площадки не созданы</h2><p>Добавьте площадки реализации через административную панель.</p></section>{% endfor %}

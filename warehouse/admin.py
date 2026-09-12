@@ -2,10 +2,13 @@ from django.contrib import admin
 
 from .models import (
     CDWarehouseStock,
+    CDWarehouseStorageAssignment,
     CDWarehouseTransferItem,
     TechWarehouseStock,
+    TechWarehouseStorageAssignment,
     TechWarehouseTransferItem,
     Warehouse,
+    WarehouseStorageLocation,
     WarehouseTransfer,
 )
 
@@ -39,6 +42,29 @@ class TechWarehouseStockAdmin(CurrentStockAdmin):
     list_display = ("warehouse", "tech", "quantity")
     list_filter = ("warehouse", "tech__product_type")
     search_fields = ("tech__name", "tech__sku", "warehouse__name")
+
+
+@admin.register(WarehouseStorageLocation)
+class WarehouseStorageLocationAdmin(admin.ModelAdmin):
+    list_display = ("warehouse", "canonical_value", "room", "rack", "shelf", "columns")
+    list_filter = ("warehouse", "room")
+    search_fields = ("canonical_value", "warehouse__name")
+
+
+class StorageAssignmentAdmin(CurrentStockAdmin):
+    list_select_related = ("stock", "location", "location__warehouse")
+
+
+@admin.register(CDWarehouseStorageAssignment)
+class CDWarehouseStorageAssignmentAdmin(StorageAssignmentAdmin):
+    list_display = ("stock", "location", "position")
+    search_fields = ("stock__cd__name", "stock__cd__sku", "location__canonical_value")
+
+
+@admin.register(TechWarehouseStorageAssignment)
+class TechWarehouseStorageAssignmentAdmin(StorageAssignmentAdmin):
+    list_display = ("stock", "location", "position")
+    search_fields = ("stock__tech__name", "stock__tech__sku", "location__canonical_value")
 
 
 class TransferHistoryAdmin(admin.ModelAdmin):

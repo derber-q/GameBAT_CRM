@@ -1,9 +1,52 @@
 {% extends "base.html" %}
+{% load static %}
 {% block title %}{{ warehouse.name }} · ReSOURCE{% endblock %}
+{% block extra_head %}<script src="{% static 'js/storage-locations.js' %}?v=storage-locations-1" defer></script>{% endblock %}
 {% block content %}
-<div class="page-heading"><div><p class="eyebrow">Физический склад</p><h1>{{ warehouse.name }}</h1><p class="muted">Локальный физический остаток выбранного склада.</p></div><div class="heading-actions">{% if perms.warehouse.create_transfer or user.is_superuser %}<a class="button" href="{% url 'warehouse:transfer_create' warehouse.pk %}">Создать перемещение</a>{% endif %}{% if can_view_global %}<a class="button button-secondary" href="{% url 'catalog:warehouse' %}">Общие остатки</a>{% endif %}</div></div>
-{% include "warehouse/_inventory_search.html" %}
-{% for group, rows in cd_groups %}<section class="panel inventory-section"><div class="section-heading"><div><span class="category-tag">CD</span><h2>{{ group.name }}</h2></div><span class="count">{{ rows|length }} поз.</span></div><div class="table-scroll"><table class="warehouse-detail-table"><thead><tr><th>ID</th><th>Артикул</th><th>Название</th><th class="numeric-center">CUSA/PPSA</th><th class="numeric-center">Количество</th></tr></thead><tbody>{% for row in rows %}<tr><td class="mono">{{ row.product.id }}</td><td class="mono">{{ row.product.sku }}</td><td class="strong">{{ row.product.name }}</td><td class="mono numeric-center">{{ row.product.cusa_ppsa_code|default:"—" }}</td><td class="numeric-center stock-number">{{ row.quantity }}</td></tr>{% endfor %}</tbody></table></div></section>{% endfor %}
-{% for group, rows in tech_groups %}<section class="panel inventory-section"><div class="section-heading"><div><span class="category-tag category-tag-tech">TECH</span><h2>{{ group.name }}</h2></div><span class="count">{{ rows|length }} поз.</span></div><div class="table-scroll"><table class="warehouse-detail-table"><thead><tr><th>ID</th><th>Артикул</th><th>Название</th><th>Бренд</th><th class="numeric-center">Количество</th></tr></thead><tbody>{% for row in rows %}<tr><td class="mono">{{ row.product.id }}</td><td class="mono">{{ row.product.sku }}</td><td class="strong">{{ row.product.name }}</td><td>{{ row.product.brand.name }}</td><td class="numeric-center stock-number">{{ row.quantity }}</td></tr>{% endfor %}</tbody></table></div></section>{% endfor %}
-{% if not cd_groups and not tech_groups %}<section class="empty-state"><span class="empty-code">0</span>{% if query %}<h2>Ничего не найдено</h2><p>На этом складе нет товара с положительным остатком по вашему запросу.</p>{% else %}<h2>На складе пока нет товаров</h2><p>Позиции с нулевым локальным остатком доступны в «Номенклатуре».</p>{% endif %}</section>{% endif %}
+<div class="page-heading">
+  <div><p class="eyebrow">Физический склад</p><h1>{{ warehouse.name }}</h1><p class="muted">Локальный физический остаток выбранного склада.</p></div>
+  <div class="heading-actions">
+    {% if perms.warehouse.create_transfer or user.is_superuser %}<a class="button" href="{% url 'warehouse:transfer_create' warehouse.pk %}">Создать перемещение</a>{% endif %}
+    {% if can_view_global %}<a class="button button-secondary" href="{% url 'catalog:warehouse' %}">Общие остатки</a>{% endif %}
+  </div>
+</div>
+{% include "catalog/_product_filters.html" %}
+
+{% for group, rows in cd_groups %}
+  <section class="panel inventory-section collapsible-section">
+    <button class="section-heading section-toggle" type="button" aria-expanded="true" aria-controls="warehouse-cd-{{ group.pk }}" data-collapse-toggle>
+      <span class="section-title"><span class="category-tag">CD</span><span class="section-name">{{ group.name }}</span></span>
+      <span class="section-heading-meta"><span class="count">{{ rows|length }} поз.</span><span class="collapse-indicator" aria-hidden="true">▼</span></span>
+    </button>
+    <div id="warehouse-cd-{{ group.pk }}" class="collapsible-content table-scroll">
+      <table class="warehouse-detail-table">
+        <thead><tr><th>ID</th><th>Артикул</th><th>Место хранения</th><th>Название</th><th class="numeric-center">CUSA/PPSA</th><th class="numeric-center">Количество</th></tr></thead>
+        <tbody>{% for row in rows %}<tr><td class="mono">{{ row.product.id }}</td><td class="mono">{{ row.product.sku }}</td><td class="storage-location-cell">{% if can_change_storage_location %}{% include "warehouse/_storage_location_editor.html" with product_type="cd" %}{% else %}<span class="storage-location-value">{{ row.storage_locations|default:"—" }}</span>{% endif %}</td><td class="strong">{{ row.product.name }}</td><td class="mono numeric-center">{{ row.product.cusa_ppsa_code|default:"—" }}</td><td class="numeric-center stock-number">{{ row.quantity }}</td></tr>{% endfor %}</tbody>
+      </table>
+    </div>
+  </section>
+{% endfor %}
+
+{% for group, rows in tech_groups %}
+  <section class="panel inventory-section collapsible-section">
+    <button class="section-heading section-toggle" type="button" aria-expanded="true" aria-controls="warehouse-tech-{{ group.pk }}" data-collapse-toggle>
+      <span class="section-title"><span class="category-tag category-tag-tech">TECH</span><span class="section-name">{{ group.name }}</span></span>
+      <span class="section-heading-meta"><span class="count">{{ rows|length }} поз.</span><span class="collapse-indicator" aria-hidden="true">▼</span></span>
+    </button>
+    <div id="warehouse-tech-{{ group.pk }}" class="collapsible-content table-scroll">
+      <table class="warehouse-detail-table">
+        <thead><tr><th>ID</th><th>Артикул</th><th>Место хранения</th><th>Название</th><th>Бренд</th><th class="numeric-center">Количество</th></tr></thead>
+        <tbody>{% for row in rows %}<tr><td class="mono">{{ row.product.id }}</td><td class="mono">{{ row.product.sku }}</td><td class="storage-location-cell">{% if can_change_storage_location %}{% include "warehouse/_storage_location_editor.html" with product_type="tech" %}{% else %}<span class="storage-location-value">{{ row.storage_locations|default:"—" }}</span>{% endif %}</td><td class="strong">{{ row.product.name }}</td><td>{{ row.product.brand.name }}</td><td class="numeric-center stock-number">{{ row.quantity }}</td></tr>{% endfor %}</tbody>
+      </table>
+    </div>
+  </section>
+{% endfor %}
+
+{% if not cd_groups and not tech_groups %}
+  <section class="empty-state">
+    <span class="empty-code">0</span>
+    {% if has_active_filters %}<h2>Товары по заданным параметрам не найдены</h2><p>Ничего не найдено: на этом складе нет подходящих позиций с положительным остатком.</p>
+    {% else %}<h2>На складе пока нет товаров</h2><p>Позиции с нулевым локальным остатком доступны в «Номенклатуре».</p>{% endif %}
+  </section>
+{% endif %}
 {% endblock %}

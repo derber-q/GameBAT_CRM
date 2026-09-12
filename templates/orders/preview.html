@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block title %}Предпросмотр заказа · ReSOURCE{% endblock %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">Проверка перед созданием</p><h1>{{ draft.recipient }}</h1><p class="muted">Файл не проводит оплату и не создаёт приход товара.</p></div><a class="button button-secondary" href="{% url 'orders:upload' %}">Загрузить заново</a></div>
+<section class="panel table-panel"><div class="table-scroll"><table><thead><tr><th>Товар</th><th class="numeric">Цена предоплата</th><th class="numeric">Кол-во</th><th class="numeric">Цена постоплата</th><th class="numeric">Кол-во</th></tr></thead><tbody>{% for row in rows %}<tr><td>{{ row.item.product_name_snapshot }}</td><td class="numeric">{{ row.item.prepayment_price_rub }}</td><td class="numeric">{{ row.prepayment_quantity }}</td><td class="numeric">{{ row.item.postpayment_price_rub }}</td><td class="numeric">{{ row.postpayment_quantity }}</td></tr>{% endfor %}</tbody></table></div></section>
+<form method="post" class="submit-bar">{% csrf_token %}<div><b>Цены взяты из сохранённого прайса №{{ draft.price_list_id }}</b><span>{{ draft.comment|default:"Без комментария" }}</span></div><button class="button button-large" type="submit">Создать заказ</button></form>
+{% endblock %}

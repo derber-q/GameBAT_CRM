@@ -113,7 +113,9 @@ def collect_cash(*, actor, warehouse_id, amount, comment, operation_key=None):
 def credit_sale_payment(*, sale, actor):
     """Зачисляет оплату продажи ровно один раз в кассу её склада."""
     register = _locked_register(sale.warehouse_id)
-    if CashTransaction.objects.select_for_update().filter(sale=sale).exists():
+    if CashTransaction.objects.select_for_update().filter(
+        sale=sale, operation_type=CashTransaction.OperationType.SALE_PAYMENT
+    ).exists():
         raise ValidationError("Оплата этой продажи уже проведена.")
     register.balance += sale.total_amount
     register.full_clean()
@@ -129,6 +131,47 @@ def credit_sale_payment(*, sale, actor):
     logger.info(
         "Наличная оплата продажи: user_id=%s sale_id=%s transaction_id=%s amount=%s",
         actor.pk, sale.pk, operation.pk, sale.total_amount,
+    )
+    return operation
+
+
+@transaction.atomic
+def refund_sale_payment(*, sale, actor, comment):
+    """Возвращает фактически принятую наличную оплату ровно один раз."""
+    comment = _comment(comment)
+    existing = CashTransaction.objects.select_for_update().filter(
+        sale=sale, operation_type=CashTransaction.OperationType.SALE_REFUND
+    ).first()
+    if existing:
+        return existing
+    payment = CashTransaction.objects.select_for_update().filter(
+        sale=sale, operation_type=CashTransaction.OperationType.SALE_PAYMENT
+    ).first()
+    if payment is None:
+        raise ValidationError("Наличная оплата этой продажи не найдена.")
+    register = _locked_register(sale.warehouse_id)
+    if payment.cash_register_id != register.pk:
+        raise ValidationError("Оплата продажи относится к другой кассе.")
+    if register.balance < payment.amount:
+        logger.warning(
+            "Отмена продажи отклонена: недостаточно наличных: user_id=%s sale_id=%s amount=%s balance=%s",
+            actor.pk, sale.pk, payment.amount, register.balance,
+        )
+        raise ValidationError("Недостаточно наличных в кассе для возврата по продаже.")
+    register.balance -= payment.amount
+    register.full_clean()
+    register.save(update_fields=("balance",))
+    operation = CashTransaction.objects.create(
+        cash_register=register,
+        operation_type=CashTransaction.OperationType.SALE_REFUND,
+        amount=payment.amount,
+        comment=comment,
+        created_by=actor,
+        sale=sale,
+    )
+    logger.info(
+        "Наличная оплата возвращена: user_id=%s sale_id=%s transaction_id=%s amount=%s",
+        actor.pk, sale.pk, operation.pk, payment.amount,
     )
     return operation
 

@@ -16,8 +16,11 @@ from .services import update_product_prices, update_supplier_price
 class PricingTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_superuser("admin", password="StrongAdmin!123")
-        platform = Platform.objects.create(name="PS5")
-        self.cd = CD.objects.create(platform=platform, name="Игра", sku="CD-1", barcode="1", cost=100)
+        self.platform = Platform.objects.create(name="PS5")
+        self.cd = CD.objects.create(
+            platform=self.platform, name="Игра", sku="CD-1", barcode="1",
+            cusa_ppsa_code="PPSA-PRICE-1", cost=100,
+        )
         self.supplier = Supplier.objects.create(
             name="Секретный поставщик", letter="A", highlight_color="#37A7BA",
             legal_entity="ООО Секрет", phone_1="+70000000000",
@@ -104,11 +107,32 @@ class PricingTests(TestCase):
             ["Аксессуары", "Консоли"],
         )
 
-    def test_missing_supplier_price_is_rendered_as_zero(self):
+    def test_supplier_prices_stay_in_database_but_are_not_rendered(self):
+        supplier_price = SupplierCDPrice.objects.create(supplier=self.supplier, cd=self.cd, price=95)
         self.client.force_login(self.user)
         response = self.client.get(reverse("pricing:list"))
-        self.assertContains(response, 'name="price" value="0" required')
+        self.assertNotContains(response, 'name="price"')
+        self.assertNotContains(response, "supplier-price-heading")
+        self.assertNotContains(response, self.supplier.name)
         self.assertContains(response, '<td class="numeric">100,00</td>', html=True)
+        self.assertTrue(SupplierCDPrice.objects.filter(pk=supplier_price.pk, price=95).exists())
+
+    def test_inline_price_update_returns_to_the_filtered_view(self):
+        self.client.force_login(self.user)
+        response = self.client.post(
+            f'{reverse("pricing:product_update")}?search=CD-1&platform={self.platform.pk}',
+            {
+                "product_type": "cd",
+                "product_id": self.cd.pk,
+                "retail_price": "250",
+            },
+        )
+        self.assertRedirects(
+            response,
+            f'{reverse("pricing:list")}?search=CD-1&platform={self.platform.pk}',
+        )
+        self.cd.refresh_from_db()
+        self.assertEqual(self.cd.retail_price, Decimal("250.00"))
 
     def test_supplier_confidentiality_and_post_permissions(self):
         worker = User.objects.create_user("worker", password="StrongWorker!123")

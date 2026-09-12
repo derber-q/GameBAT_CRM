@@ -36,6 +36,8 @@ INSTALLED_APPS = [
     "pricing",
     "sales",
     "cash",
+    "price",
+    "orders",
 ]
 
 MIDDLEWARE = [
@@ -96,6 +98,7 @@ LOGIN_REDIRECT_URL = "core:home"
 LOGOUT_REDIRECT_URL = "accounts:login"
 
 FILE_UPLOAD_PERMISSIONS = 0o600
+DATA_UPLOAD_MAX_NUMBER_FIELDS = 5000
 X_FRAME_OPTIONS = "DENY"
 SECURE_CONTENT_TYPE_NOSNIFF = True
 SESSION_COOKIE_HTTPONLY = True

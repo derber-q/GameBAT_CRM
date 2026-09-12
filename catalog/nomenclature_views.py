@@ -2,6 +2,7 @@ import logging
 from collections import defaultdict
 
 from django.contrib import messages
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
 from django.db.models import Sum
 from django.shortcuts import get_object_or_404, redirect, render
@@ -10,35 +11,21 @@ from core.decorators import permission_required_any
 from warehouse.models import Warehouse, WarehouseTransfer
 
 from .models import CD, Tech
-from .nomenclature_forms import CDCardForm, TechCardForm
-from .nomenclature_services import update_product_card
+from .nomenclature_forms import CDCardForm, CDCreateForm, TechCardForm, TechCreateForm
+from .nomenclature_services import create_product, update_product_card
+from .product_filters import filter_product_querysets, product_filter_context
 
 logger = logging.getLogger("gamebat.business")
 
 
 @permission_required_any("catalog.view_nomenclature")
 def nomenclature_list(request):
-    query = request.GET.get("q", "").strip()
-    cds = list(CD.objects.select_related("platform").order_by("platform__name", "name", "id"))
-    tech_items = list(Tech.objects.select_related("brand", "product_type").order_by(
+    filters, filter_context = product_filter_context(request.GET)
+    cds = CD.objects.select_related("platform").order_by("platform__name", "name", "id")
+    tech_items = Tech.objects.select_related("brand", "product_type").order_by(
         "product_type__name", "name", "id"
-    ))
-    if query:
-        needle = query.casefold()
-        cds = [
-            product for product in cds
-            if any(
-                needle in (value or "").casefold()
-                for value in (product.name, product.sku, product.barcode, product.cusa_ppsa_code)
-            )
-        ]
-        tech_items = [
-            product for product in tech_items
-            if any(
-                needle in (value or "").casefold()
-                for value in (product.name, product.sku, product.barcode)
-            )
-        ]
+    )
+    cds, tech_items = filter_product_querysets(cds, tech_items, filters)
 
     cd_groups = defaultdict(list)
     for product in cds:
@@ -46,10 +33,44 @@ def nomenclature_list(request):
     tech_groups = defaultdict(list)
     for product in tech_items:
         tech_groups[product.product_type].append(product)
-    return render(request, "nomenclature/list.html", {
-        "query": query,
+    context = {
+        "query": filters.search,
         "cd_groups": list(cd_groups.items()),
         "tech_groups": list(tech_groups.items()),
+        "can_add_cd": request.user.is_superuser or request.user.has_perm("catalog.add_cd"),
+        "can_add_tech": request.user.is_superuser or request.user.has_perm("catalog.add_tech"),
+    }
+    context.update(filter_context)
+    return render(request, "nomenclature/list.html", context)
+
+
+@permission_required_any("catalog.add_cd", "catalog.add_tech")
+def product_create(request):
+    permissions = {
+        "cd": request.user.is_superuser or request.user.has_perm("catalog.add_cd"),
+        "tech": request.user.is_superuser or request.user.has_perm("catalog.add_tech"),
+    }
+    product_kind = (request.POST.get("product_kind") or request.GET.get("kind") or "").lower()
+    if product_kind and (product_kind not in permissions or not permissions[product_kind]):
+        raise PermissionDenied
+    form_class = {"cd": CDCreateForm, "tech": TechCreateForm}.get(product_kind)
+    form = form_class(request.POST or None) if form_class else None
+    if request.method == "POST" and form and form.is_valid():
+        try:
+            product = create_product(
+                actor=request.user, product_kind=product_kind, data=form.cleaned_data,
+            )
+        except ValidationError as exc:
+            form.add_error(None, exc)
+        else:
+            messages.success(request, "Новое наименование создано.")
+            return redirect(f"nomenclature:{product_kind}_detail", pk=product.pk)
+    return render(request, "nomenclature/create.html", {
+        "product_kind": product_kind,
+        "product_kind_label": "CD" if product_kind == "cd" else "Tech" if product_kind == "tech" else "",
+        "form": form,
+        "can_add_cd": permissions["cd"],
+        "can_add_tech": permissions["tech"],
     })
 
 
@@ -106,7 +127,13 @@ def _render_detail(request, *, product, product_kind, form):
         "product_kind_label": "CD" if product_kind == "cd" else "Tech",
         "form": form,
         "form_sections": _form_sections(form, product_kind),
-        "stock_fields": [form[name] for name in form.stock_fields],
+        "warehouse_fields": [
+            {
+                "stock": form[stock_field_name],
+                "storage_location": form[location_field_name],
+            }
+            for stock_field_name, location_field_name in form.warehouse_field_pairs
+        ],
         "event_page": event_page,
         **_stock_context(product),
     }

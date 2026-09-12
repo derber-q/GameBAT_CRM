@@ -24,9 +24,10 @@ class WarehouseGroupingTests(TestCase):
         empty_type = ProductType.objects.create(name="Empty product type")
         response = self.client.get(reverse("catalog:warehouse"))
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, self.platform.name)
-        self.assertContains(response, self.product_type.name)
-        self.assertNotContains(response, empty_type.name)
+        self.assertIn(self.platform, [group for group, _ in response.context["cd_groups"]])
+        self.assertIn(self.product_type, [group for group, _ in response.context["tech_groups"]])
+        self.assertNotIn(empty_type, [group for group, _ in response.context["tech_groups"]])
+        self.assertIn(empty_type, response.context["product_type_options"])
         self.assertContains(response, "Диск")
         self.assertContains(response, "Техника")
 

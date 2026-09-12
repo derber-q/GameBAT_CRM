@@ -5,8 +5,10 @@ from decimal import Decimal
 
 from django import forms
 from django.core.exceptions import FieldDoesNotExist, ValidationError
+from django.urls import reverse
 
 from warehouse.models import CDWarehouseStock, TechWarehouseStock, Warehouse
+from warehouse.storage_locations import normalize_storage_location_list
 
 from .models import CD, Tech
 from .product_fields import (
@@ -28,9 +30,24 @@ def product_version(instance):
             value = format(value, "f")
         values[field_name] = value
     if instance.pk:
-        values["warehouse_stocks"] = list(
-            instance.warehouse_stocks.order_by("warehouse_id").values_list("warehouse_id", "quantity")
+        stocks = list(
+            instance.warehouse_stocks.order_by("warehouse_id").prefetch_related(
+                "storage_assignments__location"
+            )
         )
+        values["warehouse_stocks"] = [
+            (stock.warehouse_id, stock.quantity) for stock in stocks
+        ]
+        values["warehouse_storage_locations"] = [
+            (
+                stock.warehouse_id,
+                [
+                    assignment.location.canonical_value
+                    for assignment in stock.storage_assignments.all()
+                ],
+            )
+            for stock in stocks
+        ]
     payload = json.dumps(values, ensure_ascii=False, sort_keys=True, default=str)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
@@ -55,17 +72,29 @@ class ProductCardFormMixin(forms.ModelForm):
             else "warehouse.change_techwarehousestock"
         )
         self.can_change_stock = user.is_superuser or user.has_perm(stock_permission)
-        stock_values = {
-            warehouse_id: quantity
-            for warehouse_id, quantity in stock_model.objects.filter(
+        stocks = list(
+            stock_model.objects.filter(
                 **{self.instance._meta.model_name: self.instance}
-            ).values_list("warehouse_id", "quantity")
-        } if self.instance.pk else {}
+            ).prefetch_related("storage_assignments__location")
+        ) if self.instance.pk else []
+        stock_values = {stock.warehouse_id: stock.quantity for stock in stocks}
+        storage_location_values = {
+            stock.warehouse_id: ", ".join(
+                assignment.location.canonical_value
+                for assignment in stock.storage_assignments.all()
+            )
+            for stock in stocks
+        }
         self.stock_fields = []
+        self.storage_location_fields = []
+        self.warehouse_field_pairs = []
         self.warehouses_by_id = {warehouse.pk: warehouse for warehouse in Warehouse.objects.all()}
+        self.can_change_storage_location = (
+            user.is_superuser or user.has_perm("warehouse.change_storage_location")
+        )
         for warehouse in self.warehouses_by_id.values():
-            field_name = f"stock_{warehouse.pk}"
-            self.fields[field_name] = forms.IntegerField(
+            stock_field_name = f"stock_{warehouse.pk}"
+            self.fields[stock_field_name] = forms.IntegerField(
                 label=warehouse.name,
                 min_value=0,
                 initial=stock_values.get(warehouse.pk, 0),
@@ -74,10 +103,33 @@ class ProductCardFormMixin(forms.ModelForm):
                 widget=forms.NumberInput(attrs={"min": 0, "step": 1}),
             )
             if not self.can_change_stock:
-                self.fields[field_name].widget.attrs["aria-readonly"] = "true"
+                self.fields[stock_field_name].widget.attrs["aria-readonly"] = "true"
             else:
-                self.allowed_fields.add(field_name)
-            self.stock_fields.append(field_name)
+                self.allowed_fields.add(stock_field_name)
+            self.stock_fields.append(stock_field_name)
+
+            location_field_name = f"storage_location_{warehouse.pk}"
+            self.fields[location_field_name] = forms.CharField(
+                label=f"Место хранения: {warehouse.name}",
+                initial=storage_location_values.get(warehouse.pk, ""),
+                required=False,
+                disabled=not self.can_change_storage_location,
+                widget=forms.TextInput(attrs={
+                    "placeholder": "",
+                    "autocomplete": "off",
+                    "data-storage-location-autocomplete": "true",
+                    "data-autocomplete-url": reverse(
+                        "warehouse:storage_location_autocomplete", args=(warehouse.pk,)
+                    ),
+                    "aria-label": f"Место хранения: {warehouse.name}",
+                }),
+            )
+            if not self.can_change_storage_location:
+                self.fields[location_field_name].widget.attrs["aria-readonly"] = "true"
+            else:
+                self.allowed_fields.add(location_field_name)
+            self.storage_location_fields.append(location_field_name)
+            self.warehouse_field_pairs.append((stock_field_name, location_field_name))
         self.fields["version"].initial = product_version(self.instance)
         for field_name in ("sku",):
             if not getattr(self.instance, field_name):
@@ -115,6 +167,13 @@ class ProductCardFormMixin(forms.ModelForm):
                 params={"fields": ", ".join(labels)},
                 code="forbidden_fields",
             )
+        for field_name in self.storage_location_fields:
+            if field_name not in self.allowed_fields or field_name not in cleaned_data:
+                continue
+            try:
+                cleaned_data[field_name] = normalize_storage_location_list(cleaned_data[field_name])
+            except ValidationError as exc:
+                self.add_error(field_name, exc)
         return cleaned_data
 
 
@@ -132,3 +191,24 @@ class TechCardForm(ProductCardFormMixin):
     class Meta:
         model = Tech
         fields = TECH_CARD_FIELDS
+
+
+class ProductCreateFormMixin:
+    """Форма создаёт только карточку — без остатков, себестоимости и цен."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field_name in ("description", "comment"):
+            self.fields[field_name].widget.attrs.setdefault("rows", 4)
+
+
+class CDCreateForm(ProductCreateFormMixin, forms.ModelForm):
+    class Meta:
+        model = CD
+        fields = ("platform", "name", "description", "sku", "barcode", "cusa_ppsa_code", "comment")
+
+
+class TechCreateForm(ProductCreateFormMixin, forms.ModelForm):
+    class Meta:
+        model = Tech
+        fields = ("brand", "product_type", "name", "description", "sku", "barcode", "comment")

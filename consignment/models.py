@@ -35,6 +35,7 @@ class CDConsignmentStock(ConsignmentStockBase):
         permissions = [
             ("transfer_stock", "Может передавать товар на реализацию"),
             ("return_stock", "Может возвращать товар с реализации"),
+            ("change_consignment_reward", "Может изменять вознаграждение на реализации"),
         ]
         constraints = [
             models.UniqueConstraint(fields=("platform", "warehouse", "cd"), name="unique_cd_platform_warehouse_stock"),

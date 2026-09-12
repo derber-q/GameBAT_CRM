@@ -1,12 +1,16 @@
 from django.contrib import messages
-from django.core.exceptions import ObjectDoesNotExist, ValidationError
+from django.core.exceptions import ValidationError
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
-from core.decorators import permission_required_any
-from .forms import SaleCreateForm
+from core.decorators import permission_required_all, permission_required_any
+from price.excel import import_wholesale_price_to_sale
+from .forms import SaleCreateForm, WholesalePriceImportForm
 from .models import Sale
-from .services import advance_order_status, create_sale, edit_postpay_sale_items, mark_sale_paid
+from .services import advance_order_status, cancel_sale, create_sale, edit_postpay_sale_items, mark_sale_paid
+
+
+WHOLESALE_DRAFT_SESSION_KEY = "sale_wholesale_import_draft"
 
 
 def _sale_destination(request, sale):
@@ -35,21 +39,35 @@ def sale_list(request):
         "warehouse", "created_by", "consignment_platform"
     ).prefetch_related("cd_items", "tech_items")
     completed = queryset.filter(
-        order_status=Sale.OrderStatus.DELIVERED, payment_status=Sale.PaymentStatus.PAID
+        order_status=Sale.OrderStatus.DELIVERED,
+        payment_status=Sale.PaymentStatus.PAID,
+        cancelled_at__isnull=True,
     ) if (request.user.is_superuser or request.user.has_perm("sales.view_completed_sales")) else []
-    incomplete = queryset.exclude(
+    incomplete = queryset.filter(cancelled_at__isnull=True).exclude(
         order_status=Sale.OrderStatus.DELIVERED, payment_status=Sale.PaymentStatus.PAID
     )
+    cancelled = queryset.filter(cancelled_at__isnull=False)
     return render(request, "sales/list.html", {
         "incomplete_sales": incomplete,
         "completed_sales": completed,
+        "cancelled_sales": cancelled,
         "can_view_completed": request.user.is_superuser or request.user.has_perm("sales.view_completed_sales"),
     })
 
 
 @permission_required_any("sales.create_sale")
 def sale_create(request):
-    form = SaleCreateForm(request.POST or None)
+    draft = request.session.get(WHOLESALE_DRAFT_SESSION_KEY)
+    initial = {}
+    if draft:
+        initial = {
+            "warehouse": draft["warehouse_id"],
+            "price_type": Sale.PriceType.WHOLESALE,
+            "sale_type": Sale.SaleType.WHOLESALE_PICKUP,
+        }
+    form = SaleCreateForm(
+        request.POST or None, initial=initial, imported_wholesale=bool(draft)
+    )
     if request.method == "POST" and form.is_valid():
         try:
             sale = create_sale(
@@ -63,12 +81,34 @@ def sale_create(request):
         except ValidationError as exc:
             form.add_error(None, exc)
         else:
+            request.session.pop(WHOLESALE_DRAFT_SESSION_KEY, None)
             messages.success(request, f"Продажа {sale.visible_id} создана.")
             return _sale_destination(request, sale)
     return render(request, "sales/create.html", {
         "form": form,
         "can_view_sales": request.user.is_superuser or request.user.has_perm("sales.view_sales"),
+        "can_import_wholesale": request.user.is_superuser or request.user.has_perm("sales.import_wholesale_price"),
+        "initial_items": draft["lines"] if draft else [],
+        "imported_wholesale": bool(draft),
     })
+
+
+@permission_required_all("sales.create_sale", "sales.import_wholesale_price")
+def sale_wholesale_import(request):
+    form = WholesalePriceImportForm(request.POST or None, request.FILES or None)
+    if request.method == "POST" and form.is_valid():
+        try:
+            warehouse, lines = import_wholesale_price_to_sale(form.cleaned_data["file"])
+        except ValidationError as exc:
+            form.add_error("file", exc)
+        else:
+            request.session[WHOLESALE_DRAFT_SESSION_KEY] = {
+                "warehouse_id": warehouse.pk,
+                "lines": lines,
+            }
+            messages.success(request, "Оптовый прайс проверен. Проверьте обычную форму продажи.")
+            return redirect("sales:create")
+    return render(request, "sales/import_wholesale.html", {"form": form})
 
 
 @permission_required_any("sales.view_sale_detail")
@@ -93,16 +133,17 @@ def sale_detail(request, pk):
         Sale.OrderStatus.ASSEMBLED: (Sale.OrderStatus.SHIPPED, "Отметить как отправленный"),
         Sale.OrderStatus.SHIPPED: (Sale.OrderStatus.DELIVERED, "Отметить как доставленный"),
     }.get(sale.order_status)
-    if not (request.user.is_superuser or request.user.has_perm("sales.advance_order_status")):
+    if sale.is_cancelled or not (request.user.is_superuser or request.user.has_perm("sales.advance_order_status")):
         next_status = None
-    cash_transaction = None
+    cash_transactions = []
     if request.user.is_superuser or request.user.has_perm("cash.view_cash_history"):
-        try:
-            cash_transaction = sale.cash_transaction
-        except ObjectDoesNotExist:
-            pass
+        cash_transactions = sale.cash_transactions.all()
     return render(request, "sales/detail.html", {
-        "sale": sale, "rows": rows, "next_status": next_status, "cash_transaction": cash_transaction,
+        "sale": sale, "rows": rows, "next_status": next_status,
+        "cash_transactions": cash_transactions,
+        "can_cancel": not sale.is_cancelled and (
+            request.user.is_superuser or request.user.has_perm("sales.cancel_sale")
+        ),
     })
 
 
@@ -154,5 +195,26 @@ def sale_mark_paid(request, pk):
         messages.error(request, " ".join(exc.messages) if isinstance(exc, ValidationError) else "Продажа не найдена.")
     else:
         messages.success(request, "Оплата подтверждена.")
+    sale = Sale.objects.filter(pk=pk).first()
+    return _sale_destination(request, sale) if sale else redirect("core:home")
+
+
+@require_POST
+@permission_required_any("sales.cancel_sale")
+def sale_cancel(request, pk):
+    try:
+        result = cancel_sale(
+            actor=request.user, sale_id=pk, comment=request.POST.get("cancellation_comment"),
+        )
+    except (ValidationError, Sale.DoesNotExist) as exc:
+        messages.error(
+            request,
+            " ".join(exc.messages) if isinstance(exc, ValidationError) else "Продажа не найдена.",
+        )
+    else:
+        if result.cancelled:
+            messages.success(request, f"Продажа {result.sale.visible_id} отменена.")
+        else:
+            messages.info(request, "Продажа уже была отменена ранее.")
     sale = Sale.objects.filter(pk=pk).first()
     return _sale_destination(request, sale) if sale else redirect("core:home")

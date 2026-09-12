@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% block title %}Новый закупочный заказ · ReSOURCE{% endblock %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">Заказы</p><h1>Новый заказ</h1><p class="muted">Загрузите заполненный клиентом закупочный XLSX. Цены и поставщики будут восстановлены из снимка в CRM.</p></div><a class="button button-secondary" href="{% url 'orders:list' %}">Назад</a></div>
+<form method="post" enctype="multipart/form-data" class="panel form-panel stacked-form">{% csrf_token %}{% if form.non_field_errors %}<div class="alert alert-error">{{ form.non_field_errors }}</div>{% endif %}{% for field in form %}<div class="field {% if field.errors %}field-error{% endif %}"><label>{{ field.label }}</label>{{ field }}{% for error in field.errors %}<span class="error-text">{{ error }}</span>{% endfor %}</div>{% endfor %}<button class="button button-large" type="submit">Проверить и показать состав</button></form>
+{% endblock %}

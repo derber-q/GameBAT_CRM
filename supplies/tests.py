@@ -1,6 +1,7 @@
 from decimal import Decimal
 from unittest.mock import patch
 
+from django.contrib.auth.models import Permission
 from django.core.exceptions import ValidationError
 from django.test import TestCase
 from django.urls import reverse
@@ -243,3 +244,22 @@ class SupplyAutocompleteTests(TestCase):
         result = response.json()["results"][0]
         self.assertEqual(result["type"], "cd")
         self.assertIn("CD — Grand Theft Auto V — PS5", result["label"])
+
+    def test_autocomplete_finds_product_by_barcode_for_sale(self):
+        worker = User.objects.create_user("sales-barcode", password="StrongWorker!123")
+        worker.user_permissions.add(Permission.objects.get(
+            content_type__app_label="sales", codename="create_sale",
+        ))
+        self.client.force_login(worker)
+
+        response = self.client.get(
+            reverse("supplies:autocomplete"),
+            {"q": "123", "warehouse": self.warehouse.pk},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        result = response.json()["results"][0]
+        self.assertEqual(result["id"], self.cd.pk)
+        self.assertEqual(result["type"], "cd")
+        self.assertEqual(result["barcode"], "123")
+        self.assertEqual(result["available"], 4)
