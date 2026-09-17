@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} · ReSOURCE{% endblock %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">Кредиторы</p><h1>{{ title }}</h1></div><a class="button button-secondary" href="{% if creditor %}{% url 'creditors:detail' creditor.pk %}{% else %}{% url 'creditors:list' %}{% endif %}">Отмена</a></div>
+<section class="panel form-panel"><form method="post" class="stacked-form">{% csrf_token %}
+  {% if form.non_field_errors %}<div class="alert alert-error">{{ form.non_field_errors }}</div>{% endif %}
+  {% for field in form %}<div class="field {% if field.errors %}field-error{% endif %}"><label for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% for error in field.errors %}<span class="error-text">{{ error }}</span>{% endfor %}</div>{% endfor %}
+  <div class="form-actions"><button class="button" type="submit">Сохранить</button></div>
+</form></section>
+{% endblock %}

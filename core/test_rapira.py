@@ -1,4 +1,5 @@
 import json
+from decimal import Decimal
 from unittest.mock import Mock, patch
 
 from django.contrib.auth import get_user_model
@@ -70,10 +71,10 @@ class RapiraServiceTests(TestCase):
             "data": [{"symbol": "USDT/RUB", "close": 87.89, "change": 0.49}],
         })
 
-        rates = fetch_market_rates(("USD/RUB", "AED/RUB"))
+        rates = fetch_market_rates(("USD/RUB", "BTC/RUB"))
 
         self.assertIsNone(rates["USD/RUB"]["value"])
-        self.assertIsNone(rates["AED/RUB"]["value"])
+        self.assertIsNone(rates["BTC/RUB"]["value"])
 
     @patch("core.services.rapira.urlopen")
     def test_invalid_response_is_reported_as_service_error(self, mocked_urlopen):
@@ -108,13 +109,23 @@ class RapiraServiceTests(TestCase):
         self.assertEqual(fallback["rates"]["USDT/RUB"]["value"], "87.89")
         self.assertIsNotNone(cache.get(LAST_SUCCESS_CACHE_KEY))
 
+    @patch("core.views.get_cached_usdt_aed_rate")
     @patch("core.views.get_cached_market_rates")
-    def test_internal_endpoint_returns_compact_payload_without_browser_cache(self, mocked_rates):
+    def test_internal_endpoint_returns_both_sources_without_browser_cache(
+        self, mocked_rates, mocked_coinbase
+    ):
         mocked_rates.return_value = {
             "rates": {"USDT/RUB": {"value": "87.89", "change": "0.49"}},
             "updated_at": "2026-09-07T09:00:00+00:00",
             "available": True,
             "stale": False,
+        }
+        mocked_coinbase.return_value = {
+            "value": Decimal("3.6725"),
+            "updated_at": "2026-09-07T09:00:01+00:00",
+            "available": True,
+            "stale": False,
+            "source": "Coinbase",
         }
         user = get_user_model().objects.create_user("rates-user", password="StrongPass!123")
         self.client.force_login(user)
@@ -124,4 +135,7 @@ class RapiraServiceTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["source"], "Rapira")
         self.assertEqual(response.json()["rates"]["USDT/RUB"]["value"], "87.89")
+        self.assertEqual(response.json()["rates"]["USDT/AED"]["value"], "3.6725")
+        self.assertEqual(response.json()["rates"]["USDT/AED"]["source"], "Coinbase")
+        self.assertEqual(response.json()["sources"]["usdt_aed"], "Coinbase")
         self.assertEqual(response["Cache-Control"], "no-store, max-age=0")

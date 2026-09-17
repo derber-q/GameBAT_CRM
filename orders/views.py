@@ -96,9 +96,9 @@ def order_preview(request):
     item_ids = [row["price_list_item_id"] for row in draft["lines"]]
     items = {
         item.pk: item
-        for item in ProcurementPriceListItem.objects.filter(
+        for item in ProcurementPriceListItem.objects.select_related("cd", "tech").filter(
             price_list_id=draft["price_list_id"], pk__in=item_ids
-        )
+        ) if not item.product.is_archived
     }
     preview_rows = []
     for row in draft["lines"]:

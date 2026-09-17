@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Финализация прихода №{{ supply.pk }} · ReSOURCE{% endblock %}
+{% block content %}
+<div class="page-heading">
+  <div>
+    <p class="eyebrow">Приход №{{ supply.pk }} · редакция {{ supply.revision_number }}</p>
+    <h1>Финализация прихода</h1>
+    <p class="muted">Перераспределение глобальной себестоимости без изменения количества и общей стоимости запасов.</p>
+  </div>
+  <div class="heading-actions"><a class="button button-secondary" href="{% url 'supplies:detail' supply.pk %}">Вернуться к приходу</a></div>
+</div>
+
+<form id="supply-finalization-form" method="post" data-auto-url="{% url 'supplies:finalization_auto' supply.pk %}">
+  {% csrf_token %}
+  <input type="hidden" name="revision_number" value="{{ supply.revision_number }}">
+  <section class="panel finalization-toolbar">
+    <div class="finalization-penalty finalization-penalty-success" data-finalization-penalty>
+      <span>Текущая неустойка</span><strong>{{ initial_penalty|floatformat:2 }} ₽</strong>
+    </div>
+    <div class="finalization-quick-actions">
+      <button class="button button-secondary" type="button" data-select-kind="cd">Выбрать все CD</button>
+      <button class="button button-secondary" type="button" data-select-kind="tech">Выбрать все Tech</button>
+      <button class="button button-secondary" type="button" data-select-kind="all">Выбрать все</button>
+      <button class="button button-secondary" type="button" data-select-kind="none">Снять выделение</button>
+      <button class="button" type="button" data-auto-distribute>Распределить текущую неустойку</button>
+    </div>
+    <p class="muted finalization-help">Ручное изменение фиксирует строку и исключает её из последующего автораспределения. Автораспределение делит сумму по общему количеству единиц выбранных товаров.</p>
+    <p class="error-text finalization-error" data-finalization-error role="alert"></p>
+  </section>
+
+  <section class="panel inventory-section finalization-section">
+    <div class="section-heading"><div><span class="category-tag">CD</span><h2>Диски</h2></div><span class="count">{{ cd_rows|length }} товаров</span></div>
+    <div class="table-scroll"><table class="finalization-table"><thead><tr><th>Авто</th><th>Тип</th><th>ID</th><th>Артикул</th><th>Название</th><th class="numeric">Глобальный остаток</th><th class="numeric">Текущая себестоимость</th><th class="numeric">Откорректированная</th><th class="numeric">Изменение / ед.</th><th class="numeric">Неустойка строки</th></tr></thead><tbody>{% include "supplies/_finalization_rows.html" with section_rows=cd_rows %}</tbody></table></div>
+  </section>
+
+  <section class="panel inventory-section finalization-section">
+    <div class="section-heading"><div><span class="category-tag category-tag-tech">Tech</span><h2>Техника</h2></div><span class="count">{{ tech_rows|length }} товаров</span></div>
+    <div class="table-scroll"><table class="finalization-table"><thead><tr><th>Авто</th><th>Тип</th><th>ID</th><th>Артикул</th><th>Название</th><th class="numeric">Глобальный остаток</th><th class="numeric">Текущая себестоимость</th><th class="numeric">Откорректированная</th><th class="numeric">Изменение / ед.</th><th class="numeric">Неустойка строки</th></tr></thead><tbody>{% include "supplies/_finalization_rows.html" with section_rows=tech_rows %}</tbody></table></div>
+  </section>
+
+  <div class="submit-bar finalization-submit-bar">
+    <div class="finalization-penalty" data-finalization-penalty><span>Неустойка перед применением</span><strong>{{ initial_penalty|floatformat:2 }} ₽</strong></div>
+    <button class="button" type="submit" data-apply-finalization disabled>Применить финализацию</button>
+  </div>
+</form>
+<script src="{% static 'js/supply-finalization.js' %}?v=1"></script>
+{% endblock %}

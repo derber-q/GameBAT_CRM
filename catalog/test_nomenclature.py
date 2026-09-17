@@ -92,6 +92,9 @@ class NomenclatureListTests(NomenclatureDataMixin, TestCase):
     def test_tables_keep_groups_but_remove_duplicate_columns(self):
         response = self.client.get(reverse("nomenclature:list"))
 
+        for column in ("id", "sku", "name", "meta", "action"):
+            self.assertEqual(response.content.decode().count(f'class="nomenclature-col-{column}"'), 2)
+
         self.assertContains(
             response,
             '<th>ID</th><th>Артикул</th><th>Название</th><th>CUSA/PPSA</th><th></th>',
@@ -231,28 +234,28 @@ class ProductCardPermissionTests(NomenclatureDataMixin, TestCase):
         self.assertEqual(self.cd.name, "Новое имя старой карточки")
         self.assertEqual(self.cd.barcode, "")
 
-    def test_existing_pricing_permission_controls_retail_price(self):
-        retail_permission = permission("change_retail_price", app_label="pricing")
+    def test_existing_pricing_permission_controls_avito_price(self):
+        avito_permission = permission("change_retail_price", app_label="pricing")
         response = self.client.post(self.url, {
             "version": product_version(self.cd),
             "name": self.cd.name,
-            "retail_price": "999.00",
+            "avito_price": "999.00",
         })
         self.assertEqual(response.status_code, 200)
         self.cd.refresh_from_db()
-        self.assertIsNone(self.cd.retail_price)
+        self.assertIsNone(self.cd.avito_price)
 
-        self.worker.user_permissions.add(retail_permission)
+        self.worker.user_permissions.add(avito_permission)
         self.worker = User.objects.get(pk=self.worker.pk)
         self.client.force_login(self.worker)
         response = self.client.post(self.url, {
             "version": product_version(self.cd),
             "name": self.cd.name,
-            "retail_price": "999.00",
+            "avito_price": "999.00",
         })
         self.assertEqual(response.status_code, 302)
         self.cd.refresh_from_db()
-        self.assertEqual(str(self.cd.retail_price), "999.00")
+        self.assertEqual(str(self.cd.avito_price), "999.00")
         self.assertEqual(ProductChangeEvent.objects.count(), 1)
 
     def test_permissions_from_group_enable_the_field(self):
@@ -660,7 +663,7 @@ class ProductAdminAuditTests(NomenclatureDataMixin, TestCase):
             "sku": self.cd.sku,
             "barcode": self.cd.barcode,
             "cusa_ppsa_code": self.cd.cusa_ppsa_code,
-            "retail_price": "",
+            "avito_price": "",
             "wholesale_price": "",
             "yandex_market_price": "",
             "comment": self.cd.comment,
@@ -674,7 +677,7 @@ class ProductAdminAuditTests(NomenclatureDataMixin, TestCase):
             "description": self.tech.description,
             "sku": self.tech.sku,
             "barcode": self.tech.barcode,
-            "retail_price": "",
+            "avito_price": "",
             "wholesale_price": "",
             "yandex_market_price": "",
             "comment": self.tech.comment,

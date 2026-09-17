@@ -1,0 +1,26 @@
+{% for row in section_rows %}
+<tr class="finalization-row" data-product-key="{{ row.product_type }}:{{ row.product_id }}" data-product-type="{{ row.product_type }}" data-quantity="{{ row.global_quantity }}" data-baseline-cost="{{ row.current_cost }}">
+  <td class="finalization-select-cell">
+    <input type="checkbox" name="selected_product" value="{{ row.product_type }}:{{ row.product_id }}" aria-label="Участвует в автораспределении: {{ row.product.name }}" {% if not row.global_quantity %}disabled title="Нулевой глобальный остаток — товар не участвует в распределении."{% endif %}>
+    <input type="hidden" name="product_type" value="{{ row.product_type }}">
+    <input type="hidden" name="product_id" value="{{ row.product_id }}">
+    <input type="hidden" name="baseline_quantity" value="{{ row.global_quantity }}">
+    <input type="hidden" name="baseline_cost" value="{{ row.current_cost|floatformat:'2u' }}">
+    <input class="finalization-source-input" type="hidden" name="change_source" value="unchanged">
+  </td>
+  <td><span class="badge {% if row.product_type == 'tech' %}badge-primary{% endif %}">{{ row.product_type|upper }}</span></td>
+  <td class="numeric">{{ row.product_id }}</td>
+  <td class="mono">{{ row.product.sku|default:"—" }}</td>
+  <td class="strong">{{ row.product.name }}</td>
+  <td class="numeric strong">{{ row.global_quantity }}</td>
+  <td class="numeric">{{ row.current_cost|floatformat:2 }} ₽</td>
+  <td class="numeric finalization-corrected-cell">
+    <input class="finalization-cost-input" type="number" inputmode="decimal" min="0" step="0.01" name="corrected_cost" value="{{ row.corrected_cost|floatformat:'2u' }}" aria-label="Откорректированная себестоимость: {{ row.product.name }}">
+    <span class="finalization-source" aria-live="polite"></span>
+  </td>
+  <td class="numeric finalization-difference">0,00 ₽</td>
+  <td class="numeric strong finalization-row-penalty">0,00 ₽</td>
+</tr>
+{% empty %}
+<tr><td colspan="10" class="empty-cell">В этой категории товаров нет.</td></tr>
+{% endfor %}

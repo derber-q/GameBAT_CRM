@@ -1,5 +1,9 @@
+import logging
+
 from django.contrib import admin
 from .models import SalesPlatform, Supplier
+
+logger = logging.getLogger("gamebat.business")
 
 
 class SupplierDetailAdminMixin:
@@ -25,8 +29,18 @@ class SupplierDetailAdminMixin:
 
 @admin.register(Supplier)
 class SupplierAdmin(SupplierDetailAdminMixin, admin.ModelAdmin):
-    list_display = ("id", "letter", "name", "legal_entity", "phone_1", "email")
+    list_display = ("id", "letter", "name", "priority", "legal_entity", "phone_1", "email")
     search_fields = ("letter", "name", "legal_entity", "phone_1", "email")
+
+    def save_model(self, request, obj, form, change):
+        old_priority = None
+        if change and obj.pk:
+            old_priority = Supplier.objects.filter(pk=obj.pk).values_list("priority", flat=True).first()
+        super().save_model(request, obj, form, change)
+        logger.info(
+            "Поставщик сохранён через Admin: user_id=%s supplier_id=%s priority=%s old_priority=%s fields=%s",
+            request.user.pk, obj.pk, obj.priority, old_priority, ",".join(form.changed_data),
+        )
 
 
 @admin.register(SalesPlatform)

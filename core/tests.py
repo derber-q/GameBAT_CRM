@@ -81,8 +81,9 @@ class InternalPageSmokeTests(TestCase):
         self.assertNotContains(response, "GameBAT CRM")
         self.assertContains(response, 'class="nav-sale')
         self.assertContains(response, 'data-rate-symbol="USDT/RUB"')
-        self.assertContains(response, 'data-rate-symbol="AED/RUB"')
-        self.assertContains(response, 'data-rate-symbol="USD/AED"')
+        self.assertContains(response, 'data-rate-symbol="USDT/AED"')
+        self.assertNotContains(response, 'data-rate-symbol="AED/RUB"')
+        self.assertNotContains(response, 'data-rate-symbol="USD/AED"')
 
         warehouse_trigger = nav_html.index(">Склад</a>")
         menu_start = nav_html.index('<div class="nav-dropdown-menu">', warehouse_trigger)

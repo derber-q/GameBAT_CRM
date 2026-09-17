@@ -117,20 +117,23 @@ def credit_sale_payment(*, sale, actor):
         sale=sale, operation_type=CashTransaction.OperationType.SALE_PAYMENT
     ).exists():
         raise ValidationError("Оплата этой продажи уже проведена.")
-    register.balance += sale.total_amount
+    amount = sale.cash_received_amount if sale.cash_received_amount is not None else sale.total_amount
+    if amount < sale.total_amount:
+        raise ValidationError("Полученная сумма не может быть меньше стоимости продажи.")
+    register.balance += amount
     register.full_clean()
     register.save(update_fields=("balance",))
     operation = CashTransaction.objects.create(
         cash_register=register,
         operation_type=CashTransaction.OperationType.SALE_PAYMENT,
-        amount=sale.total_amount,
+        amount=amount,
         comment=f"Продажа {sale.visible_id}.",
         created_by=actor,
         sale=sale,
     )
     logger.info(
         "Наличная оплата продажи: user_id=%s sale_id=%s transaction_id=%s amount=%s",
-        actor.pk, sale.pk, operation.pk, sale.total_amount,
+        actor.pk, sale.pk, operation.pk, amount,
     )
     return operation
 

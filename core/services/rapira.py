@@ -11,7 +11,7 @@ from django.utils import timezone
 
 logger = logging.getLogger("gamebat.business")
 
-HEADER_RATE_SYMBOLS = ("USDT/RUB", "AED/RUB", "USD/AED")
+HEADER_RATE_SYMBOLS = ("USDT/RUB",)
 FRESH_CACHE_KEY = "rapira:header-rates:fresh:v1"
 LAST_SUCCESS_CACHE_KEY = "rapira:header-rates:last-success:v1"
 REFRESH_LOCK_KEY = "rapira:header-rates:refresh-lock:v1"

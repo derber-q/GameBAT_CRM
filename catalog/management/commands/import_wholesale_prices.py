@@ -86,7 +86,7 @@ def _load_source(path):
 
 def _resolve_rows(source_rows):
     models = {"cd": CD, "tech": Tech}
-    products = {kind: list(model.objects.all()) for kind, model in models.items()}
+    products = {kind: list(model.objects.active()) for kind, model in models.items()}
     by_normalized_name = {kind: {} for kind in models}
     for kind, items in products.items():
         for product in items:
@@ -98,7 +98,7 @@ def _resolve_rows(source_rows):
         manual_sku = MANUAL_SKU_BY_SOURCE_ROW.get(row)
         if manual_sku:
             try:
-                product = models[kind].objects.get(sku=manual_sku)
+                product = models[kind].objects.active().get(sku=manual_sku)
             except models[kind].DoesNotExist as exc:
                 raise CommandError(f"Строка {row}: карточка с SKU {manual_sku} не найдена.") from exc
         else:

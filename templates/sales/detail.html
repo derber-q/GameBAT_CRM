@@ -34,16 +34,19 @@
       <dt>Способ оплаты</dt><dd>{{ sale.get_payment_method_display }}</dd>
       <dt>Статус заказа</dt><dd>{{ sale.get_order_status_display }}</dd>
       <dt>Статус оплаты</dt><dd>{{ sale.get_payment_status_display }}</dd>
+      <dt>Примечание</dt><dd>{{ sale.note|default:"—"|linebreaksbr }}</dd>
       {% if sale.completed_at %}<dt>Завершена</dt><dd>{{ sale.completed_at|date:"d.m.Y H:i" }}</dd>{% endif %}
       {% for operation in cash_transactions %}<dt>{{ operation.get_operation_type_display }}</dt><dd>#{{ operation.pk }} · {{ operation.signed_amount }} ₽</dd>{% endfor %}
     </dl>
     {% if not sale.is_cancelled %}<div class="heading-actions status-action">
       {% if next_status %}<form method="post" action="{% url 'sales:advance' sale.pk %}">{% csrf_token %}<input type="hidden" name="next_status" value="{{ next_status.0 }}"><button class="button button-secondary" type="submit">{{ next_status.1 }}</button></form>{% endif %}
-      {% if sale.payment_status == 'unpaid' and perms.sales.mark_sale_paid or sale.payment_status == 'unpaid' and user.is_superuser %}<form method="post" action="{% url 'sales:mark_paid' sale.pk %}">{% csrf_token %}<button class="button" type="submit">Отметить как оплаченную</button></form>{% endif %}
+      {% if sale.payment_status == 'unpaid' and perms.sales.mark_sale_paid or sale.payment_status == 'unpaid' and user.is_superuser %}<form method="post" action="{% url 'sales:mark_paid' sale.pk %}" class="mark-paid-form">{% csrf_token %}{% if sale.payment_method == 'cash_postpay' %}<div class="field"><label for="cash-received-at-payment">Получено от покупателя</label><input id="cash-received-at-payment" type="number" name="cash_received_amount" min="{{ sale.total_amount }}" step="0.01" placeholder="{{ sale.total_amount }}"><span class="help-text">Если оставить пустым, в кассу поступит стоимость товаров.</span></div>{% endif %}<button class="button" type="submit">Отметить как оплаченную</button></form>{% endif %}
     </div>{% endif %}
   </section>
-  <section class="panel summary-card"><h2>Итоги</h2><dl class="summary"><dt>Позиций</dt><dd>{{ rows|length }}</dd><dt>Единиц</dt><dd>{{ sale.total_units }}</dd><dt class="grand">Итоговая сумма</dt><dd class="grand">{{ sale.total_amount }}</dd></dl></section>
+  <section class="panel summary-card"><h2>Итоги</h2><dl class="summary"><dt>Позиций</dt><dd>{{ rows|length }}</dd><dt>Единиц</dt><dd>{{ sale.total_units }}</dd><dt class="grand">Стоимость товаров</dt><dd class="grand">{{ sale.total_amount }}</dd>{% if sale.cash_received_amount is not None %}<dt>Получено от покупателя</dt><dd>{{ sale.cash_received_amount }}</dd><dt>Сумма сверх стоимости</dt><dd>{{ sale.extra_cash_amount }}</dd>{% endif %}</dl></section>
 </div>
+
+{% if can_edit_note %}<section class="panel form-panel sale-note-editor"><form method="post" action="{% url 'sales:note_update' sale.pk %}" class="stacked-form">{% csrf_token %}<div class="field"><label for="sale-note">Примечание</label><textarea id="sale-note" name="note" rows="3">{{ sale.note }}</textarea></div><div class="form-actions"><button class="button button-secondary" type="submit">Сохранить примечание</button></div></form></section>{% endif %}
 
 <section class="panel table-panel"><div class="table-scroll"><table><thead><tr><th>Тип</th><th>Название</th><th>Артикул</th><th class="numeric">Количество</th><th class="numeric">Цена единицы</th><th class="numeric">Сумма</th></tr></thead><tbody>{% for row in rows %}<tr><td><span class="badge">{{ row.type }}</span></td><td class="strong">{{ row.name }}</td><td class="mono">{{ row.sku }}</td><td class="numeric">{{ row.quantity }}</td><td class="numeric">{{ row.unit_price }}</td><td class="numeric strong">{{ row.line_total }}</td></tr>{% endfor %}</tbody></table></div></section>
 

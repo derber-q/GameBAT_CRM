@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% load static %}
 {% block title %}Передать на реализацию · ReSOURCE{% endblock %}
-{% block extra_head %}<script src="{% static 'js/consignment-transfer.js' %}?v=resource-ui-3" defer></script>{% endblock %}
+{% block extra_head %}<script src="{% static 'js/consignment-transfer.js' %}?v=creditors-sales-search-1" defer></script>{% endblock %}
 {% block content %}
 <div class="page-heading">
   <div>
@@ -11,7 +11,7 @@
   </div>
   <a class="button button-secondary" href="{% url 'consignment:list' %}">Назад</a>
 </div>
-<form method="post" id="consignment-transfer-form" data-autocomplete-url="{% url 'supplies:autocomplete' %}">{% csrf_token %}
+<form method="post" id="consignment-transfer-form" data-autocomplete-url="{% url 'supplies:autocomplete' %}" data-search-context="consignment">{% csrf_token %}
   {% if form.non_field_errors %}<div class="alert alert-error">{{ form.non_field_errors }}</div>{% endif %}
   <section class="panel form-panel">
     <div class="stacked-form">

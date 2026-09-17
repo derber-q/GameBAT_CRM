@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Подключения Avito · ReSOURCE{% endblock %}
+{% block content %}
+<div class="page-heading">
+  <div><p class="eyebrow">Интеграции · Avito</p><h1>Все подключения объявлений</h1></div>
+  <form method="post" action="{% url 'integrations:listings_refresh' %}">{% csrf_token %}<button class="button" type="submit">Обновить список</button></form>
+</div>
+<form method="get" class="panel filters"><div class="field"><label for="id_q">Поиск</label><input id="id_q" name="q" value="{{ query }}" placeholder="Avito ID, название, статус или товар CRM"></div><button class="button" type="submit">Найти</button></form>
+<section class="panel">
+  <div class="section-heading section-heading-plain"><h2>Не связанные объявления</h2><span class="count">{{ unlinked_page.paginator.count }}</span></div>
+  <div class="table-scroll"><table><thead><tr><th>Avito ID</th><th>Название</th><th>Категория</th><th>Статус</th><th></th></tr></thead><tbody>
+  {% for item in unlinked_page %}<tr><td class="mono">{{ item.avito_item_id }}</td><td>{% if item.url %}<a href="{{ item.url }}" target="_blank" rel="noopener">{{ item.title }}</a>{% else %}{{ item.title }}{% endif %}</td><td>{{ item.category_name|default:"—" }}</td><td>{% if item.missing_since %}Нет в текущем списке Avito; статус проверится при привязке{% else %}{{ item.status|default:"—" }}{% endif %}</td><td><a class="button button-small" href="{% url 'integrations:bind' item.pk %}">Привязать к товару</a></td></tr>{% empty %}<tr><td colspan="5" class="empty-cell">Объявлений нет. Нажмите «Обновить список» и дождитесь фоновой задачи.</td></tr>{% endfor %}
+  </tbody></table></div>
+  {% include "integrations/_pagination.html" with page=unlinked_page parameter="unlinked_page" %}
+</section>
+<section class="panel">
+  <div class="section-heading section-heading-plain"><h2>Связанные объявления</h2><span class="count">{{ linked_page.paginator.count }}</span></div>
+  <div class="table-scroll"><table><thead><tr><th>Avito ID</th><th>Объявление</th><th>Товар CRM</th><th>Продажа</th><th>Синхронизация</th><th></th></tr></thead><tbody>
+  {% for connection in linked_page %}<tr><td class="mono">{{ connection.remote_listing.avito_item_id }}</td><td>{{ connection.remote_listing.title }}</td><td><a href="{% if connection.profile.cd_id %}{% url 'nomenclature:cd_detail' connection.profile.cd_id %}{% else %}{% url 'nomenclature:tech_detail' connection.profile.tech_id %}{% endif %}">#{{ connection.profile.product_id }} · {{ connection.profile.product.name }}</a></td><td>{% if connection.profile.sell_on_avito %}Да{% else %}Нет{% endif %}</td><td>{{ connection.profile.get_sync_status_display }}{% if connection.profile.last_error %}<br><small class="error-text">{{ connection.profile.last_error }}</small>{% endif %}</td><td><a class="button button-secondary button-small" href="{% url 'integrations:rebind' connection.pk %}">Перепривязать</a></td></tr>{% empty %}<tr><td colspan="6" class="empty-cell">Связей пока нет.</td></tr>{% endfor %}
+  </tbody></table></div>
+  {% include "integrations/_pagination.html" with page=linked_page parameter="linked_page" %}
+</section>
+{% endblock %}

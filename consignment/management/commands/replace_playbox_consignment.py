@@ -90,9 +90,9 @@ def _read_source(path):
 
 def _match_line(line):
     if line.kind == "tech":
-        candidates = list(Tech.objects.all())
+        candidates = list(Tech.objects.active())
     else:
-        candidates = list(CD.objects.select_related("platform").filter(platform__name=line.platform))
+        candidates = list(CD.objects.active().select_related("platform").filter(platform__name=line.platform))
 
     exact = [obj for obj in candidates if _base_normalize(obj.name) == _base_normalize(line.name)]
     fuzzy = [

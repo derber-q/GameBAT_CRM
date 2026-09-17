@@ -24,7 +24,7 @@ class SaleCancellationTests(TestCase):
         self.actor = User.objects.create_superuser("admin", password="StrongAdmin!123")
         platform = Platform.objects.create(name="PS5")
         self.product = CD.objects.create(
-            platform=platform, name="Игра", sku="CD-1", barcode="1", retail_price=100,
+            platform=platform, name="Игра", sku="CD-1", barcode="1", avito_price=100,
         )
         self.warehouse = Warehouse.objects.create(name="Склад")
         self.stock = CDWarehouseStock.objects.create(
@@ -59,7 +59,7 @@ class SaleCancellationTests(TestCase):
         brand = Brand.objects.create(name="Sony")
         product_type = ProductType.objects.create(name="Консоли")
         tech = Tech.objects.create(
-            brand=brand, product_type=product_type, name="Консоль", sku="TECH-1", retail_price=50,
+            brand=brand, product_type=product_type, name="Консоль", sku="TECH-1", avito_price=50,
         )
         tech_stock = TechWarehouseStock.objects.create(warehouse=self.warehouse, tech=tech, quantity=5)
         sale = create_sale(

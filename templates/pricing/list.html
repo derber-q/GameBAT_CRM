@@ -1,5 +1,7 @@
 {% extends "base.html" %}
+{% load static %}
 {% block title %}Ценообразование · ReSOURCE{% endblock %}
+{% block extra_head %}<script src="{% static 'js/pricing.js' %}?v=avito-margin-1" defer></script>{% endblock %}
 {% block content %}
 <div class="page-heading">
   <div>

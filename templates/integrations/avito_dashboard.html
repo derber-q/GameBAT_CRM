@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Avito · Интеграции · ReSOURCE{% endblock %}
+{% block content %}
+<div class="page-heading">
+  <div><p class="eyebrow">Интеграции</p><h1>Avito</h1><p class="muted">CRM управляет ценой и глобальным складским остатком связанных объявлений.</p></div>
+  <div class="heading-actions"><a class="button button-secondary" href="{% url 'integrations:connections' %}">Все подключения объявлений</a></div>
+</div>
+{% if not credential or not credential.is_configured %}
+  <div class="alert alert-error">Сначала сохраните параметры на странице <a href="{% url 'integrations:api_keys' %}">API ключи</a>.</div>
+{% endif %}
+<div class="summary-grid integration-summary">
+  <article class="panel"><span class="muted">Подключение</span><strong>{{ credential.get_status_display|default:"Не настроено" }}</strong><small>{{ credential.account_name|default:"—" }}</small></article>
+  <article class="panel"><span class="muted">Связано</span><strong>{{ linked_count }}</strong><small>объявлений</small></article>
+  <article class="panel"><span class="muted">Не связано</span><strong>{{ unlinked_count }}</strong><small>объявлений</small></article>
+  <article class="panel"><span class="muted">Ошибки</span><strong>{{ error_count }}</strong><small>профилей</small></article>
+</div>
+<section class="panel">
+  <dl class="details integration-details">
+    <dt>Последняя успешная синхронизация</dt><dd>{{ last_log.finished_at|date:"d.m.Y H:i"|default:"—" }}</dd>
+    <dt>Задач в очереди</dt><dd>{{ pending_count }}</dd>
+    <dt>Автоматическая сверка</dt><dd>каждые 5 минут</dd>
+    <dt>Обновление списка</dt><dd>каждые 60 минут</dd>
+  </dl>
+  <div class="alert alert-info">У аккаунта сейчас нет доступа к Avito Autoload API. Чтение объявлений, цена и остатки доступны; создание, контент, фотографии и полное управление публикацией будут доступны после подключения Autoload.</div>
+  <form method="post" action="{% url 'integrations:manual_sync' %}">{% csrf_token %}<button class="button" type="submit">Синхронизировать сейчас</button></form>
+</section>
+{% endblock %}

@@ -38,10 +38,10 @@ def product_configuration(product_type):
 def update_product_prices(*, actor, product_type, product_id, changes, record_audit=True):
     product_model, _, _ = product_configuration(product_type)
     try:
-        product = product_model.objects.select_for_update().get(pk=product_id)
+        product = product_model.objects.active().select_for_update().get(pk=product_id)
     except (product_model.DoesNotExist, TypeError, ValueError) as exc:
         raise ValidationError("Товар не найден.") from exc
-    allowed = {"retail_price", "wholesale_price", "yandex_market_price"}
+    allowed = {"avito_price", "wholesale_price", "yandex_market_price"}
     updates = {}
     for field, value in changes.items():
         if field not in allowed:
@@ -88,7 +88,7 @@ def update_product_prices(*, actor, product_type, product_id, changes, record_au
 def update_supplier_price(*, actor, product_type, product_id, supplier_id, value):
     product_model, price_model, product_field = product_configuration(product_type)
     try:
-        product = product_model.objects.get(pk=product_id)
+        product = product_model.objects.active().get(pk=product_id)
         supplier = Supplier.objects.get(pk=supplier_id)
     except (product_model.DoesNotExist, Supplier.DoesNotExist, TypeError, ValueError) as exc:
         raise ValidationError("Товар или поставщик не найден.") from exc

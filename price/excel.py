@@ -145,17 +145,17 @@ def generate_retail_price_xlsx(*, warehouse_id, actor):
         warehouse = Warehouse.objects.get(pk=warehouse_id)
     except Warehouse.DoesNotExist as exc:
         raise ValidationError("Выберите существующий склад.") from exc
-    stocks = list(CDWarehouseStock.objects.filter(warehouse=warehouse, quantity__gt=0).select_related("cd")) + list(
-        TechWarehouseStock.objects.filter(warehouse=warehouse, quantity__gt=0).select_related("tech")
+    stocks = list(CDWarehouseStock.objects.filter(warehouse=warehouse, quantity__gt=0, cd__is_archived=False).select_related("cd")) + list(
+        TechWarehouseStock.objects.filter(warehouse=warehouse, quantity__gt=0, tech__is_archived=False).select_related("tech")
     )
     available = []
     skipped = 0
     for stock in stocks:
         product = getattr(stock, "cd", None) or stock.tech
-        if product.retail_price is None:
+        if product.avito_price is None:
             skipped += 1
         else:
-            available.append((product.name, product.retail_price))
+            available.append((product.name, product.avito_price))
     available.sort(key=lambda row: row[0].casefold())
     workbook, sheet = _base_workbook(
         title="Розничный прайс", subtitle=f"Склад: {warehouse.name}", columns=2
@@ -183,7 +183,7 @@ def generate_wholesale_price_xlsx(*, warehouse_id, actor):
     for kind, model, field in (
         ("cd", CDWarehouseStock, "cd"), ("tech", TechWarehouseStock, "tech")
     ):
-        for stock in model.objects.filter(warehouse=warehouse, quantity__gt=0).select_related(field):
+        for stock in model.objects.filter(warehouse=warehouse, quantity__gt=0, **{f"{field}__is_archived": False}).select_related(field):
             product = getattr(stock, field)
             if product.wholesale_price is not None:
                 rows.append((kind, product, stock.quantity))
@@ -230,7 +230,7 @@ def generate_supplier_template(*, actor):
     workbook, sheet = _base_workbook(
         title="Шаблон цен поставщика", subtitle="Заполните только колонку «Цена AED»", columns=5
     )
-    rows = [("cd", item) for item in CD.objects.all()] + [("tech", item) for item in Tech.objects.all()]
+    rows = [("cd", item) for item in CD.objects.active()] + [("tech", item) for item in Tech.objects.active()]
     rows.sort(key=lambda row: (row[0], row[1].name.casefold(), row[1].pk))
     metadata = []
     for excel_row, (kind, product) in enumerate(rows, HEADER_ROW + 1):
@@ -256,7 +256,10 @@ def generate_procurement_customer_xlsx(*, price_list_id, actor):
         title="Закупочный прайс", subtitle="Укажите количество по предоплате или постоплате", columns=5
     )
     metadata = []
-    rows = list(price_list.items.all())
+    rows = [
+        item for item in price_list.items.select_related("cd", "tech")
+        if not item.product.is_archived
+    ]
     for excel_row, item in enumerate(rows, HEADER_ROW + 1):
         values = (
             safe_text(item.product_name_snapshot), item.prepayment_price_rub, 0,
@@ -381,10 +384,10 @@ def import_wholesale_price_to_sale(upload):
             if not quantity:
                 continue
             if kind == "cd":
-                product = CD.objects.filter(pk=product_id).first()
+                product = CD.objects.active().filter(pk=product_id).first()
                 stock = CDWarehouseStock.objects.filter(warehouse=warehouse, cd_id=product_id).first()
             elif kind == "tech":
-                product = Tech.objects.filter(pk=product_id).first()
+                product = Tech.objects.active().filter(pk=product_id).first()
                 stock = TechWarehouseStock.objects.filter(warehouse=warehouse, tech_id=product_id).first()
             else:
                 raise ValidationError(f"Строка {excel_row}: неизвестный тип товара.")
@@ -400,6 +403,7 @@ def import_wholesale_price_to_sale(upload):
             lines.append({
                 "product_type": kind, "product_id": product_id, "quantity": quantity,
                 "label": f"{kind.upper()} — {product.name}",
+                "unit_price": f"{product.wholesale_price:.2f}",
             })
         if not lines:
             raise ValidationError("В файле не выбрано ни одной товарной позиции.")
@@ -439,12 +443,12 @@ def import_supplier_price(*, supplier_id, upload, actor):
             if price <= 0:
                 raise ValidationError(f"Строка {excel_row}: цена AED должна быть больше нуля.")
             model = CD if kind == "cd" else Tech if kind == "tech" else None
-            if model is None or not model.objects.filter(pk=product_id).exists():
+            if model is None or not model.objects.active().filter(pk=product_id).exists():
                 raise ValidationError(f"Строка {excel_row}: товар не найден.")
             prepared[kind].append((product_id, price))
         expected = (
-            {("cd", product_id) for product_id in CD.objects.values_list("id", flat=True)}
-            | {("tech", product_id) for product_id in Tech.objects.values_list("id", flat=True)}
+            {("cd", product_id) for product_id in CD.objects.active().values_list("id", flat=True)}
+            | {("tech", product_id) for product_id in Tech.objects.active().values_list("id", flat=True)}
         )
         if seen != expected:
             raise ValidationError(

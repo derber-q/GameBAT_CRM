@@ -104,6 +104,8 @@ def create_customer_procurement_order(*, actor, price_list_id, recipient, commen
     }
     if set(source_items) != set(prepared):
         raise ValidationError("Одна из позиций отсутствует в исходном закупочном прайсе.")
+    if any(item.product.is_archived for item in source_items.values()):
+        raise ValidationError("Удалённый товар нельзя включить в новый заказ.")
     order = CustomerProcurementOrder.objects.create(
         recipient=recipient, comment=str(comment or "").strip(), price_list=price_list, created_by=actor
     )
@@ -140,6 +142,8 @@ def edit_created_order(*, actor, order_id, recipient, comment, lines):
     }
     if set(sources) != set(prepared):
         raise ValidationError("Товар отсутствует в исходном закупочном прайсе.")
+    if any(item.product.is_archived for item in sources.values()):
+        raise ValidationError("Удалённый товар нельзя включить в заказ.")
     existing = {
         item.price_list_item_id: item
         for item in CustomerProcurementOrderItem.objects.select_for_update().filter(order=order)
@@ -370,6 +374,8 @@ def create_supplier_order_batch(*, actor, order_ids):
         quantity = item.prepayment_quantity + item.postpayment_quantity
         if not quantity:
             continue
+        if item.product.is_archived:
+            raise ValidationError("Удалённый товар нельзя включить в новый заказ поставщику.")
         key = (item.selected_supplier_id, item.product_kind, item.product_id)
         if key not in aggregated:
             aggregated[key] = {

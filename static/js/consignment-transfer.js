@@ -83,6 +83,7 @@
       suggestions: suggestionBox,
       endpoint: form.dataset.autocompleteUrl,
       warehouseInput: warehouse,
+      searchContext: form.dataset.searchContext,
       onSelect: showCost,
     });
     if (!value.label) search.focus();

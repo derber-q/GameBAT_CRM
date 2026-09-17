@@ -2,7 +2,7 @@
 <div class="table-scroll">
   <table class="global-stock-table pricing-table">
     <thead>
-      <tr><th>ID</th><th>Артикул</th><th>Название</th><th class="numeric">Себестоимость</th><th class="numeric">Розница</th><th class="numeric">Опт</th><th class="numeric">Яндекс Маркет</th><th></th></tr>
+      <tr><th>ID</th><th>Артикул</th><th>Название</th><th class="numeric">Себестоимость</th><th class="numeric">Цена Avito</th><th class="numeric">Опт</th><th class="numeric">Яндекс Маркет</th><th></th></tr>
     </thead>
     <tbody>
       {% for row in rows %}
@@ -11,10 +11,10 @@
           <td class="mono">{{ row.product.sku }}</td>
           <td class="strong">{{ row.product.name }}</td>
           <td class="numeric">{{ row.product.cost|floatformat:2 }}</td>
-          <td class="numeric">{% if can_change_retail %}<input class="compact-input" form="product-price-{{ row.type }}-{{ row.product.id }}" type="number" min="0" step="0.01" name="retail_price" value="{{ row.product.retail_price|default_if_none:''|unlocalize }}" aria-label="Розничная цена">{% else %}<span class="price-readonly">{{ row.product.retail_price|default_if_none:"—" }}</span>{% endif %}</td>
+          <td class="numeric">{% if can_change_avito %}<input class="compact-input avito-price-input{% if row.avito_low_margin %} avito-low-margin{% endif %}" form="product-price-{{ row.type }}-{{ row.product.id }}" type="number" min="0" step="0.01" name="avito_price" value="{{ row.product.avito_price|default_if_none:''|unlocalize }}" data-cost="{{ row.product.cost|unlocalize }}" aria-label="Цена Avito"{% if row.avito_low_margin %} title="Наценка относительно себестоимости меньше 200 ₽"{% endif %}>{% else %}<span class="price-readonly{% if row.avito_low_margin %} avito-price-readonly-warning{% endif %}"{% if row.avito_low_margin %} title="Наценка относительно себестоимости меньше 200 ₽"{% endif %}>{{ row.product.avito_price|default_if_none:"—" }}</span>{% endif %}</td>
           <td class="numeric">{% if can_change_wholesale %}<input class="compact-input" form="product-price-{{ row.type }}-{{ row.product.id }}" type="number" min="0" step="0.01" name="wholesale_price" value="{{ row.product.wholesale_price|default_if_none:''|unlocalize }}" aria-label="Оптовая цена">{% else %}<span class="price-readonly">{{ row.product.wholesale_price|default_if_none:"—" }}</span>{% endif %}</td>
           <td class="numeric">{% if can_change_yandex %}<input class="compact-input" form="product-price-{{ row.type }}-{{ row.product.id }}" type="number" min="0" step="0.01" name="yandex_market_price" value="{{ row.product.yandex_market_price|default_if_none:''|unlocalize }}" aria-label="Цена Яндекс Маркет">{% else %}<span class="price-readonly">{{ row.product.yandex_market_price|default_if_none:"—" }}</span>{% endif %}</td>
-          <td>{% if can_change_retail or can_change_wholesale or can_change_yandex %}<form id="product-price-{{ row.type }}-{{ row.product.id }}" method="post" action="{% url 'pricing:product_update' %}{% if filter_query %}?{{ filter_query }}{% endif %}" class="inline-price-form">{% csrf_token %}<input type="hidden" name="product_type" value="{{ row.type }}"><input type="hidden" name="product_id" value="{{ row.product.id }}"><button class="table-action" type="submit">Сохранить</button></form>{% endif %}</td>
+          <td>{% if can_change_avito or can_change_wholesale or can_change_yandex %}<form id="product-price-{{ row.type }}-{{ row.product.id }}" method="post" action="{% url 'pricing:product_update' %}{% if filter_query %}?{{ filter_query }}{% endif %}" class="inline-price-form">{% csrf_token %}<input type="hidden" name="product_type" value="{{ row.type }}"><input type="hidden" name="product_id" value="{{ row.product.id }}"><button class="table-action" type="submit">Сохранить</button></form>{% endif %}</td>
         </tr>
       {% endfor %}
     </tbody>

@@ -1,4 +1,5 @@
 from django.db import models
+from django.core.validators import MinValueValidator
 from .validators import hex_color_validator
 
 
@@ -13,6 +14,7 @@ class Supplier(models.Model):
     phone_3 = models.CharField("Телефон №3", max_length=40, blank=True)
     website = models.URLField("Сайт", blank=True)
     telegram = models.CharField("Telegram", max_length=100, blank=True)
+    priority = models.PositiveIntegerField("Приоритет", default=1000, validators=[MinValueValidator(1)])
 
     class Meta:
         ordering = ("letter",)

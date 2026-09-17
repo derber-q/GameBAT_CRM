@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}{{ creditor.name }} · Кредиторы · ReSOURCE{% endblock %}
+{% block content %}
+<div class="page-heading">
+  <div><p class="eyebrow">Кредитор</p><h1>{{ creditor.name }}</h1><p class="muted">Создан {{ creditor.created_at|date:"d.m.Y H:i" }}</p></div>
+  <div class="heading-actions">{% if can_change_debt %}<a class="button" href="{% url 'creditors:debt' creditor.pk %}">Изменить задолженность</a>{% endif %}{% if can_change %}<a class="button button-secondary" href="{% url 'creditors:edit' creditor.pk %}">Редактировать</a>{% endif %}<a class="button button-secondary" href="{% url 'creditors:list' %}">К списку</a></div>
+</div>
+<div class="detail-grid"><section class="panel"><h2>Описание</h2><p>{{ creditor.description|default:"Описание не заполнено."|linebreaksbr }}</p></section><section class="panel summary-card"><h2>Текущая задолженность</h2><div class="creditor-debt-value">{{ creditor.current_debt }} ₽</div></section></div>
+{% if can_view_history %}<section class="panel table-panel"><div class="section-heading"><h2>История операций</h2><span class="count">{{ transactions|length }}</span></div><div class="table-scroll"><table>
+  <thead><tr><th>Дата</th><th>Склад</th><th>Хранилище</th><th class="numeric">Было</th><th class="numeric">Стало</th><th class="numeric">Изменение</th><th>Комментарий</th><th>Сотрудник</th></tr></thead>
+  <tbody>{% for operation in transactions %}<tr><td>{{ operation.created_at|date:"d.m.Y H:i" }}</td><td>{{ operation.warehouse.name }}</td><td>{{ operation.get_money_source_type_display }}</td><td class="numeric">{{ operation.old_debt }}</td><td class="numeric strong">{{ operation.new_debt }}</td><td class="numeric {% if operation.delta > 0 %}danger-text{% endif %}">{% if operation.delta > 0 %}+{% endif %}{{ operation.delta }}</td><td>{{ operation.comment|default:"—" }}</td><td>{{ operation.actor.full_name|default:operation.actor.username }}</td></tr>{% empty %}<tr><td colspan="8" class="empty-cell">Операций пока нет.</td></tr>{% endfor %}</tbody>
+</table></div></section>{% endif %}
+{% endblock %}

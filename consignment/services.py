@@ -108,7 +108,7 @@ def transfer_many_to_consignment(*, actor, warehouse_id, platform_id, lines):
         ids = {line["product_id"] for line in prepared if line["product_type"] == product_type}
         products.update({
             (product_type, product.pk): product
-            for product in product_model.objects.select_for_update().filter(pk__in=ids).order_by("pk")
+            for product in product_model.objects.active().select_for_update().filter(pk__in=ids).order_by("pk")
         })
         warehouse_stocks.update({
             (product_type, getattr(stock, f"{product_field}_id")): stock
@@ -265,7 +265,7 @@ def update_consignment_reward(*, actor, product_type, stock_id, value):
         raise ValidationError("Позиция на реализации не найдена.") from exc
     if stock.quantity <= 0:
         raise ValidationError("Вознаграждение можно менять только у товара на реализации.")
-    product = product_model.objects.select_for_update().get(pk=getattr(stock, f"{product_field}_id"))
+    product = product_model.objects.active().select_for_update().get(pk=getattr(stock, f"{product_field}_id"))
     old_value = stock.receivable_per_unit
     if old_value == amount:
         return stock
@@ -296,7 +296,7 @@ def return_from_consignment(*, actor, warehouse_id, platform_id, product_type, p
     product_model, consignment_model, warehouse_stock_model, _, product_field = _configuration(product_type)
     try:
         warehouse = Warehouse.objects.select_for_update().get(pk=warehouse_id)
-        product = product_model.objects.select_for_update().get(pk=product_id)
+        product = product_model.objects.active().select_for_update().get(pk=product_id)
         stock = consignment_model.objects.select_for_update().select_related("platform").get(
             warehouse=warehouse,
             platform_id=platform_id,
@@ -386,7 +386,7 @@ def record_consignment_sale(*, actor, product_type, stock_id, quantity, payment_
         ).get(pk=stock_id)
     except stock_model.DoesNotExist as exc:
         raise ValidationError("Остаток товара на реализации не найден.") from exc
-    product = product_model.objects.select_for_update().get(pk=getattr(stock, f"{product_field}_id"))
+    product = product_model.objects.active().select_for_update().get(pk=getattr(stock, f"{product_field}_id"))
     if stock.quantity < quantity:
         raise ValidationError(f"На реализации осталось только {stock.quantity} единиц товара.")
     unit_price = stock.receivable_per_unit.quantize(CENT, rounding=ROUND_HALF_UP)
@@ -404,6 +404,8 @@ def record_consignment_sale(*, actor, product_type, stock_id, quantity, payment_
         payment_status=Sale.PaymentStatus.PAID,
         completed_at=now,
         total_amount=total,
+        cash_received_amount=total if payment_method == Sale.PaymentMethod.CASH else None,
+        extra_cash_amount=Decimal("0.00"),
         created_by=actor,
     )
     sale.visible_id = f"SALE-{sale.pk:06d}"

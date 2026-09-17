@@ -71,7 +71,9 @@ class ProductCardFormMixin(forms.ModelForm):
             if isinstance(self.instance, CD)
             else "warehouse.change_techwarehousestock"
         )
-        self.can_change_stock = user.is_superuser or user.has_perm(stock_permission)
+        self.can_change_stock = not self.instance.is_archived and (
+            user.is_superuser or user.has_perm(stock_permission)
+        )
         stocks = list(
             stock_model.objects.filter(
                 **{self.instance._meta.model_name: self.instance}
@@ -89,7 +91,7 @@ class ProductCardFormMixin(forms.ModelForm):
         self.storage_location_fields = []
         self.warehouse_field_pairs = []
         self.warehouses_by_id = {warehouse.pk: warehouse for warehouse in Warehouse.objects.all()}
-        self.can_change_storage_location = (
+        self.can_change_storage_location = not self.instance.is_archived and (
             user.is_superuser or user.has_perm("warehouse.change_storage_location")
         )
         for warehouse in self.warehouses_by_id.values():
@@ -138,10 +140,12 @@ class ProductCardFormMixin(forms.ModelForm):
                 self.fields[field_name].required = False
         for field_name in self.field_permissions:
             field = self.fields[field_name]
-            if field_name not in self.allowed_fields:
+            if field_name not in self.allowed_fields or self.instance.is_archived:
                 field.disabled = True
                 field.required = False
                 field.widget.attrs["aria-readonly"] = "true"
+        if self.instance.is_archived:
+            self.allowed_fields.clear()
         for field_name in ("description", "comment"):
             self.fields[field_name].widget.attrs.setdefault("rows", 4)
         self.can_edit = bool(self.allowed_fields)
@@ -198,6 +202,7 @@ class ProductCreateFormMixin:
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fields["sku"].required = False
         for field_name in ("description", "comment"):
             self.fields[field_name].widget.attrs.setdefault("rows", 4)
 
@@ -205,10 +210,16 @@ class ProductCreateFormMixin:
 class CDCreateForm(ProductCreateFormMixin, forms.ModelForm):
     class Meta:
         model = CD
-        fields = ("platform", "name", "description", "sku", "barcode", "cusa_ppsa_code", "comment")
+        fields = (
+            "platform", "game_series", "name", "description", "sku", "barcode", "cusa_ppsa_code",
+            "weight_grams", "comment",
+        )
 
 
 class TechCreateForm(ProductCreateFormMixin, forms.ModelForm):
     class Meta:
         model = Tech
-        fields = ("brand", "product_type", "name", "description", "sku", "barcode", "comment")
+        fields = (
+            "brand", "product_type", "name", "description", "sku", "barcode",
+            "weight_grams", "comment",
+        )

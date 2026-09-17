@@ -26,6 +26,7 @@ class SupplyCancellationTests(TestCase):
         product_type = ProductType.objects.create(name="Консоли")
         self.tech = Tech.objects.create(
             brand=brand, product_type=product_type, name="Консоль", sku="TECH-1", cost=50,
+            weight_grams=500,
         )
         self.warehouse = Warehouse.objects.create(name="Склад")
         self.cd_stock = CDWarehouseStock.objects.create(

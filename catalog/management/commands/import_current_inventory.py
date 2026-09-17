@@ -283,7 +283,7 @@ def _parse_workbook(path):
 
 
 def _require_exact(model, names, label):
-    found = {item.name: item for item in model.objects.filter(name__in=names)}
+    found = {item.name: item for item in model.objects.active().filter(name__in=names)}
     missing = sorted(set(names) - set(found))
     if missing:
         raise CommandError(f"В справочнике «{label}» отсутствуют значения: {', '.join(missing)}.")
@@ -375,7 +375,7 @@ class Command(BaseCommand):
                     "sku": f"{'TECH' if item.kind == 'tech' else 'CD'}-XLSX-{item.row:04d}",
                     "cost": item.cost,
                     "quantity_on_consignment": 0,
-                    "retail_price": None,
+                    "avito_price": None,
                     "wholesale_price": None,
                     "yandex_market_price": None,
                     "comment": "",

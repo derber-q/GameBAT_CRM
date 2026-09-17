@@ -78,7 +78,7 @@ def create_transfer(*, actor, source_warehouse_id, destination_warehouse_id, lin
         ids = {line["product_id"] for line in prepared if line["product_type"] == product_type}
         products.update({
             (product_type, product.pk): product
-            for product in product_model.objects.filter(pk__in=ids).order_by("pk")
+            for product in product_model.objects.active().select_for_update().filter(pk__in=ids).order_by("pk")
         })
         stocks.update({
             (product_type, getattr(stock, f"{product_field}_id")): stock

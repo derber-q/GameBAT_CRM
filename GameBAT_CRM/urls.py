@@ -34,7 +34,9 @@ urlpatterns = [
     path("sales/", include("sales.urls")),
     path("orders/", include("orders.urls")),
     path("cash/", include("cash.urls")),
+    path("creditors/", include("creditors.urls")),
     path("nomenclature/", include("catalog.nomenclature_urls")),
+    path("integrations/", include("integrations.urls")),
     path("", include("core.urls")),
 ]
 

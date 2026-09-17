@@ -479,7 +479,7 @@ def _match_existing(items, existing, *, cd):
 
 
 def _require_references(model, names, label):
-    found = {obj.name: obj for obj in model.objects.filter(name__in=names)}
+    found = {obj.name: obj for obj in model.objects.active().filter(name__in=names)}
     missing = sorted(set(names) - set(found))
     if missing:
         raise CommandError(f"В справочнике «{label}» отсутствуют: {', '.join(missing)}.")
@@ -506,8 +506,8 @@ class Command(BaseCommand):
         tech_source, tech_missing = _read_tech(tech_path)
         cd_unique, cd_source_dupes = _dedupe_source(cd_source, cd=True)
         tech_unique, tech_source_dupes = _dedupe_source(tech_source, cd=False)
-        new_cd, cd_matches, cd_ambiguous = _match_existing(cd_unique, list(CD.objects.select_related("platform")), cd=True)
-        new_tech, tech_matches, tech_ambiguous = _match_existing(tech_unique, list(Tech.objects.select_related("brand", "product_type")), cd=False)
+        new_cd, cd_matches, cd_ambiguous = _match_existing(cd_unique, list(CD.objects.active().select_related("platform")), cd=True)
+        new_tech, tech_matches, tech_ambiguous = _match_existing(tech_unique, list(Tech.objects.active().select_related("brand", "product_type")), cd=False)
 
         self.stdout.write(f"CD: строк с ценой {len(cd_source)}, дублей внутри файла {len(cd_source_dupes)}, уже в базе {len(cd_matches)}, новых {len(new_cd)}.")
         self.stdout.write(f"Техника: строк с ценой {len(tech_source)}, дублей внутри файла {len(tech_source_dupes)}, уже в базе {len(tech_matches)}, новых {len(new_tech)}.")

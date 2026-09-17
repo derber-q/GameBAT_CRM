@@ -55,14 +55,14 @@ class PriceExcelTests(TestCase):
         product_type = ProductType.objects.create(name="Консоли")
         self.cd = CD.objects.create(
             platform=platform, name="Игра", sku="CD-1", barcode="1", cost=100,
-            retail_price=200, wholesale_price=150,
+            avito_price=200, wholesale_price=150,
         )
         self.no_price_cd = CD.objects.create(
             platform=platform, name="Без цены", sku="CD-2", barcode="2", cost=100,
         )
         self.tech = Tech.objects.create(
             brand=brand, product_type=product_type, name="Консоль", sku="T-1", barcode="3", cost=100,
-            retail_price=300, wholesale_price=250,
+            avito_price=300, wholesale_price=250,
         )
         CDWarehouseStock.objects.create(warehouse=self.moscow, cd=self.cd, quantity=5)
         CDWarehouseStock.objects.create(warehouse=self.moscow, cd=self.no_price_cd, quantity=3)

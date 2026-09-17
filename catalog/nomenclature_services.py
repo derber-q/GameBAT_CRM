@@ -2,6 +2,7 @@
 import logging
 from dataclasses import dataclass
 
+from django.core.exceptions import ValidationError
 from django.db import transaction
 
 from pricing.services import update_product_prices
@@ -11,14 +12,21 @@ from warehouse.storage_services import clear_storage_locations_if_zero, update_s
 from .audit import changed_snapshots, field_change, product_snapshot, record_product_changes, stock_change
 from .models import CD, ProductChangeEvent, Tech
 from .nomenclature_forms import CDCardForm, TechCardForm, product_version
+from .product_identifiers import ensure_product_article, set_product_barcode
 from .product_fields import CD_CARD_FIELDS, PRICE_FIELDS, TECH_CARD_FIELDS
 
 logger = logging.getLogger("gamebat.business")
 
 
 CREATE_FIELDS = {
-    "cd": ("platform", "name", "description", "sku", "barcode", "cusa_ppsa_code", "comment"),
-    "tech": ("brand", "product_type", "name", "description", "sku", "barcode", "comment"),
+    "cd": (
+        "platform", "game_series", "name", "description", "sku", "barcode", "cusa_ppsa_code",
+        "weight_grams", "comment",
+    ),
+    "tech": (
+        "brand", "product_type", "name", "description", "sku", "barcode",
+        "weight_grams", "comment",
+    ),
 }
 
 
@@ -32,7 +40,7 @@ class ProductUpdateResult:
 
 def product_configuration(product_kind):
     if product_kind == "cd":
-        return CD, CDCardForm, CD_CARD_FIELDS, ("platform",), CDWarehouseStock, "cd"
+        return CD, CDCardForm, CD_CARD_FIELDS, ("platform", "game_series"), CDWarehouseStock, "cd"
     if product_kind == "tech":
         return Tech, TechCardForm, TECH_CARD_FIELDS, ("brand", "product_type"), TechWarehouseStock, "tech"
     raise ValueError("Неизвестный тип товара.")
@@ -44,9 +52,18 @@ def create_product(*, actor, product_kind, data):
     if product_kind not in CREATE_FIELDS:
         raise ValueError("Неизвестный тип товара.")
     model = CD if product_kind == "cd" else Tech
-    product = model(**{field: data[field] for field in CREATE_FIELDS[product_kind]})
+    barcode = data.get("barcode", "")
+    values = {
+        field: data[field]
+        for field in CREATE_FIELDS[product_kind]
+        if field != "barcode" and field in data
+    }
+    product = model(barcode="", **values)
     product.full_clean()
     product.save()
+    ensure_product_article(product)
+    if barcode:
+        set_product_barcode(product=product, barcode=barcode)
     changes = [field_change(
         field_name="created",
         field_label="Товар создан",
@@ -96,6 +113,8 @@ def update_product_card(*, actor, product_kind, product_id, data):
             ).order_by("pk")
         )
     product = model.objects.select_for_update().select_related(*related_fields).get(pk=product_id)
+    if product.is_archived:
+        raise ValidationError("Удалённый товар нельзя изменять.")
     locked_stocks = list(
         stock_model.objects.select_for_update().filter(
             **{stock_product_field: product}
@@ -145,10 +164,14 @@ def update_product_card(*, actor, product_kind, product_id, data):
         return ProductUpdateResult(product=product, form=form)
 
     product = form.save(commit=False)
-    card_fields = [field for field in product_fields if field not in PRICE_FIELDS]
+    card_fields = [
+        field for field in product_fields if field not in PRICE_FIELDS and field != "barcode"
+    ]
     price_fields = [field for field in product_fields if field in PRICE_FIELDS]
     if card_fields:
         product.save(update_fields=tuple(card_fields))
+    if "barcode" in product_fields:
+        set_product_barcode(product=product, barcode=form.cleaned_data["barcode"])
     if price_fields:
         update_product_prices(
             actor=actor,

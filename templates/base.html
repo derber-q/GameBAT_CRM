@@ -6,8 +6,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}ReSOURCE{% endblock %}</title>
   <link rel="icon" href="{% static 'img/gamebat-favicon.ico' %}" sizes="32x32" type="image/x-icon">
-  <link rel="stylesheet" href="{% static 'css/gamebat.css' %}?v=barcode-sale-3">
-  <script src="{% static 'js/app.js' %}?v=barcode-search-2" defer></script>
+  <link rel="stylesheet" href="{% static 'css/gamebat.css' %}?v=nomenclature-columns-1">
+  <script src="{% static 'js/app.js' %}?v=catalog-archive-1" defer></script>
   {% block extra_head %}{% endblock %}
 </head>
 <body>
@@ -29,6 +29,7 @@
             </div>
           {% endif %}
         {% endif %}
+        {% if nav.creditors %}<a class="{% if request.resolver_match.namespace == 'creditors' %}active{% endif %}" href="{% url 'creditors:list' %}">Кредиторы</a>{% endif %}
         {% if nav.nomenclature %}<a class="{% if request.resolver_match.namespace == 'nomenclature' %}active{% endif %}" href="{% url 'nomenclature:list' %}">Номенклатура</a>{% endif %}
         {% if nav.warehouse %}
           <div class="nav-dropdown">
@@ -51,12 +52,20 @@
         {% if nav.pricing %}<a class="{% if request.resolver_match.namespace == 'pricing' %}active{% endif %}" href="{% url 'pricing:list' %}">Ценообразование</a>{% endif %}
         {% if nav.price %}<a class="{% if request.resolver_match.namespace == 'price' %}active{% endif %}" href="{% url 'price:index' %}">Прайс</a>{% endif %}
         {% if nav.suppliers %}<a class="{% if request.resolver_match.namespace == 'partners' %}active{% endif %}" href="{% url 'partners:list' %}">Поставщики</a>{% endif %}
+        {% if nav.integrations %}
+          <div class="nav-dropdown">
+            <a class="nav-dropdown-trigger {% if request.resolver_match.namespace == 'integrations' %}active{% endif %}" href="{% url 'integrations:api_keys' %}" aria-haspopup="true">Интеграции</a>
+            <div class="nav-dropdown-menu">
+              {% if nav.integration_keys %}<a href="{% url 'integrations:api_keys' %}">API ключи</a>{% endif %}
+              {% if nav.integration_avito %}<a href="{% url 'integrations:avito' %}">Avito</a>{% endif %}
+            </div>
+          </div>
+        {% endif %}
         {% if nav.users %}<a class="{% if request.resolver_match.namespace == 'accounts' and 'user' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'accounts:user_list' %}">Пользователи</a>{% endif %}
       </nav>
       <div class="rates" aria-label="Курсы валют">
         <span data-rate-symbol="USDT/RUB">USDT/RUB <b>—</b></span>
-        <span data-rate-symbol="AED/RUB">AED/RUB <b>—</b></span>
-        <span data-rate-symbol="USD/AED">USD/AED <b>—</b></span>
+        <span data-rate-symbol="USDT/AED" data-rate-decimals="4">USDT/AED <b>—</b></span>
       </div>
       <div class="session-tools">
         <span class="clock"><b id="gb-date">—</b><span id="gb-time">—</span></span>

@@ -15,7 +15,7 @@ def temporary_sale_id():
 
 class Sale(models.Model):
     class PriceType(models.TextChoices):
-        RETAIL = "retail", "Розничная"
+        RETAIL = "retail", "Цена Avito"
         WHOLESALE = "wholesale", "Оптовая"
         YANDEX_MARKET = "yandex_market", "Яндекс Маркет"
         CONSIGNMENT = "consignment", "Реализация"
@@ -68,6 +68,15 @@ class Sale(models.Model):
     updated_at = models.DateTimeField("Обновлена", auto_now=True)
     completed_at = models.DateTimeField("Завершена", null=True, blank=True, editable=False)
     total_amount = models.DecimalField("Сумма", max_digits=20, decimal_places=2, default=0, editable=False)
+    cash_received_amount = models.DecimalField(
+        "Получено от покупателя", max_digits=20, decimal_places=2,
+        null=True, blank=True, validators=[MinValueValidator(0)], editable=False,
+    )
+    extra_cash_amount = models.DecimalField(
+        "Сумма сверх стоимости", max_digits=20, decimal_places=2, default=0,
+        validators=[MinValueValidator(0)], editable=False,
+    )
+    note = models.TextField("Примечание", blank=True)
     cancelled_at = models.DateTimeField("Отменена", null=True, blank=True, editable=False)
     cancelled_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="cancelled_sales",
@@ -98,8 +107,32 @@ class Sale(models.Model):
             models.CheckConstraint(condition=models.Q(total_amount__gte=0), name="sale_total_nonnegative"),
             models.CheckConstraint(condition=models.Q(refunded_amount__gte=0), name="sale_refund_nonnegative"),
             models.CheckConstraint(
-                condition=models.Q(refunded_amount__lte=models.F("total_amount")),
-                name="sale_refund_not_above_total",
+                condition=(
+                    models.Q(cash_received_amount__isnull=True, refunded_amount__lte=models.F("total_amount"))
+                    | models.Q(
+                        cash_received_amount__isnull=False,
+                        refunded_amount__lte=models.F("cash_received_amount"),
+                    )
+                ),
+                name="sale_refund_not_above_received",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(cash_received_amount__isnull=True)
+                    | models.Q(cash_received_amount__gte=models.F("total_amount"))
+                ),
+                name="sale_cash_received_not_below_total",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(extra_cash_amount__gte=0),
+                name="sale_extra_cash_nonnegative",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(payment_method__in=("cash", "cash_postpay"))
+                    | models.Q(cash_received_amount__isnull=True, extra_cash_amount=0)
+                ),
+                name="sale_bank_has_no_cash_received",
             ),
             models.CheckConstraint(
                 condition=(

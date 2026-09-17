@@ -11,5 +11,6 @@ urlpatterns = [
     path("<int:pk>/edit/", views.sale_edit, name="edit"),
     path("<int:pk>/advance/", views.sale_advance, name="advance"),
     path("<int:pk>/mark-paid/", views.sale_mark_paid, name="mark_paid"),
+    path("<int:pk>/note/", views.sale_note_update, name="note_update"),
     path("<int:pk>/cancel/", views.sale_cancel, name="cancel"),
 ]

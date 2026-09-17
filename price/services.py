@@ -47,6 +47,8 @@ def _supplier_offers(*, lock=False):
         queryset = getattr(model.objects, queryset_method)().select_related("supplier", field).filter(price__gt=0)
         for offer in queryset.order_by("supplier_id", f"{field}_id"):
             product = getattr(offer, field)
+            if product.is_archived:
+                continue
             result[(kind, product.pk)].append((offer.supplier, offer.price, product))
     return result
 

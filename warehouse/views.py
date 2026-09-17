@@ -74,11 +74,11 @@ def _warehouse_stock_groups(
 
     filters = filters or ProductFilterState()
     cd_products = (
-        CD.objects.select_related("platform").order_by("platform__name", "name", "id")
+        CD.objects.active().select_related("platform").order_by("platform__name", "name", "id")
         if include_cd else CD.objects.none()
     )
     tech_products = (
-        Tech.objects.select_related("brand", "product_type").order_by("product_type__name", "name", "id")
+        Tech.objects.active().select_related("brand", "product_type").order_by("product_type__name", "name", "id")
         if include_tech else Tech.objects.none()
     )
     cd_products, tech_products = filter_product_querysets(cd_products, tech_products, filters)
@@ -154,11 +154,11 @@ def global_stock_context(*, include_cd=True, include_tech=True, query="", filter
     tech_groups = defaultdict(list)
     filters = filters or ProductFilterState(search=query)
     cd_products = (
-        CD.objects.select_related("platform").order_by("platform__name", "name", "id")
+        CD.objects.active().select_related("platform").order_by("platform__name", "name", "id")
         if include_cd else CD.objects.none()
     )
     tech_products = (
-        Tech.objects.select_related("brand", "product_type").order_by("product_type__name", "name", "id")
+        Tech.objects.active().select_related("brand", "product_type").order_by("product_type__name", "name", "id")
         if include_tech else Tech.objects.none()
     )
     cd_products, tech_products = filter_product_querysets(cd_products, tech_products, filters)
@@ -456,6 +456,7 @@ def transfer_detail(request, pk):
 def transfer_create(request, source_pk):
     source = get_object_or_404(Warehouse, pk=source_pk)
     form = WarehouseTransferForm(request.POST or None, source_warehouse=source)
+    filters, filter_context = product_filter_context(request.GET)
     if request.method == "POST" and form.is_valid():
         try:
             transfer = create_transfer(
@@ -473,6 +474,7 @@ def transfer_create(request, source_pk):
         source,
         only_available=True,
         requested_quantities=_requested_quantities(request.POST) if request.method == "POST" else None,
+        filters=filters,
     )
     return render(request, "warehouse/transfer_create.html", {
         "form": form,
@@ -486,6 +488,7 @@ def transfer_create(request, source_pk):
             or request.user.has_perm("catalog.view_tech")
         ),
         "can_view_transfers": request.user.is_superuser or request.user.has_perm("warehouse.view_transfers"),
+        **filter_context,
     })
 
 

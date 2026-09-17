@@ -75,13 +75,13 @@ class StorageLocationFeatureTests(TestCase):
         self.brand = Brand.objects.create(name="Sony")
         self.product_type = ProductType.objects.create(name="Консоль")
         self.cd = CD.objects.create(
-            platform=self.platform, name="Игра", sku="CD-1", barcode="1", retail_price=100, cost=100,
+            platform=self.platform, name="Игра", sku="CD-1", barcode="1", avito_price=100, cost=100,
         )
         self.other_cd = CD.objects.create(
-            platform=self.platform, name="Другая игра", sku="CD-2", barcode="2", retail_price=100, cost=100,
+            platform=self.platform, name="Другая игра", sku="CD-2", barcode="2", avito_price=100, cost=100,
         )
         self.tech = Tech.objects.create(
-            brand=self.brand, product_type=self.product_type, name="Приставка", sku="TECH-1", retail_price=200,
+            brand=self.brand, product_type=self.product_type, name="Приставка", sku="TECH-1", avito_price=200,
         )
         self.warehouse = Warehouse.objects.create(name="Москва")
         self.other_warehouse = Warehouse.objects.create(name="СПб")
@@ -230,7 +230,7 @@ class StorageLocationFeatureTests(TestCase):
                 name=f"Игра {index}",
                 sku=f"CD-N-{index}",
                 barcode=f"N-{index}",
-                retail_price=100,
+                avito_price=100,
                 cost=100,
             )
             CDWarehouseStock.objects.create(warehouse=self.warehouse, cd=product, quantity=1)

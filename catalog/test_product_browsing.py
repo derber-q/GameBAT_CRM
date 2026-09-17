@@ -140,6 +140,8 @@ class ProductBrowsingTests(TestCase):
                 html = self.client.get(url).content.decode()
                 controls = re.findall(r'aria-controls="([^"]+)"[^>]*data-collapse-toggle', html)
                 content_ids = re.findall(r'id="((?:global|warehouse|nomenclature|pricing)-(?:cd|tech)-\d+)"', html)
+                if url == reverse("nomenclature:list"):
+                    content_ids += re.findall(r'id="(nomenclature-series-\d+-(?:\d+|none))"', html)
                 self.assertGreater(len(controls), 0)
                 self.assertEqual(len(controls), len(set(controls)))
                 self.assertCountEqual(controls, content_ids)

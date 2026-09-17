@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Печать штрихкода</title>
+  <style>
+    @page { size: 58mm 40mm; margin: 0; }
+    * { box-sizing: border-box; }
+    html, body { height: 40mm; margin: 0; overflow: hidden; width: 58mm; }
+    .barcode-label {
+      align-items: center;
+      break-after: avoid;
+      break-before: avoid;
+      break-inside: avoid;
+      display: flex;
+      height: 40mm;
+      justify-content: center;
+      overflow: hidden;
+      page-break-after: avoid;
+      page-break-before: avoid;
+      page-break-inside: avoid;
+      width: 58mm;
+    }
+    .barcode-label img { display: block; max-height: 32mm; max-width: 52mm; object-fit: contain; }
+  </style>
+</head>
+<body>
+  <div class="barcode-label"><img src="{{ barcode_image }}" alt=""></div>
+  <script>window.addEventListener("load", () => window.print());</script>
+</body>
+</html>

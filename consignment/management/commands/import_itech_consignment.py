@@ -75,9 +75,9 @@ def _read_source(path):
 
 def _match_line(line):
     if line.kind == "cd":
-        candidates = list(CD.objects.select_related("platform").filter(platform__name=line.platform))
+        candidates = list(CD.objects.active().select_related("platform").filter(platform__name=line.platform))
     else:
-        candidates = list(Tech.objects.select_related("brand", "product_type"))
+        candidates = list(Tech.objects.active().select_related("brand", "product_type"))
     exact = [obj for obj in candidates if _base_normalize(obj.name) == _base_normalize(line.name)]
     if len(exact) == 1:
         return exact[0]

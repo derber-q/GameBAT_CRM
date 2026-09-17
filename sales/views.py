@@ -7,7 +7,10 @@ from core.decorators import permission_required_all, permission_required_any
 from price.excel import import_wholesale_price_to_sale
 from .forms import SaleCreateForm, WholesalePriceImportForm
 from .models import Sale
-from .services import advance_order_status, cancel_sale, create_sale, edit_postpay_sale_items, mark_sale_paid
+from .services import (
+    advance_order_status, cancel_sale, create_sale, edit_postpay_sale_items,
+    mark_sale_paid, update_sale_note,
+)
 
 
 WHOLESALE_DRAFT_SESSION_KEY = "sale_wholesale_import_draft"
@@ -77,6 +80,8 @@ def sale_create(request):
                 sale_type=form.cleaned_data["sale_type"],
                 payment_method=form.cleaned_data["payment_method"],
                 lines=_parse_lines(request.POST),
+                cash_received_amount=form.cleaned_data["cash_received_amount"],
+                note=form.cleaned_data["note"],
             )
         except ValidationError as exc:
             form.add_error(None, exc)
@@ -144,6 +149,7 @@ def sale_detail(request, pk):
         "can_cancel": not sale.is_cancelled and (
             request.user.is_superuser or request.user.has_perm("sales.cancel_sale")
         ),
+        "can_edit_note": request.user.is_superuser or request.user.has_perm("sales.change_sale"),
     })
 
 
@@ -155,11 +161,11 @@ def sale_edit(request, pk):
         return _sale_destination(request, sale)
     initial_items = [
         {"product_type": "cd", "product_id": item.cd_id, "quantity": item.quantity,
-         "label": f"CD — {item.product_name_snapshot}"}
+         "label": f"CD — {item.product_name_snapshot}", "unit_price": f"{item.unit_price:.2f}"}
         for item in sale.cd_items.all()
     ] + [
         {"product_type": "tech", "product_id": item.tech_id, "quantity": item.quantity,
-         "label": f"Tech — {item.product_name_snapshot}"}
+         "label": f"Tech — {item.product_name_snapshot}", "unit_price": f"{item.unit_price:.2f}"}
         for item in sale.tech_items.all()
     ]
     if request.method == "POST":
@@ -190,13 +196,28 @@ def sale_advance(request, pk):
 @permission_required_any("sales.mark_sale_paid")
 def sale_mark_paid(request, pk):
     try:
-        mark_sale_paid(actor=request.user, sale_id=pk)
+        mark_sale_paid(
+            actor=request.user, sale_id=pk,
+            cash_received_amount=request.POST.get("cash_received_amount"),
+        )
     except (ValidationError, Sale.DoesNotExist) as exc:
         messages.error(request, " ".join(exc.messages) if isinstance(exc, ValidationError) else "Продажа не найдена.")
     else:
         messages.success(request, "Оплата подтверждена.")
     sale = Sale.objects.filter(pk=pk).first()
     return _sale_destination(request, sale) if sale else redirect("core:home")
+
+
+@require_POST
+@permission_required_any("sales.change_sale")
+def sale_note_update(request, pk):
+    try:
+        sale = update_sale_note(actor=request.user, sale_id=pk, note=request.POST.get("note"))
+    except Sale.DoesNotExist:
+        messages.error(request, "Продажа не найдена.")
+        return redirect("sales:list")
+    messages.success(request, "Примечание сохранено.")
+    return _sale_destination(request, sale)
 
 
 @require_POST

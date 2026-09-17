@@ -1,4 +1,5 @@
 from collections import defaultdict
+from decimal import Decimal
 
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied, ValidationError
@@ -27,8 +28,8 @@ def _pricing_destination(request):
 @permission_required_any("pricing.view_pricing")
 def pricing_list(request):
     filters, filter_context = product_filter_context(request.GET)
-    cds = CD.objects.select_related("platform").order_by("platform__name", "name", "id")
-    tech_items = Tech.objects.select_related("brand", "product_type").order_by(
+    cds = CD.objects.active().select_related("platform").order_by("platform__name", "name", "id")
+    tech_items = Tech.objects.active().select_related("brand", "product_type").order_by(
         "product_type__name", "name", "id"
     )
     cds, tech_items = filter_product_querysets(cds, tech_items, filters)
@@ -37,19 +38,27 @@ def pricing_list(request):
         cd_groups[product.platform].append({
             "type": "cd",
             "product": product,
+            "avito_low_margin": (
+                product.avito_price is not None
+                and product.avito_price - product.cost < Decimal("200.00")
+            ),
         })
     tech_groups = defaultdict(list)
     for product in tech_items:
         tech_groups[product.product_type].append({
             "type": "tech",
             "product": product,
+            "avito_low_margin": (
+                product.avito_price is not None
+                and product.avito_price - product.cost < Decimal("200.00")
+            ),
         })
     context = {
         "query": filters.search,
         "cd_groups": list(cd_groups.items()),
         "tech_groups": list(tech_groups.items()),
         "filter_query": product_filter_query_string(request.GET),
-        "can_change_retail": request.user.is_superuser or request.user.has_perm("pricing.change_retail_price"),
+        "can_change_avito": request.user.is_superuser or request.user.has_perm("pricing.change_retail_price"),
         "can_change_wholesale": request.user.is_superuser or request.user.has_perm("pricing.change_wholesale_price"),
         "can_change_yandex": request.user.is_superuser or request.user.has_perm("pricing.change_yandex_market_price"),
     }
@@ -63,7 +72,7 @@ def pricing_list(request):
 )
 def product_prices_update(request):
     field_permissions = {
-        "retail_price": "pricing.change_retail_price",
+        "avito_price": "pricing.change_retail_price",
         "wholesale_price": "pricing.change_wholesale_price",
         "yandex_market_price": "pricing.change_yandex_market_price",
     }

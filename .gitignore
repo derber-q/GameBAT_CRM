@@ -64,7 +64,9 @@ db.sqlite3.*.bak
 protected_media/
 staticfiles/
 .django-secret-key
+.integration-encryption-key
 backups/
+reports/
 
 # Flask stuff:
 instance/

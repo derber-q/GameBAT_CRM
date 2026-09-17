@@ -32,7 +32,7 @@ class SupplyServiceTests(TestCase):
         )
         self.tech = Tech.objects.create(
             brand=self.brand, product_type=self.product_type, name="Консоль", sku="T-1",
-            barcode="002", cost=0,
+            barcode="002", cost=0, weight_grams=500,
         )
 
     def line(self, product_type="cd", product_id=None, quantity=1, cost="100"):

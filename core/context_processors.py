@@ -42,6 +42,9 @@ def crm_header(request):
             "warehouse_details": warehouse_details_access,
             "transfers": transfers_access,
             "cash": cash_access,
+            "creditors": authenticated and (
+                user.is_superuser or user.has_perm("creditors.view_creditors")
+            ),
             "nomenclature": authenticated and (
                 user.is_superuser or user.has_perm("catalog.view_nomenclature")
             ),
@@ -52,6 +55,17 @@ def crm_header(request):
             "price": authenticated and (user.is_superuser or user.has_perm("price.view_price_page")),
             "sales": authenticated and (user.is_superuser or user.has_perm("sales.view_sales")),
             "orders": authenticated and (user.is_superuser or user.has_perm("orders.view_orders")),
+            "integrations": authenticated and (
+                user.is_superuser
+                or user.has_perm("integrations.view_integrations")
+                or user.has_perm("integrations.view_avito_integration")
+            ),
+            "integration_keys": authenticated and (
+                user.is_superuser or user.has_perm("integrations.view_integrations")
+            ),
+            "integration_avito": authenticated and (
+                user.is_superuser or user.has_perm("integrations.view_avito_integration")
+            ),
             "users": authenticated and user.is_superuser,
             "admin": authenticated and (user.is_superuser or user.has_perm("core.access_admin_panel")),
         },

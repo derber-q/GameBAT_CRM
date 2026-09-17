@@ -28,14 +28,14 @@ class PricingTests(TestCase):
 
     def test_three_sales_prices_and_supplier_price(self):
         update_product_prices(actor=self.user, product_type="cd", product_id=self.cd.pk, changes={
-            "retail_price": "150", "wholesale_price": "130", "yandex_market_price": "170",
+            "avito_price": "150", "wholesale_price": "130", "yandex_market_price": "170",
         })
         update_supplier_price(
             actor=self.user, product_type="cd", product_id=self.cd.pk,
             supplier_id=self.supplier.pk, value="95.123456",
         )
         self.cd.refresh_from_db()
-        self.assertEqual(self.cd.retail_price, Decimal("150.00"))
+        self.assertEqual(self.cd.avito_price, Decimal("150.00"))
         self.assertEqual(self.cd.wholesale_price, Decimal("130.00"))
         self.assertEqual(self.cd.yandex_market_price, Decimal("170.00"))
         self.assertEqual(SupplierCDPrice.objects.get().price, Decimal("95.123456"))
@@ -49,21 +49,21 @@ class PricingTests(TestCase):
             product_type="cd",
             product_id=self.cd.pk,
             changes={
-                "retail_price": "150",
+                "avito_price": "150",
                 "wholesale_price": "",
                 "yandex_market_price": "170",
             },
         )
 
         self.cd.refresh_from_db()
-        self.assertEqual(self.cd.retail_price, Decimal("150.00"))
+        self.assertEqual(self.cd.avito_price, Decimal("150.00"))
         self.assertIsNone(self.cd.wholesale_price)
         self.assertEqual(self.cd.yandex_market_price, Decimal("170.00"))
 
     def test_negative_price_and_duplicate_supplier_pair_are_rejected(self):
         with self.assertRaises(ValidationError):
             update_product_prices(
-                actor=self.user, product_type="cd", product_id=self.cd.pk, changes={"retail_price": "-1"}
+                actor=self.user, product_type="cd", product_id=self.cd.pk, changes={"avito_price": "-1"}
             )
         SupplierCDPrice.objects.create(supplier=self.supplier, cd=self.cd, price=1)
         with self.assertRaises(IntegrityError), transaction.atomic():
@@ -124,7 +124,7 @@ class PricingTests(TestCase):
             {
                 "product_type": "cd",
                 "product_id": self.cd.pk,
-                "retail_price": "250",
+                "avito_price": "250",
             },
         )
         self.assertRedirects(
@@ -132,7 +132,7 @@ class PricingTests(TestCase):
             f'{reverse("pricing:list")}?search=CD-1&platform={self.platform.pk}',
         )
         self.cd.refresh_from_db()
-        self.assertEqual(self.cd.retail_price, Decimal("250.00"))
+        self.assertEqual(self.cd.avito_price, Decimal("250.00"))
 
     def test_supplier_confidentiality_and_post_permissions(self):
         worker = User.objects.create_user("worker", password="StrongWorker!123")
@@ -145,9 +145,32 @@ class PricingTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertNotContains(response, self.supplier.name)
         response = self.client.post(reverse("pricing:product_update"), {
-            "product_type": "cd", "product_id": self.cd.pk, "retail_price": "200",
+            "product_type": "cd", "product_id": self.cd.pk, "avito_price": "200",
         })
         self.assertEqual(response.status_code, 403)
         self.assertEqual(self.client.post(reverse("pricing:supplier_update"), {
             "product_type": "cd", "product_id": self.cd.pk, "supplier_id": self.supplier.pk, "price": "1",
         }).status_code, 403)
+
+    def test_avito_margin_warning_is_strictly_below_200_and_does_not_block_save(self):
+        self.client.force_login(self.user)
+        for price, expected in (("299.99", True), ("300.00", False), ("90.00", True)):
+            self.cd.avito_price = Decimal(price)
+            self.cd.save(update_fields=("avito_price",))
+            response = self.client.get(reverse("pricing:list"))
+            row = response.context["cd_groups"][0][1][0]
+            self.assertEqual(row["avito_low_margin"], expected)
+        response = self.client.post(reverse("pricing:product_update"), {
+            "product_type": "cd", "product_id": self.cd.pk, "avito_price": "150.00",
+        })
+        self.assertEqual(response.status_code, 302)
+        self.cd.refresh_from_db()
+        self.assertEqual(self.cd.avito_price, Decimal("150.00"))
+
+    def test_pricing_page_uses_avito_name_and_dynamic_warning_script(self):
+        self.client.force_login(self.user)
+        response = self.client.get(reverse("pricing:list"))
+        self.assertContains(response, "Цена Avito")
+        self.assertContains(response, 'name="avito_price"')
+        self.assertContains(response, "pricing.js?v=avito-margin-1")
+        self.assertNotContains(response, 'name="retail_price"')

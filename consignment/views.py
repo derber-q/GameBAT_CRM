@@ -56,7 +56,7 @@ def _submitted_transfer_lines(post):
         if product_id:
             model = CD if product_type == "cd" else Tech if product_type == "tech" else None
             try:
-                product = model.objects.select_related(
+                product = model.objects.active().select_related(
                     "platform" if product_type == "cd" else "product_type"
                 ).get(pk=product_id) if model else None
             except (CD.DoesNotExist, Tech.DoesNotExist, ValueError):
@@ -91,7 +91,7 @@ def consignment_list(request):
                 "cost": stock.cd.cost, "quantity": stock.quantity,
                 "receivable": stock.receivable_per_unit, "potential": stock.potential_receivable,
             } for stock in CDConsignmentStock.objects.filter(
-                platform=platform, quantity__gt=0
+                platform=platform, quantity__gt=0, cd__is_archived=False
             ).select_related("cd", "warehouse"))
         if request.user.is_superuser or request.user.has_perm("consignment.view_techconsignmentstock"):
             rows.extend({
@@ -100,7 +100,7 @@ def consignment_list(request):
                 "cost": stock.tech.cost, "quantity": stock.quantity,
                 "receivable": stock.receivable_per_unit, "potential": stock.potential_receivable,
             } for stock in TechConsignmentStock.objects.filter(
-                platform=platform, quantity__gt=0
+                platform=platform, quantity__gt=0, tech__is_archived=False
             ).select_related("tech", "warehouse"))
         platforms.append((platform, sorted(
             rows, key=lambda row: (row["type"], row["name"], row["warehouse"].name)
@@ -179,13 +179,13 @@ def consignment_sale(request, product_kind, pk):
     if product_kind == "cd":
         stock = get_object_or_404(
             CDConsignmentStock.objects.select_related("cd", "platform", "warehouse"),
-            pk=pk, quantity__gt=0,
+            pk=pk, quantity__gt=0, cd__is_archived=False,
         )
         product = stock.cd
     elif product_kind == "tech":
         stock = get_object_or_404(
             TechConsignmentStock.objects.select_related("tech", "platform", "warehouse"),
-            pk=pk, quantity__gt=0,
+            pk=pk, quantity__gt=0, tech__is_archived=False,
         )
         product = stock.tech
     else:

@@ -26,7 +26,7 @@ class SupplierCDPrice(SupplierPriceBase):
             ("view_pricing", "Может просматривать ценообразование"),
             ("view_supplier_prices", "Может просматривать текущие цены поставщиков"),
             ("change_supplier_prices", "Может изменять текущие цены поставщиков"),
-            ("change_retail_price", "Может изменять розничные цены"),
+            ("change_retail_price", "Может изменять цены Avito"),
             ("change_wholesale_price", "Может изменять оптовые цены"),
             ("change_yandex_market_price", "Может изменять цены Яндекс Маркет"),
         ]

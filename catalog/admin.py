@@ -1,26 +1,48 @@
 import logging
 
 from django.contrib import admin
+from django.core.exceptions import PermissionDenied
 from django.db import transaction
+from django.db.models import Count
+from django.urls import reverse
+from django.utils.html import format_html
 
 from .audit import changed_snapshots, field_change, product_snapshot, record_product_changes
 from .models import (
     Brand,
+    BarcodeRegistry,
     CD,
+    GameSeries,
     Platform,
     ProductChangeEvent,
     ProductFieldChange,
+    ProductRemovalEvent,
     ProductType,
     Tech,
 )
 from .product_fields import PRICE_FIELDS, card_fields_for, field_permissions_for
+from .product_identifiers import ensure_product_article, set_product_barcode
 
 logger = logging.getLogger("gamebat.business")
 
 
 class ProductAdminMixin:
+    def has_delete_permission(self, request, obj=None):
+        # Удаление из Admin обошло бы проверку остатков и могло бы затронуть историю.
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        if obj is not None and obj.is_archived:
+            return False
+        return super().has_change_permission(request, obj)
+
+    def get_actions(self, request):
+        actions = super().get_actions(request)
+        actions.pop("delete_selected", None)
+        return actions
+
     def get_readonly_fields(self, request, obj=None):
-        readonly = ["quantity_on_consignment", "cost"]
+        readonly = ["quantity_on_consignment", "cost", "is_archived"]
         for field, permission in field_permissions_for(self.model).items():
             enforce_permission = field in PRICE_FIELDS or obj is not None
             if enforce_permission and not (
@@ -30,14 +52,18 @@ class ProductAdminMixin:
         return tuple(readonly)
 
     def save_model(self, request, obj, form, change):
+        if change and obj.is_archived:
+            raise PermissionDenied("Удалённый товар нельзя изменять.")
         audited_fields = card_fields_for(type(obj))
         with transaction.atomic():
             before = None
             if change and obj.pk:
-                related_fields = ("platform",) if isinstance(obj, CD) else ("brand", "product_type")
+                related_fields = ("platform", "game_series") if isinstance(obj, CD) else ("brand", "product_type")
                 previous = type(obj).objects.select_for_update().select_related(*related_fields).get(pk=obj.pk)
                 before = product_snapshot(previous, audited_fields)
             super().save_model(request, obj, form, change)
+            ensure_product_article(obj)
+            set_product_barcode(product=obj, barcode=obj.barcode)
             if before is None:
                 snapshot = product_snapshot(obj, audited_fields)
                 record_product_changes(
@@ -83,20 +109,57 @@ class ReferenceAdmin(admin.ModelAdmin):
     search_fields = ("name",)
 
 
+@admin.register(GameSeries)
+class GameSeriesAdmin(admin.ModelAdmin):
+    search_fields = ("name",)
+    list_display = ("name", "cd_count", "updated_at")
+    readonly_fields = ("created_at", "updated_at")
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).annotate(_cd_count=Count("cds"))
+
+    @admin.display(description="CD")
+    def cd_count(self, obj):
+        url = reverse("admin:catalog_cd_changelist")
+        return format_html('<a href="{}?game_series__id__exact={}">{}</a>', url, obj.pk, obj._cd_count)
+
+
 @admin.register(CD)
 class CDAdmin(ProductAdminMixin, admin.ModelAdmin):
-    list_display = ("id", "name", "platform", "sku", "quantity_on_consignment", "cost", "retail_price")
-    list_filter = ("platform",)
+    list_display = (
+        "id", "name", "is_archived", "platform", "game_series", "sku", "weight_grams", "quantity_on_consignment",
+        "cost", "avito_price",
+    )
+    list_filter = ("is_archived", "platform", "game_series")
     search_fields = ("name", "sku", "barcode", "cusa_ppsa_code")
-    autocomplete_fields = ("platform",)
+    autocomplete_fields = ("platform", "game_series")
 
 
 @admin.register(Tech)
 class TechAdmin(ProductAdminMixin, admin.ModelAdmin):
-    list_display = ("id", "name", "brand", "product_type", "sku", "quantity_on_consignment", "cost", "retail_price")
-    list_filter = ("brand", "product_type")
+    list_display = (
+        "id", "name", "is_archived", "brand", "product_type", "sku", "weight_grams",
+        "quantity_on_consignment", "cost", "avito_price",
+    )
+    list_filter = ("is_archived", "brand", "product_type")
     search_fields = ("name", "sku", "barcode")
     autocomplete_fields = ("brand", "product_type")
+
+
+@admin.register(ProductRemovalEvent)
+class ProductRemovalEventAdmin(admin.ModelAdmin):
+    list_display = ("created_at", "action", "product_kind", "product_id", "product_sku", "product_name", "actor")
+    readonly_fields = ("created_at", "action", "product_kind", "product_id", "product_sku", "product_name", "reason", "actor")
+    search_fields = ("product_id", "product_sku", "product_name")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 class ProductFieldChangeInline(admin.TabularInline):
@@ -148,3 +211,11 @@ class ProductFieldChangeAdmin(ReadonlyAuditAdminMixin, admin.ModelAdmin):
     list_filter = ("event__product_kind", "event__source")
     search_fields = ("field_label", "old_value", "new_value", "event__cd__name", "event__tech__name")
     readonly_fields = ("event", "field_name", "field_label", "old_value", "new_value")
+
+
+@admin.register(BarcodeRegistry)
+class BarcodeRegistryAdmin(ReadonlyAuditAdminMixin, admin.ModelAdmin):
+    list_display = ("value", "product_kind", "product", "created_at")
+    list_filter = ("product_kind",)
+    search_fields = ("value", "cd__name", "tech__name")
+    readonly_fields = ("value", "product_kind", "cd", "tech", "created_at")

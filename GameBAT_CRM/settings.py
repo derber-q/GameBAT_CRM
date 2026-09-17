@@ -36,8 +36,10 @@ INSTALLED_APPS = [
     "pricing",
     "sales",
     "cash",
+    "creditors",
     "price",
     "orders",
+    "integrations.apps.IntegrationsConfig",
 ]
 
 MIDDLEWARE = [
@@ -88,9 +90,17 @@ STATICFILES_DIRS = [BASE_DIR / "static"]
 STATIC_ROOT = BASE_DIR / "staticfiles"
 MEDIA_ROOT = BASE_DIR / "protected_media"
 MEDIA_URL = "/protected-media/"
+INTEGRATION_ENCRYPTION_KEY = os.environ.get("INTEGRATION_ENCRYPTION_KEY", "")
+INTEGRATION_ENCRYPTION_KEY_FILE = BASE_DIR / ".integration-encryption-key"
+AVITO_API_BASE_URL = "https://api.avito.ru"
+AVITO_API_TIMEOUT_SECONDS = int(os.environ.get("AVITO_API_TIMEOUT_SECONDS", "10"))
+AVITO_SYNC_DEBOUNCE_SECONDS = int(os.environ.get("AVITO_SYNC_DEBOUNCE_SECONDS", "3"))
 RAPIRA_MARKET_RATES_URL = "https://api.rapira.net/open/market/rates"
 RAPIRA_API_TIMEOUT_SECONDS = 4
 RAPIRA_RATES_CACHE_TTL_SECONDS = 15
+COINBASE_EXCHANGE_RATES_URL = "https://api.coinbase.com/v2/exchange-rates"
+COINBASE_API_TIMEOUT_SECONDS = 5
+COINBASE_RATES_CACHE_TTL_SECONDS = 30
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 AUTH_USER_MODEL = "accounts.User"
 LOGIN_URL = "accounts:login"

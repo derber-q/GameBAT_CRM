@@ -8,6 +8,7 @@
     <p class="eyebrow">Номенклатура · {{ product_kind_label }}</p>
     <h1>{{ product.name }}</h1>
     <p class="muted">Карточка товара и неизменяемая история её редактирования.</p>
+    {% if product.is_archived %}<span class="badge badge-danger">Товар удалён из активной номенклатуры</span>{% endif %}
   </div>
   <a class="button button-secondary" href="{% url 'nomenclature:list' %}">К списку</a>
 </div>
@@ -29,6 +30,7 @@
     <div class="detail-grid product-system-grid">
       <dl class="details">
         <dt>ID</dt><dd class="mono">{{ product.id }}</dd>
+        {% if product_kind == 'cd' %}<dt>Игровая серия</dt><dd>{{ product.game_series.name|default:"Без серии" }}</dd>{% endif %}
         <dt>Средняя себестоимость</dt><dd>{{ product.cost|floatformat:2 }} ₽</dd>
         <dt>Всего на складах</dt><dd>{{ warehouse_total }}</dd>
         <dt>На реализации</dt><dd>{{ consignment_total }}</dd>
@@ -59,10 +61,43 @@
       </div>
     </div>
   </section>
-  {% if form.can_edit %}
-    <div class="form-actions product-save-actions"><button class="button button-large" type="submit">Сохранить изменения</button></div>
+  {% if form.can_edit or can_delete_product %}
+    <div class="form-actions product-save-actions">
+      {% if form.can_edit %}<button class="button button-large" type="submit">Сохранить изменения</button>{% endif %}
+      {% if can_delete_product %}<button class="button button-danger" type="button" data-dialog-open="product-delete-dialog">Удалить товар</button>{% endif %}
+    </div>
   {% endif %}
 </form>
+
+{% if can_delete_product %}
+<dialog id="product-delete-dialog" class="confirmation-dialog" aria-labelledby="product-delete-title">
+  <h2 id="product-delete-title">Удалить товар?</h2>
+  <p>Товар #{{ product.pk }} · {{ product.sku|default:"без артикула" }} · {{ product.name }}</p>
+  <p class="muted">Если товар участвовал в операциях, его история сохранится, а карточка исчезнет из активной номенклатуры.</p>
+  <form method="post" action="{% url 'nomenclature:product_delete' product_kind product.pk %}">
+    {% csrf_token %}
+    <div class="dialog-actions"><button class="button button-secondary" type="button" data-dialog-close>Отмена</button><button class="button button-danger" type="submit">Да, удалить товар</button></div>
+  </form>
+</dialog>
+{% endif %}
+
+{% if not product.is_archived %}
+{% include "integrations/_product_block.html" %}
+
+<section class="panel barcode-actions-panel">
+  <div>
+    <h2>Штрихкод</h2>
+    <p class="muted">{% if product.barcode %}Штрихкод готов к печати на этикетке 58 × 40 мм.{% else %}Для товара пока не задан штрихкод.{% endif %}</p>
+  </div>
+  <div class="heading-actions">
+    {% if product.barcode %}
+      <a class="button" href="{% url 'nomenclature:barcode_print' product_kind product.pk %}" target="_blank" rel="noopener">Напечатать штрихкод</a>
+    {% elif can_change_barcode %}
+      <form method="post" action="{% url 'nomenclature:barcode_generate' product_kind product.pk %}">{% csrf_token %}<button class="button" type="submit">Сгенерировать штрихкод</button></form>
+    {% endif %}
+  </div>
+</section>
+{% endif %}
 
 <section class="panel audit-history">
   <div class="section-heading section-heading-plain"><div><h2>История изменений</h2></div><span class="count">{{ event_page.paginator.count }} событий</span></div>

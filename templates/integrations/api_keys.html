@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}API ключи · Интеграции · ReSOURCE{% endblock %}
+{% block content %}
+<div class="page-heading">
+  <div><p class="eyebrow">Интеграции</p><h1>API ключи</h1><p class="muted">Параметры внешних сервисов хранятся на сервере в зашифрованном виде.</p></div>
+</div>
+<section class="panel">
+  <div class="section-heading section-heading-plain">
+    <div><h2>Avito</h2><p class="muted">Официальный Auth API: client_id и client_secret.</p></div>
+    {% if credential %}<span class="badge {% if credential.status == 'connected' %}badge-success{% elif credential.status == 'error' %}badge-danger{% endif %}">{{ credential.get_status_display }}</span>{% endif %}
+  </div>
+  {% if credential and credential.is_configured %}
+    <dl class="details integration-details">
+      <dt>Client ID</dt><dd>{{ credential.masked_client_id }}</dd>
+      <dt>Client secret</dt><dd>{{ credential.masked_client_secret }}</dd>
+      <dt>Аккаунт</dt><dd>{{ credential.account_name|default:"—" }}{% if credential.account_id %} · ID {{ credential.account_id }}{% endif %}</dd>
+      <dt>Последняя проверка</dt><dd>{{ credential.last_checked_at|date:"d.m.Y H:i"|default:"—" }}</dd>
+    </dl>
+    {% if credential.last_error %}<div class="alert alert-error">{{ credential.last_error }}</div>{% endif %}
+  {% endif %}
+  <form method="post" action="{% url 'integrations:credentials_save' %}" class="stacked-form integration-credential-form">
+    {% csrf_token %}
+    <div class="product-form-grid">
+      <div class="field"><label for="{{ form.client_id.id_for_label }}">{{ form.client_id.label }}</label>{{ form.client_id }}<small>{% if credential.is_configured %}Оставьте пустым, чтобы сохранить текущее значение.{% endif %}</small></div>
+      <div class="field"><label for="{{ form.client_secret.id_for_label }}">{{ form.client_secret.label }}</label>{{ form.client_secret }}<small>{% if credential.is_configured %}Оставьте пустым, чтобы сохранить текущее значение.{% endif %}</small></div>
+    </div>
+    <div class="form-actions"><button class="button" type="submit">Сохранить и проверить</button></div>
+  </form>
+  {% if credential.is_configured %}<form method="post" action="{% url 'integrations:credentials_check' %}">{% csrf_token %}<button class="button button-secondary" type="submit">Проверить подключение</button></form>{% endif %}
+</section>
+{% endblock %}

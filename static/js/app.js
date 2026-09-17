@@ -9,7 +9,10 @@
     if (time) time.textContent = new Intl.DateTimeFormat("ru-RU", { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(now);
   }
 
-  function attachAutocomplete({ input, typeInput, idInput, suggestions, endpoint, warehouseId, warehouseInput, onSelect }) {
+  function attachAutocomplete({
+    input, typeInput, idInput, suggestions, endpoint, warehouseId, warehouseInput,
+    searchContext, priceTypeInput, fixedPriceType, onSelect,
+  }) {
     if (!input || !typeInput || !idInput || !suggestions || !endpoint) return;
     let timer;
     const host = suggestions.parentElement;
@@ -63,8 +66,12 @@
     const loadSuggestions = async (query) => {
       try {
         const selectedWarehouse = warehouseInput ? warehouseInput.value : warehouseId;
-        const warehouseQuery = selectedWarehouse ? `&warehouse=${encodeURIComponent(selectedWarehouse)}` : "";
-        const response = await fetch(`${endpoint}?q=${encodeURIComponent(query)}${warehouseQuery}`, { headers: { "X-Requested-With": "XMLHttpRequest" } });
+        const params = new URLSearchParams({ q: query });
+        if (selectedWarehouse) params.set("warehouse", selectedWarehouse);
+        if (searchContext) params.set("context", searchContext);
+        const selectedPriceType = priceTypeInput ? priceTypeInput.value : fixedPriceType;
+        if (selectedPriceType) params.set("price_type", selectedPriceType);
+        const response = await fetch(`${endpoint}?${params.toString()}`, { headers: { "X-Requested-With": "XMLHttpRequest" } });
         if (!response.ok || input.value.trim() !== query) return close();
         const payload = await response.json();
         const exactBarcodeMatches = payload.results.filter(
@@ -82,9 +89,13 @@
           const label = document.createElement("span");
           label.textContent = result.label;
           const available = document.createElement("small");
-          available.textContent = result.barcode
-            ? `Штрихкод: ${result.barcode} · На складе: ${result.available}`
-            : `На складе: ${result.available}`;
+          const identifiers = [];
+          if (result.sku) identifiers.push(`Арт.: ${result.sku}`);
+          if (result.cusa_ppsa_code) identifiers.push(`CUSA/PPSA: ${result.cusa_ppsa_code}`);
+          if (result.barcode) identifiers.push(`Штрихкод: ${result.barcode}`);
+          identifiers.push(`${result.availability_label || "На складе"}: ${result.available}`);
+          if (result.storage_locations) identifiers.push(`Место: ${result.storage_locations}`);
+          available.textContent = identifiers.join(" · ");
           option.append(label, available);
           option.addEventListener("click", () => selectResult(result));
           suggestions.append(option);
@@ -137,9 +148,9 @@
           const value = payload.rates[element.dataset.rateSymbol]?.value;
           if (!output) return;
           const numeric = Number(value);
-          output.textContent = value !== null && value !== "" && Number.isFinite(numeric)
-            ? numeric.toFixed(2)
-            : "—";
+          if (value === null || value === "" || !Number.isFinite(numeric)) return;
+          const decimals = Number.parseInt(element.dataset.rateDecimals || "2", 10);
+          output.textContent = numeric.toFixed(decimals);
         });
       } catch (_) {
         // Сохраняем последнее успешно показанное значение до следующей попытки.
@@ -164,6 +175,7 @@
       suggestions: form.querySelector(".suggestions"),
       endpoint: form.dataset.autocompleteUrl,
       warehouseInput: form.querySelector("#id_warehouse"),
+      searchContext: form.dataset.searchContext,
     });
   });
 
@@ -180,6 +192,7 @@
 
   document.querySelectorAll("[data-product-filters]").forEach((form) => {
     const platform = form.querySelector('[data-product-filter="platform"]');
+    const gameSeries = form.querySelector('[data-product-filter="game_series"]');
     const brand = form.querySelector('[data-product-filter="brand"]');
     const productType = form.querySelector('[data-product-filter="product_type"]');
     if (!platform || !brand || !productType) return;
@@ -188,19 +201,25 @@
       if (changed === platform && platform.value) {
         brand.value = "";
         productType.value = "";
+      } else if (changed === gameSeries && gameSeries.value) {
+        brand.value = "";
+        productType.value = "";
       } else if ((changed === brand || changed === productType) && changed.value) {
         platform.value = "";
+        if (gameSeries) gameSeries.value = "";
       }
-      const hasPlatform = Boolean(platform.value);
+      const hasCdFilter = Boolean(platform.value || (gameSeries && gameSeries.value));
       const hasTechFilter = Boolean(brand.value || productType.value);
       platform.disabled = hasTechFilter;
-      brand.disabled = hasPlatform;
-      productType.disabled = hasPlatform;
+      if (gameSeries) gameSeries.disabled = hasTechFilter;
+      brand.disabled = hasCdFilter;
+      productType.disabled = hasCdFilter;
     };
 
-    [platform, brand, productType].forEach((select) => {
+    [platform, gameSeries, brand, productType].filter(Boolean).forEach((select) => {
       select.addEventListener("change", () => syncFilters(select));
     });
+    form.querySelector('[data-avito-highlight-toggle]')?.addEventListener("change", () => form.requestSubmit());
     syncFilters(null);
   });
 

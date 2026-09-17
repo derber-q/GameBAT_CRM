@@ -65,11 +65,11 @@ class ProductCreationTests(TestCase):
             "sku": "NEW-TECH-1",
             "barcode": "",
             "comment": "",
-            "retail_price": "1000",
+            "avito_price": "1000",
         })
         product = Tech.objects.get(sku="NEW-TECH-1")
         self.assertRedirects(response, reverse("nomenclature:tech_detail", args=(product.pk,)))
-        self.assertIsNone(product.retail_price)
+        self.assertIsNone(product.avito_price)
         self.assertEqual(product.cost, Decimal("0.00"))
         self.assertFalse(TechWarehouseStock.objects.filter(tech=product).exists())
 

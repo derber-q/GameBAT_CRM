@@ -19,6 +19,7 @@ class SaleAdmin(SaleHistoryAdmin):
     list_display = (
         "visible_id", "warehouse", "consignment_platform", "sale_type", "payment_method", "order_status",
         "payment_status", "total_amount", "refunded_amount", "cancelled_at", "cancelled_by", "created_at",
+        "cash_received_amount", "extra_cash_amount", "note",
     )
     list_filter = (
         "warehouse", "consignment_platform", "sale_type", "payment_method", "order_status", "payment_status",

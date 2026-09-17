@@ -8,6 +8,7 @@
   const lines = document.getElementById("supply-lines");
   const expenses = document.getElementById("expense-lines");
   const warehouse = document.getElementById("id_warehouse");
+  const csrfToken = form.querySelector('input[name="csrfmiddlewaretoken"]').value;
 
   function removeButton(row) {
     const cell = document.createElement("td");
@@ -44,8 +45,84 @@
     id.value = value.product_id || "";
     const suggestionBox = document.createElement("div");
     suggestionBox.className = "suggestions";
-    wrap.append(search, type, id, suggestionBox);
+    const weightPrompt = document.createElement("div");
+    weightPrompt.className = "supply-weight-prompt";
+    weightPrompt.hidden = true;
+    wrap.append(search, type, id, suggestionBox, weightPrompt);
     productCell.append(wrap);
+
+    function hideWeightPrompt() {
+      weightPrompt.hidden = true;
+      weightPrompt.replaceChildren();
+      row.classList.remove("supply-line-needs-weight");
+    }
+
+    function requestProductWeight(result) {
+      hideWeightPrompt();
+      if (!result || Number(result.weight_grams) > 0) return;
+      id.value = "";
+      row.classList.add("supply-line-needs-weight");
+      weightPrompt.hidden = false;
+      const label = document.createElement("label");
+      label.textContent = "Введите вес товара, г";
+      const controls = document.createElement("div");
+      controls.className = "supply-weight-controls";
+      const input = document.createElement("input");
+      input.type = "number";
+      input.min = "1";
+      input.step = "1";
+      input.inputMode = "numeric";
+      const save = document.createElement("button");
+      save.type = "button";
+      save.className = "button button-small";
+      save.textContent = "Сохранить и добавить";
+      const feedback = document.createElement("span");
+      feedback.className = "error-text";
+      if (result.can_set_weight === false) {
+        input.disabled = true;
+        save.disabled = true;
+        feedback.textContent = "Нет права изменять вес товара. Обратитесь к администратору.";
+      }
+      save.addEventListener("click", async () => {
+        feedback.textContent = "";
+        if (!/^\d+$/.test(input.value.trim()) || Number(input.value) < 1) {
+          feedback.textContent = "Введите целый вес не меньше 1 г.";
+          return;
+        }
+        save.disabled = true;
+        try {
+          const payload = new URLSearchParams({
+            product_type: result.type,
+            product_id: result.id,
+            weight_grams: input.value.trim(),
+            csrfmiddlewaretoken: csrfToken,
+          });
+          const response = await fetch(form.dataset.weightUrl, {
+            method: "POST",
+            body: payload,
+            headers: { "Accept": "application/json", "X-Requested-With": "XMLHttpRequest" },
+          });
+          const data = await response.json().catch(() => ({}));
+          if (!response.ok || !data.ok) throw new Error(data.error || "Не удалось сохранить вес.");
+          type.value = result.type;
+          id.value = result.id;
+          result.weight_grams = data.weight_grams;
+          hideWeightPrompt();
+          cost.focus();
+        } catch (error) {
+          feedback.textContent = error.message;
+          save.disabled = false;
+        }
+      });
+      input.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter") return;
+        event.preventDefault();
+        save.click();
+      });
+      controls.append(input, save);
+      weightPrompt.append(label, controls, feedback);
+      input.focus();
+    }
 
     const supplierCell = document.createElement("td");
     const supplierSelect = document.createElement("select");
@@ -86,7 +163,24 @@
 
     row.append(productCell, supplierCell, quantityCell, costCell, removeButton(row));
     lines.append(row);
-    window.GameBAT.attachAutocomplete({ input: search, typeInput: type, idInput: id, suggestions: suggestionBox, endpoint: form.dataset.autocompleteUrl, warehouseInput: warehouse });
+    window.GameBAT.attachAutocomplete({
+      input: search,
+      typeInput: type,
+      idInput: id,
+      suggestions: suggestionBox,
+      endpoint: form.dataset.autocompleteUrl,
+      warehouseInput: warehouse,
+      searchContext: form.dataset.searchContext,
+      onSelect: requestProductWeight,
+    });
+    if (value.product_id && !value.weight_grams) {
+      requestProductWeight({
+        id: value.product_id,
+        type: value.product_type,
+        weight_grams: value.weight_grams,
+        can_set_weight: value.can_set_weight !== false,
+      });
+    }
     if (!value.label) search.focus();
   }
 
@@ -118,8 +212,26 @@
     if (!selected) {
       event.preventDefault();
       window.alert("Выберите существующий товар из списка.");
+      return;
+    }
+    if (form.dataset.editing === "true") {
+      const confirmed = document.getElementById("revision-confirmed");
+      const dialog = document.getElementById("supply-revision-dialog");
+      if (confirmed && confirmed.value !== "1") {
+        event.preventDefault();
+        dialog.showModal();
+      }
     }
   });
+  const revisionDialog = document.getElementById("supply-revision-dialog");
+  if (revisionDialog) {
+    revisionDialog.querySelector("[data-revision-cancel]").addEventListener("click", () => revisionDialog.close());
+    revisionDialog.querySelector("[data-revision-confirm]").addEventListener("click", () => {
+      document.getElementById("revision-confirmed").value = "1";
+      revisionDialog.close();
+      form.requestSubmit();
+    });
+  }
   (initialLines.length ? initialLines : [{}]).forEach(addProductLine);
   (initialExpenses.length ? initialExpenses : [{}]).forEach(addExpenseLine);
 })();

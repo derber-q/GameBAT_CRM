@@ -69,6 +69,8 @@ class CashTransaction(models.Model):
         CUSTOMER_ORDER_PREPAYMENT = "order_prepayment", "Предоплата закупочного заказа"
         CUSTOMER_ORDER_REFUND = "order_refund", "Возврат по закупочному заказу"
         CUSTOMER_ORDER_POSTPAYMENT = "order_postpayment", "Постоплата закупочного заказа"
+        CREDITOR_ADVANCE = "creditor_advance", "Кредитор: увеличение задолженности"
+        CREDITOR_REPAYMENT = "creditor_repayment", "Кредитор: погашение задолженности"
 
     cash_register = models.ForeignKey(
         CashRegister, on_delete=models.PROTECT, related_name="transactions", verbose_name="Касса"
@@ -127,6 +129,9 @@ class CashTransaction(models.Model):
                         safe__isnull=True,
                         customer_order__isnull=False,
                     )
+                    | models.Q(
+                        operation_type__in=("creditor_advance", "creditor_repayment"),
+                    )
                 ),
                 name="cash_transaction_safe_matches_type",
             ),
@@ -174,6 +179,7 @@ class CashTransaction(models.Model):
             self.OperationType.SALE_REFUND,
             self.OperationType.SAFE_COLLECTION,
             self.OperationType.CUSTOMER_ORDER_REFUND,
+            self.OperationType.CREDITOR_ADVANCE,
         } else self.amount
 
     @property
@@ -194,6 +200,10 @@ class CashTransaction(models.Model):
 
     @property
     def source_label(self):
+        if self.operation_type == self.OperationType.CREDITOR_ADVANCE:
+            return "Сейф" if self.safe_id else "Касса"
+        if self.operation_type == self.OperationType.CREDITOR_REPAYMENT:
+            return "Кредитор"
         return {
             self.OperationType.DEPOSIT: "Внешнее поступление",
             self.OperationType.COLLECTION: "Касса",
@@ -210,6 +220,10 @@ class CashTransaction(models.Model):
 
     @property
     def destination_label(self):
+        if self.operation_type == self.OperationType.CREDITOR_ADVANCE:
+            return "Кредитор"
+        if self.operation_type == self.OperationType.CREDITOR_REPAYMENT:
+            return "Сейф" if self.safe_id else "Касса"
         return {
             self.OperationType.DEPOSIT: "Касса",
             self.OperationType.COLLECTION: "Инкассация",

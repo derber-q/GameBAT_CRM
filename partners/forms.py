@@ -8,5 +8,6 @@ class SupplierForm(forms.ModelForm):
         fields = (
             "name", "letter", "highlight_color", "legal_entity", "email", "phone_1",
             "phone_2", "phone_3", "website", "telegram",
+            "priority",
         )
         widgets = {"highlight_color": forms.TextInput(attrs={"type": "color"})}

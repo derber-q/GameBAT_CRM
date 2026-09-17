@@ -1,7 +1,7 @@
 """Атомарные продажи, статусы, оплаты и изменение неоплаченной постоплаты."""
 import logging
 from dataclasses import dataclass
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
@@ -48,7 +48,7 @@ def _locked_inventory(warehouse_id, lines):
         ids = {line["product_id"] for line in lines if line["product_type"] == product_type}
         products.update({
             (product_type, product.pk): product
-            for product in product_model.objects.select_for_update().filter(pk__in=ids).order_by("pk")
+            for product in product_model.objects.active().select_for_update().filter(pk__in=ids).order_by("pk")
         })
         stocks.update({
             (product_type, getattr(stock, f"{product_field}_id")): stock
@@ -63,7 +63,7 @@ def _locked_inventory(warehouse_id, lines):
 
 def _selected_price(product, price_type):
     field = {
-        Sale.PriceType.RETAIL: "retail_price",
+        Sale.PriceType.RETAIL: "avito_price",
         Sale.PriceType.WHOLESALE: "wholesale_price",
         Sale.PriceType.YANDEX_MARKET: "yandex_market_price",
     }[price_type]
@@ -80,8 +80,23 @@ def _complete_if_ready(sale):
     return False
 
 
+def _cash_received(value, total):
+    if value in (None, ""):
+        return total
+    try:
+        amount = Decimal(str(value)).quantize(CENT, rounding=ROUND_HALF_UP)
+    except (InvalidOperation, TypeError, ValueError) as exc:
+        raise ValidationError("Укажите корректную сумму, полученную от покупателя.") from exc
+    if amount < total:
+        raise ValidationError("Полученная сумма не может быть меньше стоимости продажи.")
+    return amount
+
+
 @transaction.atomic
-def create_sale(*, actor, warehouse_id, price_type, sale_type, payment_method, lines):
+def create_sale(
+    *, actor, warehouse_id, price_type, sale_type, payment_method, lines,
+    cash_received_amount=None, note="",
+):
     """Списывает локальный stock и для наличной продажи в той же транзакции проводит кассу."""
     prepared = normalise_product_lines(lines)
     _validate_choice(price_type, Sale.PriceType, "Выберите тип цены.")
@@ -99,13 +114,18 @@ def create_sale(*, actor, warehouse_id, price_type, sale_type, payment_method, l
         product = products[key]
         stock = stocks.get(key)
         if stock is None or stock.quantity < line["quantity"]:
-            raise ValidationError(f"На выбранном складе недостаточно товара «{product.name}».")
+            available = stock.quantity if stock is not None else 0
+            raise ValidationError(
+                f"На выбранном складе недостаточно товара «{product.name}»: доступно только {available} шт."
+            )
         price = _selected_price(product, price_type)
         line_total = (price * line["quantity"]).quantize(CENT, rounding=ROUND_HALF_UP)
         priced_lines.append((line, product, stock, price, line_total))
         total += line_total
 
     immediate_cash = payment_method == Sale.PaymentMethod.CASH
+    actual_received = _cash_received(cash_received_amount, total) if immediate_cash else None
+    extra_cash = (actual_received - total).quantize(CENT) if actual_received is not None else Decimal("0.00")
     sale = Sale.objects.create(
         warehouse=warehouse,
         price_type=price_type,
@@ -115,6 +135,9 @@ def create_sale(*, actor, warehouse_id, price_type, sale_type, payment_method, l
         payment_status=Sale.PaymentStatus.PAID if immediate_cash else Sale.PaymentStatus.UNPAID,
         completed_at=timezone.now() if immediate_cash else None,
         total_amount=total,
+        cash_received_amount=actual_received,
+        extra_cash_amount=extra_cash,
+        note=str(note or "").strip(),
         created_by=actor,
     )
     sale.visible_id = f"SALE-{sale.pk:06d}"
@@ -159,8 +182,10 @@ def create_sale(*, actor, warehouse_id, price_type, sale_type, payment_method, l
     if immediate_cash:
         credit_sale_payment(sale=sale, actor=actor)
     logger.info(
-        "Продажа создана: user_id=%s sale_id=%s warehouse_id=%s total=%s payment=%s",
+        "Продажа создана: user_id=%s sale_id=%s warehouse_id=%s total=%s payment=%s "
+        "cash_received=%s extra_cash=%s note=%s",
         actor.pk, sale.pk, warehouse.pk, total, payment_method,
+        actual_received, extra_cash, bool(sale.note),
     )
     return sale
 
@@ -187,22 +212,42 @@ def advance_order_status(*, actor, sale_id, next_status):
 
 
 @transaction.atomic
-def mark_sale_paid(*, actor, sale_id):
+def mark_sale_paid(*, actor, sale_id, cash_received_amount=None):
     sale = Sale.objects.select_for_update().select_related("warehouse").get(pk=sale_id)
     if sale.is_cancelled:
         raise ValidationError("Отменённую продажу оплачивать нельзя.")
     if sale.payment_status == Sale.PaymentStatus.PAID:
         raise ValidationError("Заказ уже оплачен.")
     if sale.payment_method == Sale.PaymentMethod.CASH_POSTPAY:
+        sale.cash_received_amount = _cash_received(cash_received_amount, sale.total_amount)
+        sale.extra_cash_amount = (sale.cash_received_amount - sale.total_amount).quantize(CENT)
         credit_sale_payment(sale=sale, actor=actor)
     elif sale.payment_method != Sale.PaymentMethod.BANK_ACCOUNT:
         raise ValidationError("Этот способ оплаты не поддерживает отложенное подтверждение.")
     sale.payment_status = Sale.PaymentStatus.PAID
     update_fields = ["payment_status", "updated_at"]
+    if sale.payment_method == Sale.PaymentMethod.CASH_POSTPAY:
+        update_fields.extend(("cash_received_amount", "extra_cash_amount"))
     if _complete_if_ready(sale):
         update_fields.append("completed_at")
     sale.save(update_fields=update_fields)
-    logger.info("Оплата подтверждена: user_id=%s sale_id=%s", actor.pk, sale.pk)
+    logger.info(
+        "Оплата подтверждена: user_id=%s sale_id=%s cash_received=%s extra_cash=%s",
+        actor.pk, sale.pk, sale.cash_received_amount, sale.extra_cash_amount,
+    )
+    return sale
+
+
+@transaction.atomic
+def update_sale_note(*, actor, sale_id, note):
+    sale = Sale.objects.select_for_update().get(pk=sale_id)
+    old_note = sale.note
+    sale.note = str(note or "").strip()
+    sale.save(update_fields=("note", "updated_at"))
+    logger.info(
+        "Примечание продажи изменено: user_id=%s sale_id=%s old_length=%s new_length=%s",
+        actor.pk, sale.pk, len(old_note), len(sale.note),
+    )
     return sale
 
 

@@ -21,11 +21,11 @@ class SaleServiceTests(TestCase):
         platform = Platform.objects.create(name="PS5")
         self.cd = CD.objects.create(
             platform=platform, name="Игра", sku="CD-1", barcode="1", cost=100,
-            retail_price=150, wholesale_price=130, yandex_market_price=170,
+            avito_price=150, wholesale_price=130, yandex_market_price=170,
         )
         self.other_cd = CD.objects.create(
             platform=platform, name="Новая игра", sku="CD-2", barcode="2", cost=200,
-            retail_price=300, wholesale_price=260, yandex_market_price=330,
+            avito_price=300, wholesale_price=260, yandex_market_price=330,
         )
         self.stock = CDWarehouseStock.objects.create(warehouse=self.warehouse, cd=self.cd, quantity=10)
         self.other_stock = CDWarehouseStock.objects.create(
@@ -123,8 +123,8 @@ class SaleServiceTests(TestCase):
     def test_shipped_unpaid_postpay_is_editable_with_stock_deltas_and_snapshots(self):
         sale = self.create(Sale.PaymentMethod.CASH_POSTPAY)
         item = sale.cd_items.get()
-        self.cd.retail_price = 999
-        self.cd.save(update_fields=("retail_price",))
+        self.cd.avito_price = 999
+        self.cd.save(update_fields=("avito_price",))
         advance_order_status(actor=self.user, sale_id=sale.pk, next_status=Sale.OrderStatus.ASSEMBLED)
         advance_order_status(actor=self.user, sale_id=sale.pk, next_status=Sale.OrderStatus.SHIPPED)
         edit_postpay_sale_items(actor=self.user, sale_id=sale.pk, lines=[
@@ -227,5 +227,5 @@ class SalesCreateBarcodeUiTests(TestCase):
         self.assertContains(response, "Добавить по штрихкоду")
         self.assertContains(response, 'id="sale-barcode-input"')
         self.assertContains(response, "data-sale-barcode-add")
-        self.assertContains(response, "stock-lines.js?v=barcode-search-3")
-        self.assertContains(response, "gamebat.css?v=barcode-sale-3")
+        self.assertContains(response, "stock-lines.js?v=sale-local-inventory-1")
+        self.assertContains(response, "gamebat.css?v=nomenclature-columns-1")

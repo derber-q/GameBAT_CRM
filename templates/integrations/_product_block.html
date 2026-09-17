@@ -1,0 +1,27 @@
+<section class="panel avito-product-panel" id="avito">
+  <div class="section-heading section-heading-plain"><div><h2>Avito</h2><p class="muted">Цена берётся из поля «Цена Avito», количество — сумма остатков на складах.</p></div><span class="badge {% if avito_profile.sync_status == 'ok' %}badge-success{% elif avito_profile.sync_status == 'error' %}badge-danger{% endif %}">{{ avito_profile.get_sync_status_display }}</span></div>
+  <dl class="details integration-details">
+    <dt>Статус связи</dt><dd>{% if avito_connection %}Связано{% else %}Не связано{% endif %}</dd>
+    <dt>Avito ID</dt><dd>{% if avito_connection %}<span class="mono">{{ avito_connection.remote_listing.avito_item_id }}</span>{% else %}—{% endif %}</dd>
+    <dt>Статус объявления</dt><dd>{% if avito_connection %}{{ avito_connection.remote_listing.status|default:"—" }}{% else %}—{% endif %}</dd>
+    <dt>Глобальный остаток CRM</dt><dd>{{ avito_global_stock }}</dd>
+    <dt>Последняя успешная синхронизация</dt><dd>{{ avito_profile.last_successful_sync_at|date:"d.m.Y H:i"|default:"—" }}</dd>
+  </dl>
+  {% if avito_profile.last_error %}<div class="alert alert-error">{{ avito_profile.last_error }}</div>{% endif %}
+  {% if can_manage_avito %}
+  <form method="post" action="{% url 'integrations:product_save' product_kind product.pk %}" class="stacked-form">{% csrf_token %}
+    <div class="field checkbox-field">{{ avito_profile_form.sell_on_avito }}<label for="{{ avito_profile_form.sell_on_avito.id_for_label }}">{{ avito_profile_form.sell_on_avito.label }}</label></div>
+    <div class="product-form-grid">
+      <div class="field">{{ avito_profile_form.listing_title.label_tag }}{{ avito_profile_form.listing_title }}</div>
+      <div class="field">{{ avito_profile_form.category_slug.label_tag }}{{ avito_profile_form.category_slug }}<small>Точный slug категории из Avito Autoload.</small></div>
+    </div>
+    <div class="field">{{ avito_profile_form.listing_description.label_tag }}{{ avito_profile_form.listing_description }}</div>
+    <div class="field">{{ avito_profile_form.attributes.label_tag }}{{ avito_profile_form.attributes }}<small>Сохраняются только интеграционные поля. Публикация проверяется по официальной схеме, когда Autoload доступен аккаунту.</small></div>
+    <button class="button" type="submit">Сохранить настройки Avito</button>
+  </form>
+  <div class="avito-photo-section"><h3>Фотографии Avito</h3>
+    <div class="avito-photo-grid">{% for photo in avito_profile.photos.all %}<article><img src="{{ photo.image.url }}" alt="Фото Avito {{ forloop.counter }}"><div class="heading-actions"><form method="post" action="{% url 'integrations:photo_move' product_kind product.pk photo.pk %}">{% csrf_token %}<button class="button button-ghost button-small" name="direction" value="up" type="submit">←</button><button class="button button-ghost button-small" name="direction" value="down" type="submit">→</button></form><form method="post" action="{% url 'integrations:photo_delete' product_kind product.pk photo.pk %}">{% csrf_token %}<button class="button button-danger button-small" type="submit">Удалить</button></form></div></article>{% empty %}<p class="muted">Фотографий пока нет.</p>{% endfor %}</div>
+    <form method="post" enctype="multipart/form-data" action="{% url 'integrations:photo_add' product_kind product.pk %}" class="inline-form">{% csrf_token %}{{ avito_photo_form.image }}<button class="button button-secondary" type="submit">Добавить фотографию</button></form>
+  </div>
+  {% endif %}
+</section>

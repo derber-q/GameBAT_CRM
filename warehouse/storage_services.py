@@ -135,7 +135,7 @@ def update_storage_locations(
     parsed = parse_storage_location_list(raw_value)
     warehouse = Warehouse.objects.select_for_update().get(pk=warehouse_id)
     product_model, stock_model, product_field = storage_stock_configuration(product_type)
-    product = product_model.objects.select_for_update().get(pk=product_id)
+    product = product_model.objects.active().select_for_update().get(pk=product_id)
     stock = stock_model.objects.select_for_update().filter(
         warehouse=warehouse, **{f"{product_field}_id": product.pk}
     ).first()
