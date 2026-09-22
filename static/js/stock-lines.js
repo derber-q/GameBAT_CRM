@@ -226,7 +226,7 @@
         searchContext: form.dataset.searchContext,
         priceTypeInput,
         fixedPriceType: form.dataset.fixedPriceType,
-        onSelect: (result) => {
+        onSelect: (result, metadata = {}) => {
           delete row.dataset.fixedUnitPrice;
           row.dataset.prices = result?.prices ? JSON.stringify(result.prices) : "{}";
           if (
@@ -238,6 +238,15 @@
             warehouseInput.dispatchEvent(new Event("change", {bubbles: true}));
           }
           applyInventory(row, result);
+          if (result && metadata.exactBarcode) {
+            if (!quantity.value) quantity.value = "1";
+            recalculate();
+            if (barcodeFeedback) {
+              barcodeFeedback.classList.remove("error-text");
+              barcodeFeedback.textContent = `Добавлено: ${result.label}`;
+            }
+            quantity.focus();
+          }
         },
       });
       if (showSaleInventory && Object.prototype.hasOwnProperty.call(value, "warehouse_stock")) {
@@ -249,6 +258,19 @@
     }
 
     function putBarcodeResultIntoSale(result) {
+      const existingRow = [...body.querySelectorAll("tr")].find((row) => (
+        row.querySelector('input[name="product_type"]')?.value === String(result.type)
+        && row.querySelector('input[name="product_id"]')?.value === String(result.id)
+      ));
+      if (existingRow) {
+        const quantity = existingRow.querySelector('input[name="quantity"]');
+        if (quantity) {
+          quantity.value = String(Math.max(0, Number(quantity.value) || 0) + 1);
+          quantity.dispatchEvent(new Event("input", { bubbles: true }));
+          quantity.focus();
+        }
+        return;
+      }
       const blankRow = [...body.querySelectorAll("tr")].find((row) => {
         const productId = row.querySelector('input[name="product_id"]');
         const productSearch = row.querySelector("[data-product-search]");
@@ -277,9 +299,9 @@
       });
     }
 
-    async function addByBarcode() {
+    async function addByBarcode(scannedBarcode = "") {
       if (!barcodeInput || !barcodeFeedback) return;
-      const barcode = barcodeInput.value.trim();
+      const barcode = String(scannedBarcode || barcodeInput.value).trim();
       barcodeFeedback.classList.remove("error-text");
       if (barcode.length < 2) {
         barcodeFeedback.textContent = "Введите штрихкод.";
@@ -307,7 +329,9 @@
         if (!response.ok) throw new Error("Не удалось выполнить поиск.");
         const payload = await response.json();
         const exactMatches = payload.results.filter(
-          (result) => String(result.barcode || "").trim() === barcode,
+          (result) => (result.barcodes || [result.barcode]).some(
+            (value) => String(value || "").trim() === barcode,
+          ),
         );
         if (exactMatches.length === 0) throw new Error("Товар с таким штрихкодом не найден.");
         if (exactMatches.length > 1) {
@@ -333,6 +357,9 @@
         event.preventDefault();
         addByBarcode();
       });
+    }
+    if (barcodeInput && barcodeFeedback && window.GameBAT.registerGlobalBarcodeHandler) {
+      window.GameBAT.registerGlobalBarcodeHandler(addByBarcode);
     }
     if (priceTypeInput) priceTypeInput.addEventListener("change", recalculate);
     if (warehouseInput) warehouseInput.addEventListener("change", refreshInventory);

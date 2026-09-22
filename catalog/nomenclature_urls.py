@@ -15,9 +15,10 @@ urlpatterns = [
         views.barcode_generate,
         name="barcode_generate",
     ),
+    path("barcode/<int:barcode_id>/print/", views.barcode_print, name="barcode_print"),
     path(
         "<str:product_kind>/<int:pk>/barcode/print/",
-        views.barcode_print,
+        views.barcode_print_legacy,
         name="barcode_print",
     ),
 ]

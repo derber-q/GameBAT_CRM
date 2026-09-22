@@ -458,8 +458,8 @@ def product_autocomplete(request):
     if len(query) < 2 and not exact_refresh:
         return JsonResponse({"results": []})
 
-    cds = CD.objects.active().select_related("platform").order_by("name", "id")
-    tech = Tech.objects.active().select_related("product_type").order_by("name", "id")
+    cds = CD.objects.active().select_related("platform").prefetch_related("barcodes").order_by("name", "id")
+    tech = Tech.objects.active().select_related("product_type").prefetch_related("barcodes").order_by("name", "id")
     if exact_refresh:
         cds = list(cds.filter(pk__in=requested_ids["cd"])[:100])
         tech = list(tech.filter(pk__in=requested_ids["tech"])[:100])
@@ -528,12 +528,20 @@ def product_autocomplete(request):
         ).values_list("tech_id", "warehouse_id").order_by("warehouse_id"):
             tech_warehouse_ids.setdefault(product_id, []).append(available_warehouse_id)
 
+    def barcode_values(item):
+        return [entry.value for entry in item.barcodes.all()]
+
+    def selected_barcode(item):
+        values = barcode_values(item)
+        return next((value for value in values if value == query), values[0] if values else "")
+
     results = [{
         "type": "cd", "id": item.pk,
         "label": f"CD — {item.name} — {item.platform.name}", "available": cd_available.get(item.pk, 0),
         "warehouse_stock": cd_available.get(item.pk, 0) if warehouse_id else None,
         "storage_locations": ", ".join(cd_locations.get(item.pk, [])),
-        "barcode": item.barcode,
+        "barcode": selected_barcode(item),
+        "barcodes": barcode_values(item),
         "availability_label": "На складе" if warehouse_id else "Всего в наличии",
         "available_warehouse_ids": cd_warehouse_ids.get(item.pk, []),
         "sku": item.sku,
@@ -552,7 +560,8 @@ def product_autocomplete(request):
         "label": f"Tech — {item.name} — {item.product_type.name}", "available": tech_available.get(item.pk, 0),
         "warehouse_stock": tech_available.get(item.pk, 0) if warehouse_id else None,
         "storage_locations": ", ".join(tech_locations.get(item.pk, [])),
-        "barcode": item.barcode,
+        "barcode": selected_barcode(item),
+        "barcodes": barcode_values(item),
         "availability_label": "На складе" if warehouse_id else "Всего в наличии",
         "available_warehouse_ids": tech_warehouse_ids.get(item.pk, []),
         "sku": item.sku,

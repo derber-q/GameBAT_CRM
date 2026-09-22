@@ -5,12 +5,13 @@ from decimal import Decimal
 
 from django import forms
 from django.core.exceptions import FieldDoesNotExist, ValidationError
+from django.forms import BaseFormSet, formset_factory
 from django.urls import reverse
 
 from warehouse.models import CDWarehouseStock, TechWarehouseStock, Warehouse
 from warehouse.storage_locations import normalize_storage_location_list
 
-from .models import CD, Tech
+from .models import BarcodeRegistry, CD, Tech
 from .product_fields import (
     CD_CARD_FIELDS,
     CD_FIELD_PERMISSIONS,
@@ -30,6 +31,7 @@ def product_version(instance):
             value = format(value, "f")
         values[field_name] = value
     if instance.pk:
+        values["barcodes"] = list(instance.barcodes.order_by("id").values_list("value", flat=True))
         stocks = list(
             instance.warehouse_stocks.order_by("warehouse_id").prefetch_related(
                 "storage_assignments__location"
@@ -211,7 +213,7 @@ class CDCreateForm(ProductCreateFormMixin, forms.ModelForm):
     class Meta:
         model = CD
         fields = (
-            "platform", "game_series", "name", "description", "sku", "barcode", "cusa_ppsa_code",
+            "platform", "game_series", "name", "description", "sku", "cusa_ppsa_code",
             "weight_grams", "comment",
         )
 
@@ -220,6 +222,77 @@ class TechCreateForm(ProductCreateFormMixin, forms.ModelForm):
     class Meta:
         model = Tech
         fields = (
-            "brand", "product_type", "name", "description", "sku", "barcode",
+            "brand", "product_type", "name", "description", "sku",
             "weight_grams", "comment",
         )
+
+
+class ProductBarcodeForm(forms.Form):
+    id = forms.IntegerField(required=False, widget=forms.HiddenInput)
+    value = forms.CharField(
+        label="Штрихкод", max_length=100,
+        widget=forms.TextInput(attrs={"autocomplete": "off"}),
+    )
+    DELETE = forms.BooleanField(required=False, widget=forms.HiddenInput)
+
+    def clean_value(self):
+        value = str(self.cleaned_data.get("value") or "").strip()
+        if not value:
+            raise ValidationError("Укажите штрихкод.")
+        return value
+
+
+class BaseProductBarcodeFormSet(BaseFormSet):
+    deletion_widget = forms.HiddenInput
+
+    def __init__(self, *args, product=None, **kwargs):
+        self.product = product
+        super().__init__(*args, **kwargs)
+
+    def clean(self):
+        super().clean()
+        if any(self.errors):
+            return
+        seen = set()
+        values = []
+        owner_filter = {"cd": self.product} if isinstance(self.product, CD) else {"tech": self.product}
+        deleting_ids = {
+            form.cleaned_data.get("id") for form in self.forms
+            if form.cleaned_data and form.cleaned_data.get("DELETE")
+        }
+        for form in self.forms:
+            if not form.cleaned_data:
+                continue
+            barcode_id = form.cleaned_data.get("id")
+            if barcode_id and (self.product is None or not BarcodeRegistry.objects.filter(
+                pk=barcode_id, **owner_filter,
+            ).exists()):
+                raise ValidationError("Штрихкод не принадлежит этому товару.")
+            if form.cleaned_data.get("DELETE"):
+                continue
+            value = form.cleaned_data.get("value")
+            if not value:
+                continue
+            if value in seen:
+                raise ValidationError(f"Штрихкод {value} указан несколько раз.")
+            seen.add(value)
+            values.append(value)
+            occupied = BarcodeRegistry.objects.filter(value=value).first()
+            if occupied and occupied.pk != barcode_id and occupied.pk not in deleting_ids:
+                raise ValidationError("Этот штрихкод уже используется другим товаром или строкой.")
+
+
+ProductBarcodeFormSet = formset_factory(
+    ProductBarcodeForm,
+    formset=BaseProductBarcodeFormSet,
+    extra=1,
+    can_delete=True,
+)
+
+
+def barcode_formset(*, data=None, product=None):
+    initial = [
+        {"id": item.pk, "value": item.value}
+        for item in product.barcodes.order_by("id")
+    ] if product and product.pk else []
+    return ProductBarcodeFormSet(data=data, initial=initial, product=product, prefix="barcodes")

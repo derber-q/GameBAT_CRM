@@ -33,14 +33,6 @@ def validate_barcode_uniqueness(*, product, barcode):
     barcode = str(barcode or "").strip()
     if not barcode:
         return ""
-    for model in (CD, Tech):
-        queryset = model.objects.filter(barcode=barcode)
-        if isinstance(product, model) and product.pk:
-            queryset = queryset.exclude(pk=product.pk)
-        if queryset.exists():
-            raise ValidationError({
-                "barcode": "Этот штрихкод уже используется другим товаром."
-            })
     registry = BarcodeRegistry.objects.filter(value=barcode)
     if product.pk:
         if isinstance(product, CD):
@@ -55,35 +47,79 @@ def validate_barcode_uniqueness(*, product, barcode):
 
 
 def set_product_barcode(*, product, barcode):
-    """Синхронно меняет barcode товара и уникальную запись общего реестра."""
+    """Compatibility helper: replaces all product barcodes with one value."""
     barcode = validate_barcode_uniqueness(product=product, barcode=barcode)
     lookup = _registry_lookup(product)
-    current = BarcodeRegistry.objects.select_for_update().filter(**lookup).first()
-    if not barcode:
-        if current is not None:
-            current.delete()
-        product.barcode = ""
-        product.save(update_fields=("barcode",))
-        return product
-
     try:
         with transaction.atomic():
-            if current is None:
+            BarcodeRegistry.objects.select_for_update().filter(**lookup).delete()
+            if barcode:
                 BarcodeRegistry.objects.create(
                     value=barcode,
                     product_kind=product._meta.model_name,
                     **lookup,
                 )
-            elif current.value != barcode:
-                current.value = barcode
-                current.save(update_fields=("value",))
-    except IntegrityError as exc:
+    except (IntegrityError, ValidationError) as exc:
         raise ValidationError({
             "barcode": "Этот штрихкод уже используется другим товаром."
         }) from exc
-    product.barcode = barcode
-    product.save(update_fields=("barcode",))
     return product
+
+
+def save_barcode_formset(*, product, formset):
+    """Saves a validated barcode formset and returns audit field changes."""
+    if formset is None:
+        return []
+    changes = []
+    lookup = _registry_lookup(product)
+    existing = {
+        item.pk: item
+        for item in BarcodeRegistry.objects.select_for_update().filter(**lookup)
+    }
+    # Release values marked for deletion before inserting replacements in the
+    # same request; the database uniqueness constraint remains authoritative.
+    for form in formset.forms:
+        if not form.cleaned_data or not form.cleaned_data.get("DELETE"):
+            continue
+        instance = existing.pop(form.cleaned_data.get("id"), None)
+        if instance:
+            value = instance.value
+            instance.delete()
+            changes.append(field_change(
+                field_name="barcode_removed", field_label="Штрихкод удалён",
+                old_value=value, new_value="",
+            ))
+    for form in formset.forms:
+        if not form.cleaned_data:
+            continue
+        barcode_id = form.cleaned_data.get("id")
+        instance = existing.get(barcode_id) if barcode_id else None
+        old_value = instance.value if instance else ""
+        if form.cleaned_data.get("DELETE"):
+            continue
+        value = form.cleaned_data.get("value")
+        if not value:
+            continue
+        if instance is None:
+            instance = BarcodeRegistry(product_kind=product._meta.model_name, **lookup)
+        if old_value != value:
+            instance.value = value
+            instance.save()
+        if not old_value:
+            changes.append(field_change(
+                field_name="barcode_added",
+                field_label="Штрихкод добавлен",
+                old_value="",
+                new_value=value,
+            ))
+        elif old_value != value:
+            changes.append(field_change(
+                field_name="barcode_changed",
+                field_label="Штрихкод изменён",
+                old_value=old_value,
+                new_value=value,
+            ))
+    return changes
 
 
 def ensure_product_article(product):
@@ -151,24 +187,25 @@ def generate_unique_barcode(*, actor, product_kind, product_id):
         product = model.objects.active().select_for_update().get(pk=product_id)
     except (model.DoesNotExist, TypeError, ValueError) as exc:
         raise ValidationError("Товар не найден.") from exc
-    if str(product.barcode or "").strip():
-        raise ValidationError("У товара уже есть штрихкод.")
-
     for _ in range(BARCODE_ATTEMPTS):
         candidate = "".join(secrets.choice(string.digits) for _ in range(BARCODE_LENGTH))
         if candidate == "0" * BARCODE_LENGTH:
             continue
         try:
             with transaction.atomic():
-                set_product_barcode(product=product, barcode=candidate)
-        except ValidationError:
+                BarcodeRegistry.objects.create(
+                    value=candidate,
+                    product_kind=product_kind,
+                    **_registry_lookup(product),
+                )
+        except (IntegrityError, ValidationError):
             continue
         record_product_changes(
             actor=actor,
             instance=product,
             changes=[field_change(
-                field_name="barcode",
-                field_label="Штрихкод",
+                field_name="barcode_added",
+                field_label="Штрихкод добавлен",
                 old_value="",
                 new_value=candidate,
             )],

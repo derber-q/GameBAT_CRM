@@ -47,7 +47,7 @@ class AvitoClient:
     def _execute(self, req, *, retry_network=False):
         # GET не меняет состояние Avito; получение OAuth-токена также можно повторить.
         # Запросы изменения цены и остатка здесь намеренно не повторяются.
-        attempts = 3 if req.get_method() == "GET" or retry_network else 1
+        attempts = 5 if req.get_method() == "GET" else 3 if retry_network else 1
         for attempt in range(attempts):
             try:
                 with request.urlopen(req, timeout=self.timeout) as response:
@@ -74,7 +74,13 @@ class AvitoClient:
                 if attempt < attempts - 1:
                     time.sleep(0.25 * (attempt + 1))
                     continue
-                raise AvitoAPIError("Нет соединения с Avito.", "network") from exc
+                reason = exc.reason if isinstance(exc, error.URLError) else exc
+                message = (
+                    "Истекло время ожидания ответа Avito."
+                    if isinstance(reason, TimeoutError) or "timed out" in str(reason).lower()
+                    else "Нет соединения с Avito."
+                )
+                raise AvitoAPIError(message, "network") from exc
 
     def _token(self):
         cache_key = f"avito-token-{self.credential.pk}-{self.credential.updated_at.timestamp()}"
@@ -98,7 +104,7 @@ class AvitoClient:
         cache.set(cache_key, token, ttl)
         return token
 
-    def request_json(self, method, path, *, payload=None, query=None):
+    def request_json(self, method, path, *, payload=None, query=None, retry_network=False):
         url = f"{self.base_url}{path}"
         if query:
             url = f"{url}?{parse.urlencode(query)}"
@@ -111,7 +117,7 @@ class AvitoClient:
                 **({"Content-Type": "application/json"} if body is not None else {}),
             },
         )
-        return self._execute(req)
+        return self._execute(req, retry_network=retry_network)
 
     def get_self(self):
         return self.request_json("GET", "/core/v1/accounts/self")
@@ -148,6 +154,7 @@ class AvitoClient:
         return self.request_json(
             "POST", "/stock-management/1/info",
             payload={"item_ids": [int(value) for value in item_ids], "strong_consistency": strong_consistency},
+            retry_network=True,  # Это только чтение, повтор запроса не меняет Avito.
         )
 
     def update_stock(self, item_id, quantity):

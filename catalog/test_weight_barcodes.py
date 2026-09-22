@@ -124,8 +124,8 @@ class ProductWeightAndIdentifierTests(TestCase):
         self.assertRegex(generated.barcode, r"^\d{12}$")
         self.assertTrue(BarcodeRegistry.objects.filter(value=generated.barcode, cd=generated).exists())
         response = self.client.get(detail_url)
-        self.assertNotContains(response, "Сгенерировать штрихкод")
-        self.assertContains(response, "Напечатать штрихкод")
+        self.assertContains(response, "Сгенерировать штрихкод")
+        self.assertContains(response, "Напечатать")
 
     def test_print_page_is_one_58_by_40_barcode_only_label(self):
         product = create_product(

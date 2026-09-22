@@ -1,13 +1,16 @@
 from django.db.utils import OperationalError, ProgrammingError
 
 from warehouse.models import Warehouse
+from partners.models import SalesPlatform
 
 
 def crm_header(request):
     """Единый контекст шапки без каких-либо внешних сетевых запросов."""
     warehouses = []
+    sales_platforms = []
     try:
         warehouses = list(Warehouse.objects.values("id", "name"))
+        sales_platforms = list(SalesPlatform.objects.values("id", "name"))
     except (OperationalError, ProgrammingError):
         # До применения первой миграции таблицы ещё может не быть.
         pass
@@ -36,6 +39,7 @@ def crm_header(request):
     )
     return {
         "nav_warehouses": warehouses,
+        "nav_sales_platforms": sales_platforms,
         "nav": {
             "warehouse": warehouse_global_access or warehouse_details_access,
             "warehouse_global": warehouse_global_access,
@@ -54,6 +58,7 @@ def crm_header(request):
             "pricing": authenticated and (user.is_superuser or user.has_perm("pricing.view_pricing")),
             "price": authenticated and (user.is_superuser or user.has_perm("price.view_price_page")),
             "sales": authenticated and (user.is_superuser or user.has_perm("sales.view_sales")),
+            "statistics": authenticated and (user.is_superuser or user.has_perm("sales.view_sales_statistics")),
             "orders": authenticated and (user.is_superuser or user.has_perm("orders.view_orders")),
             "integrations": authenticated and (
                 user.is_superuser

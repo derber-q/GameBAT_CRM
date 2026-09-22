@@ -174,3 +174,21 @@ class PricingTests(TestCase):
         self.assertContains(response, 'name="avito_price"')
         self.assertContains(response, "pricing.js?v=avito-margin-1")
         self.assertNotContains(response, 'name="retail_price"')
+
+    def test_group_collapse_uses_unique_shared_controls_after_filtering(self):
+        brand = Brand.objects.create(name="Sony")
+        product_type = ProductType.objects.create(name="Консоли")
+        Tech.objects.create(
+            brand=brand, product_type=product_type, name="PlayStation 5", sku="T-1", barcode="3"
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("pricing:list"), {"search": "PlayStation"})
+        html = response.content.decode()
+
+        control_id = f"pricing-tech-{product_type.pk}"
+        self.assertContains(response, f'aria-controls="{control_id}"')
+        self.assertContains(response, f'id="{control_id}"')
+        self.assertEqual(html.count(f'id="{control_id}"'), 1)
+        self.assertContains(response, "app.js?v=global-barcode-1")
+        self.assertContains(response, "data-global-barcode-search")

@@ -1,5 +1,7 @@
 {% extends "base.html" %}
+{% load static %}
 {% block title %}Новое наименование · ReSOURCE{% endblock %}
+{% block extra_head %}<script src="{% static 'js/barcode-formset.js' %}?v=multiple-barcodes-1" defer></script>{% endblock %}
 {% block content %}
 <div class="page-heading">
   <div><p class="eyebrow">Номенклатура</p><h1>Новое наименование</h1><p class="muted">Создаётся только карточка товара. Остаток и себестоимость появятся после прихода.</p></div>
@@ -23,6 +25,7 @@
   <div class="product-form-grid">
     {% for field in form %}{% include "nomenclature/_field.html" with field=field %}{% endfor %}
   </div>
+  {% include "nomenclature/_barcode_formset.html" with barcode_editable=True %}
   <p class="muted creation-system-note">Складской остаток: 0 · Средняя себестоимость: 0,00 ₽. Эти значения нельзя вводить вручную.</p>
   <div class="form-actions"><button class="button button-large" type="submit">Создать наименование</button></div>
 </form>

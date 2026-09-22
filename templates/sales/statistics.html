@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Статистика · ReSOURCE{% endblock %}
+{% block extra_head %}<script src="{% static 'js/sales-statistics.js' %}?v=1" defer></script>{% endblock %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">Управленческие отчёты</p><h1>Статистика</h1><p class="muted">Завершённые продажи, фактическая выручка и историческая себестоимость.</p></div></div>
+
+<form id="statistics-filter-form" method="get" class="panel stats-filters">
+  <div class="section-heading section-heading-plain"><div><h2>Фильтры отчёта</h2></div></div>
+  {% if form.non_field_errors %}<div class="alert alert-error">{{ form.non_field_errors }}</div>{% endif %}
+  <div class="stats-filter-grid">
+    <div class="field"><label for="{{ form.date_from.id_for_label }}">Дата с</label>{{ form.date_from }}{{ form.date_from.errors }}</div>
+    <div class="field"><label for="{{ form.date_to.id_for_label }}">Дата по</label>{{ form.date_to }}{{ form.date_to.errors }}</div>
+    <div class="field"><label for="{{ form.warehouse.id_for_label }}">Склад</label>{{ form.warehouse }}{{ form.warehouse.errors }}</div>
+    <div class="field"><label for="{{ form.grouping.id_for_label }}">Группировка</label>{{ form.grouping }}</div>
+  </div>
+  <div class="stats-quick-periods" aria-label="Быстрый выбор периода">
+    <button type="button" class="button button-secondary button-small" data-stats-period="today">Сегодня</button>
+    <button type="button" class="button button-secondary button-small" data-stats-period="yesterday">Вчера</button>
+    <button type="button" class="button button-secondary button-small" data-stats-period="week">Последние 7 дней</button>
+    <button type="button" class="button button-secondary button-small" data-stats-period="month">Этот месяц</button>
+    <button type="button" class="button button-secondary button-small" data-stats-period="previous-month">Прошлый месяц</button>
+    <button type="button" class="button button-secondary button-small" data-stats-period="year">Этот год</button>
+  </div>
+  <div class="stats-filter-grid stats-filter-choices">
+    <fieldset><legend>Каналы продаж</legend>{{ form.channels }}</fieldset>
+    <fieldset><legend>Способы оплаты</legend>{{ form.payment_methods }}</fieldset>
+  </div>
+  <details class="stats-advanced" {% if advanced_active %}open{% endif %}><summary>Дополнительные фильтры и сортировка</summary>
+    <div class="stats-filter-grid">
+      <div class="field"><label for="{{ form.product_query.id_for_label }}">{{ form.product_query.label }}</label>{{ form.product_query }}</div>
+      <div class="field"><label for="{{ form.platform.id_for_label }}">Платформа CD</label>{{ form.platform }}</div>
+      <div class="field"><label for="{{ form.game_series.id_for_label }}">Игровая серия</label>{{ form.game_series }}</div>
+      <div class="field"><label for="{{ form.brand.id_for_label }}">Бренд Tech</label>{{ form.brand }}</div>
+      <div class="field"><label for="{{ form.product_type.id_for_label }}">Тип Tech</label>{{ form.product_type }}</div>
+      <div class="field"><label for="{{ form.sale_ids_text.id_for_label }}">ID продаж через запятую</label>{{ form.sale_ids_text }}<span class="help-text">Или отметьте нужные продажи в таблице ниже и нажмите «Сформировать отчёт».</span></div>
+      <div class="field"><label for="{{ form.min_profit.id_for_label }}">Мин. прибыль продажи, ₽</label>{{ form.min_profit }}</div>
+      <div class="field"><label for="{{ form.max_profit.id_for_label }}">Макс. прибыль продажи, ₽</label>{{ form.max_profit }}</div>
+      <div class="field"><label for="{{ form.sale_sort.id_for_label }}">Сортировка продаж</label>{{ form.sale_sort }}</div>
+      <div class="field"><label for="{{ form.product_sort.id_for_label }}">Сортировка товаров</label>{{ form.product_sort }}</div>
+    </div>
+  </details>
+  <div class="form-actions"><button class="button" type="submit">Сформировать отчёт</button><a class="button button-secondary" href="{% url 'statistics:index' %}">Сбросить</a>{% if can_export and report %}<a class="button button-secondary" href="{% url 'statistics:export' %}?{{ request.GET.urlencode }}">Экспорт в Excel</a>{% endif %}</div>
+</form>
+
+{% if report %}
+  {% if report.undated_completed_count %}<div class="alert alert-warning">Завершённых продаж без достоверной даты: {{ report.undated_completed_count }}. Они не включены в отчёт по периоду.</div>{% endif %}
+  {% if report.totals.missing_lines %}<div class="alert alert-warning">Себестоимость недоступна для {{ report.totals.missing_lines }} позиций в {{ report.totals.missing_sales }} продажах. Прибыль, маржа и наценка этих продаж и общей выборки не рассчитываются: текущая себестоимость товара не подставляется.</div>{% endif %}
+  <section class="stats-kpis" aria-label="Сводные показатели">
+    <div class="panel"><span>Фактическая выручка</span><strong>{{ report.totals.actual_revenue|floatformat:2 }} ₽</strong></div>
+    <div class="panel"><span>Стоимость товаров</span><strong>{{ report.totals.goods_total|floatformat:2 }} ₽</strong></div>
+    <div class="panel"><span>Себестоимость</span><strong>{% if report.totals.cost is None %}Недоступна{% else %}{{ report.totals.cost|floatformat:2 }} ₽{% endif %}</strong></div>
+    <div class="panel"><span>Чистая прибыль, ₽</span><strong>{% if report.totals.profit is None %}Недоступна{% else %}{{ report.totals.profit|floatformat:2 }} ₽{% endif %}</strong></div>
+    <div class="panel"><span>Маржа %</span><strong>{% if report.totals.margin is None %}—{% else %}{{ report.totals.margin|floatformat:2 }}%{% endif %}</strong></div>
+    <div class="panel"><span>Наценка %</span><strong>{% if report.totals.markup is None %}—{% else %}{{ report.totals.markup|floatformat:2 }}%{% endif %}</strong></div>
+    <div class="panel"><span>Завершённых продаж</span><strong>{{ report.totals.sales_count }}</strong></div>
+    <div class="panel"><span>Продано единиц</span><strong>{{ report.totals.units }}</strong></div>
+    <div class="panel"><span>Средний чек</span><strong>{% if report.totals.average_check is None %}—{% else %}{{ report.totals.average_check|floatformat:2 }} ₽{% endif %}</strong></div>
+    <div class="panel"><span>Переплаты покупателей</span><strong>{{ report.totals.overpayment|floatformat:2 }} ₽</strong></div>
+  </section>
+
+  <section class="panel stats-section"><h2>Динамика</h2>
+    {% if report.time_series %}
+      <div class="stats-chart-wrap"><svg class="stats-chart" viewBox="0 0 {{ report.chart.width }} {{ report.chart.height }}" role="img" aria-label="Динамика выручки, себестоимости и чистой прибыли">
+        <line x1="32" y1="{{ report.chart.zero_y }}" x2="868" y2="{{ report.chart.zero_y }}" stroke="#b7c6d1" stroke-width="1" />
+        {% for series in report.chart.series %}{% for segment in series.segments %}<polyline points="{{ segment }}" fill="none" stroke="{{ series.color }}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />{% endfor %}{% for point in series.points %}<circle cx="{{ point.0 }}" cy="{{ point.1 }}" r="3" fill="{{ series.color }}" />{% endfor %}{% endfor %}
+        {% for label in report.chart.labels %}<text x="{{ label.x }}" y="226" text-anchor="middle" font-size="10" fill="#526879">{{ label.label }}</text>{% endfor %}
+      </svg></div>
+      <div class="stats-chart-legend"><span class="revenue">Выручка</span><span class="cost">Себестоимость</span><span class="profit">Чистая прибыль</span></div>
+      <div class="table-scroll"><table><thead><tr><th>Период</th><th>Продаж</th><th>Единиц</th><th>Выручка</th><th>Себестоимость</th><th>Прибыль</th></tr></thead><tbody>{% for row in report.time_series %}<tr><td>{{ row.label }}</td><td>{{ row.totals.sales_count }}</td><td>{{ row.totals.units }}</td><td>{{ row.totals.actual_revenue|floatformat:2 }} ₽</td><td>{% if row.totals.cost is None %}—{% else %}{{ row.totals.cost|floatformat:2 }} ₽{% endif %}</td><td>{% if row.totals.profit is None %}—{% else %}{{ row.totals.profit|floatformat:2 }} ₽{% endif %}</td></tr>{% endfor %}</tbody></table></div>
+    {% else %}<p class="muted">За выбранный период завершённых продаж нет.</p>{% endif %}
+  </section>
+
+  <section class="panel stats-section"><h2>Сравнение каналов продаж</h2><div class="table-scroll"><table><thead><tr><th>Канал</th><th>Продаж</th><th>Единиц</th><th>Стоимость товаров</th><th>Переплаты</th><th>Выручка</th><th>Себестоимость</th><th>Прибыль</th><th>Маржа %</th><th>Наценка %</th><th>Средний чек</th></tr></thead><tbody>{% for row in report.channels %}<tr><td>{{ row.label }}</td><td>{{ row.totals.sales_count }}</td><td>{{ row.totals.units }}</td><td>{{ row.totals.goods_total|floatformat:2 }}</td><td>{{ row.totals.overpayment|floatformat:2 }}</td><td>{{ row.totals.actual_revenue|floatformat:2 }}</td><td>{% if row.totals.cost is None %}—{% else %}{{ row.totals.cost|floatformat:2 }}{% endif %}</td><td>{% if row.totals.profit is None %}—{% else %}{{ row.totals.profit|floatformat:2 }}{% endif %}</td><td>{{ row.totals.margin|default_if_none:"—" }}</td><td>{{ row.totals.markup|default_if_none:"—" }}</td><td>{{ row.totals.average_check|default_if_none:"—" }}</td></tr>{% empty %}<tr><td colspan="11">Нет данных.</td></tr>{% endfor %}</tbody></table></div></section>
+
+  <section class="panel stats-section stats-sales-section"><div class="section-heading"><div><h2>Продажи</h2><p class="muted">Отметьте одну или несколько продаж и снова сформируйте отчёт. Раскрытие строки показывает расчёт по каждой позиции.</p></div><span class="count">{{ report.totals.sales_count }}</span></div>
+    <div class="stats-sales-list">
+      {% for row in sale_page %}
+        <article class="stats-sale-card">
+          <div class="stats-sale-head">
+            <label class="stats-sale-select" title="Выбрать продажу {{ row.sale.pk }}"><input type="checkbox" name="sale_id" value="{{ row.sale.pk }}" form="statistics-filter-form" aria-label="Выбрать продажу {{ row.sale.pk }}" {% if row.sale.pk in form.cleaned_data.sale_ids %}checked{% endif %}></label>
+            <div class="stats-sale-identity">{% if can_view_sale_detail %}<a href="{% url 'sales:detail' row.sale.pk %}">{{ row.sale.visible_id }}</a>{% else %}{{ row.sale.visible_id }}{% endif %}<small>{{ row.sale.completed_at|date:"d.m.Y H:i" }}</small></div>
+            <div class="stats-sale-meta"><span>Склад</span><strong>{{ row.sale.warehouse.name }}</strong></div>
+            <div class="stats-sale-meta"><span>Канал</span><strong>{{ row.channel_label }}</strong></div>
+            <div class="stats-sale-meta"><span>Оплата</span><strong>{{ row.sale.get_payment_method_display }}</strong></div>
+            <button type="button" class="button button-secondary button-small" data-stats-expand="stats-sale-{{ row.sale.pk }}" aria-expanded="false" aria-controls="stats-sale-{{ row.sale.pk }}">Состав</button>
+          </div>
+          <div class="stats-sale-metrics">
+            <div class="stats-metric"><span>Стоимость товаров</span><strong>{{ row.goods_total|floatformat:2 }} ₽</strong></div>
+            <div class="stats-metric"><span>Переплата</span><strong>{{ row.overpayment|floatformat:2 }} ₽</strong></div>
+            <div class="stats-metric"><span>Выручка</span><strong>{{ row.actual_revenue|floatformat:2 }} ₽</strong></div>
+            <div class="stats-metric"><span>Себестоимость</span><strong>{% if row.cost is None %}—{% else %}{{ row.cost|floatformat:2 }} ₽{% endif %}</strong></div>
+            <div class="stats-metric"><span>Прибыль</span><strong class="{% if row.profit < 0 %}stats-negative{% endif %}">{% if row.profit is None %}—{% else %}{{ row.profit|floatformat:2 }} ₽{% endif %}</strong></div>
+            <div class="stats-metric"><span>Маржа %</span><strong>{{ row.margin|default_if_none:"—" }}</strong></div>
+            <div class="stats-metric"><span>Наценка %</span><strong>{{ row.markup|default_if_none:"—" }}</strong></div>
+            <div class="stats-metric"><span>Единиц / позиций</span><strong>{{ row.units }} / {{ row.positions }}</strong></div>
+          </div>
+          <div id="stats-sale-{{ row.sale.pk }}" class="stats-sale-detail" hidden>
+            <h3>Состав продажи {{ row.sale.visible_id }}</h3>
+            {% for line in row.lines %}
+              <div class="stats-line-card">
+                <div class="stats-line-identity"><span>{{ line.kind|upper }} #{{ line.product_id }} · {{ line.sku }}</span><strong>{{ line.name }}</strong></div>
+                <div class="stats-line-metrics">
+                  <div class="stats-metric"><span>Количество</span><strong>{{ line.quantity }}</strong></div>
+                  <div class="stats-metric"><span>Цена / ед.</span><strong>{{ line.unit_price|floatformat:2 }} ₽</strong></div>
+                  <div class="stats-metric"><span>Выручка</span><strong>{{ line.revenue|floatformat:2 }} ₽</strong></div>
+                  <div class="stats-metric"><span>Себестоимость / ед.</span><strong>{% if line.unit_cost is None %}Недоступна{% else %}{{ line.unit_cost|floatformat:2 }} ₽{% endif %}</strong></div>
+                  <div class="stats-metric"><span>Себестоимость</span><strong>{% if line.cost is None %}—{% else %}{{ line.cost|floatformat:2 }} ₽{% endif %}</strong></div>
+                  <div class="stats-metric"><span>Прибыль</span><strong class="{% if line.profit < 0 %}stats-negative{% endif %}">{% if line.profit is None %}—{% else %}{{ line.profit|floatformat:2 }} ₽{% endif %}</strong></div>
+                  <div class="stats-metric"><span>Маржа %</span><strong>{{ line.margin|default_if_none:"—" }}</strong></div>
+                  <div class="stats-metric"><span>Наценка %</span><strong>{{ line.markup|default_if_none:"—" }}</strong></div>
+                </div>
+              </div>
+            {% endfor %}
+            <div class="stats-sale-summary"><span>Прибыль по товарам: <b>{% if row.items_profit is None %}недоступна{% else %}{{ row.items_profit|floatformat:2 }} ₽{% endif %}</b></span><span>Переплата: <b>{{ row.overpayment|floatformat:2 }} ₽</b></span><span>Итого чистая прибыль: <b>{% if row.profit is None %}недоступна{% else %}{{ row.profit|floatformat:2 }} ₽{% endif %}</b></span></div>
+          </div>
+        </article>
+      {% empty %}<p class="muted">Завершённых продаж по этим фильтрам нет.</p>{% endfor %}
+    </div>
+    {% if sale_page.paginator.num_pages > 1 %}<nav class="stats-pages" aria-label="Страницы продаж">{% if sale_page.has_previous %}<a href="?{{ filter_query }}&page={{ sale_page.previous_page_number }}">← Предыдущая</a>{% endif %}<span>{{ sale_page.number }} / {{ sale_page.paginator.num_pages }}</span>{% if sale_page.has_next %}<a href="?{{ filter_query }}&page={{ sale_page.next_page_number }}">Следующая →</a>{% endif %}</nav>{% endif %}
+  </section>
+
+  <section class="panel stats-section"><div class="section-heading"><div><h2>Статистика по товарам</h2><p class="muted">Доля в прибыли рассчитана только по прибыли позиций, без распределения переплат.</p></div><span class="count">{{ report.products|length }} поз.</span></div><div class="table-scroll"><table><thead><tr><th>Тип / ID</th><th>Артикул / товар</th><th>Категория</th><th>Продано шт.</th><th>Продаж</th><th>Выручка</th><th>Себестоимость</th><th>Прибыль</th><th>Маржа %</th><th>Наценка %</th><th>Средняя цена / ед.</th><th>Доля в прибыли товаров %</th></tr></thead><tbody>{% for row in product_page %}<tr><td>{{ row.kind|upper }} #{{ row.product_id }}</td><td>{{ row.sku }}<br><b>{{ row.name }}</b></td><td>{{ row.category }}</td><td>{{ row.units }}</td><td>{{ row.sales_count }}</td><td>{{ row.revenue|floatformat:2 }}</td><td>{% if row.cost is None %}—{% else %}{{ row.cost|floatformat:2 }}{% endif %}</td><td class="{% if row.profit < 0 %}stats-negative{% endif %}">{% if row.profit is None %}—{% else %}{{ row.profit|floatformat:2 }}{% endif %}</td><td>{{ row.margin|default_if_none:"—" }}</td><td>{{ row.markup|default_if_none:"—" }}</td><td>{{ row.average_unit_price|floatformat:2 }}</td><td>{{ row.profit_share|default_if_none:"—" }}</td></tr>{% empty %}<tr><td colspan="12">Нет товаров.</td></tr>{% endfor %}</tbody></table></div>
+    {% if product_page.paginator.num_pages > 1 %}<nav class="stats-pages" aria-label="Страницы товаров">{% if product_page.has_previous %}<a href="?{{ filter_query }}&product_page={{ product_page.previous_page_number }}">← Предыдущая</a>{% endif %}<span>{{ product_page.number }} / {{ product_page.paginator.num_pages }}</span>{% if product_page.has_next %}<a href="?{{ filter_query }}&product_page={{ product_page.next_page_number }}">Следующая →</a>{% endif %}</nav>{% endif %}
+  </section>
+{% endif %}
+{% endblock %}

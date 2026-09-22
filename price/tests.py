@@ -45,6 +45,13 @@ def workbook_bytes(workbook):
     return output.getvalue()
 
 
+def find_sheet_row(sheet, value, *, column=1):
+    for row in range(HEADER_ROW + 1, sheet.max_row + 1):
+        if sheet.cell(row, column).value == value:
+            return row
+    raise AssertionError(f"Значение {value!r} не найдено в прайсе")
+
+
 class PriceExcelTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_superuser("admin", password="StrongAdmin!123")
@@ -92,17 +99,63 @@ class PriceExcelTests(TestCase):
         self.assertEqual(skipped, 0)
         workbook.close()
 
+    def test_retail_and_wholesale_prices_are_grouped_like_nomenclature(self):
+        switch = Platform.objects.create(name="Nintendo Switch")
+        zelda = CD.objects.create(
+            platform=switch, name="Zelda", sku="CD-3", barcode="4", cost=100,
+            avito_price=400, wholesale_price=350,
+        )
+        accessories = ProductType.objects.create(name="Аксессуары")
+        gamepad = Tech.objects.create(
+            brand=self.tech.brand, product_type=accessories, name="Gamepad",
+            sku="T-2", barcode="5", cost=100, avito_price=500, wholesale_price=450,
+        )
+        CDWarehouseStock.objects.create(warehouse=self.moscow, cd=zelda, quantity=2)
+        TechWarehouseStock.objects.create(warehouse=self.moscow, tech=gamepad, quantity=3)
+        TechWarehouseStock.objects.filter(warehouse=self.moscow, tech=self.tech).update(quantity=1)
+        expected = [
+            "CD · Платформа: Nintendo Switch", "Zelda",
+            "CD · Платформа: PS5", self.cd.name,
+            "Техника · Тип товара: Аксессуары", "Gamepad",
+            "Техника · Тип товара: Консоли", self.tech.name,
+        ]
+
+        retail, _skipped = generate_retail_price_xlsx(
+            warehouse_id=self.moscow.pk, actor=self.user
+        )
+        wholesale = generate_wholesale_price_xlsx(
+            warehouse_id=self.moscow.pk, actor=self.user
+        )
+        for content in (retail, wholesale):
+            workbook = load_workbook(BytesIO(content), data_only=False)
+            sheet = workbook[MAIN_SHEET]
+            values = [
+                sheet.cell(row, 1).value
+                for row in range(HEADER_ROW + 1, sheet.max_row + 1)
+            ]
+            self.assertEqual([value for value in values if value in expected], expected)
+            workbook.close()
+
+        workbook = load_workbook(BytesIO(wholesale), data_only=False)
+        sheet = workbook[MAIN_SHEET]
+        group_row = find_sheet_row(sheet, "CD · Платформа: Nintendo Switch")
+        product_row = find_sheet_row(sheet, "Zelda")
+        self.assertTrue(sheet.cell(group_row, 4).protection.locked)
+        self.assertFalse(sheet.cell(product_row, 4).protection.locked)
+        workbook.close()
+
     def test_wholesale_file_has_availability_formulas_ids_and_import_ignores_price(self):
         content = generate_wholesale_price_xlsx(warehouse_id=self.moscow.pk, actor=self.user)
         workbook = load_workbook(BytesIO(content), data_only=False)
         sheet = workbook[MAIN_SHEET]
-        self.assertEqual(sheet.cell(HEADER_ROW + 1, 3).value, 5)
+        product_row = find_sheet_row(sheet, self.cd.name)
+        self.assertEqual(sheet.cell(product_row, 3).value, 5)
         self.assertTrue(str(sheet.cell(sheet.max_row, 4).value).startswith("=SUMPRODUCT"))
         self.assertTrue(sheet.cell(sheet.max_row, 4).protection.locked)
-        self.assertFalse(sheet.cell(HEADER_ROW + 1, 4).protection.locked)
+        self.assertFalse(sheet.cell(product_row, 4).protection.locked)
         self.assertEqual(workbook[META_SHEET].sheet_state, "veryHidden")
-        sheet.cell(HEADER_ROW + 1, 2, 1)
-        sheet.cell(HEADER_ROW + 1, 4, 2)
+        sheet.cell(product_row, 2, 1)
+        sheet.cell(product_row, 4, 2)
         changed = workbook_bytes(workbook)
 
         warehouse, lines = import_wholesale_price_to_sale(uploaded(changed))
@@ -119,7 +172,8 @@ class PriceExcelTests(TestCase):
     def test_wholesale_formula_quantity_is_rejected(self):
         content = generate_wholesale_price_xlsx(warehouse_id=self.moscow.pk, actor=self.user)
         workbook = load_workbook(BytesIO(content), data_only=False)
-        workbook[MAIN_SHEET].cell(HEADER_ROW + 1, 4, "=1+1")
+        sheet = workbook[MAIN_SHEET]
+        sheet.cell(find_sheet_row(sheet, self.cd.name), 4, "=1+1")
         with self.assertRaisesMessage(ValidationError, "не формулой"):
             import_wholesale_price_to_sale(uploaded(workbook_bytes(workbook)))
 
@@ -127,7 +181,8 @@ class PriceExcelTests(TestCase):
         self.client.force_login(self.user)
         content = generate_wholesale_price_xlsx(warehouse_id=self.moscow.pk, actor=self.user)
         workbook = load_workbook(BytesIO(content), data_only=False)
-        workbook[MAIN_SHEET].cell(HEADER_ROW + 1, 4, 2)
+        sheet = workbook[MAIN_SHEET]
+        sheet.cell(find_sheet_row(sheet, self.cd.name), 4, 2)
         response = self.client.post(reverse("sales:import_wholesale"), {
             "file": uploaded(workbook_bytes(workbook)),
         })
@@ -324,5 +379,7 @@ class PriceExcelTests(TestCase):
         self.cd.save(update_fields=("name",))
         content = generate_wholesale_price_xlsx(warehouse_id=self.moscow.pk, actor=self.user)
         workbook = load_workbook(BytesIO(content), data_only=False)
-        self.assertTrue(workbook[MAIN_SHEET].cell(HEADER_ROW + 1, 1).value.startswith("'="))
+        sheet = workbook[MAIN_SHEET]
+        product_row = find_sheet_row(sheet, "'=HYPERLINK(\"bad\")")
+        self.assertTrue(sheet.cell(product_row, 1).value.startswith("'="))
         workbook.close()

@@ -246,6 +246,8 @@ class ConsignmentServiceTests(TestCase):
             html=True,
         )
         self.assertNotContains(response, 'name="cost"')
+        self.assertContains(response, "data-consignment-barcode-feedback")
+        self.assertContains(response, "consignment-transfer.js?v=global-barcode-1")
 
         failed_response = self.client.post(reverse("consignment:transfer"), {
             "warehouse": self.warehouse.pk,
@@ -287,6 +289,71 @@ class ConsignmentServiceTests(TestCase):
         }).json()
 
         self.assertIsNone(payload["results"][0]["cost"])
+
+    def test_list_groups_cd_by_platform_and_tech_by_product_type(self):
+        second_platform = Platform.objects.create(name="PS4")
+        second_cd = CD.objects.create(
+            platform=second_platform, name="Другая игра", sku="CD-2", barcode="002", cost=1000,
+        )
+        second_type = ProductType.objects.create(name="Консоль")
+        second_tech = Tech.objects.create(
+            brand=self.tech.brand, product_type=second_type, name="Консоль", sku="TECH-2", cost=5000,
+        )
+        CDConsignmentStock.objects.create(
+            platform=self.sales_platform, warehouse=self.warehouse, cd=self.product,
+            quantity=1, receivable_per_unit=2500,
+        )
+        CDConsignmentStock.objects.create(
+            platform=self.sales_platform, warehouse=self.warehouse, cd=second_cd,
+            quantity=1, receivable_per_unit=1500,
+        )
+        TechConsignmentStock.objects.create(
+            platform=self.sales_platform, warehouse=self.warehouse, tech=self.tech,
+            quantity=1, receivable_per_unit=3500,
+        )
+        TechConsignmentStock.objects.create(
+            platform=self.sales_platform, warehouse=self.warehouse, tech=second_tech,
+            quantity=1, receivable_per_unit=5500,
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("consignment:list"))
+
+        presentation = response.context["platforms"][0]
+        self.assertEqual([group.name for group, _ in presentation["cd_groups"]], ["PS4", "PS5"])
+        self.assertEqual(
+            [group.name for group, _ in presentation["tech_groups"]], ["Геймпад", "Консоль"],
+        )
+        self.assertContains(response, f'aria-controls="consignment-platform-{self.sales_platform.pk}"')
+        self.assertContains(response, f'id="consignment-{self.sales_platform.pk}-cd-{self.product.platform_id}"')
+        self.assertContains(response, f'id="consignment-{self.sales_platform.pk}-tech-{self.tech.product_type_id}"')
+        self.assertNotContains(response, "<th>Тип</th>", html=True)
+
+    def test_platform_page_only_contains_selected_platform_data(self):
+        other = SalesPlatform.objects.create(
+            name="Другая площадка", address="Адрес", legal_entity="ООО Другая", phone_1="+70000000001",
+        )
+        CDConsignmentStock.objects.create(
+            platform=self.sales_platform, warehouse=self.warehouse, cd=self.product,
+            quantity=1, receivable_per_unit=2500,
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("consignment:platform", args=(self.sales_platform.pk,)))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([item["platform"] for item in response.context["platforms"]], [self.sales_platform])
+        self.assertEqual(response.context["selected_platform"], self.sales_platform)
+        self.assertNotIn(other, [item["platform"] for item in response.context["platforms"]])
+
+    def test_platform_page_preserves_consignment_permission(self):
+        worker = User.objects.create_user("no-consignment", password="StrongWorker!123")
+        self.client.force_login(worker)
+
+        self.assertEqual(
+            self.client.get(reverse("consignment:platform", args=(self.sales_platform.pk,))).status_code,
+            403,
+        )
 
     def test_posted_cost_is_ignored_by_transfer(self):
         self.client.force_login(self.user)

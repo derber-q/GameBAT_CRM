@@ -1,11 +1,15 @@
 import logging
+from uuid import uuid4
 
 from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
 from django.db import transaction
 from django.db.models import F, Q
+from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
+from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 
 from catalog.models import CD, Tech
@@ -30,6 +34,7 @@ from .services import (
     get_or_create_profile,
     global_stock,
     rebind_listing,
+    unbind_listing,
     save_avito_credentials,
     update_profile,
 )
@@ -81,16 +86,26 @@ def credentials_check(request):
 @permission_required_any("integrations.view_avito_integration")
 def avito_dashboard(request):
     credential = get_avito_credential()
+    manual_jobs = AvitoSyncJob.objects.filter(job_type=AvitoSyncJob.JobType.MANUAL)
+    requested_run = request.GET.get("run", "")
+    manual_job = (
+        manual_jobs.filter(pk=int(requested_run)).first()
+        if requested_run.isdigit() else manual_jobs.order_by("-created_at", "-pk").first()
+    )
     context = {
         "credential": credential,
         "linked_count": AvitoListingConnection.objects.count(),
-        "unlinked_count": AvitoRemoteListing.objects.filter(connection__isnull=True).count(),
+        "unlinked_count": AvitoRemoteListing.objects.filter(connection__isnull=True).exclude(status__iexact="removed").count(),
         "error_count": AvitoProductProfile.objects.filter(
             Q(cd__is_archived=False) | Q(tech__is_archived=False),
             sync_status=AvitoProductProfile.SyncStatus.ERROR,
         ).count(),
         "last_log": AvitoSyncLog.objects.filter(result=AvitoSyncLog.Result.SUCCESS).first(),
         "pending_count": AvitoSyncJob.objects.filter(status=AvitoSyncJob.Status.PENDING).count(),
+        "manual_job": manual_job,
+        "active_manual_job": manual_jobs.filter(
+            status__in=(AvitoSyncJob.Status.PENDING, AvitoSyncJob.Status.RUNNING)
+        ).order_by("-created_at", "-pk").first(),
     }
     return render(request, "integrations/avito_dashboard.html", context)
 
@@ -98,16 +113,50 @@ def avito_dashboard(request):
 @require_POST
 @permission_required_any("integrations.manual_avito_sync")
 def manual_sync(request):
-    enqueue_periodic(AvitoSyncJob.JobType.REFRESH)
-    enqueue_periodic(AvitoSyncJob.JobType.RECONCILE, delay_seconds=2)
-    messages.success(request, "Синхронизация поставлена в очередь.")
-    return redirect("integrations:avito")
+    credential = get_avito_credential()
+    if not credential or not credential.is_configured:
+        messages.error(request, "Сначала настройте подключение к Avito.")
+        return redirect("integrations:avito")
+    active_job = AvitoSyncJob.objects.filter(
+        job_type=AvitoSyncJob.JobType.MANUAL,
+        status__in=(AvitoSyncJob.Status.PENDING, AvitoSyncJob.Status.RUNNING),
+    ).order_by("-created_at", "-pk").first()
+    if active_job:
+        return redirect(f"{reverse('integrations:avito')}?run={active_job.pk}")
+    job = AvitoSyncJob.objects.create(
+        dedupe_key=f"manual:{uuid4().hex}", job_type=AvitoSyncJob.JobType.MANUAL,
+        status=AvitoSyncJob.Status.PENDING, run_after=timezone.now(),
+        phase="Ожидает запуска",
+    )
+    return redirect(f"{reverse('integrations:avito')}?run={job.pk}")
+
+
+@require_GET
+@permission_required_any("integrations.view_avito_integration")
+def manual_sync_status(request, pk):
+    job = get_object_or_404(AvitoSyncJob, pk=pk, job_type=AvitoSyncJob.JobType.MANUAL)
+    return JsonResponse({
+        "status": job.status,
+        "phase": job.phase or job.get_status_display(),
+        "current_item": job.current_item,
+        "total": job.total_count,
+        "checked": job.checked_count,
+        "changed": job.changed_count,
+        "stock_changed": job.stock_changed_count,
+        "price_changed": job.price_changed_count,
+        "failed": job.failed_count,
+        "skipped": job.skipped_count,
+        "error": job.last_error,
+        "details": job.details,
+        "retry_at": timezone.localtime(job.run_after).strftime("%d.%m.%Y %H:%M")
+        if job.status == AvitoSyncJob.Status.PENDING and job.attempts else "",
+    })
 
 
 @permission_required_any("integrations.view_avito_integration")
 def connections(request):
     query = str(request.GET.get("q") or "").strip()
-    unlinked = AvitoRemoteListing.objects.filter(connection__isnull=True)
+    unlinked = AvitoRemoteListing.objects.filter(connection__isnull=True).exclude(status__iexact="removed")
     linked = AvitoListingConnection.objects.select_related(
         "remote_listing", "profile", "profile__cd", "profile__tech"
     )
@@ -173,6 +222,15 @@ def listing_rebind(request, pk):
             messages.success(request, "Объявление перепривязано. Его Avito ID сохранён.")
             return redirect("integrations:connections")
     return render(request, "integrations/rebind.html", {"connection": connection, "form": form, "query": query})
+
+
+@permission_required_any("integrations.rebind_avito_listing")
+@require_POST
+def listing_unbind(request, pk):
+    connection = get_object_or_404(AvitoListingConnection, pk=pk)
+    unbind_listing(connection=connection, actor=request.user)
+    messages.success(request, "Связь удалена. Объявление находится в списке несвязанных. Само объявление на Avito сохранено.")
+    return redirect("integrations:connections")
 
 
 def product_avito_context(product, product_kind, user):

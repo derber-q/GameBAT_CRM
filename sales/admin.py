@@ -19,7 +19,7 @@ class SaleAdmin(SaleHistoryAdmin):
     list_display = (
         "visible_id", "warehouse", "consignment_platform", "sale_type", "payment_method", "order_status",
         "payment_status", "total_amount", "refunded_amount", "cancelled_at", "cancelled_by", "created_at",
-        "cash_received_amount", "extra_cash_amount", "note",
+        "cash_received_amount", "extra_cash_amount", "completed_at", "note",
     )
     list_filter = (
         "warehouse", "consignment_platform", "sale_type", "payment_method", "order_status", "payment_status",
@@ -31,11 +31,11 @@ class SaleAdmin(SaleHistoryAdmin):
 
 @admin.register(SaleCDItem)
 class SaleCDItemAdmin(SaleHistoryAdmin):
-    list_display = ("sale", "product_name_snapshot", "quantity", "unit_price", "line_total")
+    list_display = ("sale", "product_name_snapshot", "quantity", "unit_price", "unit_cost_snapshot", "line_total")
     search_fields = ("sale__visible_id", "product_name_snapshot", "article_snapshot")
 
 
 @admin.register(SaleTechItem)
 class SaleTechItemAdmin(SaleHistoryAdmin):
-    list_display = ("sale", "product_name_snapshot", "quantity", "unit_price", "line_total")
+    list_display = ("sale", "product_name_snapshot", "quantity", "unit_price", "unit_cost_snapshot", "line_total")
     search_fields = ("sale__visible_id", "product_name_snapshot", "article_snapshot")

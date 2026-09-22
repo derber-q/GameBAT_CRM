@@ -21,6 +21,72 @@ def _can_record_sale(user):
     return user.is_superuser or user.has_perm("sales.create_sale")
 
 
+def _stock_row(stock, product_kind):
+    product = stock.cd if product_kind == "cd" else stock.tech
+    return {
+        "product_kind": product_kind,
+        "stock_id": stock.pk,
+        "name": product.name,
+        "sku": product.sku,
+        "warehouse": stock.warehouse,
+        "cost": product.cost,
+        "quantity": stock.quantity,
+        "receivable": stock.receivable_per_unit,
+        "potential": stock.potential_receivable,
+    }
+
+
+def _group_stocks(stocks, *, product_kind):
+    grouped = {}
+    for stock in stocks:
+        product = stock.cd if product_kind == "cd" else stock.tech
+        group = product.platform if product_kind == "cd" else product.product_type
+        grouped.setdefault(group, []).append(_stock_row(stock, product_kind))
+    return [
+        (group, sorted(rows, key=lambda row: (row["name"].casefold(), row["warehouse"].name.casefold())))
+        for group, rows in sorted(grouped.items(), key=lambda item: item[0].name.casefold())
+    ]
+
+
+def _platform_presentations(user, platform_queryset):
+    platforms = list(platform_queryset)
+    platform_ids = [platform.pk for platform in platforms]
+    cd_by_platform = {platform_id: [] for platform_id in platform_ids}
+    tech_by_platform = {platform_id: [] for platform_id in platform_ids}
+    if platform_ids and (user.is_superuser or user.has_perm("consignment.view_cdconsignmentstock")):
+        for stock in CDConsignmentStock.objects.filter(
+            platform_id__in=platform_ids, quantity__gt=0, cd__is_archived=False,
+        ).select_related("cd__platform", "warehouse"):
+            cd_by_platform[stock.platform_id].append(stock)
+    if platform_ids and (user.is_superuser or user.has_perm("consignment.view_techconsignmentstock")):
+        for stock in TechConsignmentStock.objects.filter(
+            platform_id__in=platform_ids, quantity__gt=0, tech__is_archived=False,
+        ).select_related("tech__product_type", "warehouse"):
+            tech_by_platform[stock.platform_id].append(stock)
+    result = []
+    for platform in platforms:
+        cd_groups = _group_stocks(cd_by_platform[platform.pk], product_kind="cd")
+        tech_groups = _group_stocks(tech_by_platform[platform.pk], product_kind="tech")
+        result.append({
+            "platform": platform,
+            "cd_groups": cd_groups,
+            "tech_groups": tech_groups,
+            "count": sum(len(rows) for _, rows in cd_groups + tech_groups),
+        })
+    return result
+
+
+def _consignment_context(request, platform_queryset, *, selected_platform=None):
+    return {
+        "platforms": _platform_presentations(request.user, platform_queryset),
+        "selected_platform": selected_platform,
+        "can_record_sale": _can_record_sale(request.user),
+        "can_change_reward": request.user.is_superuser or request.user.has_perm(
+            "consignment.change_consignment_reward"
+        ),
+    }
+
+
 def _parse_transfer_lines(post):
     product_types = post.getlist("product_type")
     product_ids = post.getlist("product_id")
@@ -77,38 +143,21 @@ def _submitted_transfer_lines(post):
 
 @permission_required_any("consignment.view_cdconsignmentstock", "consignment.view_techconsignmentstock")
 def consignment_list(request):
-    platforms = []
-    can_record_sale = _can_record_sale(request.user)
-    can_change_reward = request.user.is_superuser or request.user.has_perm(
-        "consignment.change_consignment_reward"
+    return render(
+        request, "consignment/list.html",
+        _consignment_context(request, SalesPlatform.objects.all()),
     )
-    for platform in SalesPlatform.objects.all():
-        rows = []
-        if request.user.is_superuser or request.user.has_perm("consignment.view_cdconsignmentstock"):
-            rows.extend({
-                "product_kind": "cd", "stock_id": stock.pk, "type": "CD",
-                "name": stock.cd.name, "sku": stock.cd.sku, "warehouse": stock.warehouse,
-                "cost": stock.cd.cost, "quantity": stock.quantity,
-                "receivable": stock.receivable_per_unit, "potential": stock.potential_receivable,
-            } for stock in CDConsignmentStock.objects.filter(
-                platform=platform, quantity__gt=0, cd__is_archived=False
-            ).select_related("cd", "warehouse"))
-        if request.user.is_superuser or request.user.has_perm("consignment.view_techconsignmentstock"):
-            rows.extend({
-                "product_kind": "tech", "stock_id": stock.pk, "type": "Tech",
-                "name": stock.tech.name, "sku": stock.tech.sku, "warehouse": stock.warehouse,
-                "cost": stock.tech.cost, "quantity": stock.quantity,
-                "receivable": stock.receivable_per_unit, "potential": stock.potential_receivable,
-            } for stock in TechConsignmentStock.objects.filter(
-                platform=platform, quantity__gt=0, tech__is_archived=False
-            ).select_related("tech", "warehouse"))
-        platforms.append((platform, sorted(
-            rows, key=lambda row: (row["type"], row["name"], row["warehouse"].name)
-        )))
-    return render(request, "consignment/list.html", {
-        "platforms": platforms, "can_record_sale": can_record_sale,
-        "can_change_reward": can_change_reward,
-    })
+
+
+@permission_required_any("consignment.view_cdconsignmentstock", "consignment.view_techconsignmentstock")
+def consignment_platform(request, pk):
+    platform = get_object_or_404(SalesPlatform, pk=pk)
+    return render(
+        request, "consignment/list.html",
+        _consignment_context(
+            request, SalesPlatform.objects.filter(pk=platform.pk), selected_platform=platform,
+        ),
+    )
 
 
 @require_POST

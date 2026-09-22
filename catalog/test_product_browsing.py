@@ -79,6 +79,14 @@ class ProductBrowsingTests(TestCase):
                     self.assertEqual(response.status_code, 200)
                     self.assertContains(response, self.ps5_cd.name)
 
+    def test_scanner_can_send_barcode_to_search_without_input_focus(self):
+        for url in self.urls:
+            with self.subTest(url=url):
+                response = self.client.get(url)
+                self.assertContains(response, "data-global-barcode-search")
+                self.assertContains(response, "data-global-barcode-search-input")
+                self.assertContains(response, "app.js?v=global-barcode-1")
+
     def test_platform_filter_returns_only_matching_cd_on_every_page(self):
         for url in self.urls:
             with self.subTest(url=url):

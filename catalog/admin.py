@@ -21,12 +21,46 @@ from .models import (
     Tech,
 )
 from .product_fields import PRICE_FIELDS, card_fields_for, field_permissions_for
-from .product_identifiers import ensure_product_article, set_product_barcode
+from .product_identifiers import ensure_product_article
 
 logger = logging.getLogger("gamebat.business")
 
 
 class ProductAdminMixin:
+    def save_formset(self, request, form, formset, change):
+        if formset.model is not BarcodeRegistry:
+            return super().save_formset(request, form, formset, change)
+        before = {
+            row.pk: row.value for row in form.instance.barcodes.all()
+        }
+        super().save_formset(request, form, formset, change)
+        after = {
+            row.pk: row.value for row in form.instance.barcodes.all()
+        }
+        changes = []
+        for pk, value in before.items():
+            if pk not in after:
+                changes.append(field_change(
+                    field_name="barcode_removed", field_label="Штрихкод удалён",
+                    old_value=value, new_value="",
+                ))
+            elif after[pk] != value:
+                changes.append(field_change(
+                    field_name="barcode_changed", field_label="Штрихкод изменён",
+                    old_value=value, new_value=after[pk],
+                ))
+        for pk, value in after.items():
+            if pk not in before:
+                changes.append(field_change(
+                    field_name="barcode_added", field_label="Штрихкод добавлен",
+                    old_value="", new_value=value,
+                ))
+        if changes:
+            record_product_changes(
+                actor=request.user, instance=form.instance, changes=changes,
+                source=ProductChangeEvent.Source.DJANGO_ADMIN,
+            )
+
     def has_delete_permission(self, request, obj=None):
         # Удаление из Admin обошло бы проверку остатков и могло бы затронуть историю.
         return False
@@ -63,7 +97,6 @@ class ProductAdminMixin:
                 before = product_snapshot(previous, audited_fields)
             super().save_model(request, obj, form, change)
             ensure_product_article(obj)
-            set_product_barcode(product=obj, barcode=obj.barcode)
             if before is None:
                 snapshot = product_snapshot(obj, audited_fields)
                 record_product_changes(
@@ -124,6 +157,35 @@ class GameSeriesAdmin(admin.ModelAdmin):
         return format_html('<a href="{}?game_series__id__exact={}">{}</a>', url, obj.pk, obj._cd_count)
 
 
+class BarcodeInlineBase(admin.TabularInline):
+    model = BarcodeRegistry
+    fields = ("value",)
+    extra = 1
+
+    def _permission(self, obj):
+        kind = obj._meta.model_name if obj is not None else self.fk_name
+        return f"catalog.change_{kind}_barcode"
+
+    def has_add_permission(self, request, obj=None):
+        return obj is not None and not obj.is_archived and (
+            request.user.is_superuser or request.user.has_perm(self._permission(obj))
+        )
+
+    def has_change_permission(self, request, obj=None):
+        return self.has_add_permission(request, obj)
+
+    def has_delete_permission(self, request, obj=None):
+        return self.has_add_permission(request, obj)
+
+
+class CDBarcodeInline(BarcodeInlineBase):
+    fk_name = "cd"
+
+
+class TechBarcodeInline(BarcodeInlineBase):
+    fk_name = "tech"
+
+
 @admin.register(CD)
 class CDAdmin(ProductAdminMixin, admin.ModelAdmin):
     list_display = (
@@ -131,8 +193,9 @@ class CDAdmin(ProductAdminMixin, admin.ModelAdmin):
         "cost", "avito_price",
     )
     list_filter = ("is_archived", "platform", "game_series")
-    search_fields = ("name", "sku", "barcode", "cusa_ppsa_code")
+    search_fields = ("name", "sku", "barcodes__value", "cusa_ppsa_code")
     autocomplete_fields = ("platform", "game_series")
+    inlines = (CDBarcodeInline,)
 
 
 @admin.register(Tech)
@@ -142,8 +205,9 @@ class TechAdmin(ProductAdminMixin, admin.ModelAdmin):
         "quantity_on_consignment", "cost", "avito_price",
     )
     list_filter = ("is_archived", "brand", "product_type")
-    search_fields = ("name", "sku", "barcode")
+    search_fields = ("name", "sku", "barcodes__value")
     autocomplete_fields = ("brand", "product_type")
+    inlines = (TechBarcodeInline,)
 
 
 @admin.register(ProductRemovalEvent)
@@ -218,4 +282,4 @@ class BarcodeRegistryAdmin(ReadonlyAuditAdminMixin, admin.ModelAdmin):
     list_display = ("value", "product_kind", "product", "created_at")
     list_filter = ("product_kind",)
     search_fields = ("value", "cd__name", "tech__name")
-    readonly_fields = ("value", "product_kind", "cd", "tech", "created_at")
+    readonly_fields = ("product_kind", "value", "cd", "tech", "created_at")

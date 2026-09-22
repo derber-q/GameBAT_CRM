@@ -172,6 +172,7 @@ def create_sale(
         values = dict(
             sale=sale, quantity=line["quantity"], unit_price=price, line_total=line_total,
             product_name_snapshot=product.name, article_snapshot=product.sku,
+            unit_cost_snapshot=product.cost,
         )
         if line["product_type"] == "cd":
             cd_items.append(SaleCDItem(cd=product, **values))
@@ -335,6 +336,7 @@ def edit_postpay_sale_items(*, actor, sale_id, lines):
             sale=sale, quantity=quantity, unit_price=price,
             line_total=(price * quantity).quantize(CENT, rounding=ROUND_HALF_UP),
             product_name_snapshot=product.name, article_snapshot=product.sku,
+            unit_cost_snapshot=product.cost,
         )
         if product_type == "cd":
             SaleCDItem.objects.create(cd=product, **values)

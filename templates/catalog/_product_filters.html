@@ -1,8 +1,8 @@
 <section class="panel product-filter-panel">
-  <form method="get" role="search" class="product-filter-form" data-product-filters>
+  <form method="get" role="search" class="product-filter-form" data-product-filters data-global-barcode-search>
     <div class="field product-search-field">
       <label for="product-search">Поиск товара</label>
-      <input id="product-search" type="search" name="search" value="{{ filter_state.search }}" placeholder="Поиск по ID, названию, артикулу, CUSA/PPSA или штрихкоду">
+      <input id="product-search" type="search" name="search" value="{{ filter_state.search }}" placeholder="Поиск по ID, названию, артикулу, CUSA/PPSA или штрихкоду" data-global-barcode-search-input>
     </div>
     {% if show_location_filter %}
     <div class="field product-location-filter {% if location_filter_error %}field-error{% endif %}">
@@ -50,6 +50,11 @@
       <label for="product-avito-highlight">Интеграция Avito</label>
       <input type="hidden" name="avito_highlight" value="0">
       <label class="product-avito-toggle"><input id="product-avito-highlight" type="checkbox" name="avito_highlight" value="1" {% if avito_highlight %}checked{% endif %} data-avito-highlight-toggle> Подсвечивать связанные товары</label>
+    </div>
+    <div class="field product-avito-toggle-field">
+      <label for="product-zero-stock-highlight">Остатки</label>
+      <input type="hidden" name="zero_stock_highlight" value="0">
+      <label class="product-avito-toggle"><input id="product-zero-stock-highlight" type="checkbox" name="zero_stock_highlight" value="1" {% if zero_stock_highlight %}checked{% endif %} data-zero-stock-highlight-toggle> Подсвечивать товары без остатка</label>
     </div>
     {% endif %}
     <div class="product-filter-actions">

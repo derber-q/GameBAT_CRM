@@ -21,7 +21,9 @@ from pricing.models import SupplierCDPrice
 from sales.models import Sale, SaleCDItem
 from sales.services import create_sale
 from supplies.services import accept_supply, cancel_supply
-from warehouse.models import CDWarehouseStock, CDWarehouseTransferItem, Warehouse, WarehouseTransfer
+from warehouse.models import (
+    CDWarehouseStock, CDWarehouseTransferItem, TechWarehouseStock, Warehouse, WarehouseTransfer,
+)
 from warehouse.services import create_transfer
 
 from .models import CD, GameSeries, Platform, ProductChangeEvent, ProductFieldChange, ProductRemovalEvent, Tech, Brand, ProductType
@@ -123,6 +125,65 @@ class ProductRemovalTests(TestCase):
         response = self.client.get(reverse("nomenclature:list"))
         self.assertContains(response, 'class="avito-connected-row"', count=1)
         self.assertContains(response, tech.name)
+
+    def test_zero_stock_highlight_defaults_on_and_avito_has_priority_for_cd_and_tech(self):
+        cd_zero = self.cd("CD без остатка")
+        cd_positive = self.cd("CD с остатком")
+        cd_linked_zero = self.cd("CD Avito без остатка")
+        tech_zero = Tech.objects.create(
+            name="Tech без остатка", brand=self.brand, product_type=self.product_type,
+        )
+        tech_linked_positive = Tech.objects.create(
+            name="Tech Avito с остатком", brand=self.brand, product_type=self.product_type,
+        )
+        CDWarehouseStock.objects.create(warehouse=self.warehouse, cd=cd_positive, quantity=3)
+        TechWarehouseStock.objects.create(warehouse=self.warehouse, tech=tech_linked_positive, quantity=2)
+
+        cd_profile = AvitoProductProfile.objects.create(cd=cd_linked_zero, sell_on_avito=False)
+        tech_profile = AvitoProductProfile.objects.create(tech=tech_linked_positive, sell_on_avito=False)
+        AvitoListingConnection.objects.create(
+            profile=cd_profile,
+            remote_listing=AvitoRemoteListing.objects.create(avito_item_id=123456792),
+        )
+        AvitoListingConnection.objects.create(
+            profile=tech_profile,
+            remote_listing=AvitoRemoteListing.objects.create(avito_item_id=123456793),
+        )
+
+        response = self.client.get(reverse("nomenclature:list"))
+        self.assertTrue(response.context["avito_highlight"])
+        self.assertTrue(response.context["zero_stock_highlight"])
+        self.assertContains(response, 'name="zero_stock_highlight" value="1" checked')
+        self.assertContains(response, 'class="zero-stock-row"', count=2)
+        self.assertContains(response, 'class="avito-connected-row"', count=2)
+        self.assertRegex(response.content.decode(), rf'(?s)class="zero-stock-row"[^>]*>.*?{cd_zero.name}')
+        self.assertRegex(response.content.decode(), rf'(?s)class="zero-stock-row"[^>]*>.*?{tech_zero.name}')
+        self.assertRegex(response.content.decode(), rf'(?s)class="avito-connected-row"[^>]*>.*?{cd_linked_zero.name}')
+
+    def test_highlight_toggles_only_change_row_colors(self):
+        linked_zero = self.cd("Связанный товар с нулём")
+        unlinked_zero = self.cd("Несвязанный товар с нулём")
+        profile = AvitoProductProfile.objects.create(cd=linked_zero, sell_on_avito=False)
+        AvitoListingConnection.objects.create(
+            profile=profile,
+            remote_listing=AvitoRemoteListing.objects.create(avito_item_id=123456794),
+        )
+        url = reverse("nomenclature:list")
+
+        avito_off = self.client.get(url, {"avito_highlight": "0"})
+        self.assertNotContains(avito_off, 'class="avito-connected-row"')
+        self.assertContains(avito_off, 'class="zero-stock-row"', count=2)
+        self.assertEqual(len(avito_off.context["cd_groups"][0][1]["series_groups"][0][1]), 2)
+
+        zero_off = self.client.get(url, {"zero_stock_highlight": "0"})
+        self.assertContains(zero_off, 'class="avito-connected-row"', count=1)
+        self.assertNotContains(zero_off, 'class="zero-stock-row"')
+
+        both_off = self.client.get(url, {"avito_highlight": "0", "zero_stock_highlight": "0"})
+        self.assertNotContains(both_off, 'class="avito-connected-row"')
+        self.assertNotContains(both_off, 'class="zero-stock-row"')
+        self.assertContains(both_off, linked_zero.name)
+        self.assertContains(both_off, unlinked_zero.name)
 
     def test_barcode_and_avito_connection_block_even_without_sell_flag(self):
         product = self.cd(barcode="001234567890")

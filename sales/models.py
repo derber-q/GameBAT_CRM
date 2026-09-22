@@ -1,6 +1,7 @@
 import uuid
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from django.db import models
 
@@ -102,6 +103,8 @@ class Sale(models.Model):
             ("mark_sale_paid", "Может подтверждать оплату продажи"),
             ("import_wholesale_price", "Может импортировать оптовый XLSX в новую продажу"),
             ("cancel_sale", "Может отменять продажи"),
+            ("view_sales_statistics", "Может просматривать статистику продаж и прибыль"),
+            ("export_sales_statistics", "Может экспортировать статистику продаж"),
         ]
         constraints = [
             models.CheckConstraint(condition=models.Q(total_amount__gte=0), name="sale_total_nonnegative"),
@@ -186,11 +189,12 @@ class Sale(models.Model):
     def save(self, *args, **kwargs):
         """Разрешает только одно служебное преобразование TMP-id в постоянный номер продажи."""
         if self.pk:
-            stored_id = type(self).objects.filter(pk=self.pk).values_list("visible_id", flat=True).first()
+            stored = type(self).objects.filter(pk=self.pk).values("visible_id", "completed_at").first()
+            stored_id = stored["visible_id"] if stored else None
             if stored_id and not stored_id.startswith("TMP-") and stored_id != self.visible_id:
-                from django.core.exceptions import ValidationError
-
                 raise ValidationError("Номер созданной продажи изменять нельзя.")
+            if stored and stored["completed_at"] is not None and stored["completed_at"] != self.completed_at:
+                raise ValidationError("Дату завершения продажи изменять нельзя.")
         return super().save(*args, **kwargs)
 
 
@@ -198,11 +202,22 @@ class SaleItemBase(models.Model):
     quantity = models.PositiveIntegerField("Количество")
     unit_price = models.DecimalField("Цена единицы", max_digits=20, decimal_places=2)
     line_total = models.DecimalField("Сумма строки", max_digits=20, decimal_places=2)
+    unit_cost_snapshot = models.DecimalField(
+        "Себестоимость единицы на момент продажи", max_digits=20, decimal_places=2,
+        null=True, blank=True, editable=False,
+    )
     product_name_snapshot = models.CharField("Название товара", max_length=255)
     article_snapshot = models.CharField("Артикул", max_length=100)
 
     class Meta:
         abstract = True
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            stored = type(self).objects.filter(pk=self.pk).values("unit_cost_snapshot").first()
+            if stored and stored["unit_cost_snapshot"] != self.unit_cost_snapshot:
+                raise ValidationError("Историческую себестоимость продажи изменять нельзя.")
+        return super().save(*args, **kwargs)
 
 
 class SaleCDItem(SaleItemBase):

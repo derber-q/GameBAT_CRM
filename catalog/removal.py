@@ -35,7 +35,7 @@ BLOCK_MESSAGES = {
 }
 
 TECHNICAL_RELATIONS = frozenset({
-    "warehouse_stocks", "consignment_stocks", "supplier_prices", "change_events", "avito_profile",
+    "warehouse_stocks", "consignment_stocks", "supplier_prices", "change_events", "avito_profile", "barcodes",
 })
 
 
@@ -78,9 +78,6 @@ def has_product_history(product):
         accessor = relation.get_accessor_name()
         if accessor in TECHNICAL_RELATIONS:
             continue
-        if accessor == "barcode_registration":
-            # Сам реестр проверяется как blocker, а не как бизнес-история.
-            continue
         if relation.related_model.objects.filter(**{relation.field.name: product}).exists():
             found.append(accessor)
     return tuple(found)
@@ -91,7 +88,7 @@ def evaluate_product_removal(product):
     reasons = []
     if product.is_archived:
         reasons.append(ALREADY_ARCHIVED)
-    if str(product.barcode or "").strip() or BarcodeRegistry.objects.filter(**{kind: product}).exists():
+    if BarcodeRegistry.objects.filter(**{kind: product}).exists():
         reasons.append(HAS_BARCODE)
     if AvitoListingConnection.objects.filter(**{f"profile__{kind}_id": product.pk}).exists():
         reasons.append(HAS_AVITO_CONNECTION)

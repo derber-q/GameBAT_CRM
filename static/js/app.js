@@ -1,6 +1,116 @@
 (() => {
   "use strict";
 
+  const globalBarcodeHandlers = [];
+
+  function registerGlobalBarcodeHandler(handler) {
+    if (typeof handler !== "function") return () => {};
+    globalBarcodeHandlers.push(handler);
+    return () => {
+      const index = globalBarcodeHandlers.lastIndexOf(handler);
+      if (index >= 0) globalBarcodeHandlers.splice(index, 1);
+    };
+  }
+
+  function scannerCanStartFrom(target) {
+    if (!(target instanceof Element)) return true;
+    if (target.matches("[data-global-barcode-search-input], [data-sale-barcode-input]")) return true;
+    if (target.matches("textarea, [contenteditable='true']")) return false;
+    if (!target.matches("input")) return true;
+    return ["number", "range", "checkbox", "radio", "button", "submit"].includes(target.type);
+  }
+
+  function captureControlState(target) {
+    if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement)) {
+      return null;
+    }
+    return {
+      target,
+      value: target.value,
+      selectionStart: typeof target.selectionStart === "number" ? target.selectionStart : null,
+      selectionEnd: typeof target.selectionEnd === "number" ? target.selectionEnd : null,
+      className: target.className,
+      title: target.getAttribute("title"),
+    };
+  }
+
+  function restoreControlState(snapshot) {
+    if (!snapshot || !snapshot.target.isConnected) return;
+    const { target } = snapshot;
+    target.value = snapshot.value;
+    target.className = snapshot.className;
+    if (snapshot.title === null) target.removeAttribute("title");
+    else target.setAttribute("title", snapshot.title);
+    if (snapshot.selectionStart !== null && typeof target.setSelectionRange === "function") {
+      target.setSelectionRange(snapshot.selectionStart, snapshot.selectionEnd);
+    }
+    if (target instanceof HTMLInputElement && target.type === "number") {
+      target.dispatchEvent(new Event("input", { bubbles: true }));
+    } else if (target instanceof HTMLSelectElement) {
+      target.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+  }
+
+  function initGlobalBarcodeScanner() {
+    let buffer = "";
+    let startedAt = 0;
+    let lastAt = 0;
+    let largestGap = 0;
+    let controlSnapshot = null;
+
+    const reset = () => {
+      buffer = "";
+      startedAt = 0;
+      lastAt = 0;
+      largestGap = 0;
+      controlSnapshot = null;
+    };
+
+    document.addEventListener("keydown", (event) => {
+      if (!globalBarcodeHandlers.length || event.isComposing || event.repeat) return;
+      if (event.ctrlKey || event.altKey || event.metaKey) {
+        reset();
+        return;
+      }
+      if (event.key === "Shift") return;
+      const now = performance.now();
+      if (event.key === "Enter") {
+        const duration = Math.max(0, lastAt - startedAt);
+        const averageGap = buffer.length > 1 ? duration / (buffer.length - 1) : Infinity;
+        const isScanner = buffer.length >= 8 && largestGap <= 150 && averageGap <= 80;
+        const barcode = buffer;
+        const snapshot = controlSnapshot;
+        reset();
+        if (!isScanner) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        restoreControlState(snapshot);
+        const handler = globalBarcodeHandlers[globalBarcodeHandlers.length - 1];
+        Promise.resolve(handler(barcode)).catch(() => {});
+        return;
+      }
+      if (event.key.length !== 1 || !/^[0-9A-Za-z._-]$/.test(event.key)) {
+        reset();
+        return;
+      }
+      if (!scannerCanStartFrom(event.target)) {
+        reset();
+        return;
+      }
+      const gap = lastAt ? now - lastAt : 0;
+      if (!lastAt || gap > 150) {
+        buffer = event.key;
+        startedAt = now;
+        largestGap = 0;
+        controlSnapshot = captureControlState(event.target);
+      } else {
+        buffer += event.key;
+        largestGap = Math.max(largestGap, gap);
+      }
+      lastAt = now;
+    }, true);
+  }
+
   function updateClock() {
     const now = new Date();
     const date = document.getElementById("gb-date");
@@ -56,11 +166,11 @@
         suggestions.remove();
       }
     };
-    const selectResult = (result) => {
+    const selectResult = (result, metadata = {}) => {
       input.value = result.label;
       typeInput.value = result.type;
       idInput.value = result.id;
-      if (onSelect) onSelect(result);
+      if (onSelect) onSelect(result, metadata);
       close();
     };
     const loadSuggestions = async (query) => {
@@ -75,10 +185,12 @@
         if (!response.ok || input.value.trim() !== query) return close();
         const payload = await response.json();
         const exactBarcodeMatches = payload.results.filter(
-          (result) => String(result.barcode || "").trim() === query,
+          (result) => (result.barcodes || [result.barcode]).some(
+            (value) => String(value || "").trim() === query,
+          ),
         );
         if (exactBarcodeMatches.length === 1) {
-          selectResult(exactBarcodeMatches[0]);
+          selectResult(exactBarcodeMatches[0], { exactBarcode: true });
           return;
         }
         suggestions.replaceChildren();
@@ -92,12 +204,13 @@
           const identifiers = [];
           if (result.sku) identifiers.push(`Арт.: ${result.sku}`);
           if (result.cusa_ppsa_code) identifiers.push(`CUSA/PPSA: ${result.cusa_ppsa_code}`);
-          if (result.barcode) identifiers.push(`Штрихкод: ${result.barcode}`);
+          if (result.barcodes?.length) identifiers.push(`Штрихкоды: ${result.barcodes.join(", ")}`);
+          else if (result.barcode) identifiers.push(`Штрихкод: ${result.barcode}`);
           identifiers.push(`${result.availability_label || "На складе"}: ${result.available}`);
           if (result.storage_locations) identifiers.push(`Место: ${result.storage_locations}`);
           available.textContent = identifiers.join(" · ");
           option.append(label, available);
-          option.addEventListener("click", () => selectResult(result));
+          option.addEventListener("click", () => selectResult(result, { exactBarcode: false }));
           suggestions.append(option);
         });
         if (payload.results.length > 0) open();
@@ -166,6 +279,7 @@
   updateClock();
   setInterval(updateClock, 1000);
   initExchangeRates();
+  initGlobalBarcodeScanner();
 
   document.querySelectorAll(".product-operation-form").forEach((form) => {
     attachAutocomplete({
@@ -220,8 +334,20 @@
       select.addEventListener("change", () => syncFilters(select));
     });
     form.querySelector('[data-avito-highlight-toggle]')?.addEventListener("change", () => form.requestSubmit());
+    form.querySelector('[data-zero-stock-highlight-toggle]')?.addEventListener("change", () => form.requestSubmit());
     syncFilters(null);
   });
+
+  const globalBarcodeSearchForm = document.querySelector("[data-global-barcode-search]");
+  if (globalBarcodeSearchForm) {
+    const searchInput = globalBarcodeSearchForm.querySelector("[data-global-barcode-search-input]");
+    if (searchInput) {
+      registerGlobalBarcodeHandler((barcode) => {
+        searchInput.value = barcode;
+        globalBarcodeSearchForm.requestSubmit();
+      });
+    }
+  }
 
   document.querySelectorAll("[data-collapse-toggle]").forEach((button) => {
     const content = document.getElementById(button.getAttribute("aria-controls"));
@@ -245,5 +371,5 @@
     });
   });
 
-  window.GameBAT = { attachAutocomplete };
+  window.GameBAT = { attachAutocomplete, registerGlobalBarcodeHandler };
 })();

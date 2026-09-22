@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% load static %}
 {% block title %}{{ product.name }} · Номенклатура · ReSOURCE{% endblock %}
-{% block extra_head %}<script src="{% static 'js/storage-locations.js' %}?v=storage-locations-2" defer></script>{% endblock %}
+{% block extra_head %}<script src="{% static 'js/storage-locations.js' %}?v=storage-locations-2" defer></script><script src="{% static 'js/barcode-formset.js' %}?v=multiple-barcodes-1" defer></script>{% endblock %}
 {% block content %}
 <div class="page-heading">
   <div>
@@ -13,6 +13,7 @@
   <a class="button button-secondary" href="{% url 'nomenclature:list' %}">К списку</a>
 </div>
 
+{% if can_change_barcode and not product.is_archived %}<form id="barcode-generate-form" method="post" action="{% url 'nomenclature:barcode_generate' product_kind product.pk %}">{% csrf_token %}</form>{% endif %}
 <form method="post" class="product-card-form">
   {% csrf_token %}
   {{ form.version }}
@@ -25,6 +26,7 @@
       </div>
     </section>
   {% endfor %}
+  {% include "nomenclature/_barcode_formset.html" with barcode_editable=barcode_editable %}
   <section class="panel">
     <div class="section-heading section-heading-plain"><div><h2>Системная информация</h2></div></div>
     <div class="detail-grid product-system-grid">
@@ -61,9 +63,9 @@
       </div>
     </div>
   </section>
-  {% if form.can_edit or can_delete_product %}
+  {% if form.can_edit or barcode_editable or can_delete_product %}
     <div class="form-actions product-save-actions">
-      {% if form.can_edit %}<button class="button button-large" type="submit">Сохранить изменения</button>{% endif %}
+      {% if form.can_edit or barcode_editable %}<button class="button button-large" type="submit">Сохранить изменения</button>{% endif %}
       {% if can_delete_product %}<button class="button button-danger" type="button" data-dialog-open="product-delete-dialog">Удалить товар</button>{% endif %}
     </div>
   {% endif %}
@@ -84,19 +86,6 @@
 {% if not product.is_archived %}
 {% include "integrations/_product_block.html" %}
 
-<section class="panel barcode-actions-panel">
-  <div>
-    <h2>Штрихкод</h2>
-    <p class="muted">{% if product.barcode %}Штрихкод готов к печати на этикетке 58 × 40 мм.{% else %}Для товара пока не задан штрихкод.{% endif %}</p>
-  </div>
-  <div class="heading-actions">
-    {% if product.barcode %}
-      <a class="button" href="{% url 'nomenclature:barcode_print' product_kind product.pk %}" target="_blank" rel="noopener">Напечатать штрихкод</a>
-    {% elif can_change_barcode %}
-      <form method="post" action="{% url 'nomenclature:barcode_generate' product_kind product.pk %}">{% csrf_token %}<button class="button" type="submit">Сгенерировать штрихкод</button></form>
-    {% endif %}
-  </div>
-</section>
 {% endif %}
 
 <section class="panel audit-history">

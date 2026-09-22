@@ -15,7 +15,7 @@
         <tr>
           <td class="mono">{{ row.id }}</td>
           <td class="mono">{{ row.sku }}</td>
-          <td class="strong">{{ row.name }}</td>
+          <td class="strong">{% if perms.catalog.view_nomenclature %}{% if row.type == "CD" %}<a class="strong" href="{% url 'nomenclature:cd_detail' row.id %}">{{ row.name }}</a>{% else %}<a class="strong" href="{% url 'nomenclature:tech_detail' row.id %}">{{ row.name }}</a>{% endif %}{% else %}{{ row.name }}{% endif %}</td>
           <td class="numeric-center stock-number">{{ row.warehouse_total }}</td>
           <td class="numeric-center">{{ row.consignment }}</td>
           <td class="numeric-center">{{ row.transit }}</td>

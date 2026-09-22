@@ -91,7 +91,7 @@ class SaleLocalInventoryUiTests(TestCase):
         self.assertContains(response, "Доступно ещё")
         self.assertContains(response, "Место хранения")
         self.assertContains(response, 'data-show-sale-inventory="true"')
-        self.assertContains(response, "stock-lines.js?v=sale-local-inventory-1")
+        self.assertContains(response, "stock-lines.js?v=global-barcode-1")
 
     def test_frontend_aggregates_duplicate_quantities_and_refreshes_on_warehouse_change(self):
         script = (settings.STATICFILES_DIRS[0] / "js" / "stock-lines.js").read_text(encoding="utf-8")

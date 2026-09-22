@@ -189,45 +189,63 @@ def update_profile(*, profile, data, actor=None, refresh_schema=False):
 
 def refresh_remote_listings():
     client = AvitoClient()
-    seen = set()
-    page = 1
-    while page <= 100:
-        data = client.list_items(page=page, per_page=100)
-        resources = data.get("resources") or []
-        if not isinstance(resources, list):
-            raise AvitoAPIError("Avito вернул некорректный список объявлений.", "temporary")
-        now = timezone.now()
-        for item in resources:
-            try:
-                item_id = int(item["id"])
-            except (KeyError, TypeError, ValueError):
-                continue
-            seen.add(item_id)
-            safe_snapshot = {
-                key: item.get(key) for key in ("id", "title", "category", "status", "url", "address", "price")
-                if item.get(key) is not None
-            }
-            AvitoRemoteListing.objects.update_or_create(
-                avito_item_id=item_id,
-                defaults={
-                    "title": str(item.get("title") or "")[:500],
-                    "category_name": str(item.get("category") or "")[:255],
-                    "status": str(item.get("status") or "")[:64],
-                    "remote_price": _remote_price(item.get("price")),
-                    "url": str(item.get("url") or "")[:1000],
-                    "snapshot": safe_snapshot,
-                    "last_seen_at": now,
-                    "missing_since": None,
-                },
-            )
-        if len(resources) < 100:
-            break
-        page += 1
-    if seen:
-        AvitoRemoteListing.objects.exclude(avito_item_id__in=seen).filter(missing_since__isnull=True).update(
-            missing_since=timezone.now()
+    # Список Avito иногда возвращает неполную пагинацию. Два независимых
+    # прохода и объединение ID не позволят одному короткому ответу скрыть товар.
+    found = {}
+    for _ in range(2):
+        for page in range(1, 101):
+            data = client.list_items(page=page, per_page=100)
+            resources = data.get("resources") if isinstance(data, dict) else None
+            if not isinstance(resources, list):
+                raise AvitoAPIError("Avito вернул некорректный список объявлений.", "temporary")
+            for item in resources:
+                try:
+                    found[int(item["id"])] = item
+                except (KeyError, TypeError, ValueError):
+                    continue
+            if len(resources) < 100:
+                break
+    if not found and AvitoListingConnection.objects.exists():
+        raise AvitoAPIError("Avito вернул пустой список при наличии связанных объявлений.", "temporary")
+    now = timezone.now()
+    for item_id, item in found.items():
+        safe_snapshot = {
+            key: item.get(key) for key in ("id", "title", "category", "status", "url", "address", "price")
+            if item.get(key) is not None
+        }
+        AvitoRemoteListing.objects.update_or_create(
+            avito_item_id=item_id,
+            defaults={
+                "title": str(item.get("title") or "")[:500],
+                "category_name": str(item.get("category") or "")[:255],
+                "status": str(item.get("status") or "")[:64],
+                "remote_price": _remote_price(item.get("price")),
+                "url": str(item.get("url") or "")[:1000],
+                "snapshot": safe_snapshot,
+                "last_seen_at": now,
+                "missing_since": None,
+            },
         )
-    return len(seen)
+    missing = AvitoRemoteListing.objects.exclude(avito_item_id__in=found)
+    missing.filter(missing_since__isnull=True).update(missing_since=now)
+    credential = get_avito_credential()
+    if credential and credential.account_id:
+        # Absence from the paginated list is not proof of deletion: archived
+        # listings must remain visible. Ask the item endpoint for its status.
+        for listing in missing.filter(connection__isnull=True).exclude(status__iexact="removed"):
+            try:
+                details = client.get_item_details(credential.account_id, listing.avito_item_id)
+            except AvitoAPIError as exc:
+                if exc.status == 404:
+                    continue  # Unknown/inaccessible is not a confirmed deletion.
+                raise
+            status = str(details.get("status") or "").strip().lower()
+            if status:
+                listing.status = status
+                if status != "removed":
+                    listing.missing_since = None
+                listing.save(update_fields=("status", "missing_since"))
+    return len(found)
 
 
 def _remote_snapshot(listing):
@@ -383,6 +401,22 @@ def rebind_listing(*, connection, product, product_kind, actor=None):
         raise ValidationError("Перепривязка конфликтует с существующей связью.") from exc
 
 
+@transaction.atomic
+def unbind_listing(*, connection, actor=None):
+    connection = AvitoListingConnection.objects.select_for_update().select_related(
+        "remote_listing"
+    ).get(pk=connection.pk)
+    profile = AvitoProductProfile.objects.select_for_update().get(pk=connection.profile_id)
+    listing_id = connection.remote_listing.avito_item_id
+    connection.delete()
+    profile.sell_on_avito = False
+    profile.sync_status = AvitoProductProfile.SyncStatus.IDLE
+    profile.last_error = ""
+    profile.desired_state_hash = ""
+    profile.save(update_fields=("sell_on_avito", "sync_status", "last_error", "desired_state_hash"))
+    _audit("listing_unbound", actor=actor, profile=profile, details={"avito_item_id": listing_id})
+
+
 def desired_state(profile):
     product = profile.product
     state = {
@@ -424,6 +458,18 @@ def sync_profile(profile_id, *, retry_number=0, force_remote_check=False):
             AvitoProductProfile.objects.filter(pk=profile.pk).update(
                 sync_status=AvitoProductProfile.SyncStatus.OK, last_error="", last_successful_sync_at=timezone.now()
             )
+        return
+    if connection.remote_listing.missing_since or connection.remote_listing.status.lower() != "active":
+        message = "Объявление отсутствует в актуальном активном списке Avito; цена и остаток не отправлены."
+        AvitoProductProfile.objects.filter(pk=profile.pk).update(
+            sync_status=AvitoProductProfile.SyncStatus.ERROR, last_error=message,
+        )
+        AvitoSyncLog.objects.create(
+            profile=profile, remote_listing=connection.remote_listing,
+            operation="outbound_sync", result=AvitoSyncLog.Result.ERROR,
+            error_category="remote_state", message=message,
+            retry_number=retry_number, started_at=started,
+        )
         return
     if errors:
         message = " ".join(errors)
@@ -473,8 +519,6 @@ def sync_profile(profile_id, *, retry_number=0, force_remote_check=False):
     listing_id = connection.remote_listing.avito_item_id
     try:
         desired_quantity = state["stock"] if state["sell"] else 0
-        if force_remote_check:
-            client.get_stocks([listing_id])
         stock_result = client.update_stock(listing_id, desired_quantity)
         stock_rows = stock_result.get("stocks") or stock_result.get("result") or []
         if isinstance(stock_rows, dict):
@@ -496,26 +540,23 @@ def sync_profile(profile_id, *, retry_number=0, force_remote_check=False):
             message=str(exc), retry_number=retry_number, started_at=started,
         )
         raise
-    limitation = ""
-    if not state["sell"] or state["stock"] == 0:
-        limitation = (
-            "Остаток Avito установлен в 0, но полное снятие объявления требует недоступного "
-            "для аккаунта Autoload API."
-        )
     now = timezone.now()
     AvitoProductProfile.objects.filter(pk=profile.pk).update(
-        sync_status=AvitoProductProfile.SyncStatus.ERROR if limitation else AvitoProductProfile.SyncStatus.OK,
-        last_error=limitation,
+        sync_status=AvitoProductProfile.SyncStatus.OK,
+        last_error="",
         last_successful_sync_at=now,
         desired_state_hash=state["hash"],
     )
     AvitoSyncLog.objects.create(
         profile=profile, remote_listing=connection.remote_listing, operation="outbound_sync",
-        result=AvitoSyncLog.Result.SUCCESS if not limitation else AvitoSyncLog.Result.SKIPPED,
-        message=limitation, retry_number=retry_number, started_at=started,
+        result=AvitoSyncLog.Result.SUCCESS,
+        message="", retry_number=retry_number, started_at=started,
     )
 
 
-def reconcile_all():
-    for profile_id in AvitoProductProfile.objects.filter(connection__isnull=False).values_list("pk", flat=True):
-        sync_profile(profile_id, force_remote_check=True)
+def reconcile_all(*, job=None):
+    # Читаем фактические данные пакетами и исправляем только расхождения.
+    # Ошибка одного объявления не должна останавливать весь проход.
+    from .manual_sync import reconcile_active_listings
+
+    return reconcile_active_listings(job=job)

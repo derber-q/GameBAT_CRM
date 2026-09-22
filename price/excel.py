@@ -29,6 +29,7 @@ TEAL = "2C879B"
 LIGHT = "EAF3F5"
 WHITE = "FFFFFF"
 GRAY = "DCE5E7"
+GROUP_FILL = "D5E6EA"
 MONEY_FORMAT = '#,##0.00 "₽"'
 AED_FORMAT = '#,##0.000000 "AED"'
 
@@ -140,36 +141,90 @@ def _bytes(workbook):
     return output.getvalue()
 
 
+def _warehouse_price_groups(warehouse, *, price_field):
+    """Return stocked products grouped like the nomenclature page."""
+    groups = []
+    skipped = 0
+    specifications = (
+        (
+            "cd", CDWarehouseStock, "cd", "platform",
+            "CD · Платформа: {name}",
+        ),
+        (
+            "tech", TechWarehouseStock, "tech", "product_type",
+            "Техника · Тип товара: {name}",
+        ),
+    )
+    for kind, stock_model, product_field, group_field, title_template in specifications:
+        stocks = stock_model.objects.filter(
+            warehouse=warehouse,
+            quantity__gt=0,
+            **{f"{product_field}__is_archived": False},
+        ).select_related(product_field, f"{product_field}__{group_field}")
+        entries = []
+        for stock in stocks:
+            product = getattr(stock, product_field)
+            price = getattr(product, price_field)
+            if price is None:
+                skipped += 1
+                continue
+            group_name = getattr(product, group_field).name
+            entries.append((group_name, product, stock.quantity, price))
+        entries.sort(key=lambda row: (row[0].casefold(), row[1].name.casefold(), row[1].pk))
+
+        current_name = None
+        current_rows = []
+        for group_name, product, quantity, price in entries:
+            if current_name is not None and group_name != current_name:
+                groups.append((title_template.format(name=current_name), current_rows))
+                current_rows = []
+            current_name = group_name
+            current_rows.append((kind, product, quantity, price))
+        if current_name is not None:
+            groups.append((title_template.format(name=current_name), current_rows))
+    return groups, skipped
+
+
+def _style_group_rows(sheet, rows, *, columns):
+    thin = Side(style="thin", color=GRAY)
+    for row_number in rows:
+        for column in range(1, columns + 1):
+            cell = sheet.cell(row_number, column)
+            cell.fill = PatternFill("solid", fgColor=GROUP_FILL)
+            cell.border = Border(top=thin, bottom=thin)
+            cell.protection = Protection(locked=True)
+        sheet.cell(row_number, 1).font = Font(bold=True, color=BLUE)
+
+
 def generate_retail_price_xlsx(*, warehouse_id, actor):
     try:
         warehouse = Warehouse.objects.get(pk=warehouse_id)
     except Warehouse.DoesNotExist as exc:
         raise ValidationError("Выберите существующий склад.") from exc
-    stocks = list(CDWarehouseStock.objects.filter(warehouse=warehouse, quantity__gt=0, cd__is_archived=False).select_related("cd")) + list(
-        TechWarehouseStock.objects.filter(warehouse=warehouse, quantity__gt=0, tech__is_archived=False).select_related("tech")
-    )
-    available = []
-    skipped = 0
-    for stock in stocks:
-        product = getattr(stock, "cd", None) or stock.tech
-        if product.avito_price is None:
-            skipped += 1
-        else:
-            available.append((product.name, product.avito_price))
-    available.sort(key=lambda row: row[0].casefold())
+    groups, skipped = _warehouse_price_groups(warehouse, price_field="avito_price")
     workbook, sheet = _base_workbook(
         title="Розничный прайс", subtitle=f"Склад: {warehouse.name}", columns=2
     )
     if skipped:
         sheet["A7"] = f"Не включено товаров без розничной цены: {skipped}"
         sheet["A7"].font = Font(color="C94F55", italic=True)
-    for index, (name, price) in enumerate(available, HEADER_ROW + 1):
-        sheet.cell(index, 1, safe_text(name))
-        sheet.cell(index, 2, price).number_format = MONEY_FORMAT
+    excel_row = HEADER_ROW + 1
+    group_rows = []
+    product_count = 0
+    for group_title, products in groups:
+        group_rows.append(excel_row)
+        sheet.cell(excel_row, 1, safe_text(group_title))
+        excel_row += 1
+        for _kind, product, _quantity, price in products:
+            sheet.cell(excel_row, 1, safe_text(product.name))
+            sheet.cell(excel_row, 2, price).number_format = MONEY_FORMAT
+            product_count += 1
+            excel_row += 1
     _style_table(sheet, ("Товар", "Цена"))
+    _style_group_rows(sheet, group_rows, columns=2)
     logger.info(
         "Розничный прайс сформирован: user_id=%s warehouse_id=%s rows=%s skipped=%s",
-        actor.pk, warehouse.pk, len(available), skipped,
+        actor.pk, warehouse.pk, product_count, skipped,
     )
     return _bytes(workbook), skipped
 
@@ -179,26 +234,27 @@ def generate_wholesale_price_xlsx(*, warehouse_id, actor):
         warehouse = Warehouse.objects.get(pk=warehouse_id)
     except Warehouse.DoesNotExist as exc:
         raise ValidationError("Выберите существующий склад.") from exc
-    rows = []
-    for kind, model, field in (
-        ("cd", CDWarehouseStock, "cd"), ("tech", TechWarehouseStock, "tech")
-    ):
-        for stock in model.objects.filter(warehouse=warehouse, quantity__gt=0, **{f"{field}__is_archived": False}).select_related(field):
-            product = getattr(stock, field)
-            if product.wholesale_price is not None:
-                rows.append((kind, product, stock.quantity))
-    rows.sort(key=lambda row: row[1].name.casefold())
+    groups, _skipped = _warehouse_price_groups(warehouse, price_field="wholesale_price")
     workbook, sheet = _base_workbook(
         title="Оптовый прайс", subtitle=f"Склад: {warehouse.name}", columns=4
     )
     metadata = []
-    for excel_row, (kind, product, quantity) in enumerate(rows, HEADER_ROW + 1):
-        sheet.cell(excel_row, 1, safe_text(product.name))
-        sheet.cell(excel_row, 2, product.wholesale_price).number_format = MONEY_FORMAT
-        sheet.cell(excel_row, 3, quantity)
-        sheet.cell(excel_row, 4, 0)
-        metadata.append((excel_row, kind, product.pk, safe_text(product.sku)))
-    end = max(HEADER_ROW + 1, HEADER_ROW + len(rows))
+    excel_row = HEADER_ROW + 1
+    group_rows = []
+    product_rows = []
+    for group_title, products in groups:
+        group_rows.append(excel_row)
+        sheet.cell(excel_row, 1, safe_text(group_title))
+        excel_row += 1
+        for kind, product, quantity, price in products:
+            product_rows.append(excel_row)
+            sheet.cell(excel_row, 1, safe_text(product.name))
+            sheet.cell(excel_row, 2, price).number_format = MONEY_FORMAT
+            sheet.cell(excel_row, 3, quantity)
+            sheet.cell(excel_row, 4, 0)
+            metadata.append((excel_row, kind, product.pk, safe_text(product.sku)))
+            excel_row += 1
+    end = max(HEADER_ROW + 1, excel_row - 1)
     totals = end + 2
     sheet.cell(totals, 3, "Выбрано позиций")
     sheet.cell(totals, 4, f'=COUNTIF(D{HEADER_ROW + 1}:D{end},">0")')
@@ -209,19 +265,21 @@ def generate_wholesale_price_xlsx(*, warehouse_id, actor):
     sheet.cell(totals + 2, 4).number_format = MONEY_FORMAT
     validation = DataValidation(type="whole", operator="greaterThanOrEqual", formula1="0", allow_blank=True)
     sheet.add_data_validation(validation)
-    validation.add(f"D{HEADER_ROW + 1}:D{end}")
+    for product_row in product_rows:
+        validation.add(sheet.cell(product_row, 4))
     _style_table(
         sheet,
         ("Товар", "Оптовая цена", "Доступно для заказа", "Количество к заказу"),
         editable_columns=(4,),
         editable_end_row=end,
     )
+    _style_group_rows(sheet, group_rows, columns=4)
     _meta_sheet(workbook, document_type="resource_wholesale", values={
         "warehouse_id": warehouse.pk, "generated_at": timezone.now().isoformat(), "main_sheet": MAIN_SHEET,
     }, rows=metadata)
     logger.info(
         "Оптовый прайс сформирован: user_id=%s warehouse_id=%s rows=%s",
-        actor.pk, warehouse.pk, len(rows),
+        actor.pk, warehouse.pk, len(product_rows),
     )
     return _bytes(workbook)
 

@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% load static %}
 {% block title %}Передать на реализацию · ReSOURCE{% endblock %}
-{% block extra_head %}<script src="{% static 'js/consignment-transfer.js' %}?v=creditors-sales-search-1" defer></script>{% endblock %}
+{% block extra_head %}<script src="{% static 'js/consignment-transfer.js' %}?v=global-barcode-1" defer></script>{% endblock %}
 {% block content %}
 <div class="page-heading">
   <div>
@@ -24,7 +24,7 @@
   </section>
   <section class="panel">
     <div class="section-heading">
-      <div><span class="step-number">1</span><h2>Товарные позиции</h2></div>
+      <div><span class="step-number">1</span><h2>Товарные позиции</h2><p class="muted">Отсканируйте штрихкод в любом месте страницы — товар добавится автоматически.</p><span class="barcode-sale-feedback" data-consignment-barcode-feedback aria-live="polite"></span></div>
       <button class="button button-secondary button-small" type="button" id="add-consignment-line">+ Добавить товар</button>
     </div>
     <div class="table-scroll">

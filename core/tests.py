@@ -93,3 +93,8 @@ class InternalPageSmokeTests(TestCase):
         self.assertIn("Склад Варфоломеева 265", warehouse_menu)
         self.assertIn("Склад Резервный склад", warehouse_menu)
         self.assertNotIn(">Перемещения</a>", warehouse_menu)
+        sales_platform = SalesPlatform.objects.get(name="Площадка")
+        self.assertContains(
+            response,
+            f'href="{reverse("consignment:platform", args=(sales_platform.pk,))}">Площадка</a>',
+        )

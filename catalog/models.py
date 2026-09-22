@@ -4,7 +4,7 @@ import unicodedata
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
-from django.db import models
+from django.db import models, transaction
 from django.urls import reverse
 
 
@@ -83,7 +83,6 @@ class ProductBase(models.Model):
     name = models.CharField("Название", max_length=255)
     description = models.TextField("Описание", blank=True)
     sku = models.CharField("Артикул", max_length=100, blank=True)
-    barcode = models.CharField("Штрихкод", max_length=100, blank=True)
     quantity_on_consignment = models.PositiveIntegerField("На реализации", default=0, editable=False)
     cost = models.DecimalField(
         "Средняя себестоимость", max_digits=20, decimal_places=2,
@@ -114,20 +113,48 @@ class ProductBase(models.Model):
     def __str__(self):
         return self.name
 
+    def __init__(self, *args, **kwargs):
+        # Compatibility for data loaders that still pass the former scalar
+        # keyword. The database source of truth is BarcodeRegistry.
+        self._pending_legacy_barcode = kwargs.pop("barcode", None) if "barcode" in kwargs else ...
+        super().__init__(*args, **kwargs)
+
+    @property
+    def barcode(self):
+        """Stable first barcode for legacy integrations that require one value."""
+        if self._pending_legacy_barcode is not ...:
+            return str(self._pending_legacy_barcode or "").strip()
+        if not self.pk:
+            return ""
+        return self.barcodes.order_by("id").values_list("value", flat=True).first() or ""
+
+    @barcode.setter
+    def barcode(self, value):
+        self._pending_legacy_barcode = str(value or "").strip()
+
+    def save(self, *args, **kwargs):
+        pending = self._pending_legacy_barcode
+        update_fields = kwargs.get("update_fields")
+        save_product = True
+        if update_fields is not None and "barcode" in update_fields:
+            update_fields = set(update_fields) - {"barcode"}
+            save_product = bool(update_fields) or self._state.adding
+            kwargs["update_fields"] = update_fields
+        with transaction.atomic():
+            if save_product:
+                super().save(*args, **kwargs)
+            if pending is not ...:
+                lookup = {"cd": self} if isinstance(self, CD) else {"tech": self}
+                BarcodeRegistry.objects.filter(**lookup).delete()
+                if str(pending or "").strip():
+                    BarcodeRegistry.objects.create(
+                        value=str(pending).strip(), product_kind=self._meta.model_name, **lookup,
+                    )
+                self._pending_legacy_barcode = ...
+
     def clean(self):
         super().clean()
         self.sku = str(self.sku or "").strip()
-        self.barcode = str(self.barcode or "").strip()
-        if not self.barcode:
-            return
-        for model in (CD, Tech):
-            queryset = model.objects.filter(barcode=self.barcode)
-            if isinstance(self, model) and self.pk:
-                queryset = queryset.exclude(pk=self.pk)
-            if queryset.exists():
-                raise ValidationError({
-                    "barcode": "Этот штрихкод уже используется другим товаром."
-                })
 
 
 class CD(ProductBase):
@@ -234,12 +261,12 @@ class BarcodeRegistry(models.Model):
 
     value = models.CharField("Штрихкод", max_length=100, unique=True)
     product_kind = models.CharField("Тип товара", max_length=8, choices=ProductKind.choices)
-    cd = models.OneToOneField(
-        CD, on_delete=models.CASCADE, related_name="barcode_registration",
+    cd = models.ForeignKey(
+        CD, on_delete=models.CASCADE, related_name="barcodes",
         null=True, blank=True, verbose_name="CD",
     )
-    tech = models.OneToOneField(
-        Tech, on_delete=models.CASCADE, related_name="barcode_registration",
+    tech = models.ForeignKey(
+        Tech, on_delete=models.CASCADE, related_name="barcodes",
         null=True, blank=True, verbose_name="Tech",
     )
     created_at = models.DateTimeField("Создан", auto_now_add=True)
@@ -265,6 +292,12 @@ class BarcodeRegistry(models.Model):
     def clean(self):
         super().clean()
         self.value = str(self.value or "").strip()
+        if not self.value:
+            raise ValidationError({"value": "Укажите штрихкод."})
+        if self.cd_id and not self.tech_id:
+            self.product_kind = self.ProductKind.CD
+        elif self.tech_id and not self.cd_id:
+            self.product_kind = self.ProductKind.TECH
         valid = (
             self.product_kind == self.ProductKind.CD and self.cd_id and not self.tech_id
         ) or (
@@ -272,6 +305,10 @@ class BarcodeRegistry(models.Model):
         )
         if not valid:
             raise ValidationError("Регистрация штрихкода должна ссылаться ровно на один товар.")
+
+    def save(self, *args, **kwargs):
+        self.clean()
+        return super().save(*args, **kwargs)
 
     def __str__(self):
         return self.value

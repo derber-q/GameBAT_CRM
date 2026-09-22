@@ -71,12 +71,14 @@ class ProductTargetForm(forms.Form):
         tech_qs = Tech.objects.active().select_related("brand", "product_type")
         if query:
             cd_qs = cd_qs.filter(
-                Q(name__icontains=query) | Q(sku__icontains=query) | Q(barcode__icontains=query)
+                Q(name__icontains=query) | Q(sku__icontains=query) | Q(barcodes__value__icontains=query)
                 | Q(cusa_ppsa_code__icontains=query)
             )
             tech_qs = tech_qs.filter(
-                Q(name__icontains=query) | Q(sku__icontains=query) | Q(barcode__icontains=query)
+                Q(name__icontains=query) | Q(sku__icontains=query) | Q(barcodes__value__icontains=query)
             )
+            cd_qs = cd_qs.distinct()
+            tech_qs = tech_qs.distinct()
         if exclude_connected:
             cd_qs = cd_qs.filter(avito_profile__connection__isnull=True)
             tech_qs = tech_qs.filter(avito_profile__connection__isnull=True)

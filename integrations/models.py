@@ -197,6 +197,7 @@ class AvitoSyncJob(models.Model):
         PRODUCT = "product", "Товар"
         RECONCILE = "reconcile", "Контрольная сверка"
         REFRESH = "refresh", "Обновление объявлений"
+        MANUAL = "manual", "Ручная сверка"
 
     class Status(models.TextChoices):
         PENDING = "pending", "Ожидает"
@@ -213,6 +214,18 @@ class AvitoSyncJob(models.Model):
     run_after = models.DateTimeField("Выполнить после")
     attempts = models.PositiveSmallIntegerField("Попытки", default=0)
     last_error = models.TextField("Последняя ошибка", blank=True)
+    total_count = models.PositiveIntegerField("Объявлений к проверке", default=0)
+    checked_count = models.PositiveIntegerField("Проверено", default=0)
+    changed_count = models.PositiveIntegerField("Изменено и подтверждено", default=0)
+    stock_changed_count = models.PositiveIntegerField("Исправлено остатков", default=0)
+    price_changed_count = models.PositiveIntegerField("Исправлено цен", default=0)
+    failed_count = models.PositiveIntegerField("Не удалось синхронизировать", default=0)
+    skipped_count = models.PositiveIntegerField("Неактивных или вне списка", default=0)
+    details = models.JSONField("Итог сверки", default=list, blank=True)
+    phase = models.CharField("Этап сверки", max_length=120, blank=True)
+    current_item = models.CharField("Текущий товар", max_length=255, blank=True)
+    started_at = models.DateTimeField("Начало сверки", null=True, blank=True)
+    finished_at = models.DateTimeField("Завершение сверки", null=True, blank=True)
     created_at = models.DateTimeField("Создана", auto_now_add=True)
     updated_at = models.DateTimeField("Обновлена", auto_now=True)
 

@@ -417,6 +417,7 @@ def record_consignment_sale(*, actor, product_type, stock_id, quantity, payment_
         line_total=total,
         product_name_snapshot=product.name,
         article_snapshot=product.sku,
+        unit_cost_snapshot=product.cost,
         **{product_field: product},
     )
 

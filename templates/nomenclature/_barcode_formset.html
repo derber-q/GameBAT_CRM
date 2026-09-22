@@ -1,0 +1,44 @@
+<section class="panel barcode-panel" data-barcode-formset>
+  <div class="section-heading section-heading-plain">
+    <div>
+      <h2>Штрихкоды</h2>
+      <p class="muted">Все значения уникальны во всей CRM для CD и Tech.</p>
+    </div>
+    {% if barcode_editable %}
+    <div class="heading-actions">
+      {% if product %}<button class="button" type="submit" form="barcode-generate-form">Сгенерировать штрихкод</button>{% endif %}
+      <button class="button button-secondary" type="button" data-barcode-add>+ Добавить штрихкод</button>
+    </div>
+    {% endif %}
+  </div>
+  {% if barcode_editable %}
+    {{ barcode_formset.management_form }}
+    {% if barcode_formset.non_form_errors %}<div class="alert alert-error">{{ barcode_formset.non_form_errors }}</div>{% endif %}
+    <div class="barcode-formset-rows" data-barcode-rows>
+      {% for barcode_form in barcode_formset %}
+      <div class="barcode-form-row{% if barcode_form.errors %} field-error{% endif %}" data-barcode-row>
+        {{ barcode_form.id }}{{ barcode_form.DELETE }}
+        <div class="barcode-value-field">
+          {{ barcode_form.value }}
+          {% for error in barcode_form.value.errors %}<span class="error-text">{{ error }}</span>{% endfor %}
+        </div>
+        {% if barcode_form.id.value %}<a class="button button-secondary button-small" href="{% url 'nomenclature:barcode_print' barcode_form.id.value %}" target="_blank" rel="noopener">Напечатать</a>{% endif %}
+        <button class="button button-danger button-small" type="button" data-barcode-remove>Удалить</button>
+      </div>
+      {% endfor %}
+    </div>
+    <template data-barcode-empty-form>
+      <div class="barcode-form-row" data-barcode-row>
+        {{ barcode_formset.empty_form.id }}{{ barcode_formset.empty_form.DELETE }}
+        <div class="barcode-value-field">{{ barcode_formset.empty_form.value }}</div>
+        <button class="button button-danger button-small" type="button" data-barcode-remove>Удалить</button>
+      </div>
+    </template>
+  {% else %}
+    <div class="barcode-readonly-list">
+      {% for barcode in product.barcodes.all %}
+      <div class="barcode-form-row"><span class="mono">{{ barcode.value }}</span><a class="button button-secondary button-small" href="{% url 'nomenclature:barcode_print' barcode.pk %}" target="_blank" rel="noopener">Напечатать</a></div>
+      {% empty %}<p class="muted">Для товара пока не задано ни одного штрихкода.</p>{% endfor %}
+    </div>
+  {% endif %}
+</section>

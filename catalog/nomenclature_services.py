@@ -3,7 +3,7 @@ import logging
 from dataclasses import dataclass
 
 from django.core.exceptions import ValidationError
-from django.db import transaction
+from django.db import IntegrityError, transaction
 
 from pricing.services import update_product_prices
 from warehouse.models import CDWarehouseStock, TechWarehouseStock, Warehouse
@@ -11,8 +11,8 @@ from warehouse.storage_services import clear_storage_locations_if_zero, update_s
 
 from .audit import changed_snapshots, field_change, product_snapshot, record_product_changes, stock_change
 from .models import CD, ProductChangeEvent, Tech
-from .nomenclature_forms import CDCardForm, TechCardForm, product_version
-from .product_identifiers import ensure_product_article, set_product_barcode
+from .nomenclature_forms import CDCardForm, TechCardForm, barcode_formset, product_version
+from .product_identifiers import ensure_product_article, save_barcode_formset
 from .product_fields import CD_CARD_FIELDS, PRICE_FIELDS, TECH_CARD_FIELDS
 
 logger = logging.getLogger("gamebat.business")
@@ -20,11 +20,11 @@ logger = logging.getLogger("gamebat.business")
 
 CREATE_FIELDS = {
     "cd": (
-        "platform", "game_series", "name", "description", "sku", "barcode", "cusa_ppsa_code",
+        "platform", "game_series", "name", "description", "sku", "cusa_ppsa_code",
         "weight_grams", "comment",
     ),
     "tech": (
-        "brand", "product_type", "name", "description", "sku", "barcode",
+        "brand", "product_type", "name", "description", "sku",
         "weight_grams", "comment",
     ),
 }
@@ -36,6 +36,7 @@ class ProductUpdateResult:
     form: object
     saved: bool = False
     stale: bool = False
+    barcode_formset: object = None
 
 
 def product_configuration(product_kind):
@@ -47,23 +48,39 @@ def product_configuration(product_kind):
 
 
 @transaction.atomic
-def create_product(*, actor, product_kind, data):
+def create_product(*, actor, product_kind, data, barcode_formset_instance=None):
     """Атомарно создаёт номенклатурную карточку с нулевым системным состоянием и audit."""
     if product_kind not in CREATE_FIELDS:
         raise ValueError("Неизвестный тип товара.")
     model = CD if product_kind == "cd" else Tech
-    barcode = data.get("barcode", "")
     values = {
         field: data[field]
         for field in CREATE_FIELDS[product_kind]
-        if field != "barcode" and field in data
+        if field in data
     }
-    product = model(barcode="", **values)
+    product = model(**values)
     product.full_clean()
     product.save()
     ensure_product_article(product)
-    if barcode:
-        set_product_barcode(product=product, barcode=barcode)
+    barcode_changes = save_barcode_formset(product=product, formset=barcode_formset_instance)
+    legacy_barcode = str(data.get("barcode") or "").strip()
+    if barcode_formset_instance is None and legacy_barcode:
+        from .models import BarcodeRegistry
+
+        try:
+            BarcodeRegistry.objects.create(
+                value=legacy_barcode,
+                product_kind=product_kind,
+                **({"cd": product} if product_kind == "cd" else {"tech": product}),
+            )
+        except IntegrityError as exc:
+            raise ValidationError({
+                "barcode": "Этот штрихкод уже используется другим товаром."
+            }) from exc
+        barcode_changes.append(field_change(
+            field_name="barcode_added", field_label="Штрихкод добавлен",
+            old_value="", new_value=legacy_barcode,
+        ))
     changes = [field_change(
         field_name="created",
         field_label="Товар создан",
@@ -81,6 +98,7 @@ def create_product(*, actor, product_kind, data):
         for field_name, value in snapshot.items()
         if value
     )
+    changes.extend(barcode_changes)
     record_product_changes(
         actor=actor,
         instance=product,
@@ -95,7 +113,7 @@ def create_product(*, actor, product_kind, data):
 
 
 @transaction.atomic
-def update_product_card(*, actor, product_kind, product_id, data):
+def update_product_card(*, actor, product_kind, product_id, data, barcode_data=None):
     model, form_class, audited_fields, related_fields, stock_model, stock_product_field = product_configuration(
         product_kind
     )
@@ -123,8 +141,16 @@ def update_product_card(*, actor, product_kind, product_id, data):
     stocks_by_warehouse = {stock.warehouse_id: stock for stock in locked_stocks}
     current_version = product_version(product)
     before = product_snapshot(product, audited_fields)
-    form = form_class(data, instance=product, user=actor)
-    if not form.is_valid():
+    form_data = data.copy()
+    if barcode_data is not None:
+        for key in list(form_data.keys()):
+            if key.startswith("barcodes-"):
+                del form_data[key]
+    form = form_class(form_data, instance=product, user=actor)
+    barcode_formset_instance = barcode_formset(data=barcode_data, product=product) if barcode_data is not None else None
+    form_valid = form.is_valid()
+    barcodes_valid = barcode_formset_instance is None or barcode_formset_instance.is_valid()
+    if not form_valid or not barcodes_valid:
         if form.forbidden_fields:
             logger.warning(
                 "Отклонена попытка изменения защищённых полей: user_id=%s type=%s product_id=%s fields=%s",
@@ -133,13 +159,13 @@ def update_product_card(*, actor, product_kind, product_id, data):
                 product.pk,
                 ",".join(form.forbidden_fields),
             )
-        return ProductUpdateResult(product=product, form=form)
+        return ProductUpdateResult(product=product, form=form, barcode_formset=barcode_formset_instance)
     if form.cleaned_data["version"] != current_version:
         form.add_error(
             None,
             "Карточка уже была изменена другим пользователем. Обновите страницу и повторите изменения.",
         )
-        return ProductUpdateResult(product=product, form=form, stale=True)
+        return ProductUpdateResult(product=product, form=form, stale=True, barcode_formset=barcode_formset_instance)
 
     changed_fields = [field for field in form.changed_data if field in form.allowed_fields]
     stock_fields = [field for field in changed_fields if field.startswith("stock_")]
@@ -147,8 +173,9 @@ def update_product_card(*, actor, product_kind, product_id, data):
         field for field in changed_fields if field.startswith("storage_location_")
     ]
     product_fields = [field for field in changed_fields if field in audited_fields]
-    if not product_fields and not stock_fields and not storage_location_fields:
-        return ProductUpdateResult(product=product, form=form)
+    barcodes_changed = bool(barcode_formset_instance and barcode_formset_instance.has_changed())
+    if not product_fields and not stock_fields and not storage_location_fields and not barcodes_changed:
+        return ProductUpdateResult(product=product, form=form, barcode_formset=barcode_formset_instance)
 
     for field_name in storage_location_fields:
         warehouse_id = int(field_name.removeprefix("storage_location_"))
@@ -164,14 +191,10 @@ def update_product_card(*, actor, product_kind, product_id, data):
         return ProductUpdateResult(product=product, form=form)
 
     product = form.save(commit=False)
-    card_fields = [
-        field for field in product_fields if field not in PRICE_FIELDS and field != "barcode"
-    ]
+    card_fields = [field for field in product_fields if field not in PRICE_FIELDS]
     price_fields = [field for field in product_fields if field in PRICE_FIELDS]
     if card_fields:
         product.save(update_fields=tuple(card_fields))
-    if "barcode" in product_fields:
-        set_product_barcode(product=product, barcode=form.cleaned_data["barcode"])
     if price_fields:
         update_product_prices(
             actor=actor,
@@ -230,7 +253,8 @@ def update_product_card(*, actor, product_kind, product_id, data):
             source=ProductChangeEvent.Source.NOMENCLATURE,
         )
 
-    changes = changed_snapshots(product, before, product_fields) + stock_changes
+    barcode_changes = save_barcode_formset(product=product, formset=barcode_formset_instance)
+    changes = changed_snapshots(product, before, product_fields) + stock_changes + barcode_changes
     try:
         record_product_changes(
             actor=actor,
@@ -262,4 +286,6 @@ def update_product_card(*, actor, product_kind, product_id, data):
             product.pk,
             ",".join(changed_warehouses),
         )
-    return ProductUpdateResult(product=product, form=form, saved=True)
+    return ProductUpdateResult(
+        product=product, form=form, saved=True, barcode_formset=barcode_formset_instance,
+    )

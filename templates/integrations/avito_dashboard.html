@@ -1,5 +1,7 @@
 {% extends "base.html" %}
+{% load static %}
 {% block title %}Avito · Интеграции · ReSOURCE{% endblock %}
+{% block extra_head %}<script src="{% static 'js/avito-sync-progress.js' %}?v=2" defer></script>{% endblock %}
 {% block content %}
 <div class="page-heading">
   <div><p class="eyebrow">Интеграции</p><h1>Avito</h1><p class="muted">CRM управляет ценой и глобальным складским остатком связанных объявлений.</p></div>
@@ -22,6 +24,30 @@
     <dt>Обновление списка</dt><dd>каждые 60 минут</dd>
   </dl>
   <div class="alert alert-info">У аккаунта сейчас нет доступа к Avito Autoload API. Чтение объявлений, цена и остатки доступны; создание, контент, фотографии и полное управление публикацией будут доступны после подключения Autoload.</div>
-  <form method="post" action="{% url 'integrations:manual_sync' %}">{% csrf_token %}<button class="button" type="submit">Синхронизировать сейчас</button></form>
+  {% if perms.integrations.manual_avito_sync %}
+    <form method="post" action="{% url 'integrations:manual_sync' %}">{% csrf_token %}<button class="button" type="submit" {% if active_manual_job or not credential.is_configured %}disabled{% endif %}>Синхронизировать сейчас</button></form>
+  {% endif %}
+  {% if manual_job %}
+    <section class="avito-sync-progress" data-avito-sync-status-url="{% url 'integrations:manual_sync_status' manual_job.pk %}">
+      <h2>Ручная синхронизация №{{ manual_job.pk }}</h2>
+      <p id="avito-sync-phase">{{ manual_job.phase|default:manual_job.get_status_display }}</p>
+      <progress id="avito-sync-bar" max="{{ manual_job.total_count|default:1 }}" value="{{ manual_job.checked_count }}"></progress>
+      <p id="avito-sync-current" class="muted">{{ manual_job.current_item }}</p>
+      <div class="avito-sync-counts">
+        <span>Проверено: <strong id="avito-sync-checked">{{ manual_job.checked_count }}</strong> / <strong id="avito-sync-total">{{ manual_job.total_count }}</strong></span>
+        <span>Исправлено объявлений: <strong id="avito-sync-changed">{{ manual_job.changed_count }}</strong></span>
+        <span>Остатков: <strong id="avito-sync-stock-changed">{{ manual_job.stock_changed_count }}</strong></span>
+        <span>Цен: <strong id="avito-sync-price-changed">{{ manual_job.price_changed_count }}</strong></span>
+        <span>Ошибок: <strong id="avito-sync-failed">{{ manual_job.failed_count }}</strong></span>
+        <span>Неактивных / вне списка: <strong id="avito-sync-skipped">{{ manual_job.skipped_count }}</strong></span>
+      </div>
+      <p class="muted">«Исправлено» означает, что изменение подтверждено повторным чтением данных Avito. Неактивные и исчезнувшие объявления не меняются.</p>
+      <div id="avito-sync-error" class="alert alert-error" {% if not manual_job.last_error %}hidden{% endif %}>{{ manual_job.last_error }}</div>
+      <div id="avito-sync-details" {% if not manual_job.details %}hidden{% endif %}>
+        <h3>Объявления с ошибками</h3>
+        <ul id="avito-sync-error-list">{% for item in manual_job.details %}<li>№{{ item.avito_id }} · {{ item.name }} — {{ item.error }}</li>{% endfor %}</ul>
+      </div>
+    </section>
+  {% endif %}
 </section>
 {% endblock %}

@@ -31,7 +31,7 @@
         <thead><tr><th>ID</th><th>Артикул</th><th>Название</th><th>CUSA/PPSA</th><th></th></tr></thead>
         <tbody>
           {% for product in products %}
-            <tr class="{% if avito_highlight and product.avito_connected %}avito-connected-row{% endif %}">
+            <tr class="{% if avito_highlight and product.avito_connected %}avito-connected-row{% elif zero_stock_highlight and product.global_stock == 0 %}zero-stock-row{% endif %}">
               <td class="mono">{{ product.id }}</td>
               <td class="mono">{{ product.sku|default:"—" }}</td>
               <td><a class="strong" href="{% url 'nomenclature:cd_detail' product.pk %}">{{ product.name }}</a></td>
@@ -60,7 +60,7 @@
         <thead><tr><th>ID</th><th>Артикул</th><th>Название</th><th>Бренд</th><th></th></tr></thead>
         <tbody>
           {% for product in products %}
-            <tr class="{% if avito_highlight and product.avito_connected %}avito-connected-row{% endif %}">
+            <tr class="{% if avito_highlight and product.avito_connected %}avito-connected-row{% elif zero_stock_highlight and product.global_stock == 0 %}zero-stock-row{% endif %}">
               <td class="mono">{{ product.id }}</td>
               <td class="mono">{{ product.sku|default:"—" }}</td>
               <td><a class="strong" href="{% url 'nomenclature:tech_detail' product.pk %}">{{ product.name }}</a></td>

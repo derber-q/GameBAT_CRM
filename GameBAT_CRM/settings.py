@@ -71,7 +71,15 @@ TEMPLATES = [
 WSGI_APPLICATION = "GameBAT_CRM.wsgi.application"
 ASGI_APPLICATION = "GameBAT_CRM.asgi.application"
 
-DATABASES = {"default": {"ENGINE": "django.db.backends.sqlite3", "NAME": BASE_DIR / "db.sqlite3"}}
+DATABASES = {
+    "default": {
+        "ENGINE": "django.db.backends.sqlite3",
+        "NAME": BASE_DIR / "db.sqlite3",
+        # The web process and the Avito worker share this local SQLite file.
+        # Let short writes finish instead of failing a synchronization instantly.
+        "OPTIONS": {"timeout": 30},
+    }
+}
 
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},

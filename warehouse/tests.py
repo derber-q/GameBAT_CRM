@@ -195,6 +195,42 @@ class WarehouseTransferTests(TestCase):
         self.assertNotContains(detail_response, "Касса склада")
         self.assertNotContains(detail_response, "<th>На реализации</th>", html=True)
 
+    def test_stock_product_names_open_nomenclature_cards(self):
+        self.client.force_login(self.user)
+        for page_url in (
+            reverse("warehouse:global_stock"),
+            reverse("warehouse:detail", args=(self.source.pk,)),
+        ):
+            with self.subTest(page_url=page_url):
+                response = self.client.get(page_url)
+                self.assertContains(
+                    response,
+                    f'<a class="strong" href="{reverse("nomenclature:cd_detail", args=(self.cd.pk,))}">{self.cd.name}</a>',
+                    html=True,
+                )
+                self.assertContains(
+                    response,
+                    f'<a class="strong" href="{reverse("nomenclature:tech_detail", args=(self.tech.pk,))}">{self.tech.name}</a>',
+                    html=True,
+                )
+
+    def test_stock_names_are_plain_text_without_nomenclature_permission(self):
+        viewer = User.objects.create_user("warehouse_viewer", password="StrongViewer!123")
+        viewer.user_permissions.add(
+            Permission.objects.get(content_type__app_label="warehouse", codename="view_warehouse_stock"),
+            Permission.objects.get(content_type__app_label="warehouse", codename="view_global_stock"),
+        )
+        self.client.force_login(viewer)
+        for page_url in (
+            reverse("warehouse:global_stock"),
+            reverse("warehouse:detail", args=(self.source.pk,)),
+        ):
+            with self.subTest(page_url=page_url):
+                response = self.client.get(page_url)
+                self.assertContains(response, self.cd.name)
+                self.assertNotContains(response, reverse("nomenclature:cd_detail", args=(self.cd.pk,)))
+                self.assertNotContains(response, reverse("nomenclature:tech_detail", args=(self.tech.pk,)))
+
     def test_stock_search_uses_all_supported_fields_and_keeps_groups(self):
         self.cd.name = "NS2 Elden Ring Tarnished Edition"
         self.cd.sku = "OLD-CD-0143"
