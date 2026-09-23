@@ -40,6 +40,43 @@ class PricingTests(TestCase):
         self.assertEqual(self.cd.yandex_market_price, Decimal("170.00"))
         self.assertEqual(SupplierCDPrice.objects.get().price, Decimal("95.123456"))
 
+    def test_ajax_save_returns_json_without_redirect(self):
+        self.client.force_login(self.user)
+        response = self.client.post(reverse("pricing:product_update"), {
+            "product_type": "cd", "product_id": self.cd.pk,
+            "avito_price": "150", "wholesale_price": "", "yandex_market_price": "0",
+        }, HTTP_X_REQUESTED_WITH="XMLHttpRequest")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"ok": True, "message": "Сохранено"})
+        self.assertNotIn("Location", response)
+        self.cd.refresh_from_db()
+        self.assertEqual(self.cd.avito_price, Decimal("150"))
+        self.assertIsNone(self.cd.wholesale_price)
+        self.assertEqual(self.cd.yandex_market_price, Decimal("0"))
+
+    def test_ajax_validation_error_keeps_prices_unchanged(self):
+        self.client.force_login(self.user)
+        response = self.client.post(reverse("pricing:product_update"), {
+            "product_type": "cd", "product_id": self.cd.pk, "avito_price": "-1",
+        }, HTTP_X_REQUESTED_WITH="XMLHttpRequest")
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(response.json()["ok"])
+        self.assertTrue(response.json()["message"])
+        self.cd.refresh_from_db()
+        self.assertIsNone(self.cd.avito_price)
+
+    def test_ajax_respects_field_permissions(self):
+        worker = User.objects.create_user("ajax-worker")
+        worker.user_permissions.add(Permission.objects.get(codename="change_retail_price"))
+        self.client.force_login(worker)
+        response = self.client.post(reverse("pricing:product_update"), {
+            "product_type": "cd", "product_id": self.cd.pk, "wholesale_price": "123",
+        }, HTTP_X_REQUESTED_WITH="XMLHttpRequest")
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(response.json()["ok"])
+        self.cd.refresh_from_db()
+        self.assertIsNone(self.cd.wholesale_price)
+
     def test_prices_can_be_saved_for_legacy_product_with_blank_barcode(self):
         self.cd.barcode = ""
         self.cd.save(update_fields=("barcode",))
@@ -152,14 +189,16 @@ class PricingTests(TestCase):
             "product_type": "cd", "product_id": self.cd.pk, "supplier_id": self.supplier.pk, "price": "1",
         }).status_code, 403)
 
-    def test_avito_margin_warning_is_strictly_below_200_and_does_not_block_save(self):
+    def test_avito_wholesale_markup_warning_is_strict_and_does_not_block_save(self):
         self.client.force_login(self.user)
-        for price, expected in (("299.99", True), ("300.00", False), ("90.00", True)):
+        self.cd.wholesale_price = Decimal("100.00")
+        self.cd.save(update_fields=("wholesale_price",))
+        for price, expected in (("288.99", True), ("289.00", False), ("90.00", True)):
             self.cd.avito_price = Decimal(price)
             self.cd.save(update_fields=("avito_price",))
             response = self.client.get(reverse("pricing:list"))
             row = response.context["cd_groups"][0][1][0]
-            self.assertEqual(row["avito_low_margin"], expected)
+            self.assertEqual(bool(row["warnings"]["avito_price"]), expected)
         response = self.client.post(reverse("pricing:product_update"), {
             "product_type": "cd", "product_id": self.cd.pk, "avito_price": "150.00",
         })
@@ -172,7 +211,7 @@ class PricingTests(TestCase):
         response = self.client.get(reverse("pricing:list"))
         self.assertContains(response, "Цена Avito")
         self.assertContains(response, 'name="avito_price"')
-        self.assertContains(response, "pricing.js?v=avito-margin-1")
+        self.assertContains(response, "pricing.js?v=price-control-2")
         self.assertNotContains(response, 'name="retail_price"')
 
     def test_group_collapse_uses_unique_shared_controls_after_filtering(self):
@@ -190,5 +229,5 @@ class PricingTests(TestCase):
         self.assertContains(response, f'aria-controls="{control_id}"')
         self.assertContains(response, f'id="{control_id}"')
         self.assertEqual(html.count(f'id="{control_id}"'), 1)
-        self.assertContains(response, "app.js?v=global-barcode-1")
+        self.assertContains(response, "app.js?v=collapse-fix-3")
         self.assertContains(response, "data-global-barcode-search")

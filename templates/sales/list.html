@@ -1,8 +1,37 @@
 {% extends "base.html" %}
-{% block title %}Продажи · ReSOURCE{% endblock %}
+{% load static %}
+{% block title %}{{ page_title }} · ReSOURCE{% endblock %}
+{% block extra_head %}
+<link rel="stylesheet" href="{% static 'css/sales-list.css' %}?v=1">
+{% if state == 'incomplete' %}<script src="{% static 'js/sales-status.js' %}?v=1" defer></script>{% endif %}
+{% endblock %}
 {% block content %}
-<div class="page-heading"><div><p class="eyebrow">Продажи GameBAT</p><h1>Продажа</h1><p class="muted">Заказы, оплаты и исторические цены.</p></div>{% if perms.sales.create_sale or user.is_superuser %}<a class="button button-large" href="{% url 'sales:create' %}">Новая продажа</a>{% endif %}</div>
-<section class="panel table-panel"><div class="section-heading"><h2>Незавершённые продажи</h2><span class="count">{{ incomplete_sales|length }}</span></div><div class="table-scroll"><table><thead><tr><th>ID</th><th>Примечание</th><th>Дата</th><th>Тип</th><th>Склад / площадка</th><th class="numeric">Позиций</th><th class="numeric">Единиц</th><th class="numeric">Сумма</th><th>Оплата</th><th>Заказ</th><th>Платёж</th><th>Сотрудник</th></tr></thead><tbody>{% for sale in incomplete_sales %}<tr><td>{% if perms.sales.view_sale_detail or user.is_superuser %}<a class="mono" href="{% url 'sales:detail' sale.pk %}">{{ sale.visible_id }}</a>{% else %}<span class="mono">{{ sale.visible_id }}</span>{% endif %}</td><td>{{ sale.note|default:"—"|truncatechars:80 }}</td><td>{{ sale.created_at|date:"d.m.Y H:i" }}</td><td>{{ sale.get_sale_type_display }}</td><td>{{ sale.warehouse.name }}{% if sale.consignment_platform %}<br><small class="muted">{{ sale.consignment_platform.name }}</small>{% endif %}</td><td class="numeric">{{ sale.position_count }}</td><td class="numeric">{{ sale.total_units }}</td><td class="numeric strong">{{ sale.total_amount }}</td><td>{{ sale.get_payment_method_display }}</td><td><span class="badge">{{ sale.get_order_status_display }}</span></td><td><span class="badge">{{ sale.get_payment_status_display }}</span></td><td>{{ sale.created_by.full_name|default:sale.created_by.username }}</td></tr>{% empty %}<tr><td colspan="12" class="empty-cell">Незавершённых продаж нет.</td></tr>{% endfor %}</tbody></table></div></section>
-{% if can_view_completed %}<section class="panel table-panel"><div class="section-heading"><h2>Завершённые продажи</h2><span class="count">{{ completed_sales|length }}</span></div><div class="table-scroll"><table><thead><tr><th>ID</th><th>Примечание</th><th>Дата</th><th>Тип</th><th>Склад / площадка</th><th class="numeric">Сумма</th><th>Оплата</th><th>Завершена</th><th>Сотрудник</th></tr></thead><tbody>{% for sale in completed_sales %}<tr><td>{% if perms.sales.view_sale_detail or user.is_superuser %}<a class="mono" href="{% url 'sales:detail' sale.pk %}">{{ sale.visible_id }}</a>{% else %}<span class="mono">{{ sale.visible_id }}</span>{% endif %}</td><td>{{ sale.note|default:"—"|truncatechars:80 }}</td><td>{{ sale.created_at|date:"d.m.Y H:i" }}</td><td>{{ sale.get_sale_type_display }}</td><td>{{ sale.warehouse.name }}{% if sale.consignment_platform %}<br><small class="muted">{{ sale.consignment_platform.name }}</small>{% endif %}</td><td class="numeric strong">{{ sale.total_amount }}</td><td>{{ sale.get_payment_method_display }}</td><td>{{ sale.completed_at|date:"d.m.Y H:i" }}</td><td>{{ sale.created_by.full_name|default:sale.created_by.username }}</td></tr>{% empty %}<tr><td colspan="9" class="empty-cell">Завершённых продаж нет.</td></tr>{% endfor %}</tbody></table></div></section>{% endif %}
-<section class="panel table-panel"><div class="section-heading"><h2>Отменённые продажи</h2><span class="count">{{ cancelled_sales|length }}</span></div><div class="table-scroll"><table><thead><tr><th>ID</th><th>Примечание</th><th>Дата</th><th>Склад</th><th class="numeric">Сумма</th><th class="numeric">Возвращено</th><th>Отменена</th><th>Отменил</th><th>Статус</th></tr></thead><tbody>{% for sale in cancelled_sales %}<tr><td>{% if perms.sales.view_sale_detail or user.is_superuser %}<a class="mono" href="{% url 'sales:detail' sale.pk %}">{{ sale.visible_id }}</a>{% else %}<span class="mono">{{ sale.visible_id }}</span>{% endif %}</td><td>{{ sale.note|default:"—"|truncatechars:80 }}</td><td>{{ sale.created_at|date:"d.m.Y H:i" }}</td><td>{{ sale.warehouse.name }}</td><td class="numeric">{{ sale.total_amount }}</td><td class="numeric">{{ sale.refunded_amount }}</td><td>{{ sale.cancelled_at|date:"d.m.Y H:i" }}</td><td>{{ sale.cancelled_by.full_name|default:sale.cancelled_by.username }}</td><td><span class="badge badge-danger">Отменена</span></td></tr>{% empty %}<tr><td colspan="9" class="empty-cell">Отменённых продаж нет.</td></tr>{% endfor %}</tbody></table></div></section>
+<div class="page-heading"><div><p class="eyebrow">Продажи GameBAT</p><h1>{{ page_title }}</h1><p class="muted">Заказы, оплаты и исторические цены.</p></div>{% if perms.sales.create_sale or user.is_superuser %}<a class="button button-large" href="{% url 'sales:create' %}">Новая продажа</a>{% endif %}</div>
+<nav class="heading-actions sales-pages" aria-label="Разделы продаж">
+  <a class="button button-secondary" href="{% url 'sales:incomplete' %}" {% if state == 'incomplete' %}aria-current="page"{% endif %}>Незавершённые продажи</a>
+  {% if perms.sales.view_completed_sales or user.is_superuser %}<a class="button button-secondary" href="{% url 'sales:completed' %}" {% if state == 'completed' %}aria-current="page"{% endif %}>Завершённые продажи</a>{% endif %}
+  <a class="button button-secondary" href="{% url 'sales:cancelled' %}" {% if state == 'cancelled' %}aria-current="page"{% endif %}>Отменённые продажи</a>
+</nav>
+<p role="status" aria-live="polite" id="sales-status-message"></p>
+{% for group in groups %}
+  {% include "sales/_list_group.html" %}
+{% endfor %}
+{% if state == 'incomplete' %}
+<dialog id="sale-status-dialog" class="confirmation-dialog" aria-labelledby="sale-status-title">
+  <form id="sale-status-confirm-form">
+    {% csrf_token %}
+    <h2 id="sale-status-title">Подтвердите изменение</h2>
+    <p id="sale-status-question"></p>
+    <div class="field" id="sale-status-cash-field" hidden>
+      <label for="sale-status-cash">Получено от покупателя</label>
+      <input id="sale-status-cash" name="cash_received_amount" type="number" min="0" step="0.01">
+      <span class="help-text">Пустое поле — сумма товаров. Деньги будут зачислены в кассу склада.</span>
+    </div>
+    <div class="dialog-actions">
+      <button class="button button-secondary" type="button" id="sale-status-cancel">Отмена</button>
+      <button class="button" type="submit">Подтвердить</button>
+    </div>
+  </form>
+</dialog>
+{% endif %}
 {% endblock %}

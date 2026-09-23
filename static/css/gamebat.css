@@ -278,8 +278,9 @@ input:focus, select:focus, textarea:focus { border-color: var(--gb-primary-light
 .revision-card:hover { border-color: var(--gb-primary); background: var(--gb-page-bg); }
 .revision-card span { color: var(--gb-text-muted); }
 .supply-line-needs-weight { background: #fffaf0; }
-.avito-price-input.avito-low-margin { border-color: var(--gb-danger); box-shadow: 0 0 0 2px rgba(201, 79, 85, .18); }
-.avito-price-readonly-warning { border: 1px solid var(--gb-danger); border-radius: 5px; display: inline-block; padding: 5px 8px; }
+.pricing-table .price-warning, .product-card-form .price-warning { border: 1px solid var(--gb-danger); background: #fff1f1; box-shadow: 0 0 0 2px rgba(201, 79, 85, .18); }
+.pricing-table .price-readonly.price-warning { border-radius: 5px; display: inline-block; padding: 5px 8px; }
+.pricing-price-cell { vertical-align: top; }
 .warehouse-stock-editor label { color: var(--gb-text-strong); font-weight: 650; }
 .warehouse-stock-editor .badge { font-size: 9px; margin-left: 7px; padding: 2px 6px; }
 .warehouse-stock-editor .error-text { display: block; margin-top: 4px; }

@@ -31,6 +31,8 @@ def enqueue_profile_sync(profile_id, *, delay_seconds=None):
 
 
 def enqueue_profile_sync_after_commit(profile_id, *, delay_seconds=None):
+    # Не отправлять в Avito состояние операции, которая затем откатится.
+    # Прямые SQL/QuerySet.update не вызывают сигналы и требуют отдельного решения.
     transaction.on_commit(lambda: enqueue_profile_sync(profile_id, delay_seconds=delay_seconds))
 
 

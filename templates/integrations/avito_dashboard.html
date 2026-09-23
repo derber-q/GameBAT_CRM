@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% load static %}
 {% block title %}Avito · Интеграции · ReSOURCE{% endblock %}
-{% block extra_head %}<script src="{% static 'js/avito-sync-progress.js' %}?v=2" defer></script>{% endblock %}
+{% block extra_head %}<script src="{% static 'js/avito-sync-progress.js' %}?v=2" defer></script><script src="{% static 'js/avito-required-actions.js' %}?v=1" defer></script><link rel="stylesheet" href="{% static 'css/avito-required-actions.css' %}?v=1">{% endblock %}
 {% block content %}
 <div class="page-heading">
   <div><p class="eyebrow">Интеграции</p><h1>Avito</h1><p class="muted">CRM управляет ценой и глобальным складским остатком связанных объявлений.</p></div>
@@ -16,6 +16,7 @@
   <article class="panel"><span class="muted">Не связано</span><strong>{{ unlinked_count }}</strong><small>объявлений</small></article>
   <article class="panel"><span class="muted">Ошибки</span><strong>{{ error_count }}</strong><small>профилей</small></article>
 </div>
+{% include "integrations/_required_actions.html" %}
 <section class="panel">
   <dl class="details integration-details">
     <dt>Последняя успешная синхронизация</dt><dd>{{ last_log.finished_at|date:"d.m.Y H:i"|default:"—" }}</dd>

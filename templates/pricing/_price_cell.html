@@ -1,0 +1,11 @@
+{% load l10n %}
+<td class="numeric pricing-price-cell">
+  {% if can_change %}
+  <input class="compact-input{% if warning %} price-warning{% endif %}" data-price-field="{{ field }}" form="product-price-{{ row.type }}-{{ row.product.id }}" type="number" min="0" step="0.01" name="{{ field }}" value="{{ value|default_if_none:''|unlocalize }}" aria-label="{{ label }}" title="{{ warning }}">
+  {% else %}
+  <span class="price-readonly{% if warning %} price-warning{% endif %}" data-price-field="{{ field }}" data-value="{{ value|default_if_none:''|unlocalize }}" title="{{ warning }}">{{ value|default_if_none:"—" }}</span>
+  {% endif %}
+  {% if markup_field %}
+  <span hidden data-markup-for="{{ field }}" data-value="{{ markup|default_if_none:''|unlocalize }}"></span>
+  {% endif %}
+</td>

@@ -1,0 +1,10 @@
+{% load l10n %}
+<tr data-consignment-row="{{ row.product_kind }}-{{ row.stock_id }}" data-token="{{ row.token }}" data-quantity="{{ row.quantity }}" data-name="{{ row.name }}" data-platform="{{ row.platform_name }}" data-action-url="{% url 'consignment:row_action' row.product_kind row.stock_id %}">
+  <td class="strong">{{ row.name }}</td><td class="mono">{{ row.sku }}</td><td>{{ row.warehouse.name }}</td>
+  <td class="numeric stock-number">{{ row.quantity }}</td><td class="numeric">{{ row.cost|floatformat:2 }} ₽</td><td class="numeric">{{ row.receivable|floatformat:2 }} ₽</td><td class="numeric strong">{{ row.potential|floatformat:2 }} ₽</td>
+  {% if can_change_reward %}<td><form method="post" class="inline-reward-form" action="{% url 'consignment:reward_update' row.product_kind row.stock_id %}">{% csrf_token %}<input type="number" name="receivable_per_unit" value="{{ row.receivable|unlocalize }}" min="0" step="0.01" required aria-label="Вознаграждение за единицу для {{ row.name }}"><button class="button button-small" type="submit">Сохранить</button></form></td>{% endif %}
+  {% if can_record_sale or can_return %}<td><div class="heading-actions" style="flex-wrap:wrap">
+    {% if can_record_sale %}<button type="button" class="button button-small" data-consignment-action="sold">Товар реализован</button>{% endif %}
+    {% if can_return %}<button type="button" class="button button-secondary button-small" data-consignment-action="return">Снять с реализации</button>{% endif %}
+  </div></td>{% endif %}
+</tr>

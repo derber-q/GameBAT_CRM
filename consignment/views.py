@@ -1,17 +1,21 @@
 from django.contrib import messages
 from django.core.exceptions import ValidationError
-from django.http import Http404
+from django.db import IntegrityError, OperationalError
+from django.http import Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
-from django.views.decorators.http import require_POST
+from django.template.loader import render_to_string
+from django.views.decorators.http import require_POST, require_GET
 
 from catalog.models import CD, Tech
+from catalog.product_filters import product_filter_context, filter_product_querysets
 from core.decorators import permission_required_any
 from partners.models import SalesPlatform
-from .forms import ConsignmentSaleForm, ReturnForm, TransferForm
+from .forms import TransferForm
+from warehouse.models import Warehouse
+from sales.models import Sale
+from .row_actions import action_token, perform_row_action, stock_queryset
 from .models import CDConsignmentStock, ConsignmentMovement, TechConsignmentStock
 from .services import (
-    record_consignment_sale,
-    return_from_consignment,
     transfer_many_to_consignment,
     update_consignment_reward,
 )
@@ -21,7 +25,7 @@ def _can_record_sale(user):
     return user.is_superuser or user.has_perm("sales.create_sale")
 
 
-def _stock_row(stock, product_kind):
+def _stock_row(stock, product_kind, user):
     product = stock.cd if product_kind == "cd" else stock.tech
     return {
         "product_kind": product_kind,
@@ -33,40 +37,47 @@ def _stock_row(stock, product_kind):
         "quantity": stock.quantity,
         "receivable": stock.receivable_per_unit,
         "potential": stock.potential_receivable,
+        "token": action_token(stock, product_kind, user),
+        "platform_name": stock.platform.name,
     }
 
 
-def _group_stocks(stocks, *, product_kind):
+def _group_stocks(stocks, *, product_kind, user):
     grouped = {}
     for stock in stocks:
         product = stock.cd if product_kind == "cd" else stock.tech
         group = product.platform if product_kind == "cd" else product.product_type
-        grouped.setdefault(group, []).append(_stock_row(stock, product_kind))
+        grouped.setdefault(group, []).append(_stock_row(stock, product_kind, user))
     return [
         (group, sorted(rows, key=lambda row: (row["name"].casefold(), row["warehouse"].name.casefold())))
         for group, rows in sorted(grouped.items(), key=lambda item: item[0].name.casefold())
     ]
 
 
-def _platform_presentations(user, platform_queryset):
+def _platform_presentations(user, platform_queryset, filters):
     platforms = list(platform_queryset)
     platform_ids = [platform.pk for platform in platforms]
     cd_by_platform = {platform_id: [] for platform_id in platform_ids}
     tech_by_platform = {platform_id: [] for platform_id in platform_ids}
+    cds, techs = filter_product_querysets(
+        CD.objects.filter(consignment_stocks__platform_id__in=platform_ids, consignment_stocks__quantity__gt=0).distinct(),
+        Tech.objects.filter(consignment_stocks__platform_id__in=platform_ids, consignment_stocks__quantity__gt=0).distinct(),
+        filters,
+    )
     if platform_ids and (user.is_superuser or user.has_perm("consignment.view_cdconsignmentstock")):
         for stock in CDConsignmentStock.objects.filter(
-            platform_id__in=platform_ids, quantity__gt=0, cd__is_archived=False,
-        ).select_related("cd__platform", "warehouse"):
+            platform_id__in=platform_ids, quantity__gt=0, cd_id__in=cds.values('pk'),
+        ).select_related("cd__platform", "warehouse", "platform"):
             cd_by_platform[stock.platform_id].append(stock)
     if platform_ids and (user.is_superuser or user.has_perm("consignment.view_techconsignmentstock")):
         for stock in TechConsignmentStock.objects.filter(
-            platform_id__in=platform_ids, quantity__gt=0, tech__is_archived=False,
-        ).select_related("tech__product_type", "warehouse"):
+            platform_id__in=platform_ids, quantity__gt=0, tech_id__in=techs.values('pk'),
+        ).select_related("tech__product_type", "warehouse", "platform"):
             tech_by_platform[stock.platform_id].append(stock)
     result = []
     for platform in platforms:
-        cd_groups = _group_stocks(cd_by_platform[platform.pk], product_kind="cd")
-        tech_groups = _group_stocks(tech_by_platform[platform.pk], product_kind="tech")
+        cd_groups = _group_stocks(cd_by_platform[platform.pk], product_kind="cd", user=user)
+        tech_groups = _group_stocks(tech_by_platform[platform.pk], product_kind="tech", user=user)
         result.append({
             "platform": platform,
             "cd_groups": cd_groups,
@@ -77,10 +88,18 @@ def _platform_presentations(user, platform_queryset):
 
 
 def _consignment_context(request, platform_queryset, *, selected_platform=None):
+    filters, filter_context = product_filter_context(request.GET)
+    presentations = _platform_presentations(request.user, platform_queryset, filters)
     return {
-        "platforms": _platform_presentations(request.user, platform_queryset),
+        **filter_context,
+        "platforms": presentations,
+        "has_results": any(item['count'] for item in presentations),
         "selected_platform": selected_platform,
         "can_record_sale": _can_record_sale(request.user),
+        "can_return": request.user.is_superuser or request.user.has_perm('consignment.return_stock'),
+        "return_warehouses": Warehouse.objects.all(),
+        "payment_methods": [(Sale.PaymentMethod.CASH, Sale.PaymentMethod.CASH.label),
+                            (Sale.PaymentMethod.BANK_ACCOUNT, Sale.PaymentMethod.BANK_ACCOUNT.label)],
         "can_change_reward": request.user.is_superuser or request.user.has_perm(
             "consignment.change_consignment_reward"
         ),
@@ -202,65 +221,64 @@ def transfer(request):
     })
 
 
+@require_GET
 @permission_required_any("consignment.return_stock")
 def return_stock(request):
-    form = ReturnForm(request.POST or None)
-    if request.method == "POST" and form.is_valid():
-        try:
-            return_from_consignment(
-                actor=request.user,
-                warehouse_id=form.cleaned_data["warehouse"].pk,
-                platform_id=form.cleaned_data["platform"].pk,
-                product_type=form.cleaned_data["product_type"],
-                product_id=form.cleaned_data["product_id"],
-                quantity=form.cleaned_data["quantity"],
-            )
-        except ValidationError as exc:
-            form.add_error(None, exc)
-        else:
-            messages.success(request, "Товар возвращён на склад-источник.")
-            return redirect("consignment:list")
-    return render(request, "consignment/form.html", {"form": form, "title": "Снять товар с реализации"})
+    return redirect('consignment:list')
 
 
+@require_GET
 @permission_required_any("sales.create_sale")
 def consignment_sale(request, product_kind, pk):
-    if product_kind == "cd":
-        stock = get_object_or_404(
-            CDConsignmentStock.objects.select_related("cd", "platform", "warehouse"),
-            pk=pk, quantity__gt=0, cd__is_archived=False,
-        )
-        product = stock.cd
-    elif product_kind == "tech":
-        stock = get_object_or_404(
-            TechConsignmentStock.objects.select_related("tech", "platform", "warehouse"),
-            pk=pk, quantity__gt=0, tech__is_archived=False,
-        )
-        product = stock.tech
-    else:
+    if product_kind not in ('cd', 'tech'):
         raise Http404
-    form = ConsignmentSaleForm(request.POST or None, stock=stock)
-    if request.method == "POST" and form.is_valid():
-        try:
-            sale = record_consignment_sale(
-                actor=request.user,
-                product_type=product_kind,
-                stock_id=stock.pk,
-                quantity=form.cleaned_data["quantity"],
-                payment_method=form.cleaned_data["payment_method"],
-            )
-        except ValidationError as exc:
-            form.add_error(None, exc)
-        else:
-            messages.success(request, f"Продажа {sale.visible_id} создана и оплачена.")
-            if request.user.is_superuser or request.user.has_perm("sales.view_sale_detail"):
-                return redirect("sales:detail", pk=sale.pk)
-            if request.user.has_perm("sales.view_sales"):
-                return redirect("sales:list")
-            return redirect("consignment:list")
-    return render(request, "consignment/sale.html", {
-        "form": form, "stock": stock, "product": product, "product_kind": product_kind,
-    })
+    stock = get_object_or_404(stock_queryset(product_kind), pk=pk)
+    return redirect('consignment:platform', pk=stock.platform_id)
+
+
+def _row_response(request, kind, pk, success, message, status=200):
+    stock = stock_queryset(kind).filter(pk=pk).first()
+    product = (stock.cd if kind == 'cd' else stock.tech) if stock else None
+    visible = bool(stock and stock.quantity > 0 and not product.is_archived)
+    context = {
+        'row': _stock_row(stock, kind, request.user) if visible else None,
+        'can_record_sale': _can_record_sale(request.user),
+        'can_return': request.user.is_superuser or request.user.has_perm('consignment.return_stock'),
+        'can_change_reward': request.user.is_superuser or request.user.has_perm('consignment.change_consignment_reward'),
+    }
+    return JsonResponse({
+        'success': success, 'message': message, 'quantity': stock.quantity if stock else 0,
+        'row_html': render_to_string('consignment/_stock_row.html', context, request=request) if visible else '',
+    }, status=status)
+
+
+@require_POST
+@permission_required_any('consignment.view_cdconsignmentstock', 'consignment.view_techconsignmentstock')
+def row_action(request, product_kind, pk):
+    action = request.POST.get('action')
+    permission = {'return': 'consignment.return_stock', 'sold': 'sales.create_sale'}.get(action)
+    if product_kind not in ('cd', 'tech') or not permission:
+        return JsonResponse({'success': False, 'message': 'Неизвестная операция.'}, status=400)
+    if not request.user.is_superuser and not (
+        request.user.has_perm(permission) and request.user.has_perm(f'consignment.view_{product_kind}consignmentstock')
+    ):
+        return JsonResponse({'success': False, 'message': 'Недостаточно прав для операции.'}, status=403)
+    if request.POST.get('confirmed') != '1':
+        return _row_response(request, product_kind, pk, False, 'Подтвердите операцию.', 400)
+    try:
+        perform_row_action(
+            actor=request.user, kind=product_kind, stock_id=pk,
+            token=request.POST.get('token', ''), action=action, quantity=request.POST.get('quantity'),
+            warehouse_id=request.POST.get('warehouse'), payment_method=request.POST.get('payment_method'),
+        )
+    except ValidationError as exc:
+        return _row_response(request, product_kind, pk, False, ' '.join(exc.messages), 400)
+    except IntegrityError:
+        return _row_response(request, product_kind, pk, False, 'Операция уже выполнена либо данные изменились. Показан актуальный остаток.', 409)
+    except OperationalError:
+        return _row_response(request, product_kind, pk, False, 'База занята другой операцией. Проверьте остаток и повторите действие.', 409)
+    message = 'Товар возвращён на выбранный склад.' if action == 'return' else 'Реализация подтверждена.'
+    return _row_response(request, product_kind, pk, True, message)
 
 
 @permission_required_any(

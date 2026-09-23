@@ -7,7 +7,20 @@ from partners.models import SalesPlatform
 from warehouse.models import Warehouse
 
 
+class ConsignmentActionReceipt(models.Model):
+    """Одна проведённая операция на ключ запроса, включая повторную отправку POST."""
+    key = models.UUIDField(primary_key=True, editable=False)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    created_at = models.DateTimeField(auto_now_add=True)
+    product_kind = models.CharField(max_length=8)
+    stock_id = models.PositiveIntegerField()
+    action = models.CharField(max_length=8)
+
+
 class ConsignmentStockBase(models.Model):
+    # Пустой ключ — обычные передачи; исторические строки получают свой ключ,
+    # чтобы одинаковый товар с разными вознаграждениями не сливался в одну партию.
+    lot_key = models.CharField("Партия", max_length=100, blank=True, default="", editable=False)
     platform = models.ForeignKey(SalesPlatform, on_delete=models.PROTECT, verbose_name="Площадка")
     warehouse = models.ForeignKey(
         Warehouse, on_delete=models.PROTECT, verbose_name="Склад-источник"
@@ -38,7 +51,7 @@ class CDConsignmentStock(ConsignmentStockBase):
             ("change_consignment_reward", "Может изменять вознаграждение на реализации"),
         ]
         constraints = [
-            models.UniqueConstraint(fields=("platform", "warehouse", "cd"), name="unique_cd_platform_warehouse_stock"),
+            models.UniqueConstraint(fields=("platform", "warehouse", "cd", "lot_key"), name="unique_cd_platform_warehouse_lot"),
             models.CheckConstraint(condition=models.Q(quantity__gte=0), name="cd_stock_quantity_nonnegative"),
             models.CheckConstraint(condition=models.Q(receivable_per_unit__gte=0), name="cd_stock_receivable_nonnegative"),
         ]
@@ -54,7 +67,7 @@ class TechConsignmentStock(ConsignmentStockBase):
         verbose_name = "остаток техники на реализации"
         verbose_name_plural = "остатки техники на реализации"
         constraints = [
-            models.UniqueConstraint(fields=("platform", "warehouse", "tech"), name="unique_tech_platform_warehouse_stock"),
+            models.UniqueConstraint(fields=("platform", "warehouse", "tech", "lot_key"), name="unique_tech_platform_warehouse_lot"),
             models.CheckConstraint(condition=models.Q(quantity__gte=0), name="tech_stock_quantity_nonnegative"),
             models.CheckConstraint(condition=models.Q(receivable_per_unit__gte=0), name="tech_stock_receivable_nonnegative"),
         ]

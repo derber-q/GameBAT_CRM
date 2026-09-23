@@ -37,23 +37,16 @@ class CashRegisterTests(TestCase):
         self.assertEqual(CashRegister.objects.filter(warehouse=self.warehouse).count(), 1)
         self.assertEqual(self.register.balance, Decimal("0.00"))
 
-    def test_cash_has_a_separate_navigation_button(self):
+    def test_cash_is_available_in_sales_navigation_menu(self):
         self.client.force_login(self.user)
         response = self.client.get(reverse("cash:register", args=(self.warehouse.pk,)))
         first_warehouse = Warehouse.objects.order_by("pk").first()
         first_register_url = reverse("cash:register", args=(first_warehouse.pk,))
-        if Warehouse.objects.count() == 1:
-            expected_cash_link = f'<a class="active" href="{first_register_url}">Касса</a>'
-        else:
-            expected_cash_link = (
-                f'<a class="nav-dropdown-trigger active" href="{first_register_url}" '
-                'aria-haspopup="true">Касса</a>'
-            )
+        expected_cash_link = f'<a href="{first_register_url}">Касса</a>'
         self.assertContains(response, expected_cash_link, html=True)
-        self.assertNotContains(
+        self.assertContains(
             response,
-            '<a class="nav-dropdown-trigger active" href="/warehouse/" '
-            'aria-haspopup="true">Склад</a>',
+            '<a class="nav-sale nav-dropdown-trigger active" href="/sales/new/" aria-haspopup="true">Продажа</a>',
             html=True,
         )
 

@@ -184,7 +184,7 @@ class SaleCancellationTests(TestCase):
         self.assertRedirects(
             self.client.post(cancel_url, {"cancellation_comment": "Отказ клиента"}), detail_url
         )
-        list_response = self.client.get(reverse("sales:list"))
+        list_response = self.client.get(reverse("sales:cancelled"))
         self.assertContains(list_response, "Отменённые продажи")
         self.assertContains(list_response, sale.visible_id)
 

@@ -6,6 +6,7 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 
 from catalog.models import CD, Tech
+from catalog.product_fields import PRICING_FIELDS
 from catalog.audit import changed_snapshots, product_snapshot, record_product_changes
 from catalog.models import ProductChangeEvent
 from partners.models import Supplier
@@ -21,6 +22,8 @@ def _price(value, *, nullable, precision):
         result = Decimal(str(value)).quantize(precision, rounding=ROUND_HALF_UP)
     except (InvalidOperation, TypeError, ValueError) as exc:
         raise ValidationError("Укажите корректную цену.") from exc
+    if not result.is_finite():
+        raise ValidationError("Укажите корректную цену.")
     if result < 0:
         raise ValidationError("Цена не может быть отрицательной.")
     return result
@@ -41,7 +44,7 @@ def update_product_prices(*, actor, product_type, product_id, changes, record_au
         product = product_model.objects.active().select_for_update().get(pk=product_id)
     except (product_model.DoesNotExist, TypeError, ValueError) as exc:
         raise ValidationError("Товар не найден.") from exc
-    allowed = {"avito_price", "wholesale_price", "yandex_market_price"}
+    allowed = set(PRICING_FIELDS)
     updates = {}
     for field, value in changes.items():
         if field not in allowed:

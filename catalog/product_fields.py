@@ -1,4 +1,6 @@
 PRICE_FIELDS = ("avito_price", "wholesale_price", "yandex_market_price")
+MARKUP_FIELDS = ("avito_markup_from_wholesale", "yandex_markup_from_wholesale")
+PRICING_FIELDS = (*PRICE_FIELDS, *MARKUP_FIELDS)
 
 CD_CARD_FIELDS = (
     "platform",
@@ -9,7 +11,7 @@ CD_CARD_FIELDS = (
     "weight_grams",
     "description",
     "comment",
-    *PRICE_FIELDS,
+    *PRICING_FIELDS,
 )
 
 TECH_CARD_FIELDS = (
@@ -20,7 +22,7 @@ TECH_CARD_FIELDS = (
     "weight_grams",
     "description",
     "comment",
-    *PRICE_FIELDS,
+    *PRICING_FIELDS,
 )
 
 CD_FIELD_PERMISSIONS = {
@@ -35,6 +37,8 @@ CD_FIELD_PERMISSIONS = {
     "avito_price": "pricing.change_retail_price",
     "wholesale_price": "pricing.change_wholesale_price",
     "yandex_market_price": "pricing.change_yandex_market_price",
+    "avito_markup_from_wholesale": "pricing.change_retail_price",
+    "yandex_markup_from_wholesale": "pricing.change_yandex_market_price",
 }
 
 TECH_FIELD_PERMISSIONS = {
@@ -48,6 +52,8 @@ TECH_FIELD_PERMISSIONS = {
     "avito_price": "pricing.change_retail_price",
     "wholesale_price": "pricing.change_wholesale_price",
     "yandex_market_price": "pricing.change_yandex_market_price",
+    "avito_markup_from_wholesale": "pricing.change_retail_price",
+    "yandex_markup_from_wholesale": "pricing.change_yandex_market_price",
 }
 
 

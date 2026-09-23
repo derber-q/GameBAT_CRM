@@ -5,6 +5,10 @@ from . import views
 app_name = "sales"
 urlpatterns = [
     path("", views.sale_list, name="list"),
+    path("incomplete/", views.sale_list, name="incomplete"),
+    path("completed/", views.sale_completed_list, name="completed"),
+    path("cancelled/", views.sale_cancelled_list, name="cancelled"),
+    path("<int:pk>/status/", views.sale_inline_status, name="inline_status"),
     path("new/", views.sale_create, name="create"),
     path("new/import-wholesale/", views.sale_wholesale_import, name="import_wholesale"),
     path("<int:pk>/", views.sale_detail, name="detail"),

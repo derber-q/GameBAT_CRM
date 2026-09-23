@@ -4,6 +4,8 @@
   if (!form) return;
   const lines = document.getElementById("consignment-lines");
   const warehouse = document.getElementById("id_warehouse");
+  const barcodeInput = form.querySelector("[data-consignment-barcode-input]");
+  const barcodeButton = form.querySelector("[data-consignment-barcode-add]");
   const barcodeFeedback = form.querySelector("[data-consignment-barcode-feedback]");
   const initialLines = JSON.parse(document.getElementById("initial-consignment-lines").textContent);
 
@@ -143,8 +145,12 @@
     blankRow.querySelector('input[name="receivable_per_unit"]')?.focus();
   }
 
-  async function addByBarcode(barcode) {
-    barcode = String(barcode || "").trim();
+  async function addByBarcode(scannedBarcode = "") {
+    const barcode = String(scannedBarcode || barcodeInput?.value || "").trim();
+    if (!barcode) {
+      showBarcodeFeedback("Введите штрихкод.", true);
+      return;
+    }
     if (!warehouse?.value) {
       showBarcodeFeedback("Сначала выберите склад.", true);
       return;
@@ -170,14 +176,29 @@
       if (exactMatches.length > 1) throw new Error("Этот штрихкод указан у нескольких товаров.");
       const result = exactMatches[0];
       if (Number(result.available) <= 0) throw new Error("Этого товара нет на выбранном складе.");
+      const existingRow = [...lines.querySelectorAll("tr")].find((row) => (
+        row.querySelector('input[name="product_type"]')?.value === String(result.type)
+        && row.querySelector('input[name="product_id"]')?.value === String(result.id)
+      ));
+      const selectedQuantity = Number(existingRow?.querySelector('input[name="quantity"]')?.value) || 0;
+      if (selectedQuantity + 1 > Number(result.available)) {
+        throw new Error("На выбранном складе недостаточно товара для ещё одной единицы.");
+      }
       putBarcodeResultIntoTransfer(result);
+      if (barcodeInput) barcodeInput.value = "";
       showBarcodeFeedback(`Добавлено: ${result.label}`);
     } catch (error) {
       showBarcodeFeedback(error.message, true);
     }
   }
 
-  document.getElementById("add-consignment-line").addEventListener("click", addLine);
+  document.getElementById("add-consignment-line").addEventListener("click", () => addLine());
+  barcodeButton?.addEventListener("click", () => addByBarcode());
+  barcodeInput?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    addByBarcode();
+  });
   if (window.GameBAT.registerGlobalBarcodeHandler) {
     window.GameBAT.registerGlobalBarcodeHandler(addByBarcode);
   }

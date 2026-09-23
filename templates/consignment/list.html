@@ -1,6 +1,7 @@
 {% extends "base.html" %}
-{% load l10n %}
+{% load l10n static %}
 {% block title %}{% if selected_platform %}{{ selected_platform.name }} · {% endif %}Реализация · ReSOURCE{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{% static 'css/consignment-actions.css' %}?v=1"><script src="{% static 'js/consignment-actions.js' %}?v=1" defer></script>{% endblock %}
 {% block content %}
 <div class="page-heading">
   <div>
@@ -10,14 +11,44 @@
   </div>
   <div class="heading-actions">
     {% if selected_platform %}<a class="button button-secondary" href="{% url 'consignment:list' %}">Все площадки</a>{% endif %}
-    {% if perms.consignment.return_stock or user.is_superuser %}<a class="button button-secondary" href="{% url 'consignment:return' %}">Снять товар</a>{% endif %}
     {% if perms.consignment.transfer_stock or user.is_superuser %}<a class="button" href="{% url 'consignment:transfer' %}">Передать товары</a>{% endif %}
   </div>
 </div>
+
+{% include "catalog/_product_filters.html" %}
+<p id="consignment-action-message" role="status" aria-live="polite" style="position:sticky;top:8px;z-index:5;background:var(--gb-surface);padding:8px;min-height:1.5em"></p>
+{% if filter_state.is_active and not has_results %}<section class="empty-state"><h2>Товары не найдены</h2><p>Измените условия поиска или сбросьте фильтры.</p></section>{% endif %}
 
 {% for presentation in platforms %}
   {% include "consignment/_platform_panel.html" with presentation=presentation %}
 {% empty %}
   <section class="empty-state"><span class="empty-code">0</span><h2>Площадки не созданы</h2><p>Добавьте площадки реализации через административную панель.</p></section>
 {% endfor %}
+{% if can_return or can_record_sale %}
+<dialog id="consignment-action-dialog" class="confirmation-dialog" aria-labelledby="consignment-action-title">
+  <form id="consignment-action-form">
+    {% csrf_token %}
+    <h2 id="consignment-action-title"></h2>
+    <p id="consignment-action-product"></p>
+    <p id="consignment-action-available"></p>
+    <div class="field" id="consignment-quantity-field"><label for="consignment-action-quantity">Количество</label>
+      <input id="consignment-action-quantity" name="quantity" type="number" min="1" step="1" required>
+    </div>
+    <div class="field" id="consignment-return-field"><label for="consignment-action-warehouse">Склад возврата</label>
+      <select id="consignment-action-warehouse" name="warehouse" required>
+        <option value="">Выберите склад</option>
+        {% for warehouse in return_warehouses %}<option value="{{ warehouse.pk }}">{{ warehouse.name }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="field" id="consignment-payment-field"><label for="consignment-action-payment">Форма оплаты</label>
+      <select id="consignment-action-payment" name="payment_method" required>
+        <option value="">Выберите форму оплаты</option>
+        {% for value, label in payment_methods %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+      </select>
+    </div>
+    <p id="consignment-action-summary"></p>
+    <div class="dialog-actions"><button type="button" class="button button-secondary" id="consignment-action-cancel">Отмена</button><button type="submit" class="button">Подтвердить</button></div>
+  </form>
+</dialog>
+{% endif %}
 {% endblock %}

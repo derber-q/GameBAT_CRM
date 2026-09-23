@@ -17,6 +17,22 @@ from .models import Sale, SaleCDItem, SaleTechItem
 
 logger = logging.getLogger("gamebat.business")
 CENT = Decimal("0.01")
+ORDER_TRANSITIONS = {
+    Sale.OrderStatus.CREATED: Sale.OrderStatus.ASSEMBLED,
+    Sale.OrderStatus.ASSEMBLED: Sale.OrderStatus.SHIPPED,
+    Sale.OrderStatus.SHIPPED: Sale.OrderStatus.DELIVERED,
+}
+
+
+def next_order_status(sale):
+    return None if sale.is_cancelled or sale.is_completed else ORDER_TRANSITIONS.get(sale.order_status)
+
+
+def can_mark_paid(sale):
+    return (
+        not sale.is_cancelled and sale.payment_status == Sale.PaymentStatus.UNPAID
+        and sale.payment_method in (Sale.PaymentMethod.CASH_POSTPAY, Sale.PaymentMethod.BANK_ACCOUNT)
+    )
 
 
 @dataclass(frozen=True)
@@ -196,12 +212,7 @@ def advance_order_status(*, actor, sale_id, next_status):
     sale = Sale.objects.select_for_update().get(pk=sale_id)
     if sale.is_cancelled:
         raise ValidationError("Отменённую продажу изменять нельзя.")
-    transitions = {
-        Sale.OrderStatus.CREATED: Sale.OrderStatus.ASSEMBLED,
-        Sale.OrderStatus.ASSEMBLED: Sale.OrderStatus.SHIPPED,
-        Sale.OrderStatus.SHIPPED: Sale.OrderStatus.DELIVERED,
-    }
-    if transitions.get(sale.order_status) != next_status:
+    if ORDER_TRANSITIONS.get(sale.order_status) != next_status:
         raise ValidationError("Этот переход статуса недопустим.")
     sale.order_status = next_status
     update_fields = ["order_status", "updated_at"]

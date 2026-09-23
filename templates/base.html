@@ -6,8 +6,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}ReSOURCE{% endblock %}</title>
   <link rel="icon" href="{% static 'img/gamebat-favicon.ico' %}" sizes="32x32" type="image/x-icon">
-  <link rel="stylesheet" href="{% static 'css/gamebat.css' %}?v=avito-sync-1">
-  <script src="{% static 'js/app.js' %}?v=global-barcode-1" defer></script>
+  <link rel="stylesheet" href="{% static 'css/gamebat.css' %}?v=price-control-2">
+  <script src="{% static 'js/app.js' %}?v=collapse-fix-3" defer></script>
   {% block extra_head %}{% endblock %}
 </head>
 <body>
@@ -15,21 +15,21 @@
     <header class="topbar">
       <a class="brand" href="{% url 'core:home' %}"><span class="brand-mark">RS</span><span>Re<b>SOURCE</b></span></a>
       <nav class="main-nav" aria-label="Основная навигация">
-        {% if nav.sales %}<a class="nav-sale {% if request.resolver_match.namespace == 'sales' %}active{% endif %}" href="{% url 'sales:list' %}">Продажа</a>{% endif %}
-        {% if nav.statistics %}<a class="{% if request.resolver_match.namespace == 'statistics' %}active{% endif %}" href="{% url 'statistics:index' %}">Статистика</a>{% endif %}
+        {% if nav.sales %}<div class="nav-dropdown">
+          <a class="nav-sale nav-dropdown-trigger {% if request.resolver_match.namespace == 'sales' or request.resolver_match.namespace == 'cash' %}active{% endif %}" href="{% url 'sales:create' %}" aria-haspopup="true">Продажа</a>
+          <div class="nav-dropdown-menu">
+            {% if perms.sales.create_sale or user.is_superuser %}<a href="{% url 'sales:create' %}">Новая продажа</a>{% endif %}
+            {% if perms.sales.view_sales or user.is_superuser %}
+              <a href="{% url 'sales:incomplete' %}">Незавершённые продажи</a>
+              {% if perms.sales.view_completed_sales or user.is_superuser %}<a href="{% url 'sales:completed' %}">Завершённые продажи</a>{% endif %}
+              <a href="{% url 'sales:cancelled' %}">Отменённые продажи</a>
+            {% endif %}
+            {% if nav.cash and nav_warehouses %}
+              <a href="{% url 'cash:register' nav_warehouses.0.id %}">Касса</a>
+            {% endif %}
+          </div>
+        </div>{% endif %}
         {% if nav.orders %}<a class="{% if request.resolver_match.namespace == 'orders' %}active{% endif %}" href="{% url 'orders:list' %}">Заказы</a>{% endif %}
-        {% if nav.cash and nav_warehouses %}
-          {% if nav_warehouses|length == 1 %}
-            <a class="{% if request.resolver_match.namespace == 'cash' %}active{% endif %}" href="{% url 'cash:register' nav_warehouses.0.id %}">Касса</a>
-          {% else %}
-            <div class="nav-dropdown">
-              <a class="nav-dropdown-trigger {% if request.resolver_match.namespace == 'cash' %}active{% endif %}" href="{% url 'cash:register' nav_warehouses.0.id %}" aria-haspopup="true">Касса</a>
-              <div class="nav-dropdown-menu">
-                {% for warehouse in nav_warehouses %}<a href="{% url 'cash:register' warehouse.id %}">Касса {{ warehouse.name }}</a>{% endfor %}
-              </div>
-            </div>
-          {% endif %}
-        {% endif %}
         {% if nav.creditors %}<a class="{% if request.resolver_match.namespace == 'creditors' %}active{% endif %}" href="{% url 'creditors:list' %}">Кредиторы</a>{% endif %}
         {% if nav.nomenclature %}<a class="{% if request.resolver_match.namespace == 'nomenclature' %}active{% endif %}" href="{% url 'nomenclature:list' %}">Номенклатура</a>{% endif %}
         {% if nav.warehouse %}
@@ -59,7 +59,16 @@
         {% endif %}
         {% if nav.pricing %}<a class="{% if request.resolver_match.namespace == 'pricing' %}active{% endif %}" href="{% url 'pricing:list' %}">Ценообразование</a>{% endif %}
         {% if nav.price %}<a class="{% if request.resolver_match.namespace == 'price' %}active{% endif %}" href="{% url 'price:index' %}">Прайс</a>{% endif %}
-        {% if nav.suppliers %}<a class="{% if request.resolver_match.namespace == 'partners' %}active{% endif %}" href="{% url 'partners:list' %}">Поставщики</a>{% endif %}
+        {% if nav.stuf %}
+          <div class="nav-dropdown">
+            <a class="nav-dropdown-trigger {% if request.resolver_match.namespace == 'statistics' or request.resolver_match.namespace == 'partners' or request.resolver_match.namespace == 'accounts' %}active{% endif %}" href="{% url 'accounts:staff_by_group' %}" aria-haspopup="true">stuf</a>
+            <div class="nav-dropdown-menu">
+              {% if nav.statistics %}<a href="{% url 'statistics:index' %}">Статистика</a>{% endif %}
+              {% if nav.users %}<a href="{% url 'accounts:user_list' %}">Пользователи</a>{% endif %}
+              {% if nav.suppliers %}<a href="{% url 'partners:list' %}">Поставщики</a>{% endif %}
+            </div>
+          </div>
+        {% endif %}
         {% if nav.integrations %}
           <div class="nav-dropdown">
             <a class="nav-dropdown-trigger {% if request.resolver_match.namespace == 'integrations' %}active{% endif %}" href="{% url 'integrations:api_keys' %}" aria-haspopup="true">Интеграции</a>
@@ -69,11 +78,10 @@
             </div>
           </div>
         {% endif %}
-        {% if nav.users %}<a class="{% if request.resolver_match.namespace == 'accounts' and 'user' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'accounts:user_list' %}">Пользователи</a>{% endif %}
       </nav>
       <div class="rates" aria-label="Курсы валют">
         <span data-rate-symbol="USDT/RUB">USDT/RUB <b>—</b></span>
-        <span data-rate-symbol="USDT/AED" data-rate-decimals="4">USDT/AED <b>—</b></span>
+        <span data-rate-symbol="USDT/AED" data-rate-decimals="2">USDT/AED <b>—</b></span>
       </div>
       <div class="session-tools">
         <span class="clock"><b id="gb-date">—</b><span id="gb-time">—</span></span>

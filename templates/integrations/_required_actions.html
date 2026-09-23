@@ -1,0 +1,36 @@
+<section class="panel" id="required-actions">
+  <div class="section-heading section-heading-plain">
+    <h2>Необходимые действия: {{ required_actions|length }}</h2>
+    {% if perms.integrations.manual_avito_sync %}
+    <form method="post" action="{% url 'integrations:required_actions_refresh' %}">
+      {% csrf_token %}<button class="button" type="submit" {% if not credential.is_configured or actions_refresh_job.status == 'pending' or actions_refresh_job.status == 'running' %}disabled{% endif %}>Обновить</button>
+    </form>
+    {% endif %}
+  </div>
+  <p class="muted">Выполните действие вручную на Avito, затем нажмите «Обновить». CRM проверит статусы, но не будет публиковать или снимать объявления.</p>
+  <p class="muted">Остаток — суммарно по складам, без реализации. Статусы — по последнему получению данных Avito; до обновления они могут быть устаревшими.</p>
+  {% if actions_refresh_job %}
+  <div {% if actions_refresh_job.status == 'pending' or actions_refresh_job.status == 'running' %}data-actions-status-url="{% url 'integrations:required_actions_status' actions_refresh_job.pk %}"{% endif %}>
+    <p data-actions-phase role="status">{{ actions_refresh_job.phase }}{% if actions_refresh_job.finished_at %} · {{ actions_refresh_job.finished_at|date:"d.m.Y H:i" }}{% endif %}</p>
+    <p class="alert alert-error" data-actions-error {% if not actions_refresh_job.last_error %}hidden{% endif %}>{{ actions_refresh_job.last_error }}</p>
+    {% if actions_refresh_job.status == 'pending' or actions_refresh_job.status == 'running' %}<p class="muted">Обновление выполняется в фоне. Пока показаны предыдущие данные. Если ожидание затянулось, проверьте запуск обработчика Avito.</p>{% endif %}
+    {% if actions_refresh_job.status == 'error' %}<p class="muted">Обновление не завершено. Данные могут быть устаревшими; повторите проверку.</p>{% endif %}
+  </div>
+  {% endif %}
+  {% if required_actions %}
+  <table class="avito-actions-table">
+    <colgroup><col class="action-listing"><col class="action-product"><col class="action-stock"><col class="action-label"></colgroup>
+    <thead><tr><th>Объявление</th><th>Товар CRM</th><th>Остаток</th><th>Действие</th></tr></thead>
+    <tbody>
+    {% for row in required_actions %}
+      <tr>
+        <td>{% if row.listing_url %}<a href="{{ row.listing_url }}" target="_blank" rel="noopener noreferrer">{{ row.listing.title|default:"Объявление Avito" }}</a>{% else %}{{ row.listing.title|default:"Объявление Avito" }}<small class="error-text">Avito не вернул безопасную ссылку. Обновите данные.</small>{% endif %}<small class="muted">№{{ row.listing.avito_item_id }} · {{ row.remote_status }}</small></td>
+        <td><a href="{% if row.product_kind == 'cd' %}{% url 'nomenclature:cd_detail' row.product.pk %}{% else %}{% url 'nomenclature:tech_detail' row.product.pk %}{% endif %}">{{ row.product.name }}</a><small class="muted">{{ row.product_kind|upper }} #{{ row.product.pk }} · {{ row.product.sku }}</small></td>
+        <td>{{ row.global_stock }} шт.</td>
+        <td class="avito-action-{{ row.action.value }}">{{ row.label }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p>Необходимых действий нет.</p>{% endif %}
+</section>

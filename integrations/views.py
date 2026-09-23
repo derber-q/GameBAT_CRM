@@ -27,6 +27,7 @@ from .models import (
     IntegrationCredential,
 )
 from .queue import enqueue_periodic, enqueue_profile_sync_after_commit
+from .required_actions import get_avito_required_actions
 from .services import (
     bind_listing,
     check_avito_connection,
@@ -93,6 +94,8 @@ def avito_dashboard(request):
         if requested_run.isdigit() else manual_jobs.order_by("-created_at", "-pk").first()
     )
     context = {
+        "required_actions": get_avito_required_actions(),
+        "actions_refresh_job": AvitoSyncJob.objects.filter(job_type=AvitoSyncJob.JobType.STATUS_REFRESH).first(),
         "credential": credential,
         "linked_count": AvitoListingConnection.objects.count(),
         "unlinked_count": AvitoRemoteListing.objects.filter(connection__isnull=True).exclude(status__iexact="removed").count(),
@@ -108,6 +111,43 @@ def avito_dashboard(request):
         ).order_by("-created_at", "-pk").first(),
     }
     return render(request, "integrations/avito_dashboard.html", context)
+
+
+@require_POST
+@permission_required_any("integrations.manual_avito_sync")
+def required_actions_refresh(request):
+    credential = get_avito_credential()
+    if not credential or not credential.is_configured:
+        messages.error(request, "Сначала настройте подключение к Avito.")
+        return redirect("integrations:avito")
+    with transaction.atomic():
+        job, created = AvitoSyncJob.objects.select_for_update().get_or_create(
+            dedupe_key="required-actions-refresh",
+            defaults={"job_type": AvitoSyncJob.JobType.STATUS_REFRESH,
+                      "run_after": timezone.now(), "phase": "Ожидает запуска обработчика"},
+        )
+        if not created and job.status not in (AvitoSyncJob.Status.PENDING, AvitoSyncJob.Status.RUNNING):
+            job.status = AvitoSyncJob.Status.PENDING
+            job.run_after = timezone.now()
+            job.attempts = 0
+            job.last_error = ""
+            job.phase = "Ожидает запуска обработчика"
+            job.started_at = job.finished_at = None
+            job.save()
+    return redirect(reverse("integrations:avito") + "#required-actions")
+
+
+@require_GET
+@permission_required_any("integrations.view_avito_integration")
+def required_actions_status(request, pk):
+    job = get_object_or_404(AvitoSyncJob, pk=pk, job_type=AvitoSyncJob.JobType.STATUS_REFRESH)
+    response = JsonResponse({
+        "status": job.status, "phase": job.phase, "error": job.last_error,
+        "retry_at": timezone.localtime(job.run_after).strftime("%d.%m.%Y %H:%M")
+        if job.status == AvitoSyncJob.Status.PENDING and job.attempts else "",
+    })
+    response["Cache-Control"] = "no-store"
+    return response
 
 
 @require_POST

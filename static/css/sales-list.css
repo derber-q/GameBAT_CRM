@@ -1,0 +1,14 @@
+.sales-pages { margin-bottom: 18px; flex-wrap: wrap; }
+.sales-pages [aria-current="page"] { border-color: var(--gb-primary); font-weight: 700; }
+.sales-type-group { margin-bottom: 20px; scroll-margin-top: 20px; }
+.sales-list-table th, .sales-list-table td { padding: 10px 8px; }
+.sales-list-table .sale-note { min-width: 120px; max-width: 240px; overflow-wrap: anywhere; white-space: normal; }
+.sale-status { display: inline-block; padding: 8px 11px; min-height: 38px; border: 1px solid; border-radius: 7px; font-size: 14px; font-weight: 700; line-height: 20px; white-space: nowrap; }
+select.sale-status { width: auto; min-width: 145px; cursor: pointer; }
+.sale-status-created { background: #e7ebef; color: #354458; border-color: #a7b2c0; }
+.sale-status-assembled { background: #dfecff; color: #174d8a; border-color: #83ade0; }
+.sale-status-shipped { background: #fff0d5; color: #875000; border-color: #dfb057; }
+.sale-status-delivered, .sale-status-paid { background: #dbf2e5; color: #1c6140; border-color: #7fb79a; }
+.sale-status-unpaid, .sale-status-cancelled { background: #fbe0e5; color: #922438; border-color: #d38c99; }
+.sale-status:disabled { opacity: .65; cursor: wait; }
+#sales-status-message { min-height: 1.5em; position: sticky; top: 8px; z-index: 5; background: var(--gb-surface); border-radius: 6px; padding: 8px; }

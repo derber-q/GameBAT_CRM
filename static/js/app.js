@@ -14,7 +14,7 @@
 
   function scannerCanStartFrom(target) {
     if (!(target instanceof Element)) return true;
-    if (target.matches("[data-global-barcode-search-input], [data-sale-barcode-input]")) return true;
+    if (target.matches("[data-global-barcode-search-input], [data-sale-barcode-input], [data-consignment-barcode-input]")) return true;
     if (target.matches("textarea, [contenteditable='true']")) return false;
     if (!target.matches("input")) return true;
     return ["number", "range", "checkbox", "radio", "button", "submit"].includes(target.type);
@@ -315,7 +315,10 @@
       if (changed === platform && platform.value) {
         brand.value = "";
         productType.value = "";
-      } else if (changed === gameSeries && gameSeries.value) {
+      // На некоторых страницах серии нет; при начальной синхронизации changed
+      // тоже null. Проверка элемента нужна до чтения value, иначе сломается
+      // дальнейшее подключение сворачивания и глобального сканера.
+      } else if (gameSeries && changed === gameSeries && gameSeries.value) {
         brand.value = "";
         productType.value = "";
       } else if ((changed === brand || changed === productType) && changed.value) {

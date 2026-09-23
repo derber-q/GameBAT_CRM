@@ -13,7 +13,7 @@ from .audit import changed_snapshots, field_change, product_snapshot, record_pro
 from .models import CD, ProductChangeEvent, Tech
 from .nomenclature_forms import CDCardForm, TechCardForm, barcode_formset, product_version
 from .product_identifiers import ensure_product_article, save_barcode_formset
-from .product_fields import CD_CARD_FIELDS, PRICE_FIELDS, TECH_CARD_FIELDS
+from .product_fields import CD_CARD_FIELDS, PRICING_FIELDS, TECH_CARD_FIELDS
 
 logger = logging.getLogger("gamebat.business")
 
@@ -191,8 +191,8 @@ def update_product_card(*, actor, product_kind, product_id, data, barcode_data=N
         return ProductUpdateResult(product=product, form=form)
 
     product = form.save(commit=False)
-    card_fields = [field for field in product_fields if field not in PRICE_FIELDS]
-    price_fields = [field for field in product_fields if field in PRICE_FIELDS]
+    card_fields = [field for field in product_fields if field not in PRICING_FIELDS]
+    price_fields = [field for field in product_fields if field in PRICING_FIELDS]
     if card_fields:
         product.save(update_fields=tuple(card_fields))
     if price_fields:

@@ -1,7 +1,7 @@
 {% extends "base.html" %}
-{% load static %}
+{% load static l10n %}
 {% block title %}{{ product.name }} · Номенклатура · ReSOURCE{% endblock %}
-{% block extra_head %}<script src="{% static 'js/storage-locations.js' %}?v=storage-locations-2" defer></script><script src="{% static 'js/barcode-formset.js' %}?v=multiple-barcodes-1" defer></script>{% endblock %}
+{% block extra_head %}<script src="{% static 'js/storage-locations.js' %}?v=storage-locations-2" defer></script><script src="{% static 'js/barcode-formset.js' %}?v=multiple-barcodes-1" defer></script><script src="{% static 'js/pricing.js' %}?v=price-control-2" defer></script>{% endblock %}
 {% block content %}
 <div class="page-heading">
   <div>
@@ -14,7 +14,7 @@
 </div>
 
 {% if can_change_barcode and not product.is_archived %}<form id="barcode-generate-form" method="post" action="{% url 'nomenclature:barcode_generate' product_kind product.pk %}">{% csrf_token %}</form>{% endif %}
-<form method="post" class="product-card-form">
+<form method="post" class="product-card-form" data-price-row data-cost="{{ product.cost|default_if_none:''|unlocalize }}">
   {% csrf_token %}
   {{ form.version }}
   {% if form.non_field_errors %}<div class="alert alert-error">{{ form.non_field_errors }}</div>{% endif %}

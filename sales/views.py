@@ -1,15 +1,19 @@
 from django.contrib import messages
 from django.core.exceptions import ValidationError
+from django.db import transaction, OperationalError
+from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.template.loader import render_to_string
 from django.views.decorators.http import require_POST
 
 from core.decorators import permission_required_all, permission_required_any
 from price.excel import import_wholesale_price_to_sale
 from .forms import SaleCreateForm, WholesalePriceImportForm
 from .models import Sale
+from .listing import list_groups, sales_queryset, status_context
 from .services import (
     advance_order_status, cancel_sale, create_sale, edit_postpay_sale_items,
-    mark_sale_paid, update_sale_note,
+    mark_sale_paid, update_sale_note, next_order_status,
 )
 
 
@@ -38,24 +42,71 @@ def _parse_lines(post):
 
 @permission_required_any("sales.view_sales")
 def sale_list(request):
-    queryset = Sale.objects.select_related(
-        "warehouse", "created_by", "consignment_platform"
-    ).prefetch_related("cd_items", "tech_items")
-    completed = queryset.filter(
-        order_status=Sale.OrderStatus.DELIVERED,
-        payment_status=Sale.PaymentStatus.PAID,
-        cancelled_at__isnull=True,
-    ) if (request.user.is_superuser or request.user.has_perm("sales.view_completed_sales")) else []
-    incomplete = queryset.filter(cancelled_at__isnull=True).exclude(
-        order_status=Sale.OrderStatus.DELIVERED, payment_status=Sale.PaymentStatus.PAID
-    )
-    cancelled = queryset.filter(cancelled_at__isnull=False)
-    return render(request, "sales/list.html", {
-        "incomplete_sales": incomplete,
-        "completed_sales": completed,
-        "cancelled_sales": cancelled,
-        "can_view_completed": request.user.is_superuser or request.user.has_perm("sales.view_completed_sales"),
+    return _sale_list_page(request, 'incomplete', 'Незавершённые продажи')
+
+
+def _sale_list_page(request, state, title):
+    return render(request, 'sales/list.html', {
+        'state': state, 'page_title': title, 'groups': list_groups(request, state),
     })
+
+
+@permission_required_all('sales.view_sales', 'sales.view_completed_sales')
+def sale_completed_list(request):
+    return _sale_list_page(request, 'completed', 'Завершённые продажи')
+
+
+@permission_required_any('sales.view_sales')
+def sale_cancelled_list(request):
+    return _sale_list_page(request, 'cancelled', 'Отменённые продажи')
+
+
+def _status_response(request, pk, success, message, status=200):
+    sale = sales_queryset().filter(pk=pk).first()
+    data = {'success': success, 'message': message}
+    if sale:
+        data.update(
+            order_status=sale.order_status, payment_status=sale.payment_status,
+            is_completed=sale.is_completed, is_cancelled=sale.is_cancelled,
+            version=sale.updated_at.isoformat(),
+            row_html=render_to_string('sales/_list_row.html', {
+                'row': status_context(sale, request.user), 'state': 'incomplete',
+            }, request=request),
+        )
+    return JsonResponse(data, status=status)
+
+
+@require_POST
+@permission_required_any('sales.view_sales')
+def sale_inline_status(request, pk):
+    field = request.POST.get('field')
+    permission = {'order': 'sales.advance_order_status', 'payment': 'sales.mark_sale_paid'}.get(field)
+    if not permission:
+        return _status_response(request, pk, False, 'Неизвестный статус.', 400)
+    if not (request.user.is_superuser or request.user.has_perm(permission)):
+        return _status_response(request, pk, False, 'Недостаточно прав для изменения статуса.', 403)
+    if request.POST.get('confirmed') != '1':
+        return _status_response(request, pk, False, 'Подтвердите изменение статуса.', 400)
+    try:
+        with transaction.atomic():
+            sale = Sale.objects.select_for_update().get(pk=pk)
+            if sale.is_cancelled or sale.is_completed:
+                return _status_response(request, pk, False, 'Продажа уже завершена или отменена.', 409)
+            if request.POST.get('version') != sale.updated_at.isoformat():
+                return _status_response(request, pk, False, 'Продажа изменена другим пользователем. Проверьте актуальные данные и повторите действие.', 409)
+            if field == 'order':
+                advance_order_status(actor=request.user, sale_id=pk, next_status=request.POST.get('value', ''))
+            else:
+                if request.POST.get('value') != Sale.PaymentStatus.PAID:
+                    raise ValidationError('Этот переход статуса оплаты недопустим.')
+                mark_sale_paid(actor=request.user, sale_id=pk, cash_received_amount=request.POST.get('cash_received_amount'))
+    except Sale.DoesNotExist:
+        return JsonResponse({'success': False, 'message': 'Продажа не найдена.'}, status=404)
+    except ValidationError as exc:
+        return _status_response(request, pk, False, ' '.join(exc.messages), 400)
+    except OperationalError:
+        return _status_response(request, pk, False, 'База занята другим изменением. Проверьте статус и повторите действие.', 409)
+    return _status_response(request, pk, True, 'Статус сохранён.')
 
 
 @permission_required_any("sales.create_sale")
@@ -133,11 +184,13 @@ def sale_detail(request, pk):
          "quantity": item.quantity, "unit_price": item.unit_price, "line_total": item.line_total}
         for item in sale.tech_items.all()
     ]
-    next_status = {
-        Sale.OrderStatus.CREATED: (Sale.OrderStatus.ASSEMBLED, "Отметить как собранный"),
-        Sale.OrderStatus.ASSEMBLED: (Sale.OrderStatus.SHIPPED, "Отметить как отправленный"),
-        Sale.OrderStatus.SHIPPED: (Sale.OrderStatus.DELIVERED, "Отметить как доставленный"),
-    }.get(sale.order_status)
+    next_order = next_order_status(sale)
+    labels = {
+        Sale.OrderStatus.ASSEMBLED: "Отметить как собранный",
+        Sale.OrderStatus.SHIPPED: "Отметить как отправленный",
+        Sale.OrderStatus.DELIVERED: "Отметить как доставленный",
+    }
+    next_status = (next_order, labels[next_order]) if next_order else None
     if sale.is_cancelled or not (request.user.is_superuser or request.user.has_perm("sales.advance_order_status")):
         next_status = None
     cash_transactions = []

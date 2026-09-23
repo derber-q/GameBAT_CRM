@@ -7,6 +7,7 @@ from django.contrib.auth import update_session_auth_hash
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.forms import PasswordChangeForm
 from django.contrib.auth.models import Group
+from django.db.models import Prefetch
 from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
@@ -31,6 +32,22 @@ def superuser_required(view_func):
 @superuser_required
 def user_list(request):
     return render(request, "accounts/user_list.html", {"users": User.objects.prefetch_related("groups")})
+
+
+@superuser_required
+def staff_by_group(request):
+    """Обзор сотрудников по реальным группам прав с доступом как у списка пользователей."""
+    users = User.objects.order_by("full_name", "username", "pk")
+    # Предзагрузка исключает запрос на каждую группу. При нескольких членствах
+    # один сотрудник намеренно присутствует в каждой соответствующей таблице.
+    groups = Group.objects.order_by("name", "pk").prefetch_related(
+        Prefetch("user_set", queryset=users)
+    )
+    ungrouped_users = users.filter(groups__isnull=True)
+    return render(request, "accounts/staff_by_group.html", {
+        "groups": groups,
+        "ungrouped_users": ungrouped_users,
+    })
 
 
 @superuser_required

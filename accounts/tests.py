@@ -36,6 +36,29 @@ class AuthenticationAndPermissionTests(TestCase):
         self.assertEqual(self.client.get(reverse("accounts:user_update", args=(self.worker.pk,))).status_code, 200)
         self.assertEqual(self.client.get(reverse("accounts:permission_set_create")).status_code, 200)
 
+    def test_staff_page_groups_users_dynamically_and_keeps_multiple_memberships(self):
+        group_one = Group.objects.create(name="Администраторы")
+        group_two = Group.objects.create(name="Разработчики")
+        Group.objects.create(name="Пустая группа")
+        self.worker.groups.add(group_one, group_two)
+        self.client.force_login(self.admin)
+
+        response = self.client.get(reverse("accounts:staff_by_group"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Администраторы")
+        self.assertContains(response, "Разработчики")
+        self.assertContains(response, "Пустая группа")
+        self.assertContains(response, "Нет пользователей.")
+        profile_link = reverse("accounts:user_detail", args=(self.worker.pk,))
+        self.assertEqual(response.content.decode().count(f'href="{profile_link}"'), 2)
+        self.assertContains(response, "Без группы")
+        self.assertContains(response, self.admin.username)
+
+    def test_staff_page_is_denied_to_non_superuser(self):
+        self.client.force_login(self.worker)
+        self.assertEqual(self.client.get(reverse("accounts:staff_by_group")).status_code, 403)
+
     def test_worker_with_admin_panel_permission_still_cannot_open_user_admin(self):
         self.worker.user_permissions.add(
             permission("core", "access_admin_panel"), permission("accounts", "view_user")

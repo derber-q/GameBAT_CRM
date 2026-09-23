@@ -170,7 +170,10 @@ def _form_sections(form, product_kind):
         {"title": "Описание и комментарий", "fields": [form[name] for name in ("description", "comment")]},
         {
             "title": "Коммерческая информация",
-            "fields": [form[name] for name in ("avito_price", "wholesale_price", "yandex_market_price")],
+            "fields": [form[name] for name in (
+                "avito_price", "avito_markup_from_wholesale",
+                "yandex_market_price", "yandex_markup_from_wholesale", "wholesale_price",
+            )],
         },
     ]
 

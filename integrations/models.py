@@ -198,6 +198,7 @@ class AvitoSyncJob(models.Model):
         RECONCILE = "reconcile", "Контрольная сверка"
         REFRESH = "refresh", "Обновление объявлений"
         MANUAL = "manual", "Ручная сверка"
+        STATUS_REFRESH = "status_refresh", "Обновление статусов объявлений"
 
     class Status(models.TextChoices):
         PENDING = "pending", "Ожидает"

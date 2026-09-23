@@ -85,7 +85,7 @@ class ProductBrowsingTests(TestCase):
                 response = self.client.get(url)
                 self.assertContains(response, "data-global-barcode-search")
                 self.assertContains(response, "data-global-barcode-search-input")
-                self.assertContains(response, "app.js?v=global-barcode-1")
+                self.assertContains(response, "app.js?v=collapse-fix-3")
 
     def test_platform_filter_returns_only_matching_cd_on_every_page(self):
         for url in self.urls:

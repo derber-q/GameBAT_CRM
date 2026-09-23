@@ -57,7 +57,12 @@ def crm_header(request):
             "suppliers": authenticated and (user.is_superuser or user.has_perm("partners.view_supplier")),
             "pricing": authenticated and (user.is_superuser or user.has_perm("pricing.view_pricing")),
             "price": authenticated and (user.is_superuser or user.has_perm("price.view_price_page")),
-            "sales": authenticated and (user.is_superuser or user.has_perm("sales.view_sales")),
+            "sales": authenticated and (
+                user.is_superuser
+                or user.has_perm("sales.view_sales")
+                or user.has_perm("sales.create_sale")
+                or cash_access
+            ),
             "statistics": authenticated and (user.is_superuser or user.has_perm("sales.view_sales_statistics")),
             "orders": authenticated and (user.is_superuser or user.has_perm("orders.view_orders")),
             "integrations": authenticated and (
@@ -72,6 +77,7 @@ def crm_header(request):
                 user.is_superuser or user.has_perm("integrations.view_avito_integration")
             ),
             "users": authenticated and user.is_superuser,
+            "stuf": authenticated and user.is_superuser,
             "admin": authenticated and (user.is_superuser or user.has_perm("core.access_admin_panel")),
         },
     }

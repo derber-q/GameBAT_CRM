@@ -34,7 +34,10 @@ def _configuration(product_type):
 
 def _positive_quantity(value):
     try:
-        quantity = int(value)
+        text = str(value).strip()
+        if not text.isdecimal():
+            raise ValueError
+        quantity = int(text)
     except (TypeError, ValueError) as exc:
         raise ValidationError("Количество должно быть целым числом.") from exc
     if quantity <= 0:
@@ -119,7 +122,7 @@ def transfer_many_to_consignment(*, actor, warehouse_id, platform_id, lines):
         consignment_stocks.update({
             (product_type, getattr(stock, f"{product_field}_id")): stock
             for stock in consignment_model.objects.select_for_update().filter(
-                warehouse=warehouse, platform=platform, **{f"{product_field}_id__in": ids}
+                warehouse=warehouse, platform=platform, lot_key="", **{f"{product_field}_id__in": ids}
             ).order_by(product_field)
         })
     if len(products) != len(prepared):
@@ -248,6 +251,7 @@ def transfer_to_consignment(
     return stock_model.objects.get(
         warehouse_id=warehouse_id,
         platform_id=platform_id,
+        lot_key="",
         **{f"{product_field}_id": product_id},
     )
 
@@ -291,18 +295,22 @@ def update_consignment_reward(*, actor, product_type, stock_id, value):
 
 
 @transaction.atomic
-def return_from_consignment(*, actor, warehouse_id, platform_id, product_type, product_id, quantity):
+def return_from_consignment(*, actor, warehouse_id, platform_id, product_type, product_id, quantity,
+                            target_warehouse_id=None, stock_id=None):
+    """Return a specific source lot to the chosen warehouse; legacy callers default to the source."""
     quantity = _positive_quantity(quantity)
     product_model, consignment_model, warehouse_stock_model, _, product_field = _configuration(product_type)
     try:
-        warehouse = Warehouse.objects.select_for_update().get(pk=warehouse_id)
+        warehouse = Warehouse.objects.select_for_update().get(
+            pk=target_warehouse_id if target_warehouse_id is not None else warehouse_id)
         product = product_model.objects.active().select_for_update().get(pk=product_id)
         stock = consignment_model.objects.select_for_update().select_related("platform").get(
-            warehouse=warehouse,
+            warehouse_id=warehouse_id,
             platform_id=platform_id,
             **{f"{product_field}_id": product_id},
+            **({"pk": stock_id} if stock_id is not None else {"lot_key": ""}),
         )
-    except (Warehouse.DoesNotExist, product_model.DoesNotExist, consignment_model.DoesNotExist) as exc:
+    except (Warehouse.DoesNotExist, product_model.DoesNotExist, consignment_model.DoesNotExist, TypeError, ValueError) as exc:
         raise ValidationError("На выбранной площадке такого товара с этого склада нет.") from exc
     if stock.quantity < quantity:
         raise ValidationError(f"На выбранной площадке находится только {stock.quantity} единиц товара.")
@@ -314,6 +322,7 @@ def return_from_consignment(*, actor, warehouse_id, platform_id, product_type, p
         warehouse_stock = warehouse_stock_model(warehouse=warehouse, **{product_field: product})
     old_warehouse_quantity = warehouse_stock.quantity
     old_consignment_quantity = product.quantity_on_consignment
+    old_row_quantity = stock.quantity
     stock.quantity -= quantity
     product.quantity_on_consignment -= quantity
     warehouse_stock.quantity += quantity
@@ -352,6 +361,11 @@ def return_from_consignment(*, actor, warehouse_id, platform_id, product_type, p
         action_object_id=movement.pk,
         action_label=movement.action_label,
         changes=[
+            field_change(
+                field_name=f"consignment_stock_{product_type}_{stock.pk}",
+                field_label=f"На реализации: {stock.platform.name} (склад-источник #{stock.warehouse_id})",
+                old_value=old_row_quantity, new_value=stock.quantity,
+            ),
             stock_change(
                 warehouse=warehouse,
                 old_quantity=old_warehouse_quantity,

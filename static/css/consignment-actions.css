@@ -1,0 +1,4 @@
+/* .field uses display:grid globally, so hidden dialog fields need an explicit rule. */
+#consignment-action-dialog [hidden],
+.consignment-product-group[hidden],
+[data-platform-empty][hidden] { display: none !important; }

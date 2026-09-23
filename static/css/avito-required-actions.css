@@ -1,0 +1,12 @@
+.avito-actions-table { width: 100%; table-layout: fixed; }
+.avito-actions-table .action-listing { width: 34%; }
+.avito-actions-table .action-product { width: 34%; }
+.avito-actions-table .action-stock { width: 10%; }
+.avito-actions-table .action-label { width: 22%; }
+.avito-actions-table th, .avito-actions-table td { white-space: normal; overflow-wrap: anywhere; }
+.avito-actions-table small { display: block; margin-top: 4px; }
+.avito-actions-table td.avito-action-unpublish { background: #f8e4e5; color: #882e33; border-left: 3px solid var(--gb-danger); font-weight: 700; }
+.avito-actions-table td.avito-action-publish { background: #def2e7; color: #205e40; border-left: 3px solid var(--gb-success); font-weight: 700; }
+@media (max-width: 600px) {
+  .avito-actions-table th, .avito-actions-table td { padding: 8px 4px; font-size: 12px; }
+}

@@ -67,6 +67,8 @@ staticfiles/
 .integration-encryption-key
 backups/
 reports/
+outputs/
+node_modules/
 
 # Flask stuff:
 instance/

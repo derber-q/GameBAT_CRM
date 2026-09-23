@@ -5,7 +5,7 @@ from decimal import InvalidOperation
 
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
-from django.db.models import Sum
+from django.db.models import Q, Sum
 from django.utils import timezone
 
 from .client import AvitoAPIError, AvitoClient
@@ -124,7 +124,10 @@ def get_or_create_profile(product, product_kind):
     return profile
 
 
-def global_stock(profile):
+def global_stock(profile, *, stock_totals=None):
+    """Доступный для Avito физический запас: сумма складов, без реализации и пути."""
+    if stock_totals is not None:
+        return int(stock_totals.get((profile.product_kind, profile.product_id), 0))
     return int(profile.product.warehouse_stocks.aggregate(total=Sum("quantity"))["total"] or 0)
 
 
@@ -187,7 +190,7 @@ def update_profile(*, profile, data, actor=None, refresh_schema=False):
     return profile
 
 
-def refresh_remote_listings():
+def refresh_remote_listings(*, check_linked_statuses=False):
     client = AvitoClient()
     # Список Avito иногда возвращает неполную пагинацию. Два независимых
     # прохода и объединение ID не позволят одному короткому ответу скрыть товар.
@@ -205,7 +208,7 @@ def refresh_remote_listings():
                     continue
             if len(resources) < 100:
                 break
-    if not found and AvitoListingConnection.objects.exists():
+    if not found and not check_linked_statuses and AvitoListingConnection.objects.exists():
         raise AvitoAPIError("Avito вернул пустой список при наличии связанных объявлений.", "temporary")
     now = timezone.now()
     for item_id, item in found.items():
@@ -232,11 +235,22 @@ def refresh_remote_listings():
     if credential and credential.account_id:
         # Absence from the paginated list is not proof of deletion: archived
         # listings must remain visible. Ask the item endpoint for its status.
-        for listing in missing.filter(connection__isnull=True).exclude(status__iexact="removed"):
+        candidates = missing.exclude(status__iexact="removed")
+        if not check_linked_statuses:
+            candidates = candidates.filter(connection__isnull=True)
+        else:
+            # Linked removed items may also have changed since the last check.
+            candidates = missing.filter(Q(connection__isnull=False) | ~Q(status__iexact="removed"))
+        for listing in candidates:
             try:
                 details = client.get_item_details(credential.account_id, listing.avito_item_id)
             except AvitoAPIError as exc:
                 if exc.status == 404:
+                    if check_linked_statuses and AvitoListingConnection.objects.filter(remote_listing=listing).exists():
+                        raise AvitoAPIError(
+                            f"Не удалось проверить статус объявления №{listing.avito_item_id}: Avito вернул HTTP 404.",
+                            "remote_state", 404,
+                        ) from exc
                     continue  # Unknown/inaccessible is not a confirmed deletion.
                 raise
             status = str(details.get("status") or "").strip().lower()
@@ -244,7 +258,14 @@ def refresh_remote_listings():
                 listing.status = status
                 if status != "removed":
                     listing.missing_since = None
-                listing.save(update_fields=("status", "missing_since"))
+                listing.last_seen_at = now
+                if details.get("url"):
+                    listing.url = str(details["url"])[:1000]
+                listing.save(update_fields=("status", "missing_since", "last_seen_at", "url"))
+            elif check_linked_statuses:
+                raise AvitoAPIError(f"Avito не вернул статус объявления №{listing.avito_item_id}.", "temporary")
+    elif check_linked_statuses and missing.filter(connection__isnull=False).exists():
+        raise AvitoAPIError("Не указан аккаунт Avito для проверки статусов связанных объявлений.", "auth")
     return len(found)
 
 

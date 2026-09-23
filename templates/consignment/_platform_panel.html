@@ -1,7 +1,7 @@
 <section class="panel inventory-section collapsible-section consignment-platform">
   <button class="section-heading section-toggle" type="button" aria-expanded="true" aria-controls="consignment-platform-{{ presentation.platform.pk }}" data-collapse-toggle>
     <span class="section-title"><span class="category-tag">Площадка</span><span class="section-name">{{ presentation.platform.name }}</span></span>
-    <span class="section-heading-meta"><span class="count">{{ presentation.count }} поз.</span><span class="collapse-indicator" aria-hidden="true">▼</span></span>
+    <span class="section-heading-meta"><span class="count" data-platform-count>{{ presentation.count }} поз.</span><span class="collapse-indicator" aria-hidden="true">▼</span></span>
   </button>
   <div id="consignment-platform-{{ presentation.platform.pk }}" class="collapsible-content consignment-platform-content">
     {% if presentation.cd_groups %}
@@ -16,8 +16,6 @@
         {% include "consignment/_stock_group.html" with group=group rows=rows product_kind="tech" sales_platform=presentation.platform %}
       {% endfor %}
     {% endif %}
-    {% if not presentation.cd_groups and not presentation.tech_groups %}
-      <p class="empty-cell">На площадке нет товаров.</p>
-    {% endif %}
+    <p class="empty-cell" data-platform-empty {% if presentation.count %}hidden{% endif %}>{% if filter_state.is_active %}Товары не найдены.{% else %}На площадке нет товаров.{% endif %}</p>
   </div>
 </section>

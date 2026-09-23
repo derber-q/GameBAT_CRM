@@ -1,8 +1,8 @@
 from collections import defaultdict
-from decimal import Decimal
 
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied, ValidationError
+from django.http import JsonResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_POST
@@ -15,6 +15,7 @@ from catalog.product_filters import (
 )
 from core.decorators import permission_required_any
 from .services import update_product_prices, update_supplier_price
+from .warnings import product_price_warnings
 
 
 def _pricing_destination(request):
@@ -38,20 +39,14 @@ def pricing_list(request):
         cd_groups[product.platform].append({
             "type": "cd",
             "product": product,
-            "avito_low_margin": (
-                product.avito_price is not None
-                and product.avito_price - product.cost < Decimal("200.00")
-            ),
+            "warnings": product_price_warnings(product),
         })
     tech_groups = defaultdict(list)
     for product in tech_items:
         tech_groups[product.product_type].append({
             "type": "tech",
             "product": product,
-            "avito_low_margin": (
-                product.avito_price is not None
-                and product.avito_price - product.cost < Decimal("200.00")
-            ),
+            "warnings": product_price_warnings(product),
         })
     context = {
         "query": filters.search,
@@ -71,15 +66,20 @@ def pricing_list(request):
     "pricing.change_retail_price", "pricing.change_wholesale_price", "pricing.change_yandex_market_price"
 )
 def product_prices_update(request):
+    ajax = request.headers.get("X-Requested-With") == "XMLHttpRequest"
     field_permissions = {
         "avito_price": "pricing.change_retail_price",
         "wholesale_price": "pricing.change_wholesale_price",
         "yandex_market_price": "pricing.change_yandex_market_price",
+        "avito_markup_from_wholesale": "pricing.change_retail_price",
+        "yandex_markup_from_wholesale": "pricing.change_yandex_market_price",
     }
     changes = {}
     for field, permission in field_permissions.items():
         if field in request.POST:
             if not (request.user.is_superuser or request.user.has_perm(permission)):
+                if ajax:
+                    return JsonResponse({"ok": False, "message": "У вас нет доступа к изменению этой цены."}, status=403)
                 raise PermissionDenied("У вас нет доступа к изменению этой цены.")
             changes[field] = request.POST[field]
     try:
@@ -90,8 +90,12 @@ def product_prices_update(request):
             changes=changes,
         )
     except ValidationError as exc:
+        if ajax:
+            return JsonResponse({"ok": False, "message": " ".join(exc.messages)}, status=400)
         messages.error(request, " ".join(exc.messages))
     else:
+        if ajax:
+            return JsonResponse({"ok": True, "message": "Сохранено"})
         messages.success(request, "Продажные цены сохранены.")
     return _pricing_destination(request)
 

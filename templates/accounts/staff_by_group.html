@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}stuf · ReSOURCE{% endblock %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">Администрирование</p><h1>stuf</h1><p class="muted">Пользователи CRM, сгруппированные по наборам прав.</p></div><div class="heading-actions"><a class="button button-secondary" href="{% url 'accounts:user_list' %}">Управление пользователями</a></div></div>
+
+{% for group in groups %}
+<section class="panel table-panel">
+  <div class="section-heading"><h2>{{ group.name }}</h2><span class="count">{{ group.user_set.all|length }} чел.</span></div>
+  <div class="table-scroll"><table><thead><tr><th>Ф.И.О.</th><th>Логин</th><th>Телефон</th><th>Email</th><th>Telegram</th><th>Статус</th></tr></thead><tbody>
+  {% for item in group.user_set.all %}<tr><td>{{ item.full_name|default:"—" }}</td><td><a href="{% url 'accounts:user_detail' item.pk %}">{{ item.username }}</a></td><td>{{ item.phone_1|default:"—" }}</td><td>{{ item.email|default:"—" }}</td><td>{{ item.telegram|default:"—" }}</td><td><span class="status-dot {% if item.is_active %}is-active{% endif %}"></span>{% if item.is_active %}Активен{% else %}Заблокирован{% endif %}</td></tr>{% empty %}<tr><td colspan="6" class="empty-cell">Нет пользователей.</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+{% endfor %}
+
+{% if ungrouped_users %}
+<section class="panel table-panel">
+  <div class="section-heading"><h2>Без группы</h2><span class="count">{{ ungrouped_users|length }} чел.</span></div>
+  <div class="table-scroll"><table><thead><tr><th>Ф.И.О.</th><th>Логин</th><th>Телефон</th><th>Email</th><th>Telegram</th><th>Статус</th></tr></thead><tbody>
+  {% for item in ungrouped_users %}<tr><td>{{ item.full_name|default:"—" }}</td><td><a href="{% url 'accounts:user_detail' item.pk %}">{{ item.username }}</a></td><td>{{ item.phone_1|default:"—" }}</td><td>{{ item.email|default:"—" }}</td><td>{{ item.telegram|default:"—" }}</td><td><span class="status-dot {% if item.is_active %}is-active{% endif %}"></span>{% if item.is_active %}Активен{% else %}Заблокирован{% endif %}</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+{% endif %}
+{% endblock %}

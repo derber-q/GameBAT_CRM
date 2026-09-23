@@ -213,18 +213,21 @@ class ConsignmentServiceTests(TestCase):
         stock = self.transfer(quantity=3)
         self.client.force_login(self.user)
         list_response = self.client.get(reverse("consignment:list"))
-        sale_url = reverse("consignment:sale", args=("cd", stock.pk))
+        sale_url = reverse("consignment:row_action", args=("cd", stock.pk))
         self.assertContains(list_response, sale_url)
         self.assertContains(list_response, "Товар реализован")
 
-        get_response = self.client.get(sale_url)
-        self.assertContains(get_response, "Форма оплаты")
+        self.assertContains(list_response, "Форма оплаты")
+        from .row_actions import action_token
         response = self.client.post(sale_url, {
             "payment_method": Sale.PaymentMethod.CASH,
             "quantity": 1,
+            "action": "sold", "confirmed": "1", "token": action_token(stock, "cd", self.user),
         })
         sale = Sale.objects.get(sale_type=Sale.SaleType.CONSIGNMENT)
-        self.assertRedirects(response, reverse("sales:detail", args=(sale.pk,)))
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()['success'])
+        self.assertTrue(sale.is_completed)
 
     def test_transfer_accepts_product_with_blank_barcode(self):
         self.product.barcode = ""
@@ -247,7 +250,9 @@ class ConsignmentServiceTests(TestCase):
         )
         self.assertNotContains(response, 'name="cost"')
         self.assertContains(response, "data-consignment-barcode-feedback")
-        self.assertContains(response, "consignment-transfer.js?v=global-barcode-1")
+        self.assertContains(response, "data-consignment-barcode-input")
+        self.assertContains(response, "data-consignment-barcode-add")
+        self.assertContains(response, "consignment-transfer.js?v=consignment-barcode-2")
 
         failed_response = self.client.post(reverse("consignment:transfer"), {
             "warehouse": self.warehouse.pk,

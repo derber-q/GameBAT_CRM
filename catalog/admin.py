@@ -20,7 +20,7 @@ from .models import (
     ProductType,
     Tech,
 )
-from .product_fields import PRICE_FIELDS, card_fields_for, field_permissions_for
+from .product_fields import PRICING_FIELDS, card_fields_for, field_permissions_for
 from .product_identifiers import ensure_product_article
 
 logger = logging.getLogger("gamebat.business")
@@ -78,7 +78,7 @@ class ProductAdminMixin:
     def get_readonly_fields(self, request, obj=None):
         readonly = ["quantity_on_consignment", "cost", "is_archived"]
         for field, permission in field_permissions_for(self.model).items():
-            enforce_permission = field in PRICE_FIELDS or obj is not None
+            enforce_permission = field in PRICING_FIELDS or obj is not None
             if enforce_permission and not (
                 request.user.is_superuser or request.user.has_perm(permission)
             ):

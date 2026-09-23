@@ -50,8 +50,8 @@ class InternalPageSmokeTests(TestCase):
             reverse("supplies:create"),
             reverse("consignment:list"),
             reverse("consignment:transfer"),
-            reverse("consignment:return"),
             reverse("accounts:user_list"),
+            reverse("accounts:staff_by_group"),
             reverse("accounts:permission_sets"),
             reverse("accounts:password_change"),
             reverse("admin:index"),
@@ -71,8 +71,8 @@ class InternalPageSmokeTests(TestCase):
         html = response.content.decode()
         nav_html = html[html.index('<nav class="main-nav"'):html.index("</nav>")]
         labels = (
-            "Продажа", "Касса", "Номенклатура", "Склад", "Приход",
-            "Перемещения", "Реализация", "Ценообразование", "Поставщики", "Пользователи",
+            "Продажа", "Номенклатура", "Склад", "Приход",
+            "Перемещения", "Реализация", "Ценообразование", "stuf",
         )
         positions = [nav_html.index(f">{label}</a>") for label in labels]
 
@@ -93,6 +93,24 @@ class InternalPageSmokeTests(TestCase):
         self.assertIn("Склад Варфоломеева 265", warehouse_menu)
         self.assertIn("Склад Резервный склад", warehouse_menu)
         self.assertNotIn(">Перемещения</a>", warehouse_menu)
+
+        sales_trigger = nav_html.index(">Продажа</a>")
+        sales_menu_start = nav_html.index('<div class="nav-dropdown-menu">', sales_trigger)
+        sales_menu_end = nav_html.index("</div>", sales_menu_start)
+        sales_menu = nav_html[sales_menu_start:sales_menu_end]
+        self.assertIn(">Новая продажа</a>", sales_menu)
+        self.assertIn(">Незавершённые продажи</a>", sales_menu)
+        self.assertIn(">Завершённые продажи</a>", sales_menu)
+        self.assertIn(">Отменённые продажи</a>", sales_menu)
+        self.assertIn(">Касса</a>", sales_menu)
+
+        stuf_trigger = nav_html.index(">stuf</a>")
+        stuf_menu_start = nav_html.index('<div class="nav-dropdown-menu">', stuf_trigger)
+        stuf_menu_end = nav_html.index("</div>", stuf_menu_start)
+        stuf_menu = nav_html[stuf_menu_start:stuf_menu_end]
+        self.assertIn(">Статистика</a>", stuf_menu)
+        self.assertIn(">Пользователи</a>", stuf_menu)
+        self.assertIn(">Поставщики</a>", stuf_menu)
         sales_platform = SalesPlatform.objects.get(name="Площадка")
         self.assertContains(
             response,

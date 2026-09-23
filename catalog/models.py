@@ -1,5 +1,6 @@
 import re
 import unicodedata
+from decimal import Decimal
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -83,6 +84,8 @@ class ProductBase(models.Model):
     name = models.CharField("Название", max_length=255)
     description = models.TextField("Описание", blank=True)
     sku = models.CharField("Артикул", max_length=100, blank=True)
+    # Производный агрегат всех партий площадок; источник истины — consignment_stocks.
+    # Сервисы меняют обе стороны атомарно, verify_inventory выявляет расхождения.
     quantity_on_consignment = models.PositiveIntegerField("На реализации", default=0, editable=False)
     cost = models.DecimalField(
         "Средняя себестоимость", max_digits=20, decimal_places=2,
@@ -97,6 +100,14 @@ class ProductBase(models.Model):
     yandex_market_price = models.DecimalField(
         "Цена Яндекс Маркет", max_digits=20, decimal_places=2, null=True, blank=True,
         validators=[MinValueValidator(0)],
+    )
+    avito_markup_from_wholesale = models.DecimalField(
+        "Наценка от опта для Avito", max_digits=20, decimal_places=2,
+        default=Decimal("189.00"), null=True, blank=True, validators=[MinValueValidator(0)],
+    )
+    yandex_markup_from_wholesale = models.DecimalField(
+        "Наценка от опта для Яндекс Маркет", max_digits=20, decimal_places=2,
+        default=Decimal("189.00"), null=True, blank=True, validators=[MinValueValidator(0)],
     )
     comment = models.TextField("Комментарий", blank=True)
     is_archived = models.BooleanField("Удалён из активной номенклатуры", default=False, db_index=True)
@@ -114,14 +125,14 @@ class ProductBase(models.Model):
         return self.name
 
     def __init__(self, *args, **kwargs):
-        # Compatibility for data loaders that still pass the former scalar
-        # keyword. The database source of truth is BarcodeRegistry.
+        # Совместимость со старыми загрузчиками, передающими одиночный barcode.
+        # Источник истины в БД — BarcodeRegistry, а не это временное значение.
         self._pending_legacy_barcode = kwargs.pop("barcode", None) if "barcode" in kwargs else ...
         super().__init__(*args, **kwargs)
 
     @property
     def barcode(self):
-        """Stable first barcode for legacy integrations that require one value."""
+        """Первый штрихкод для старых потребителей, ожидающих одно значение."""
         if self._pending_legacy_barcode is not ...:
             return str(self._pending_legacy_barcode or "").strip()
         if not self.pk:
@@ -194,6 +205,8 @@ class CD(ProductBase):
             models.CheckConstraint(condition=models.Q(avito_price__gte=0) | models.Q(avito_price__isnull=True), name="cd_avito_price_nonnegative"),
             models.CheckConstraint(condition=models.Q(wholesale_price__gte=0) | models.Q(wholesale_price__isnull=True), name="cd_wholesale_price_nonnegative"),
             models.CheckConstraint(condition=models.Q(yandex_market_price__gte=0) | models.Q(yandex_market_price__isnull=True), name="cd_yandex_price_nonnegative"),
+            models.CheckConstraint(condition=models.Q(avito_markup_from_wholesale__gte=0) | models.Q(avito_markup_from_wholesale__isnull=True), name="cd_avito_markup_nonnegative"),
+            models.CheckConstraint(condition=models.Q(yandex_markup_from_wholesale__gte=0) | models.Q(yandex_markup_from_wholesale__isnull=True), name="cd_yandex_markup_nonnegative"),
             models.CheckConstraint(condition=models.Q(weight_grams__gt=0), name="cd_weight_positive"),
         ]
 
@@ -224,6 +237,8 @@ class Tech(ProductBase):
             models.CheckConstraint(condition=models.Q(avito_price__gte=0) | models.Q(avito_price__isnull=True), name="tech_avito_price_nonnegative"),
             models.CheckConstraint(condition=models.Q(wholesale_price__gte=0) | models.Q(wholesale_price__isnull=True), name="tech_wholesale_price_nonnegative"),
             models.CheckConstraint(condition=models.Q(yandex_market_price__gte=0) | models.Q(yandex_market_price__isnull=True), name="tech_yandex_price_nonnegative"),
+            models.CheckConstraint(condition=models.Q(avito_markup_from_wholesale__gte=0) | models.Q(avito_markup_from_wholesale__isnull=True), name="tech_avito_markup_nonnegative"),
+            models.CheckConstraint(condition=models.Q(yandex_markup_from_wholesale__gte=0) | models.Q(yandex_markup_from_wholesale__isnull=True), name="tech_yandex_markup_nonnegative"),
             models.CheckConstraint(
                 condition=models.Q(weight_grams__gt=0) | models.Q(weight_grams__isnull=True),
                 name="tech_weight_positive_or_null",

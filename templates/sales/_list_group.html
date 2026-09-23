@@ -1,0 +1,25 @@
+<section class="panel table-panel sales-type-group collapsible-section" id="group-{{ group.kind }}" data-sale-group="{{ group.kind }}">
+  <button class="section-heading section-toggle" type="button" aria-expanded="true" aria-controls="sales-group-{{ group.kind }}" data-collapse-toggle>
+    <span class="section-name">{{ group.label }}</span>
+    <span class="section-heading-meta"><span class="count" data-sale-count>{{ group.page.paginator.count }}</span><span class="collapse-indicator" aria-hidden="true">▼</span></span>
+  </button>
+  <div id="sales-group-{{ group.kind }}" class="collapsible-content">
+  <div class="table-scroll"><table class="sales-list-table">
+    <thead><tr>
+      <th>ID / Дата</th><th>Примечание</th><th>Склад / площадка</th><th>Позиций / единиц</th>
+      <th class="numeric">Сумма</th><th>Оплата</th><th>Статус заказа</th><th>Статус оплаты</th><th>Сотрудник</th>
+      {% if state == 'completed' %}<th>Завершена</th>{% endif %}
+      {% if state == 'cancelled' %}<th>Возвращено</th><th>Отменена / отменил</th>{% endif %}
+    </tr></thead>
+    <tbody>
+      {% for row in group.rows %}{% include "sales/_list_row.html" %}{% endfor %}
+      <tr data-sale-empty {% if group.rows %}hidden{% endif %}><td colspan="11" class="empty-cell">Нет продаж.</td></tr>
+    </tbody>
+  </table></div>
+  {% if group.page.has_other_pages %}<nav class="heading-actions" aria-label="Страницы: {{ group.label }}">
+    {% if group.previous_url %}<a href="{{ group.previous_url }}#group-{{ group.kind }}" class="button button-secondary">Назад</a>{% endif %}
+    <span>Страница {{ group.page.number }} из {{ group.page.paginator.num_pages }}</span>
+    {% if group.next_url %}<a href="{{ group.next_url }}#group-{{ group.kind }}" class="button button-secondary">Далее</a>{% endif %}
+  </nav>{% endif %}
+  </div>
+</section>

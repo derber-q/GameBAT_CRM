@@ -1,7 +1,7 @@
 """Явные формы карточек с серверной проверкой прав на каждое поле."""
 import hashlib
 import json
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from django import forms
 from django.core.exceptions import FieldDoesNotExist, ValidationError
@@ -151,6 +151,27 @@ class ProductCardFormMixin(forms.ModelForm):
         for field_name in ("description", "comment"):
             self.fields[field_name].widget.attrs.setdefault("rows", 4)
         self.can_edit = bool(self.allowed_fields)
+        for name in ("avito_markup_from_wholesale", "yandex_markup_from_wholesale"):
+            self.fields[name].help_text = "Минимальная разница с оптовой ценой, ₽. Пусто — не проверять наценку. Проверка цены ниже себестоимости остаётся."
+        from pricing.warnings import MARKUP_FOR_PRICE, price_warning
+        def money(name):
+            try:
+                value = Decimal(str(self[name].value()).replace(",", "."))
+                return value if value.is_finite() else None
+            except (InvalidOperation, TypeError, ValueError):
+                return None
+        for name in ("avito_price", "wholesale_price", "yandex_market_price"):
+            attrs = self.fields[name].widget.attrs
+            attrs["data-price-field"] = name
+            reason = price_warning(
+                price=money(name), wholesale=money("wholesale_price"), cost=self.instance.cost,
+                markup=money(MARKUP_FOR_PRICE[name]) if name in MARKUP_FOR_PRICE else None,
+            )
+            attrs["title"] = reason
+            if reason:
+                attrs["class"] = (attrs.get("class", "") + " price-warning").strip()
+        for name, markup_name in MARKUP_FOR_PRICE.items():
+            self.fields[markup_name].widget.attrs["data-markup-for"] = name
 
     def clean(self):
         cleaned_data = super().clean()

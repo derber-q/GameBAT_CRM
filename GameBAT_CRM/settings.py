@@ -1,4 +1,4 @@
-"""Настройки первой автономной версии GameBAT CRM."""
+"""Настройки ReSOURCE: локальная SQLite, серверные шаблоны и интеграция Avito."""
 import os
 from pathlib import Path
 
@@ -17,7 +17,13 @@ if not SECRET_KEY:
         SECRET_KEY = get_random_secret_key()
         local_secret_path.write_text(SECRET_KEY, encoding="utf-8")
 DEBUG = os.environ.get("DJANGO_DEBUG", "1") == "1"
-ALLOWED_HOSTS = [host for host in os.environ.get("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1,testserver").split(",") if host]
+ALLOWED_HOSTS = [
+    host.strip()
+    for host in os.environ.get(
+        "DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1,testserver,192.168.0.101"
+    ).split(",")
+    if host.strip()
+]
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -75,8 +81,8 @@ DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
         "NAME": BASE_DIR / "db.sqlite3",
-        # The web process and the Avito worker share this local SQLite file.
-        # Let short writes finish instead of failing a synchronization instantly.
+        # Сайт и обработчик Avito пишут в один SQLite-файл. Таймаут позволяет
+        # дождаться короткой записи, но не заменяет атомарность и повтор задания.
         "OPTIONS": {"timeout": 30},
     }
 }
