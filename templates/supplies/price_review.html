@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% load l10n %}
+{% block title %}Проверка цен · Поставка №{{ supply.pk }} · ReSOURCE{% endblock %}
+{% block content %}
+<div class="page-heading">
+  <div><p class="eyebrow">Обязательный этап перед балансом</p><h1>Проверка цен поставки №{{ supply.pk }}</h1><p class="muted">Пока вы не подтвердите эту страницу, количество на складе и себестоимость карточек не изменятся.</p></div>
+  <a class="button button-secondary" href="{% url 'supplies:detail' supply.pk %}">К поставке</a>
+</div>
+<form method="post" class="stacked-form">{% csrf_token %}
+  <section class="panel table-panel">
+    <div class="alert alert-info">Предупреждения о низких ценах не блокируют сохранение. Они рассчитаны по новой себестоимости.</div>
+    <div class="table-scroll"><table><thead><tr><th>Товар</th><th class="numeric">Остаток до / после</th><th class="numeric">Старая / новая себестоимость</th><th>Оптовая цена</th><th>Цена Avito</th><th>Наценка Avito</th><th>Цена Яндекс</th><th>Наценка Яндекс</th></tr></thead><tbody>
+    {% for row in rows %}{% with calc=row.calculation product=row.product %}
+      <tr>
+        <td><span class="badge">{{ calc.get_product_kind_display }}</span> <strong>{{ calc.product_name_snapshot }}</strong><br><span class="mono">{{ calc.product_sku_snapshot|default:"Без артикула" }}</span></td>
+        <td class="numeric">{{ calc.old_owned_quantity }} / <strong>{{ calc.resulting_quantity }}</strong></td>
+        <td class="numeric">{{ calc.old_unit_cost|floatformat:2 }} / <strong>{{ calc.resulting_unit_cost|floatformat:2 }}</strong></td>
+        <td><input type="number" step="0.01" min="0" name="{{ calc.product_kind }}_{{ product.pk }}_wholesale_price" value="{{ product.wholesale_price|default_if_none:''|unlocalize }}" {% if not row.editable.wholesale_price %}disabled{% endif %}>{% if row.warnings.wholesale_price %}<span class="warning-text">{{ row.warnings.wholesale_price }}</span>{% endif %}</td>
+        <td><input type="number" step="0.01" min="0" name="{{ calc.product_kind }}_{{ product.pk }}_avito_price" value="{{ product.avito_price|default_if_none:''|unlocalize }}" {% if not row.editable.avito_price %}disabled{% endif %}>{% if row.warnings.avito_price %}<span class="warning-text">{{ row.warnings.avito_price }}</span>{% endif %}</td>
+        <td><input type="number" step="0.01" min="0" name="{{ calc.product_kind }}_{{ product.pk }}_avito_markup_from_wholesale" value="{{ product.avito_markup_from_wholesale|default_if_none:''|unlocalize }}" {% if not row.editable.avito_markup_from_wholesale %}disabled{% endif %}></td>
+        <td><input type="number" step="0.01" min="0" name="{{ calc.product_kind }}_{{ product.pk }}_yandex_market_price" value="{{ product.yandex_market_price|default_if_none:''|unlocalize }}" {% if not row.editable.yandex_market_price %}disabled{% endif %}>{% if row.warnings.yandex_market_price %}<span class="warning-text">{{ row.warnings.yandex_market_price }}</span>{% endif %}</td>
+        <td><input type="number" step="0.01" min="0" name="{{ calc.product_kind }}_{{ product.pk }}_yandex_markup_from_wholesale" value="{{ product.yandex_markup_from_wholesale|default_if_none:''|unlocalize }}" {% if not row.editable.yandex_markup_from_wholesale %}disabled{% endif %}></td>
+      </tr>
+    {% endwith %}{% endfor %}
+    </tbody></table></div>
+  </section>
+  <div class="submit-bar"><div><b>Подтверждение атомарно</b><span>Цены, новая себестоимость и физический остаток будут сохранены одной операцией.</span></div><button class="button button-large" type="submit">Подтвердить цены и поставить на баланс</button></div>
+</form>
+{% endblock %}

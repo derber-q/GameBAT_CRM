@@ -1,6 +1,7 @@
 import logging
 from uuid import uuid4
 
+from django.conf import settings
 from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
@@ -11,6 +12,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
+from django.views.decorators.debug import sensitive_post_parameters
 
 from catalog.models import CD, Tech
 from core.decorators import permission_required_any
@@ -24,8 +26,14 @@ from .models import (
     AvitoRemoteListing,
     AvitoSyncJob,
     AvitoSyncLog,
+    GoogleSheetsSyncJob,
     IntegrationCredential,
+    ReefApiCredential,
 )
+from .reef_api import ReefApiError
+from .reef_settings import check_connection as check_reef_connection, save_key as save_reef_key
+from .google_sheets import get_google_sheets_integration, save_google_sheets_settings
+from .google_tasks import enqueue_google_sheets_sync
 from .queue import enqueue_periodic, enqueue_profile_sync_after_commit
 from .required_actions import get_avito_required_actions
 from .services import (
@@ -53,7 +61,73 @@ def _error_text(exc):
 def api_keys(request):
     credential = get_avito_credential()
     form = CredentialForm()
-    return render(request, "integrations/api_keys.html", {"credential": credential, "form": form})
+    google_sheets = get_google_sheets_integration()
+    google_job = GoogleSheetsSyncJob.objects.order_by("-created_at", "-pk").first()
+    return render(request, "integrations/api_keys.html", {
+        "credential": credential, "form": form, "google_sheets": google_sheets,
+        "reef_credential": ReefApiCredential.objects.filter(pk=1).first(),
+        "google_job": google_job,
+        "google_credentials_configured": bool(settings.GOOGLE_SERVICE_ACCOUNT_FILE),
+    })
+
+
+@require_POST
+@sensitive_post_parameters("api_key")
+@permission_required_any("integrations.manage_integration_credentials")
+def reef_key_save(request):
+    try:
+        save_reef_key(request.POST.get("api_key"))
+    except ValidationError as exc:
+        messages.error(request, " ".join(exc.messages))
+    else:
+        messages.success(request, "Ключ ReefAPI сохранён в зашифрованном виде.")
+    return redirect("integrations:api_keys")
+
+
+@require_POST
+@permission_required_any("integrations.manage_integration_credentials")
+def reef_connection_check(request):
+    try:
+        check_reef_connection()
+    except ReefApiError as exc:
+        messages.error(request, str(exc))
+    else:
+        messages.success(request, "Подключение к ReefAPI работает.")
+    return redirect("integrations:api_keys")
+
+
+@require_POST
+@permission_required_any("integrations.manage_integration_credentials")
+def google_sheets_settings_save(request):
+    try:
+        save_google_sheets_settings(
+            spreadsheet_url=request.POST.get("spreadsheet_url"),
+            sheet_name=request.POST.get("sheet_name"),
+            enabled=request.POST.get("enabled") == "on",
+        )
+    except ValidationError as exc:
+        messages.error(request, " ".join(exc.messages))
+    else:
+        messages.success(request, "Параметры Google Sheets сохранены.")
+    return redirect("integrations:api_keys")
+
+
+@require_POST
+@permission_required_any("integrations.manual_google_sheets_sync")
+def google_sheets_sync(request):
+    integration = get_google_sheets_integration()
+    if not settings.GOOGLE_SERVICE_ACCOUNT_FILE:
+        messages.error(request, "На сервере не задан GOOGLE_SERVICE_ACCOUNT_FILE.")
+    elif not integration.enabled:
+        messages.error(request, "Синхронизация Google Sheets отключена.")
+    else:
+        job = enqueue_google_sheets_sync(requested_by=request.user, manual=True)
+        logger.info(
+            "Ручная синхронизация Google Sheets поставлена в очередь: user_id=%s job_id=%s",
+            request.user.pk, job.pk,
+        )
+        messages.success(request, "Синхронизация поставлена в очередь.")
+    return redirect("integrations:api_keys")
 
 
 @require_POST

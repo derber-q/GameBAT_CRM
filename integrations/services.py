@@ -128,7 +128,8 @@ def global_stock(profile, *, stock_totals=None):
     """Доступный для Avito физический запас: сумма складов, без реализации и пути."""
     if stock_totals is not None:
         return int(stock_totals.get((profile.product_kind, profile.product_id), 0))
-    return int(profile.product.warehouse_stocks.aggregate(total=Sum("quantity"))["total"] or 0)
+    from warehouse.inventory import global_stock as product_global_stock
+    return product_global_stock(profile.product)
 
 
 def validate_profile(profile):

@@ -55,6 +55,57 @@ class IntegrationCredential(models.Model):
         return self.get_provider_display()
 
 
+class ReefApiCredential(models.Model):
+    encrypted_api_key = models.TextField("API key (зашифрован)", blank=True, editable=False)
+    last_checked_at = models.DateTimeField("Последняя проверка", null=True, blank=True, editable=False)
+    last_error = models.CharField("Ошибка подключения", max_length=255, blank=True, editable=False)
+    updated_at = models.DateTimeField("Обновлено", auto_now=True)
+
+    @property
+    def is_configured(self):
+        return bool(self.encrypted_api_key)
+
+    class Meta:
+        verbose_name = "ключ ReefAPI"
+        verbose_name_plural = "ключи ReefAPI"
+
+
+class AvitoPriceCheckResult(models.Model):
+    profile = models.OneToOneField(
+        "integrations.AvitoProductProfile", on_delete=models.CASCADE,
+        related_name="price_check_result", verbose_name="Профиль товара",
+    )
+    checked_at = models.DateTimeField("Время проверки")
+    offers = models.JSONField("Подходящие объявления", default=list)
+    metadata = models.JSONField("Параметры проверки", default=dict, blank=True)
+
+    class Meta:
+        verbose_name = "результат Avito Check"
+        verbose_name_plural = "результаты Avito Check"
+
+
+class AvitoCheckListingCache(models.Model):
+    ad_id = models.CharField("ID объявления", max_length=32, unique=True)
+    checked_at = models.DateTimeField("Время получения")
+    data = models.JSONField("Карточка ReefAPI", default=dict)
+
+    class Meta:
+        verbose_name = "кеш объявления Avito Check"
+        verbose_name_plural = "кеш объявлений Avito Check"
+
+
+class AvitoManualPrice(models.Model):
+    profile = models.OneToOneField("AvitoProductProfile", on_delete=models.CASCADE, related_name="manual_price")
+    price = models.DecimalField("Найденная минимальная цена", max_digits=20, decimal_places=2)
+    recorded_at = models.DateTimeField("Дата добавления")
+    recorded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
+
+    class Meta:
+        verbose_name = "найденная цена Avito"
+        verbose_name_plural = "найденные цены Avito"
+        constraints = [models.CheckConstraint(condition=Q(price__gt=0), name="avito_manual_price_positive")]
+
+
 class AvitoProductProfile(models.Model):
     class SyncStatus(models.TextChoices):
         IDLE = "idle", "Ожидает"
@@ -278,3 +329,57 @@ class IntegrationAuditEvent(models.Model):
         ordering = ("-created_at", "-id")
         verbose_name = "событие интеграции"
         verbose_name_plural = "аудит интеграций"
+
+
+class GoogleSheetsIntegration(models.Model):
+    class Status(models.TextChoices):
+        NOT_CONFIGURED = "not_configured", "Не настроено"
+        IDLE = "idle", "Ожидает"
+        QUEUED = "queued", "В очереди"
+        SYNCING = "syncing", "Синхронизация"
+        OK = "ok", "Синхронизировано"
+        ERROR = "error", "Ошибка"
+
+    spreadsheet_url = models.URLField("Ссылка на таблицу", max_length=1000)
+    spreadsheet_id = models.CharField("ID таблицы", max_length=255, editable=False)
+    sheet_name = models.CharField("Лист CRM", max_length=100, default="Прайс CRM")
+    enabled = models.BooleanField("Автоматическая синхронизация", default=True)
+    status = models.CharField("Состояние", max_length=24, choices=Status.choices, default=Status.IDLE)
+    last_attempt_at = models.DateTimeField("Последняя попытка", null=True, blank=True, editable=False)
+    last_success_at = models.DateTimeField("Последняя успешная синхронизация", null=True, blank=True, editable=False)
+    last_error = models.TextField("Последняя ошибка", blank=True, editable=False)
+    updated_at = models.DateTimeField("Обновлено", auto_now=True)
+
+    class Meta:
+        verbose_name = "интеграция Google Sheets"
+        verbose_name_plural = "интеграция Google Sheets"
+        permissions = [("manual_google_sheets_sync", "Google Sheets: ручная синхронизация")]
+
+    def __str__(self):
+        return f"Google Sheets — {self.sheet_name}"
+
+
+class GoogleSheetsSyncJob(models.Model):
+    class Status(models.TextChoices):
+        PENDING = "pending", "Ожидает"
+        RUNNING = "running", "Выполняется"
+        DONE = "done", "Выполнено"
+        ERROR = "error", "Ошибка"
+
+    dedupe_key = models.CharField("Ключ объединения", max_length=100, unique=True)
+    status = models.CharField("Статус", max_length=16, choices=Status.choices, default=Status.PENDING)
+    run_after = models.DateTimeField("Выполнить после")
+    attempts = models.PositiveSmallIntegerField("Попытки", default=0)
+    requested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="google_sheets_sync_jobs",
+    )
+    last_error = models.TextField("Последняя ошибка", blank=True)
+    started_at = models.DateTimeField("Начато", null=True, blank=True)
+    finished_at = models.DateTimeField("Завершено", null=True, blank=True)
+    created_at = models.DateTimeField("Создано", auto_now_add=True)
+    updated_at = models.DateTimeField("Обновлено", auto_now=True)
+
+    class Meta:
+        ordering = ("run_after", "id")
+        indexes = [models.Index(fields=("status", "run_after"), name="google_sheet_job_due_idx")]

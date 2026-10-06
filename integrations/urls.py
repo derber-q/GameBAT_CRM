@@ -6,8 +6,12 @@ app_name = "integrations"
 
 urlpatterns = [
     path("", views.api_keys, name="api_keys"),
+    path("reef/key/", views.reef_key_save, name="reef_key_save"),
+    path("reef/check/", views.reef_connection_check, name="reef_check"),
     path("credentials/save/", views.credentials_save, name="credentials_save"),
     path("credentials/check/", views.credentials_check, name="credentials_check"),
+    path("google-sheets/settings/", views.google_sheets_settings_save, name="google_sheets_settings"),
+    path("google-sheets/sync/", views.google_sheets_sync, name="google_sheets_sync"),
     path("avito/", views.avito_dashboard, name="avito"),
     path("avito/actions/refresh/", views.required_actions_refresh, name="required_actions_refresh"),
     path("avito/actions/<int:pk>/status/", views.required_actions_status, name="required_actions_status"),

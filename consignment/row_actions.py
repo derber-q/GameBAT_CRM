@@ -21,6 +21,7 @@ def action_token(stock, kind, user):
     return signing.dumps({
         'key': str(uuid4()), 'user': user.pk, 'kind': kind, 'stock': stock.pk,
         'quantity': stock.quantity, 'reward': str(stock.receivable_per_unit),
+        'cost': str(stock.unit_cost),
     }, salt=SALT)
 
 
@@ -47,7 +48,11 @@ def perform_row_action(*, actor, kind, stock_id, token, action, quantity,
     product = stock.cd if kind == 'cd' else stock.tech
     if product.is_archived:
         raise ValidationError('Товар находится в архиве.')
-    if stock.quantity != snapshot['quantity'] or str(stock.receivable_per_unit) != snapshot['reward']:
+    if (
+        stock.quantity != snapshot['quantity']
+        or str(stock.receivable_per_unit) != snapshot['reward']
+        or str(stock.unit_cost) != snapshot.get('cost')
+    ):
         raise ValidationError('Количество или вознаграждение уже изменились. Проверьте обновлённую строку и подтвердите заново.')
     if action == 'return':
         if not warehouse_id:

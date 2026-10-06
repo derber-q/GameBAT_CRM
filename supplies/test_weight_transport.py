@@ -151,4 +151,5 @@ class SupplyWeightTransportTests(TestCase):
         response = self.client.get(reverse("supplies:create"))
         self.assertContains(response, "Транспортные расходы по весу")
         self.assertContains(response, 'name="weight_transport_cost"')
-        self.assertContains(response, "creditors-sales-search-1")
+        self.assertContains(response, "supply-add-buttons-2")
+        self.assertContains(response, "add-supply-line", count=2)

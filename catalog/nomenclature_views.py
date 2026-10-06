@@ -1,9 +1,10 @@
 import logging
+import mimetypes
 from collections import defaultdict
 
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied, ValidationError
-from django.http import Http404
+from django.http import FileResponse, Http404
 from django.core.paginator import Paginator
 from django.db.models import Exists, IntegerField, OuterRef, Sum, Value
 from django.db.models.functions import Coalesce
@@ -13,15 +14,23 @@ from django.views.decorators.http import require_GET, require_POST
 from core.decorators import permission_required_any
 from warehouse.models import Warehouse, WarehouseTransfer
 
-from .models import BarcodeRegistry, CD, Tech
+from .models import BarcodeRegistry, CD, ProductImage, Tech
 from integrations.models import AvitoListingConnection
 from .removal import BLOCK_MESSAGES, remove_product
 from .nomenclature_forms import (
     CDCardForm, CDCreateForm, TechCardForm, TechCreateForm, barcode_formset,
 )
 from .nomenclature_services import create_product, update_product_card
+from .product_media import (
+    add_gallery_images,
+    delete_gallery_image,
+    delete_title_image,
+    product_model,
+    set_title_image,
+)
 from .product_identifiers import generate_unique_barcode, render_barcode_svg_data_url
 from .product_filters import filter_product_querysets, product_filter_context
+from .product_ordering import cd_order_key, tech_brand_groups
 
 logger = logging.getLogger("gamebat.business")
 
@@ -54,7 +63,7 @@ def nomenclature_list(request):
     cds, tech_items = filter_product_querysets(cds, tech_items, filters)
 
     platform_products = defaultdict(list)
-    for product in cds:
+    for product in sorted(cds, key=cd_order_key):
         platform_products[product.platform].append(product)
     cd_groups = []
     for platform, products in platform_products.items():
@@ -73,6 +82,7 @@ def nomenclature_list(request):
         "query": filters.search,
         "cd_groups": cd_groups,
         "tech_groups": list(tech_groups.items()),
+        "tech_brand_groups": tech_brand_groups([product for products in tech_groups.values() for product in products]),
         "can_add_cd": request.user.is_superuser or request.user.has_perm("catalog.add_cd"),
         "can_add_tech": request.user.is_superuser or request.user.has_perm("catalog.add_tech"),
         "show_game_series_filter": True,
@@ -180,14 +190,22 @@ def _form_sections(form, product_kind):
 
 def _render_detail(request, *, product, product_kind, form, barcodes=None):
     from integrations.views import product_avito_context
+    from yandex_market.models import Integration
 
     events = product.change_events.select_related("actor").prefetch_related("field_changes")
     event_page = Paginator(events, 10).get_page(request.GET.get("page"))
     can_change_barcode = request.user.is_superuser or request.user.has_perm(
         f"catalog.change_{product_kind}_barcode"
     )
+    can_change_media = not product.is_archived and (
+        request.user.is_superuser
+        or request.user.has_perm(f"catalog.change_{product_kind}_media")
+    )
+    gallery_images = list(product.catalog_images.all())
     context = {
         "product": product,
+        "yandex_links": product.yandex_connections.filter(active=True).select_related("remote_offer") if request.user.has_perm("yandex_market.view_integration") else [],
+        "yandex_integrations": Integration.objects.all() if request.user.has_perm("yandex_market.bind_offer") else [],
         "product_kind": product_kind,
         "product_kind_label": "CD" if product_kind == "cd" else "Tech",
         "form": form,
@@ -203,6 +221,15 @@ def _render_detail(request, *, product, product_kind, form, barcodes=None):
         "can_change_barcode": can_change_barcode,
         "barcode_editable": can_change_barcode and not product.is_archived,
         "barcode_formset": barcodes or barcode_formset(product=product),
+        "can_change_media": can_change_media,
+        "additional_images": [
+            image for image in gallery_images
+            if image.image_kind == ProductImage.ImageKind.ADDITIONAL
+        ],
+        "product_images": [
+            image for image in gallery_images
+            if image.image_kind == ProductImage.ImageKind.PRODUCT
+        ],
         **_stock_context(product),
         "can_delete_product": not product.is_archived and (
             request.user.is_superuser or request.user.has_perm(f"catalog.delete_{product_kind}")
@@ -217,7 +244,8 @@ def _product_detail(request, *, product_kind, product_id):
     form_class = CDCardForm if product_kind == "cd" else TechCardForm
     related_fields = ("platform", "game_series") if product_kind == "cd" else ("brand", "product_type")
     product = get_object_or_404(
-        model.objects.select_related(*related_fields).prefetch_related("barcodes"), pk=product_id,
+        model.objects.select_related(*related_fields).prefetch_related("barcodes", "catalog_images"),
+        pk=product_id,
     )
     can_change_barcode = request.user.is_superuser or request.user.has_perm(
         f"catalog.change_{product_kind}_barcode"
@@ -277,6 +305,150 @@ def cd_detail(request, pk):
 @permission_required_any("catalog.view_nomenclature")
 def tech_detail(request, pk):
     return _product_detail(request, product_kind="tech", product_id=pk)
+
+
+def _can_view_product_media(user):
+    permissions = (
+        "catalog.view_nomenclature",
+        "catalog.view_cd",
+        "catalog.view_tech",
+        "warehouse.view_global_stock",
+        "warehouse.view_warehouse_stock",
+        "pricing.view_pricing",
+    )
+    return user.is_authenticated and (
+        user.is_superuser or any(user.has_perm(permission) for permission in permissions)
+    )
+
+
+def _require_media_change(request, product_kind):
+    if product_kind not in {"cd", "tech"} or not (
+        request.user.is_superuser
+        or request.user.has_perm(f"catalog.change_{product_kind}_media")
+    ):
+        raise PermissionDenied("У вас нет права изменять изображения этого товара.")
+
+
+def _media_response(field_file):
+    try:
+        handle = field_file.open("rb")
+    except (FileNotFoundError, OSError, ValueError) as exc:
+        raise Http404("Изображение не найдено.") from exc
+    content_type = mimetypes.guess_type(field_file.name)[0] or "application/octet-stream"
+    response = FileResponse(handle, content_type=content_type)
+    response["Cache-Control"] = "private, no-cache"
+    response["X-Content-Type-Options"] = "nosniff"
+    return response
+
+
+@require_GET
+def product_title_image(request, product_kind, pk):
+    if not _can_view_product_media(request.user):
+        raise PermissionDenied("У вас нет доступа к изображениям товаров.")
+    try:
+        model = product_model(product_kind)
+    except ValidationError as exc:
+        raise Http404("Товар не найден.") from exc
+    product = get_object_or_404(model, pk=pk)
+    if not product.title_image:
+        raise Http404("Титульное фото не загружено.")
+    return _media_response(product.title_image)
+
+
+@require_GET
+def product_gallery_image(request, product_kind, pk, image_id):
+    if not _can_view_product_media(request.user):
+        raise PermissionDenied("У вас нет доступа к изображениям товаров.")
+    try:
+        product_model(product_kind)
+    except ValidationError as exc:
+        raise Http404("Изображение не найдено.") from exc
+    relation_filter = {"cd_id": pk} if product_kind == "cd" else {"tech_id": pk}
+    image = get_object_or_404(
+        ProductImage,
+        pk=image_id,
+        product_kind=product_kind,
+        **relation_filter,
+    )
+    return _media_response(image.image)
+
+
+@require_POST
+@permission_required_any("catalog.view_nomenclature")
+def product_title_upload(request, product_kind, pk):
+    _require_media_change(request, product_kind)
+    try:
+        set_title_image(
+            actor=request.user,
+            product_kind=product_kind,
+            product_id=pk,
+            upload=request.FILES.get("image"),
+        )
+    except (CD.DoesNotExist, Tech.DoesNotExist):
+        raise Http404("Товар не найден.")
+    except ValidationError as exc:
+        messages.error(request, " ".join(exc.messages))
+    else:
+        messages.success(request, "Титульное фото сохранено.")
+    return redirect(f"nomenclature:{product_kind}_detail", pk=pk)
+
+
+@require_POST
+@permission_required_any("catalog.view_nomenclature")
+def product_title_delete(request, product_kind, pk):
+    _require_media_change(request, product_kind)
+    try:
+        delete_title_image(
+            actor=request.user, product_kind=product_kind, product_id=pk,
+        )
+    except (CD.DoesNotExist, Tech.DoesNotExist):
+        raise Http404("Товар не найден.")
+    except ValidationError as exc:
+        messages.error(request, " ".join(exc.messages))
+    else:
+        messages.success(request, "Титульное фото удалено.")
+    return redirect(f"nomenclature:{product_kind}_detail", pk=pk)
+
+
+@require_POST
+@permission_required_any("catalog.view_nomenclature")
+def product_gallery_upload(request, product_kind, pk):
+    _require_media_change(request, product_kind)
+    try:
+        created = add_gallery_images(
+            actor=request.user,
+            product_kind=product_kind,
+            product_id=pk,
+            image_kind=request.POST.get("image_kind", ""),
+            uploads=request.FILES.getlist("images"),
+        )
+    except (CD.DoesNotExist, Tech.DoesNotExist):
+        raise Http404("Товар не найден.")
+    except ValidationError as exc:
+        messages.error(request, " ".join(exc.messages))
+    else:
+        messages.success(request, f"Добавлено изображений: {len(created)}.")
+    return redirect(f"nomenclature:{product_kind}_detail", pk=pk)
+
+
+@require_POST
+@permission_required_any("catalog.view_nomenclature")
+def product_gallery_delete(request, product_kind, pk, image_id):
+    _require_media_change(request, product_kind)
+    try:
+        delete_gallery_image(
+            actor=request.user,
+            product_kind=product_kind,
+            product_id=pk,
+            image_id=image_id,
+        )
+    except (CD.DoesNotExist, Tech.DoesNotExist, ProductImage.DoesNotExist):
+        raise Http404("Изображение не найдено.")
+    except ValidationError as exc:
+        messages.error(request, " ".join(exc.messages))
+    else:
+        messages.success(request, "Изображение удалено.")
+    return redirect(f"nomenclature:{product_kind}_detail", pk=pk)
 
 
 @require_POST

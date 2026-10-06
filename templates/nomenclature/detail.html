@@ -71,6 +71,8 @@
   {% endif %}
 </form>
 
+{% include "nomenclature/_product_media.html" %}
+
 {% if can_delete_product %}
 <dialog id="product-delete-dialog" class="confirmation-dialog" aria-labelledby="product-delete-title">
   <h2 id="product-delete-title">Удалить товар?</h2>
@@ -128,4 +130,5 @@
     </nav>
   {% endif %}
 </section>
+{% if perms.yandex_market.view_integration %}<section class="panel"><h2>Яндекс Маркет</h2>{% for link in yandex_links %}<p><a href="{% url 'yandex_market:connection' link.pk %}">{{ link.remote_offer.offer_id }} · {{ link.get_state_display }}</a></p>{% empty %}<p>Активной связи нет.</p>{% endfor %}<p><a href="{% url 'yandex_market:dashboard' %}?tab=offers">Найти существующий товар Маркета и привязать</a></p>{% if perms.yandex_market.bind_offer and not product.is_archived %}<details><summary>Создать новую карточку Маркета</summary><form method="post" action="{% url 'yandex_market:new_offer' %}">{% csrf_token %}<input type="hidden" name="kind" value="{{ product_kind }}"><input type="hidden" name="product" value="{{ product.pk }}"><label>Магазин <select name="integration" required>{% for integration in yandex_integrations %}<option value="{{ integration.pk }}">{{ integration.name }}</option>{% endfor %}</select></label>{% include 'yandex_market/confirm.html' with confirmation='Проверил каталог: существующей карточки этого товара на Маркете нет' %}<button class="button button-secondary">Подготовить новую карточку</button></form></details>{% endif %}</section>{% endif %}
 {% endblock %}

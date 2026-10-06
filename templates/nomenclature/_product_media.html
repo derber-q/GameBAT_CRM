@@ -1,0 +1,87 @@
+<section class="panel product-media-panel">
+  <div class="section-heading section-heading-plain">
+    <div>
+      <h2>Изображения товара</h2>
+      <p class="muted">Титульное фото показывается при наведении на название товара в таблицах.</p>
+    </div>
+  </div>
+
+  <div class="product-media-section">
+    <h3>Титульное фото</h3>
+    {% if product.title_image %}
+      <div class="product-media-grid product-media-grid-title">
+        <figure class="product-media-card">
+          <a href="{% url 'nomenclature:product_title_image' product_kind product.pk %}" target="_blank" rel="noopener">
+            <img src="{% url 'nomenclature:product_title_image' product_kind product.pk %}" alt="Титульное фото: {{ product.name }}">
+          </a>
+          {% if can_change_media %}
+            <figcaption>
+              <form method="post" action="{% url 'nomenclature:product_title_delete' product_kind product.pk %}">
+                {% csrf_token %}
+                <button class="button button-danger button-small" type="submit">Удалить</button>
+              </form>
+            </figcaption>
+          {% endif %}
+        </figure>
+      </div>
+    {% else %}
+      <p class="muted">Титульное фото пока не загружено.</p>
+    {% endif %}
+    {% if can_change_media %}
+      <form class="product-media-upload" method="post" enctype="multipart/form-data" action="{% url 'nomenclature:product_title_upload' product_kind product.pk %}">
+        {% csrf_token %}
+        <label>{% if product.title_image %}Заменить титульное фото{% else %}Загрузить титульное фото{% endif %}
+          <input name="image" type="file" accept="image/jpeg,image/png,image/webp" required>
+        </label>
+        <button class="button button-secondary" type="submit">Сохранить фото</button>
+      </form>
+    {% endif %}
+  </div>
+
+  <div class="product-media-section">
+    <h3>Дополнительные фото</h3>
+    <div class="product-media-grid">
+      {% for item in additional_images %}
+        <figure class="product-media-card">
+          <a href="{% url 'nomenclature:product_gallery_image' product_kind product.pk item.pk %}" target="_blank" rel="noopener">
+            <img src="{% url 'nomenclature:product_gallery_image' product_kind product.pk item.pk %}" alt="Дополнительное фото {{ forloop.counter }}: {{ product.name }}" loading="lazy">
+          </a>
+          {% if can_change_media %}<figcaption><form method="post" action="{% url 'nomenclature:product_gallery_delete' product_kind product.pk item.pk %}">{% csrf_token %}<button class="button button-danger button-small" type="submit">Удалить</button></form></figcaption>{% endif %}
+        </figure>
+      {% empty %}
+        <p class="muted">Дополнительных фото пока нет.</p>
+      {% endfor %}
+    </div>
+    {% if can_change_media %}
+      <form class="product-media-upload" method="post" enctype="multipart/form-data" action="{% url 'nomenclature:product_gallery_upload' product_kind product.pk %}">
+        {% csrf_token %}<input type="hidden" name="image_kind" value="additional">
+        <label>Добавить фото <input name="images" type="file" accept="image/jpeg,image/png,image/webp" multiple required></label>
+        <button class="button button-secondary" type="submit">Загрузить</button>
+      </form>
+    {% endif %}
+  </div>
+
+  <div class="product-media-section">
+    <h3>Изображения продукта</h3>
+    <p class="muted">Скриншоты, промоизображения и другие материалы о продукте.</p>
+    <div class="product-media-grid">
+      {% for item in product_images %}
+        <figure class="product-media-card">
+          <a href="{% url 'nomenclature:product_gallery_image' product_kind product.pk item.pk %}" target="_blank" rel="noopener">
+            <img src="{% url 'nomenclature:product_gallery_image' product_kind product.pk item.pk %}" alt="Изображение продукта {{ forloop.counter }}: {{ product.name }}" loading="lazy">
+          </a>
+          {% if can_change_media %}<figcaption><form method="post" action="{% url 'nomenclature:product_gallery_delete' product_kind product.pk item.pk %}">{% csrf_token %}<button class="button button-danger button-small" type="submit">Удалить</button></form></figcaption>{% endif %}
+        </figure>
+      {% empty %}
+        <p class="muted">Изображений продукта пока нет.</p>
+      {% endfor %}
+    </div>
+    {% if can_change_media %}
+      <form class="product-media-upload" method="post" enctype="multipart/form-data" action="{% url 'nomenclature:product_gallery_upload' product_kind product.pk %}">
+        {% csrf_token %}<input type="hidden" name="image_kind" value="product">
+        <label>Добавить изображения <input name="images" type="file" accept="image/jpeg,image/png,image/webp" multiple required></label>
+        <button class="button button-secondary" type="submit">Загрузить</button>
+      </form>
+    {% endif %}
+  </div>
+</section>

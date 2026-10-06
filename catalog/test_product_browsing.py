@@ -129,7 +129,11 @@ class ProductBrowsingTests(TestCase):
         )
         self.assertContains(self.client.get(reverse("warehouse:global_stock")), self.zero_stock.name)
         self.assertContains(self.client.get(reverse("nomenclature:list")), self.zero_stock.name)
-        self.assertContains(self.client.get(reverse("pricing:list")), self.zero_stock.name)
+        self.assertNotContains(self.client.get(reverse("pricing:list")), self.zero_stock.name)
+        self.assertContains(
+            self.client.get(reverse("pricing:list"), {"in_stock": "0"}),
+            self.zero_stock.name,
+        )
 
     def test_filter_state_options_reset_and_collapsible_groups_are_rendered(self):
         params = {"search": "iphone", "brand": self.apple.pk, "product_type": self.phone.pk}
@@ -147,7 +151,7 @@ class ProductBrowsingTests(TestCase):
             with self.subTest(url=url):
                 html = self.client.get(url).content.decode()
                 controls = re.findall(r'aria-controls="([^"]+)"[^>]*data-collapse-toggle', html)
-                content_ids = re.findall(r'id="((?:global|warehouse|nomenclature|pricing)-(?:cd|tech)-\d+)"', html)
+                content_ids = re.findall(r'id="((?:global|warehouse|nomenclature|pricing)-(?:cd-\d+|brand-\d+|tech-\d+-\d+))"', html)
                 if url == reverse("nomenclature:list"):
                     content_ids += re.findall(r'id="(nomenclature-series-\d+-(?:\d+|none))"', html)
                 self.assertGreater(len(controls), 0)

@@ -33,7 +33,7 @@ def _stock_row(stock, product_kind, user):
         "name": product.name,
         "sku": product.sku,
         "warehouse": stock.warehouse,
-        "cost": product.cost,
+        "cost": stock.unit_cost,
         "quantity": stock.quantity,
         "receivable": stock.receivable_per_unit,
         "potential": stock.potential_receivable,

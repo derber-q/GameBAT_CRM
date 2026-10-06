@@ -2,8 +2,27 @@
 {% load static %}
 {% block title %}Прайс · ReSOURCE{% endblock %}
 {% block extra_head %}<script src="{% static 'js/price.js' %}" defer></script>{% endblock %}
-{% block content %}
+{% block content %}<script>document.addEventListener('click',async e=>{const b=e.target.closest('[data-copy-link]');if(!b)return;const input=b.parentElement.querySelector('input');try{await navigator.clipboard.writeText(input.value);b.textContent='Скопировано';setTimeout(()=>b.textContent='Скопировать',1600)}catch{input.select();document.execCommand('copy')}})</script>
 <div class="page-heading"><div><p class="eyebrow">Excel-контур ReSOURCE</p><h1>Прайс</h1><p class="muted">Складские прайсы, предложения поставщиков и закупочные цены.</p></div></div>
+{% if can_manage_retail %}
+<section class="panel"><h2>Розничный сайт</h2><p class="muted">Общая ссылка для покупателей. У каждого посетителя отдельная корзина.</p>
+{% if retail_token %}<p><input readonly value="{{ request.scheme }}://{{ request.get_host }}/retailer/{{ retail_token }}/" aria-label="Ссылка на розничный сайт"><button class="button button-secondary" type="button" data-copy-link>Скопировать ссылку</button></p>{% endif %}
+<form method="post" action="{% url 'resource_storefront:retail_regenerate' %}" onsubmit="return confirm('Перегенерировать розничную ссылку? Старая ссылка и все открытые по ней сеансы потеряют доступ. Заказы сохранятся.')">{% csrf_token %}<button class="button button-secondary">Перегенерировать ссылку</button></form>
+{% if perms.resource_storefront.change_retailsettings %}<p><a href="{% url 'admin:resource_storefront_retailsettings_change' 1 %}">Настройки склада и цены розничного сайта</a></p>{% endif %}</section>
+{% endif %}
+{% if can_manage_wholesale_contacts %}
+<section class="panel">
+  <div class="page-heading"><div><h2>Пользователи оптового сайта</h2><p class="muted">У каждого контакта своя ссылка. Перевыпуск закроет предыдущую ссылку и активные сессии.</p></div><a class="button button-secondary" href="{% url 'resource_storefront:contacts' %}">Добавить пользователя</a></div>
+  {% for contact in wholesale_contacts %}
+  <div class="panel"><p><strong>{{ contact.name }}</strong> · {{ contact.phone }}</p>
+    {% if contact.active_link and contact.copy_token %}<p><input readonly value="{{ request.scheme }}://{{ request.get_host }}/opt/{{ contact.copy_token }}/" aria-label="Ссылка для {{ contact.name }}"><button class="button button-small" type="button" data-copy-link>Скопировать</button></p>
+    <form method="post" action="{% url 'resource_storefront:link_issue' contact.pk %}" onsubmit="return confirm('Перевыпустить ссылку? Предыдущая ссылка и открытые сессии перестанут работать.')">{% csrf_token %}<button class="button button-secondary button-small">Перегенерировать</button></form>
+    {% else %}<p class="muted">Ссылки нет или её нужно перевыпустить.</p><form method="post" action="{% url 'resource_storefront:link_issue' contact.pk %}">{% csrf_token %}<button class="button button-secondary button-small">Выпустить ссылку</button></form>{% endif %}
+  </div>
+  {% empty %}<p>Пользователей оптового сайта пока нет.</p>{% endfor %}
+</section>
+
+{% endif %}
 <div class="price-section-grid">
   <section class="panel"><h2>Клиентские складские прайсы</h2><p class="muted">Только положительный остаток выбранного склада и товары с заполненной ценой.</p>
     {% if can_generate_retail %}<form method="post" action="{% url 'price:retail_export' %}" class="stacked-form" data-retail-export>{% csrf_token %}<div class="field"><label>Склад для розничного прайса</label>{{ warehouse_form.warehouse }}</div><button class="button" type="submit">Скачать розничный XLSX</button><p class="muted" data-retail-result aria-live="polite"></p></form>{% endif %}

@@ -19,11 +19,13 @@ from .models import BarcodeRegistry, CD, ProductRemovalEvent, Tech
 
 HAS_BARCODE = "HAS_BARCODE"
 HAS_AVITO_CONNECTION = "HAS_AVITO_CONNECTION"
+HAS_YANDEX_CONNECTION = "HAS_YANDEX_CONNECTION"
 HAS_STOCK = "HAS_STOCK"
 ALREADY_ARCHIVED = "ALREADY_ARCHIVED"
 HAS_DEPENDENCIES = "HAS_DEPENDENCIES"
 
 BLOCK_MESSAGES = {
+    HAS_YANDEX_CONNECTION: "Нельзя удалить товар с активной связью Яндекс Маркета. Сначала отключите связь в интеграции.",
     HAS_BARCODE: "Нельзя удалить товар, которому присвоен штрихкод.",
     HAS_AVITO_CONNECTION: (
         "Нельзя удалить товар, пока он связан с объявлением Avito. "
@@ -36,6 +38,7 @@ BLOCK_MESSAGES = {
 
 TECHNICAL_RELATIONS = frozenset({
     "warehouse_stocks", "consignment_stocks", "supplier_prices", "change_events", "avito_profile", "barcodes",
+    "catalog_images",
 })
 
 
@@ -92,6 +95,8 @@ def evaluate_product_removal(product):
         reasons.append(HAS_BARCODE)
     if AvitoListingConnection.objects.filter(**{f"profile__{kind}_id": product.pk}).exists():
         reasons.append(HAS_AVITO_CONNECTION)
+    if product.yandex_connections.filter(active=True).exists():
+        reasons.append(HAS_YANDEX_CONNECTION)
     if (
         product.quantity_on_consignment > 0
         or product.warehouse_stocks.filter(quantity__gt=0).exists()
@@ -140,6 +145,14 @@ def remove_product(*, product_kind, product_id, actor):
         product.save(update_fields=("is_archived", "archived_at", "archived_by"))
     else:
         # Только технические нулевые данные; все бизнес-FK остаются PROTECT.
+        media_files = []
+        if product.title_image.name:
+            media_files.append((product.title_image.storage, product.title_image.name))
+        media_files.extend(
+            (image.image.storage, image.image.name)
+            for image in product.catalog_images.all()
+            if image.image.name
+        )
         product.change_events.all().delete()
         product.supplier_prices.all().delete()
         product.warehouse_stocks.all().delete()
@@ -149,5 +162,7 @@ def remove_product(*, product_kind, product_id, actor):
             product.delete()
         except ProtectedError:
             raise ValidationError(BLOCK_MESSAGES[HAS_DEPENDENCIES])
+        for storage, name in media_files:
+            transaction.on_commit(lambda storage=storage, name=name: storage.delete(name))
     ProductRemovalEvent.objects.create(**snapshot)
     return assessment

@@ -7,7 +7,7 @@ from .services import can_mark_paid, next_order_status
 def sales_queryset():
     return Sale.objects.select_related(
         'warehouse', 'created_by', 'cancelled_by', 'consignment_platform',
-    ).prefetch_related('cd_items', 'tech_items')
+    ).prefetch_related('cd_items', 'tech_items', 'custom_items', 'consignment_items')
 
 
 def status_context(sale, user, editable=True):
@@ -41,7 +41,7 @@ def list_groups(request, state):
             params[page_key] = number
             return '?' + params.urlencode()
         groups.append({
-            'kind': kind, 'label': label, 'page': page,
+            'kind': kind, 'label': label, 'sale_types': (kind,), 'page': page,
             'rows': [status_context(sale, request.user, state == 'incomplete') for sale in page],
             'previous_url': page_url(page.previous_page_number()) if page.has_previous() else '',
             'next_url': page_url(page.next_page_number()) if page.has_next() else '',

@@ -1,0 +1,7 @@
+{% extends "base.html" %}{% load static %}
+{% block title %}Яндекс Маркет · ReSOURCE{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{% static 'css/yandex-market.css' %}?v=1"><script src="{% static 'js/yandex-market.js' %}?v=1" defer></script>{% endblock %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">Интеграции · FBS</p><h1>{% block heading %}Яндекс Маркет{% endblock %}</h1></div><a class="button button-secondary" href="{% url 'yandex_market:dashboard' %}">Обзор Маркета</a></div>
+{% block market_content %}{% endblock %}
+{% endblock %}

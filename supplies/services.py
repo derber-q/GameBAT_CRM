@@ -6,18 +6,18 @@ from decimal import Decimal, InvalidOperation, ROUND_DOWN, ROUND_HALF_UP, localc
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import Sum
 from django.utils import timezone
 
 from catalog.audit import field_change, record_product_changes, stock_change
 from catalog.models import CD, ProductChangeEvent, Tech
+from consignment.models import ConsignmentMovement, ConsignmentMovementItem
 from partners.models import Supplier
-from consignment.models import CDConsignmentStock, TechConsignmentStock
 from warehouse.models import (
-    CDWarehouseStock, CDWarehouseTransferItem, TechWarehouseStock, TechWarehouseTransferItem,
-    Warehouse, WarehouseTransfer,
+    CDWarehouseStock, CDWarehouseTransferItem, TechWarehouseStock,
+    TechWarehouseTransferItem, Warehouse,
 )
 from warehouse.storage_services import clear_storage_locations_if_zero
+from warehouse.valuation import warehouse_owned_quantity
 from .models import (
     Supply, SupplyCDItem, SupplyCostCalculation, SupplyExpense, SupplyFinalization,
     SupplyRevision, SupplyRevisionExpense, SupplyRevisionItem, SupplyTechItem,
@@ -143,44 +143,18 @@ def allocate_weight_transport_cost(*, lines, products, total_transport_cost):
     return total_weight, line_weights, allocations
 
 
-def global_owned_quantity(product_type, product_id):
-    """Считает все единицы GameBAT без двойного учёта склада, реализации и transit."""
-    if product_type == "cd":
-        stock_model, consignment_model, transfer_item_model, product_field = (
-            CDWarehouseStock, CDConsignmentStock, CDWarehouseTransferItem, "cd"
-        )
-    else:
-        stock_model, consignment_model, transfer_item_model, product_field = (
-            TechWarehouseStock, TechConsignmentStock, TechWarehouseTransferItem, "tech"
-        )
-    warehouse_total = stock_model.objects.filter(**{f"{product_field}_id": product_id}).aggregate(
-        total=Sum("quantity")
-    )["total"] or 0
-    consignment_total = consignment_model.objects.filter(**{f"{product_field}_id": product_id}).aggregate(
-        total=Sum("quantity")
-    )["total"] or 0
-    transit_total = transfer_item_model.objects.filter(
-        **{
-            f"{product_field}_id": product_id,
-            "transfer__status__in": (
-                WarehouseTransfer.Status.CREATED,
-                WarehouseTransfer.Status.ASSEMBLED,
-                WarehouseTransfer.Status.SHIPPED,
-            ),
-        }
-    ).aggregate(total=Sum("quantity"))["total"] or 0
-    return warehouse_total + consignment_total + transit_total
+# Совместимое внутреннее имя для moving-average replay. Себестоимость карточки
+# относится только к физическому складскому остатку; партии вне склада хранят
+# собственный снимок себестоимости.
+_old_owned_quantity = warehouse_owned_quantity
 
 
-# Совместимое внутреннее имя для существующего moving-average replay.
-_old_owned_quantity = global_owned_quantity
-
-
-def accept_supply(*, accepted_by, warehouse_id, lines, expenses=(), weight_transport_cost=0):
+def accept_supply(*, accepted_by, warehouse_id, lines, expenses=(), weight_transport_cost=0, defer_balance=False):
     """Принимает поставку целиком и пересчитывает среднюю стоимость товаров.
 
-    Расходы делятся на физические единицы, а вес старого товара включает и
-    склад, и реализацию. Все изменяемые товары блокируются до конца транзакции.
+    Расходы делятся на физические единицы. В средневзвешенной стоимости участвует
+    только товар на физических складах. Все изменяемые товары блокируются до
+    конца транзакции.
     """
     prepared_lines = _normalise_lines(lines)
     prepared_expenses = _normalise_expenses(expenses)
@@ -238,6 +212,7 @@ def accept_supply(*, accepted_by, warehouse_id, lines, expenses=(), weight_trans
                     grand_total=(goods_total + expenses_total + weight_transport_cost).quantize(
                         CENT, rounding=ROUND_HALF_UP
                     ),
+                    status=(Supply.Status.PRICE_REVIEW_REQUIRED if defer_balance else Supply.Status.ACCEPTED),
                 )
                 SupplyExpense.objects.bulk_create(
                     [SupplyExpense(supply=supply, name=e.name, amount=e.amount) for e in prepared_expenses]
@@ -296,14 +271,16 @@ def accept_supply(*, accepted_by, warehouse_id, lines, expenses=(), weight_trans
                     resulting_quantity = old_owned_quantity + new_quantity
                     resulting_value = old_inventory_value + addition["value"]
                     new_average = resulting_value / Decimal(resulting_quantity)
-                    product.cost = new_average.quantize(CENT, rounding=ROUND_HALF_UP)
+                    new_average_cost = new_average.quantize(CENT, rounding=ROUND_HALF_UP)
                     # Старые импортированные карточки могут иметь пустые обязательные
                     # идентификаторы. Приход меняет только себестоимость и не должен
                     # блокироваться из-за, например, незаполненного штрихкода.
-                    product.full_clean(exclude=[
-                        field.name for field in product._meta.fields if field.name != "cost"
-                    ])
-                    product.save(update_fields=("cost",))
+                    if not defer_balance:
+                        product.cost = new_average_cost
+                        product.full_clean(exclude=[
+                            field.name for field in product._meta.fields if field.name != "cost"
+                        ])
+                        product.save(update_fields=("cost",))
                     product_type, product_id = key
                     cost_calculations.append(SupplyCostCalculation(
                         supply=supply,
@@ -317,9 +294,11 @@ def accept_supply(*, accepted_by, warehouse_id, lines, expenses=(), weight_trans
                         incoming_value=addition["value"].quantize(UNIT, rounding=ROUND_HALF_UP),
                         resulting_quantity=resulting_quantity,
                         resulting_value=resulting_value.quantize(UNIT, rounding=ROUND_HALF_UP),
-                        resulting_unit_cost=product.cost,
+                        resulting_unit_cost=new_average_cost,
                         **{product_type: product},
                     ))
+                    if defer_balance:
+                        continue
                     stock_model = CDWarehouseStock if product_type == "cd" else TechWarehouseStock
                     product_field = "cd" if product_type == "cd" else "tech"
                     stock = stock_model.objects.select_for_update().filter(
@@ -362,6 +341,98 @@ def accept_supply(*, accepted_by, warehouse_id, lines, expenses=(), weight_trans
     except Exception:
         logger.exception("Ошибка приёмки поставки: user_id=%s", getattr(accepted_by, "pk", None))
         raise
+
+
+@transaction.atomic
+def confirm_supply_price_review(*, actor, supply_id, price_changes=None):
+    """Атомарно сохраняет цены и только затем ставит ожидающий приход на баланс."""
+    try:
+        supply = Supply.objects.select_for_update().select_related("warehouse").get(pk=supply_id)
+    except Supply.DoesNotExist as exc:
+        raise ValidationError("Приход не найден.") from exc
+    if supply.status == Supply.Status.ACCEPTED:
+        return supply, False
+    if supply.status != Supply.Status.PRICE_REVIEW_REQUIRED:
+        raise ValidationError("Этот приход нельзя поставить на баланс.")
+
+    calculations = list(
+        supply.cost_calculations.select_for_update().select_related("cd", "tech").order_by("id")
+    )
+    if not calculations:
+        raise ValidationError("Для прихода отсутствуют расчёты себестоимости.")
+    products = {}
+    for product_type, model in (("cd", CD), ("tech", Tech)):
+        ids = [getattr(row, f"{product_type}_id") for row in calculations if row.product_kind == product_type]
+        products.update({
+            (product_type, product.pk): product
+            for product in model.objects.select_for_update().filter(pk__in=ids).order_by("pk")
+        })
+    if len(products) != len(calculations):
+        raise ValidationError("Один из товаров прихода больше не доступен.")
+
+    from pricing.services import update_product_prices
+    price_changes = price_changes or {}
+    for calculation in calculations:
+        key = (calculation.product_kind, calculation.cd_id or calculation.tech_id)
+        product = products[key]
+        current_quantity = warehouse_owned_quantity(*key)
+        if current_quantity != calculation.old_owned_quantity or product.cost != calculation.old_unit_cost:
+            raise ValidationError(
+                f"Остаток или себестоимость товара «{product.name}» изменились после расчёта прихода. "
+                "Отмените приход и создайте его заново по актуальным данным."
+            )
+        changes = price_changes.get(key, {})
+        if changes:
+            update_product_prices(
+                actor=actor, product_type=key[0], product_id=key[1], changes=changes,
+            )
+
+    for calculation in calculations:
+        key = (calculation.product_kind, calculation.cd_id or calculation.tech_id)
+        product = products[key]
+        old_cost = product.cost
+        product.cost = calculation.resulting_unit_cost
+        product.full_clean(exclude=[field.name for field in product._meta.fields if field.name != "cost"])
+        product.save(update_fields=("cost",))
+        stock_model = CDWarehouseStock if key[0] == "cd" else TechWarehouseStock
+        product_field = key[0]
+        stock = stock_model.objects.select_for_update().filter(
+            warehouse=supply.warehouse, **{f"{product_field}_id": key[1]},
+        ).first()
+        if stock is None:
+            stock = stock_model(warehouse=supply.warehouse, **{product_field: product})
+        old_stock_quantity = stock.quantity
+        stock.quantity += calculation.incoming_quantity
+        stock.full_clean()
+        stock.save()
+        changes = [stock_change(
+            warehouse=supply.warehouse, old_quantity=old_stock_quantity, new_quantity=stock.quantity,
+        )]
+        if old_cost != product.cost:
+            changes.append(field_change(
+                field_name="cost", field_label="Средняя себестоимость",
+                old_value=f"{old_cost:.2f}", new_value=f"{product.cost:.2f}",
+            ))
+        record_product_changes(
+            actor=actor, instance=product, source=ProductChangeEvent.Source.CRM,
+            action_kind=ProductChangeEvent.ActionKind.SUPPLY, action_object_id=supply.pk,
+            action_label=f"Поставка №{supply.pk}", changes=changes,
+        )
+    supply.status = Supply.Status.ACCEPTED
+    supply.price_reviewed_at = timezone.now()
+    supply.price_reviewed_by = actor
+    supply.save(update_fields=("status", "price_reviewed_at", "price_reviewed_by"))
+    transaction.on_commit(_enqueue_google_sheets_after_supply)
+    logger.info("Поставка поставлена на баланс: user_id=%s supply_id=%s", actor.pk, supply.pk)
+    return supply, True
+
+
+def _enqueue_google_sheets_after_supply():
+    try:
+        from integrations.google_tasks import enqueue_google_sheets_sync
+        enqueue_google_sheets_sync()
+    except Exception:
+        logger.exception("Не удалось поставить синхронизацию Google Sheets в очередь после прихода.")
 
 
 def _supply_configuration(product_type):
@@ -441,24 +512,17 @@ def _supersede_supply_finalizations(*, supply, new_revision_number):
 
 
 def _external_owned_quantity_delta(*, product_type, product_id, after, through):
-    """Returns audited non-supply changes to owned quantity in (after, through]."""
+    """Возвращает внешние изменения складского количества в (after, through]."""
     product_filter = {f"{product_type}_id": product_id}
     events = ProductChangeEvent.objects.filter(
         created_at__gt=after, created_at__lte=through, **product_filter,
-    ).exclude(
-        action_kind__in=(
-            ProductChangeEvent.ActionKind.SUPPLY,
-            ProductChangeEvent.ActionKind.WAREHOUSE_TRANSFER,
-            ProductChangeEvent.ActionKind.CONSIGNMENT,
-        )
-    ).prefetch_related("field_changes").order_by("created_at", "id")
+    ).exclude(action_kind=ProductChangeEvent.ActionKind.SUPPLY).prefetch_related(
+        "field_changes"
+    ).order_by("created_at", "id")
     delta = 0
     for event in events:
         changes = list(event.field_changes.all())
-        consignment_quantity = next(
-            (change for change in changes if change.field_name == "quantity_on_consignment"), None
-        )
-        candidates = [consignment_quantity] if consignment_quantity is not None else [
+        candidates = [
             change for change in changes if change.field_name.startswith("warehouse_stock_")
         ]
         for change in candidates:
@@ -469,6 +533,62 @@ def _external_owned_quantity_delta(*, product_type, product_id, after, through):
                     "История количества товара повреждена: невозможно выполнить точный пересчёт себестоимости."
                 ) from exc
     return delta
+
+
+def _replay_external_warehouse_events(
+    *, product_type, product_id, after, through, quantity, cost,
+):
+    """Применяет продажи, передачи, возвраты и приёмку пути между приходами."""
+    product_filter = {f"{product_type}_id": product_id}
+    events = ProductChangeEvent.objects.filter(
+        created_at__gt=after,
+        created_at__lte=through,
+        **product_filter,
+    ).exclude(action_kind=ProductChangeEvent.ActionKind.SUPPLY).prefetch_related(
+        "field_changes"
+    ).order_by("created_at", "id")
+    for event in events:
+        delta = 0
+        for change in event.field_changes.all():
+            if not change.field_name.startswith("warehouse_stock_"):
+                continue
+            try:
+                delta += int(change.new_value) - int(change.old_value)
+            except (TypeError, ValueError) as exc:
+                raise ValidationError(
+                    "История количества товара повреждена: невозможно выполнить точный пересчёт себестоимости."
+                ) from exc
+        if not delta:
+            continue
+        if quantity + delta < 0:
+            raise ValidationError(
+                "Историческое складское количество товара стало отрицательным при пересчёте себестоимости."
+            )
+        incoming_cost = None
+        if delta > 0 and event.action_kind == ProductChangeEvent.ActionKind.CONSIGNMENT:
+            item = ConsignmentMovementItem.objects.filter(
+                movement_id=event.action_object_id,
+                movement__operation_type=ConsignmentMovement.OperationType.RETURN,
+                product_kind=product_type,
+                **product_filter,
+            ).first()
+            incoming_cost = item.unit_cost_snapshot if item is not None else None
+        elif delta > 0 and event.action_kind == ProductChangeEvent.ActionKind.WAREHOUSE_TRANSFER:
+            item_model = (
+                CDWarehouseTransferItem if product_type == "cd" else TechWarehouseTransferItem
+            )
+            item = item_model.objects.filter(
+                transfer_id=event.action_object_id,
+                **{f"{product_type}_id": product_id},
+            ).first()
+            incoming_cost = item.unit_cost_snapshot if item is not None else None
+        if incoming_cost is not None:
+            cost = (
+                (Decimal(quantity) * cost + Decimal(delta) * incoming_cost)
+                / Decimal(quantity + delta)
+            ).quantize(CENT, rounding=ROUND_HALF_UP)
+        quantity += delta
+    return quantity, cost
 
 
 def _calculation_values(*, supply, product_type, product, old_quantity, old_cost, incoming):
@@ -550,9 +670,10 @@ def _replay_product_valuation(*, supply, product_type, product, incoming, old_ta
 
     previous_time = supply.accepted_at
     for calculation in later_calculations:
-        replay_quantity += _external_owned_quantity_delta(
+        replay_quantity, replay_cost = _replay_external_warehouse_events(
             product_type=product_type, product_id=product.pk,
             after=previous_time, through=calculation.supply.accepted_at,
+            quantity=replay_quantity, cost=replay_cost,
         )
         if replay_quantity < 0:
             raise ValidationError(
@@ -577,9 +698,10 @@ def _replay_product_valuation(*, supply, product_type, product, incoming, old_ta
             ))
         previous_time = calculation.supply.accepted_at
 
-    expected_current_quantity = replay_quantity + _external_owned_quantity_delta(
+    expected_current_quantity, replay_cost = _replay_external_warehouse_events(
         product_type=product_type, product_id=product.pk,
         after=previous_time, through=timezone.now(),
+        quantity=replay_quantity, cost=replay_cost,
     )
     actual_current_quantity = _old_owned_quantity(product_type, product.pk)
     if expected_current_quantity != actual_current_quantity:
@@ -932,13 +1054,26 @@ def _recalculated_cost(*, product_type, product_id, excluded_supply_id):
 
     for calculation in calculations:
         if previous_time is not None:
+            quantity_before_events = replay_quantity
+            replay_quantity, replay_cost = _replay_external_warehouse_events(
+                product_type=product_type,
+                product_id=product_id,
+                after=previous_time,
+                through=calculation.supply.accepted_at,
+                quantity=replay_quantity,
+                cost=replay_cost,
+            )
+            audited_delta = replay_quantity - quantity_before_events
             cancellation_adjustment = sum(
                 row.incoming_quantity
                 for row in calculations
                 if row.supply.cancelled_at
                 and previous_time < row.supply.cancelled_at <= calculation.supply.accepted_at
             )
-            replay_quantity += calculation.old_owned_quantity - original_quantity + cancellation_adjustment
+            original_delta = (
+                calculation.old_owned_quantity - original_quantity + cancellation_adjustment
+            )
+            replay_quantity += original_delta - audited_delta
             if replay_quantity < 0:
                 raise ValidationError(
                     "Невозможно точно пересчитать себестоимость: без отменяемого прихода "
@@ -953,6 +1088,15 @@ def _recalculated_cost(*, product_type, product_id, excluded_supply_id):
             ).quantize(CENT, rounding=ROUND_HALF_UP)
         original_quantity = calculation.resulting_quantity
         previous_time = calculation.supply.accepted_at
+    if previous_time is not None:
+        _, replay_cost = _replay_external_warehouse_events(
+            product_type=product_type,
+            product_id=product_id,
+            after=previous_time,
+            through=timezone.now(),
+            quantity=replay_quantity,
+            cost=replay_cost,
+        )
     return replay_cost
 
 
@@ -965,6 +1109,14 @@ def cancel_supply(*, actor, supply_id, comment):
     supply = Supply.objects.select_for_update().select_related("warehouse").get(pk=supply_id)
     if supply.is_cancelled:
         return SupplyCancellationResult(supply=supply, cancelled=False, costs={})
+    if supply.status == Supply.Status.PRICE_REVIEW_REQUIRED:
+        supply.status = Supply.Status.CANCELLED
+        supply.cancelled_at = timezone.now()
+        supply.cancelled_by = actor
+        supply.cancellation_comment = comment
+        supply.save(update_fields=("status", "cancelled_at", "cancelled_by", "cancellation_comment"))
+        logger.info("Ожидающий проверки приход отменён без изменения баланса: supply_id=%s", supply.pk)
+        return SupplyCancellationResult(supply=supply, cancelled=True, costs={})
     if supply.status != Supply.Status.ACCEPTED:
         raise ValidationError("Отменить можно только принятый приход.")
     Warehouse.objects.select_for_update().get(pk=supply.warehouse_id)

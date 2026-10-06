@@ -1,0 +1,11 @@
+<section class="panel table-panel"><div class="section-heading"><h2>До 3 подтверждённых предложений Avito</h2>{% if result %}<span class="muted">Последняя проверка: {{ result.checked_at|date:"d.m.Y H:i" }}</span>{% endif %}</div>
+<p class="muted">Дешёвые предложения из просмотренной выдачи. Для игр — только новые диски и картриджи с подтверждённым носителем.</p>
+{% if result.requires_update %}
+<p class="muted">Результат прежней проверки требует обновления: изменились правила отбора или данные товара. Нажмите «Проверка».</p>
+{% elif result %}
+<p class="muted">{% if result.metadata.mode == 'deep' %}Расширенная{% else %}Экономная{% endif %} проверка: страниц поиска {{ result.metadata.search_requests }}, новых запросов карточек {{ result.metadata.listing_requests }}, карточек из кеша {{ result.metadata.cached_listings }}. Расход этой проверки — до {{ result.metadata.credits }} кредитов. Повторный просмотр бесплатен.</p>
+{% if result.expired %}<p class="muted">Проверка старше суток. Нажмите «Проверка», чтобы обновить цены.</p>{% endif %}
+  {% if result.offers %}<div class="table-scroll"><table><thead><tr><th>№</th><th>Превью</th><th>Название объявления</th><th>Цена</th><th>Город</th><th>Продавец</th><th></th></tr></thead><tbody>{% for offer in result.offers %}<tr><td>{{ forloop.counter }}</td><td>{% if offer.image %}<img class="avito-check-thumb" src="{{ offer.image }}" alt="" loading="lazy" referrerpolicy="no-referrer">{% else %}—{% endif %}</td><td>{{ offer.title }}</td><td>{{ offer.price }} ₽</td><td>{{ offer.city|default:"—" }}</td><td>{{ offer.seller|default:"—" }}</td><td><a class="button button-secondary" href="{{ offer.url }}" target="_blank" rel="noopener noreferrer">Открыть на Avito</a></td></tr>{% endfor %}</tbody></table></div>{% if result.offers|length < 3 %}<p class="muted">Найдено только {{ result.offers|length }} {% if result.offers|length == 1 %}подходящее объявление{% else %}подходящих объявления{% endif %}. Можно запустить «Искать глубже».</p>{% endif %}
+  {% else %}<p class="muted">Подходящих объявлений не найдено.</p>{% endif %}
+{% else %}<p class="muted">Нажмите «Проверка», чтобы получить актуальные предложения.</p>{% endif %}
+</section>

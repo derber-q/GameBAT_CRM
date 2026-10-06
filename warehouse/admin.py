@@ -88,11 +88,11 @@ class WarehouseTransferAdmin(TransferHistoryAdmin):
 
 @admin.register(CDWarehouseTransferItem)
 class CDWarehouseTransferItemAdmin(TransferHistoryAdmin):
-    list_display = ("transfer", "cd", "quantity")
+    list_display = ("transfer", "cd", "quantity", "unit_cost_snapshot")
     search_fields = ("cd__name", "cd__sku")
 
 
 @admin.register(TechWarehouseTransferItem)
 class TechWarehouseTransferItemAdmin(TransferHistoryAdmin):
-    list_display = ("transfer", "tech", "quantity")
+    list_display = ("transfer", "tech", "quantity", "unit_cost_snapshot")
     search_fields = ("tech__name", "tech__sku")

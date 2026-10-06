@@ -1,0 +1,20 @@
+{% load storefront %}{% load resource_format %}
+<div class="rs-cart-layout"><section class="rs-cart-items">
+{% if changes %}<div class="rs-alert">Цена или наличие изменились. Проверьте позиции и подтвердите обновление корзины.</div>{% endif %}
+{% for row in rows %}<article class="rs-cart-row" id="cart-{{ row.key }}"><div>
+<h2>{% if row.product %}<a href="{% storefront_url 'product' row.kind row.product.pk %}">{{ row.product.name }}</a>{% else %}Товар больше недоступен{% endif %}</h2>
+{% if row.product %}<p>{{ row.price|rubles }} ₽ за шт. × {{ row.quantity }}</p><p>Сумма: <strong>{{ row.line_total|rubles }} ₽</strong></p>{% endif %}
+{% if row.changed %}<p class="rs-error">Цена или наличие изменились. Подтвердите обновление перед заказом.</p>{% endif %}
+{% if row.unavailable %}<p class="rs-error">Товар снят с витрины.</p>{% elif row.too_many %}<p class="rs-error">Доступно только {{ row.available }} шт.</p>{% endif %}</div>
+<div class="rs-cart-actions">{% if row.product %}<form data-cart-edit method="post" action="{% storefront_url 'cart_update' row.key %}">{% csrf_token %}<label><span class="sr-only">Количество: {{ row.product.name }}</span><input type="number" name="quantity" min="1" max="{{ row.available }}" value="{{ row.quantity }}" inputmode="numeric" required></label><button class="rs-button" type="submit">Изменить</button></form>{% endif %}
+<form data-cart-edit method="post" action="{% storefront_url 'cart_remove' row.key %}">{% csrf_token %}<button class="rs-link-button" type="submit">Удалить</button></form></div></article>
+{% empty %}<div class="rs-empty"><h2>Корзина пуста</h2><a class="rs-button" href="{% storefront_url 'catalogue' %}">Перейти в каталог</a></div>{% endfor %}
+</section><aside class="rs-checkout" id="rs-checkout"><h2>Оформление</h2>{% if not is_retail %}<dl><dt>Контактное имя</dt><dd>{{ contact.name }}</dd><dt>Основной телефон</dt><dd>{{ contact.phone }}</dd><dt>Адрес</dt><dd>{{ contact.address|default:'Не указан'|linebreaksbr }}</dd></dl>{% endif %}
+<hr><p>Итого <strong>{{ total|rubles }} ₽</strong></p>{% if minimum %}<p class="rs-small">Минимальная сумма: {{ minimum|rubles }} ₽</p>{% endif %}
+{% if rows %}<form method="post" action="{% storefront_url 'checkout' %}" class="rs-checkout-form" data-status-url="{% storefront_url 'checkout_status' %}">{% csrf_token %}<input type="hidden" name="cart_version" value="{{ version }}">
+{% for field in checkout_form %}<div class="rs-field" data-checkout-field="{{ field.name }}">{% if field.name == 'telegram_use_phone' %}<label class="rs-check-option">{{ field }}<span>{{ field.label }}</span></label>{% else %}{{ field.label_tag }}{{ field }}{% endif %}<div class="rs-field-error" data-error-for="{{ field.name }}">{{ field.errors }}</div></div>{% endfor %}
+<p class="rs-small">{% if is_retail %}Сотрудник свяжется с вами для уточнения заказа. Если способ связи не выбран, позвоним по основному телефону. Для WhatsApp по умолчанию используется основной телефон. Корзина не резервирует товар.{% else %}Дополнительный телефон и комментарий необязательны. Постоплата наличными. Корзина не резервирует товар.{% endif %}</p>
+<p class="rs-form-status" role="status"></p><button class="rs-link-button rs-status-check" type="button" hidden>Проверить статус заказа</button><a class="rs-reload-cart rs-link-button" href="{% storefront_url 'cart' %}" hidden>Обновить корзину</a>
+<button class="rs-button rs-button-gold" type="submit" {% if not checkout_allowed %}disabled{% endif %}>Оформить заказ</button></form>
+{% if changes %}<form method="post" action="{% storefront_url 'cart_refresh' %}">{% csrf_token %}<button class="rs-link-button">Подтвердить новые цены и наличие</button></form>{% endif %}{% endif %}
+</aside></div>{% if rows %}<a class="rs-cart-summary" href="#rs-checkout"><span>{{ cart_count }} шт. · {{ total|rubles }} ₽</span><strong>К оформлению ↓</strong></a>{% endif %}

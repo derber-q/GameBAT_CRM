@@ -1,5 +1,5 @@
 <section class="panel product-filter-panel">
-  <form method="get" role="search" class="product-filter-form" data-product-filters data-global-barcode-search>
+  <form method="get" role="search" class="product-filter-form{% if show_in_stock_filter %} product-filter-form-with-stock-toggle{% endif %}" data-product-filters data-global-barcode-search>
     <div class="field product-search-field">
       <label for="product-search">Поиск товара</label>
       <input id="product-search" type="search" name="search" value="{{ filter_state.search }}" placeholder="Поиск по ID, названию, артикулу, CUSA/PPSA или штрихкоду" data-global-barcode-search-input>
@@ -55,6 +55,13 @@
       <label for="product-zero-stock-highlight">Остатки</label>
       <input type="hidden" name="zero_stock_highlight" value="0">
       <label class="product-avito-toggle"><input id="product-zero-stock-highlight" type="checkbox" name="zero_stock_highlight" value="1" {% if zero_stock_highlight %}checked{% endif %} data-zero-stock-highlight-toggle> Подсвечивать товары без остатка</label>
+    </div>
+    {% endif %}
+    {% if show_in_stock_filter %}
+    <div class="field product-stock-toggle-field">
+      <label for="product-in-stock">Остатки</label>
+      <input type="hidden" name="in_stock" value="0">
+      <label class="product-avito-toggle"><input id="product-in-stock" type="checkbox" name="in_stock" value="1" {% if in_stock_only %}checked{% endif %} data-in-stock-toggle> Показывать товары в наличии</label>
     </div>
     {% endif %}
     <div class="product-filter-actions">

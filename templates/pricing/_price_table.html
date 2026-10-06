@@ -1,18 +1,30 @@
 {% load l10n %}
 <div class="table-scroll">
-  <table class="global-stock-table pricing-table">
+  <table class="global-stock-table pricing-table pricing-products-table">
+    <colgroup>
+      <col class="pricing-col-id">
+      <col class="pricing-col-sku">
+      <col class="pricing-col-name">
+      <col class="pricing-col-stock">
+      <col class="pricing-col-cost">
+      <col class="pricing-col-price">
+      <col class="pricing-col-price">
+      <col class="pricing-col-price">
+      <col class="pricing-col-actions">
+    </colgroup>
     <thead>
-      <tr><th>ID</th><th>Артикул</th><th>Название</th><th class="numeric">Себестоимость</th><th class="numeric">Цена Avito</th><th class="numeric">Опт</th><th class="numeric">Яндекс Маркет</th><th></th></tr>
+      <tr><th>ID</th><th>Артикул</th><th>Название</th><th class="numeric-center pricing-global-stock-column">Глобальный остаток</th><th class="numeric">Себестоимость</th><th class="numeric">Опт</th><th class="numeric">Цена Avito</th><th class="numeric">Яндекс Маркет</th><th></th></tr>
     </thead>
     <tbody>
       {% for row in rows %}
         <tr data-price-row data-cost="{{ row.product.cost|default_if_none:''|unlocalize }}">
           <td class="mono">{{ row.product.id }}</td>
           <td class="mono">{{ row.product.sku }}</td>
-          <td class="strong">{{ row.product.name }}</td>
-          <td class="numeric">{{ row.product.cost|floatformat:2 }}</td>
-          {% include "pricing/_price_cell.html" with field="avito_price" label="Цена Avito" value=row.product.avito_price warning=row.warnings.avito_price can_change=can_change_avito markup_field="avito_markup_from_wholesale" markup=row.product.avito_markup_from_wholesale markup_label="Наценка от опта для Avito" %}
+          <td class="strong">{% if perms.catalog.view_nomenclature %}<a class="strong" href="{% if row.type == 'cd' %}{% url 'nomenclature:cd_detail' row.product.pk %}{% else %}{% url 'nomenclature:tech_detail' row.product.pk %}{% endif %}"{% if row.product.title_image %} data-product-title-image="{% url 'nomenclature:product_title_image' row.type row.product.pk %}"{% endif %}>{{ row.product.name }}</a>{% else %}<span{% if row.product.title_image %} data-product-title-image="{% url 'nomenclature:product_title_image' row.type row.product.pk %}" tabindex="0"{% endif %}>{{ row.product.name }}</span>{% endif %}</td>
+          <td class="numeric-center stock-number pricing-global-stock-column">{{ row.product.global_stock }}</td>
+          <td class="numeric">{{ row.display_cost|floatformat:0 }}</td>
           {% include "pricing/_price_cell.html" with field="wholesale_price" label="Оптовая цена" value=row.product.wholesale_price warning=row.warnings.wholesale_price can_change=can_change_wholesale markup_field="" %}
+          {% include "pricing/_price_cell.html" with field="avito_price" label="Цена Avito" value=row.product.avito_price warning=row.warnings.avito_price can_change=can_change_avito markup_field="avito_markup_from_wholesale" markup=row.product.avito_markup_from_wholesale markup_label="Наценка от опта для Avito" %}
           {% include "pricing/_price_cell.html" with field="yandex_market_price" label="Цена Яндекс Маркет" value=row.product.yandex_market_price warning=row.warnings.yandex_market_price can_change=can_change_yandex markup_field="yandex_markup_from_wholesale" markup=row.product.yandex_markup_from_wholesale markup_label="Наценка от опта для Яндекс Маркет" %}
           <td>{% if can_change_avito or can_change_wholesale or can_change_yandex %}<form id="product-price-{{ row.type }}-{{ row.product.id }}" method="post" action="{% url 'pricing:product_update' %}{% if filter_query %}?{{ filter_query }}{% endif %}" class="inline-price-form">{% csrf_token %}<input type="hidden" name="product_type" value="{{ row.type }}"><input type="hidden" name="product_id" value="{{ row.product.id }}"><button class="table-action" type="submit">Сохранить</button></form>{% endif %}</td>
         </tr>

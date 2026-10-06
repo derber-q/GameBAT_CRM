@@ -30,6 +30,10 @@ class ConsignmentStockBase(models.Model):
         "Сумма к получению за единицу", max_digits=16, decimal_places=2,
         default=0, validators=[MinValueValidator(0)],
     )
+    unit_cost = models.DecimalField(
+        "Себестоимость единицы партии", max_digits=20, decimal_places=2,
+        default=0, validators=[MinValueValidator(0)], editable=False,
+    )
 
     class Meta:
         abstract = True
@@ -146,6 +150,10 @@ class ConsignmentMovementItem(models.Model):
     receivable_per_unit = models.DecimalField(
         "Сумма к получению за единицу", max_digits=16, decimal_places=2,
         validators=[MinValueValidator(0)], editable=False,
+    )
+    unit_cost_snapshot = models.DecimalField(
+        "Себестоимость единицы", max_digits=20, decimal_places=2,
+        default=0, validators=[MinValueValidator(0)], editable=False,
     )
     warehouse_quantity_before = models.PositiveIntegerField("Остаток склада до", editable=False)
     warehouse_quantity_after = models.PositiveIntegerField("Остаток склада после", editable=False)

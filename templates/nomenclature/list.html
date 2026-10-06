@@ -12,6 +12,42 @@
 
 {% include "catalog/_product_filters.html" %}
 
+{% for brand_group in tech_brand_groups %}
+<section class="panel inventory-section collapsible-section">
+  <button class="section-heading section-toggle" type="button" aria-expanded="true" aria-controls="nomenclature-brand-{{ brand_group.brand.pk }}" data-collapse-toggle>
+    <span class="section-title"><span class="category-tag category-tag-tech">TECH</span><span class="section-name">{{ brand_group.brand.name }}</span></span>
+    <span class="section-heading-meta"><span class="count">{{ brand_group.count }} поз.</span><span class="collapse-indicator" aria-hidden="true">▼</span></span>
+  </button>
+  <div id="nomenclature-brand-{{ brand_group.brand.pk }}" class="collapsible-content nomenclature-series-list">
+{% for product_type, products in brand_group.type_groups %}
+  <section class="nomenclature-series collapsible-section">
+    <button class="section-heading section-toggle nomenclature-series-toggle" type="button" aria-expanded="true" aria-controls="nomenclature-tech-{{ brand_group.brand.pk }}-{{ product_type.pk }}" data-collapse-toggle>
+      <span class="section-title"><span class="category-tag category-tag-tech">TECH</span><span class="section-name">{{ product_type.name }}</span></span>
+      <span class="section-heading-meta"><span class="count">{{ products|length }} поз.</span><span class="collapse-indicator" aria-hidden="true">▼</span></span>
+    </button>
+    <div id="nomenclature-tech-{{ brand_group.brand.pk }}-{{ product_type.pk }}" class="collapsible-content table-scroll">
+      <table class="nomenclature-table">
+        <colgroup><col class="nomenclature-col-id"><col class="nomenclature-col-sku"><col class="nomenclature-col-name"><col class="nomenclature-col-meta"><col class="nomenclature-col-action"></colgroup>
+        <thead><tr><th>ID</th><th>Артикул</th><th>Название</th><th>Бренд</th><th></th></tr></thead>
+        <tbody>
+          {% for product in products %}
+            <tr class="{% if avito_highlight and product.avito_connected %}avito-connected-row{% elif zero_stock_highlight and product.global_stock == 0 %}zero-stock-row{% endif %}">
+              <td class="mono">{{ product.id }}</td>
+              <td class="mono">{{ product.sku|default:"—" }}</td>
+              <td><a class="strong" href="{% url 'nomenclature:tech_detail' product.pk %}"{% if product.title_image %} data-product-title-image="{% url 'nomenclature:product_title_image' 'tech' product.pk %}"{% endif %}>{{ product.name }}</a></td>
+              <td>{{ product.brand.name }}</td>
+              <td><a class="table-action" href="{% url 'nomenclature:tech_detail' product.pk %}">Открыть</a></td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+{% endfor %}
+  </div>
+</section>
+{% endfor %}
+
 {% for platform, grouping in cd_groups %}
   <section class="panel inventory-section collapsible-section">
     <button class="section-heading section-toggle" type="button" aria-expanded="true" aria-controls="nomenclature-cd-{{ platform.pk }}" data-collapse-toggle>
@@ -34,7 +70,7 @@
             <tr class="{% if avito_highlight and product.avito_connected %}avito-connected-row{% elif zero_stock_highlight and product.global_stock == 0 %}zero-stock-row{% endif %}">
               <td class="mono">{{ product.id }}</td>
               <td class="mono">{{ product.sku|default:"—" }}</td>
-              <td><a class="strong" href="{% url 'nomenclature:cd_detail' product.pk %}">{{ product.name }}</a></td>
+              <td><a class="strong" href="{% url 'nomenclature:cd_detail' product.pk %}"{% if product.title_image %} data-product-title-image="{% url 'nomenclature:product_title_image' 'cd' product.pk %}"{% endif %}>{{ product.name }}</a></td>
               <td class="mono">{{ product.cusa_ppsa_code|default:"—" }}</td>
               <td><a class="table-action" href="{% url 'nomenclature:cd_detail' product.pk %}">Открыть</a></td>
             </tr>
@@ -44,32 +80,6 @@
         </div>
       </div>
       {% endfor %}
-    </div>
-  </section>
-{% endfor %}
-
-{% for product_type, products in tech_groups %}
-  <section class="panel inventory-section collapsible-section">
-    <button class="section-heading section-toggle" type="button" aria-expanded="true" aria-controls="nomenclature-tech-{{ product_type.pk }}" data-collapse-toggle>
-      <span class="section-title"><span class="category-tag category-tag-tech">TECH</span><span class="section-name">{{ product_type.name }}</span></span>
-      <span class="section-heading-meta"><span class="count">{{ products|length }} поз.</span><span class="collapse-indicator" aria-hidden="true">▼</span></span>
-    </button>
-    <div id="nomenclature-tech-{{ product_type.pk }}" class="collapsible-content table-scroll">
-      <table class="nomenclature-table">
-        <colgroup><col class="nomenclature-col-id"><col class="nomenclature-col-sku"><col class="nomenclature-col-name"><col class="nomenclature-col-meta"><col class="nomenclature-col-action"></colgroup>
-        <thead><tr><th>ID</th><th>Артикул</th><th>Название</th><th>Бренд</th><th></th></tr></thead>
-        <tbody>
-          {% for product in products %}
-            <tr class="{% if avito_highlight and product.avito_connected %}avito-connected-row{% elif zero_stock_highlight and product.global_stock == 0 %}zero-stock-row{% endif %}">
-              <td class="mono">{{ product.id }}</td>
-              <td class="mono">{{ product.sku|default:"—" }}</td>
-              <td><a class="strong" href="{% url 'nomenclature:tech_detail' product.pk %}">{{ product.name }}</a></td>
-              <td>{{ product.brand.name }}</td>
-              <td><a class="table-action" href="{% url 'nomenclature:tech_detail' product.pk %}">Открыть</a></td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
     </div>
   </section>
 {% endfor %}

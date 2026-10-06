@@ -1,13 +1,17 @@
 from collections import defaultdict
+from decimal import ROUND_CEILING
 
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied, ValidationError
+from django.db.models import IntegerField, Sum, Value
+from django.db.models.functions import Coalesce
 from django.http import JsonResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_POST
 
 from catalog.models import CD, Tech
+from catalog.product_ordering import cd_order_key, tech_brand_groups
 from catalog.product_filters import (
     filter_product_querysets,
     product_filter_context,
@@ -18,10 +22,13 @@ from .services import update_product_prices, update_supplier_price
 from .warnings import product_price_warnings
 
 
+PRICING_FILTER_QUERY_KEYS = ("in_stock",)
+
+
 def _pricing_destination(request):
     if request.user.is_superuser or request.user.has_perm("pricing.view_pricing"):
         destination = reverse("pricing:list")
-        query_string = product_filter_query_string(request.GET)
+        query_string = product_filter_query_string(request.GET, extra_keys=PRICING_FILTER_QUERY_KEYS)
         return redirect(f"{destination}?{query_string}" if query_string else destination)
     return redirect("core:home")
 
@@ -29,16 +36,30 @@ def _pricing_destination(request):
 @permission_required_any("pricing.view_pricing")
 def pricing_list(request):
     filters, filter_context = product_filter_context(request.GET)
-    cds = CD.objects.active().select_related("platform").order_by("platform__name", "name", "id")
-    tech_items = Tech.objects.active().select_related("brand", "product_type").order_by(
-        "product_type__name", "name", "id"
+    in_stock_only = request.GET.get("in_stock", "1") != "0"
+    stock_total = Coalesce(Sum("warehouse_stocks__quantity"), Value(0), output_field=IntegerField())
+    cds = (
+        CD.objects.active()
+        .select_related("platform")
+        .annotate(global_stock=stock_total)
+        .order_by("platform__name", "name", "id")
     )
+    tech_items = (
+        Tech.objects.active()
+        .select_related("brand", "product_type")
+        .annotate(global_stock=stock_total)
+        .order_by("product_type__name", "name", "id")
+    )
+    if in_stock_only:
+        cds = cds.filter(global_stock__gt=0)
+        tech_items = tech_items.filter(global_stock__gt=0)
     cds, tech_items = filter_product_querysets(cds, tech_items, filters)
     cd_groups = defaultdict(list)
-    for product in cds:
+    for product in sorted(cds, key=cd_order_key):
         cd_groups[product.platform].append({
             "type": "cd",
             "product": product,
+            "display_cost": product.cost.to_integral_value(rounding=ROUND_CEILING),
             "warnings": product_price_warnings(product),
         })
     tech_groups = defaultdict(list)
@@ -46,13 +67,20 @@ def pricing_list(request):
         tech_groups[product.product_type].append({
             "type": "tech",
             "product": product,
+            "display_cost": product.cost.to_integral_value(rounding=ROUND_CEILING),
             "warnings": product_price_warnings(product),
         })
     context = {
         "query": filters.search,
         "cd_groups": list(cd_groups.items()),
         "tech_groups": list(tech_groups.items()),
-        "filter_query": product_filter_query_string(request.GET),
+        "tech_brand_groups": tech_brand_groups(
+            [row for rows in tech_groups.values() for row in rows], product_of=lambda row: row["product"],
+        ),
+        "filter_query": product_filter_query_string(
+            request.GET, extra_keys=PRICING_FILTER_QUERY_KEYS,
+        ),
+        "in_stock_only": in_stock_only,
         "can_change_avito": request.user.is_superuser or request.user.has_perm("pricing.change_retail_price"),
         "can_change_wholesale": request.user.is_superuser or request.user.has_perm("pricing.change_wholesale_price"),
         "can_change_yandex": request.user.is_superuser or request.user.has_perm("pricing.change_yandex_market_price"),

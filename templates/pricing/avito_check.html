@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% load static l10n %}
+{% block body_class %}avito-check-page{% endblock %}
+{% block title %}Avito Check · ReSOURCE{% endblock %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">Ценообразование</p><h1>Avito Check · Автоматическая проверка</h1><p class="muted">Товар {{ index|add:1 }} из {{ total }}</p></div><a class="button button-secondary" href="{% url 'pricing:avito_check' %}">Все товары</a></div>
+<section class="panel avito-check-product">
+  <div class="avito-check-media">{% if product.title_image %}<img src="{% url 'nomenclature:product_title_image' kind product.pk %}" alt="{{ product.name }}">{% else %}<span>Фото не добавлено</span>{% endif %}</div>
+  <div class="avito-check-details">
+    <h2>{{ product.name }}</h2>
+    <p class="muted">{{ kind|upper }} #{{ product.pk }}{% if product.sku %} · {{ product.sku }}{% endif %}</p>
+    <p>Глобальная себестоимость: <strong>{{ product.cost }} ₽</strong></p>
+    {% if form_error %}<div class="alert alert-error">{{ form_error }}</div>{% endif %}
+    <form id="avito-check-next" method="post" action="{% url 'pricing:avito_check_next' %}" class="stacked-form">
+      {% csrf_token %}<input type="hidden" name="kind" value="{{ kind }}"><input type="hidden" name="product_id" value="{{ product.pk }}">
+      <div class="product-form-grid">
+        <div class="field"><label for="check-wholesale">Оптовая цена</label><input id="check-wholesale" type="number" name="wholesale_price" min="0" step="0.01" value="{{ form_wholesale|unlocalize|default_if_none:'' }}" {% if not can_change_wholesale %}readonly{% endif %}></div>
+        <div class="field"><label for="check-avito">Цена Avito</label><input id="check-avito" type="number" name="avito_price" min="0" step="0.01" value="{{ form_avito|unlocalize|default_if_none:'' }}" {% if not can_change_avito %}readonly{% endif %}></div>
+      </div>
+      {% if warnings.avito_price %}<p class="muted">{{ warnings.avito_price }}</p>{% endif %}
+      <div class="form-actions"><button class="button" type="submit">Далее →</button></div>
+    </form>
+    <p><a class="button button-secondary" href="{{ manual_search_url }}" target="_blank" rel="noopener noreferrer">Ручной поиск ↗</a> <span class="muted">Avito · без расхода кредитов</span></p>
+    <form id="avito-check-run" method="post" action="{% url 'pricing:avito_check_run' %}">{% csrf_token %}<input type="hidden" name="kind" value="{{ kind }}"><input type="hidden" name="product_id" value="{{ product.pk }}">
+      <div class="form-actions">
+        <button class="button button-secondary" type="submit" name="action" value="check" {% if not reef_configured %}disabled{% endif %}>Проверка</button>
+        <button class="button button-secondary" type="submit" name="action" value="refresh" {% if not reef_configured %}disabled{% endif %}>Обновить сейчас · до 10 кредитов</button>
+        <button class="button button-secondary" type="submit" name="action" value="deep" {% if not reef_configured %}disabled{% endif %}>Искать глубже · до 40 кредитов</button>
+      </div><span class="muted" role="status" id="avito-check-status"></span>
+    </form>
+    <p class="muted">Проверка: до 2 страниц и 6 полных карточек, максимум 10 кредитов. Сохранённые результаты используются 24 часа. «Искать глубже»: до 10 страниц и 20 карточек. Минимум по всей России не гарантируется.</p>
+    {% if not reef_configured %}<p class="muted">Ключ ReefAPI не настроен. Добавьте его на странице <a href="{% url 'integrations:api_keys' %}">API ключи</a>.</p>{% endif %}
+  </div>
+</section>
+<div id="avito-check-results">{% include "pricing/_avito_check_results.html" %}</div>
+<script src="{% static 'js/avito-check.js' %}?v=2" defer></script>
+{% endblock %}

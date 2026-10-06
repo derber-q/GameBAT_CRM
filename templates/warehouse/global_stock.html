@@ -4,6 +4,26 @@
 <div class="page-heading"><div><p class="eyebrow">Все склады</p><h1>Общие остатки</h1><p class="muted">Физические остатки, реализация и товары в пути.</p></div>{% if perms.warehouse.view_transfers or user.is_superuser %}<a class="button button-secondary" href="{% url 'warehouse:transfer_list' %}">Перемещения</a>{% endif %}</div>
 {% include "catalog/_product_filters.html" %}
 
+{% for brand_group in tech_brand_groups %}
+<section class="panel inventory-section collapsible-section">
+  <button class="section-heading section-toggle" type="button" aria-expanded="true" aria-controls="global-brand-{{ brand_group.brand.pk }}" data-collapse-toggle>
+    <span class="section-title"><span class="category-tag category-tag-tech">TECH</span><span class="section-name">{{ brand_group.brand.name }}</span></span>
+    <span class="section-heading-meta"><span class="count">{{ brand_group.count }} поз.</span><span class="collapse-indicator" aria-hidden="true">▼</span></span>
+  </button>
+  <div id="global-brand-{{ brand_group.brand.pk }}" class="collapsible-content nomenclature-series-list">
+{% for group, group_rows in brand_group.type_groups %}
+  <section class="nomenclature-series collapsible-section">
+    <button class="section-heading section-toggle nomenclature-series-toggle" type="button" aria-expanded="true" aria-controls="global-tech-{{ brand_group.brand.pk }}-{{ group.pk }}" data-collapse-toggle>
+      <span class="section-title"><span class="category-tag category-tag-tech">TECH</span><span class="section-name">{{ group.name }}</span></span>
+      <span class="section-heading-meta"><span class="count">{{ group_rows|length }} поз.</span><span class="collapse-indicator" aria-hidden="true">▼</span></span>
+    </button>
+    <div id="global-tech-{{ brand_group.brand.pk }}-{{ group.pk }}" class="collapsible-content">{% include "warehouse/_global_stock_table.html" %}</div>
+  </section>
+{% endfor %}
+  </div>
+</section>
+{% endfor %}
+
 {% for group, group_rows in cd_groups %}
   <section class="panel inventory-section collapsible-section">
     <button class="section-heading section-toggle" type="button" aria-expanded="true" aria-controls="global-cd-{{ group.pk }}" data-collapse-toggle>
@@ -11,16 +31,6 @@
       <span class="section-heading-meta"><span class="count">{{ group_rows|length }} поз.</span><span class="collapse-indicator" aria-hidden="true">▼</span></span>
     </button>
     <div id="global-cd-{{ group.pk }}" class="collapsible-content">{% include "warehouse/_global_stock_table.html" %}</div>
-  </section>
-{% endfor %}
-
-{% for group, group_rows in tech_groups %}
-  <section class="panel inventory-section collapsible-section">
-    <button class="section-heading section-toggle" type="button" aria-expanded="true" aria-controls="global-tech-{{ group.pk }}" data-collapse-toggle>
-      <span class="section-title"><span class="category-tag category-tag-tech">TECH</span><span class="section-name">{{ group.name }}</span></span>
-      <span class="section-heading-meta"><span class="count">{{ group_rows|length }} поз.</span><span class="collapse-indicator" aria-hidden="true">▼</span></span>
-    </button>
-    <div id="global-tech-{{ group.pk }}" class="collapsible-content">{% include "warehouse/_global_stock_table.html" %}</div>
   </section>
 {% endfor %}
 

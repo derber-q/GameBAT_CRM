@@ -1,8 +1,11 @@
 """Настройки ReSOURCE: локальная SQLite, серверные шаблоны и интеграция Avito."""
 import os
+import time
 from pathlib import Path
 
 from django.core.management.utils import get_random_secret_key
+from cryptography.fernet import Fernet
+from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -46,6 +49,8 @@ INSTALLED_APPS = [
     "price",
     "orders",
     "integrations.apps.IntegrationsConfig",
+    "yandex_market.apps.YandexMarketConfig",
+    "resource_storefront.apps.ResourceStorefrontConfig",
 ]
 
 MIDDLEWARE = [
@@ -70,6 +75,7 @@ TEMPLATES = [
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
                 "core.context_processors.crm_header",
+                "resource_storefront.context_processors.storefront_context",
             ],
         },
     },
@@ -81,9 +87,18 @@ DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
         "NAME": BASE_DIR / "db.sqlite3",
-        # Сайт и обработчик Avito пишут в один SQLite-файл. Таймаут позволяет
-        # дождаться короткой записи, но не заменяет атомарность и повтор задания.
-        "OPTIONS": {"timeout": 30},
+        # Сайт и фоновые обработчики пишут в один SQLite-файл. WAL не блокирует
+        # чтение на время записи, а IMMEDIATE захватывает право записи в начале
+        # atomic-блока и ждёт timeout вместо ошибки при переходе read -> write.
+        "OPTIONS": {
+            "timeout": 30,
+            "transaction_mode": "IMMEDIATE",
+            "init_command": (
+                "PRAGMA journal_mode=WAL; "
+                "PRAGMA synchronous=NORMAL; "
+                "PRAGMA busy_timeout=30000"
+            ),
+        },
     }
 }
 
@@ -99,16 +114,59 @@ TIME_ZONE = "Europe/Moscow"
 USE_I18N = True
 USE_TZ = True
 
-STATIC_URL = "static/"
+STATIC_URL = "/static/"
 STATICFILES_DIRS = [BASE_DIR / "static"]
 STATIC_ROOT = BASE_DIR / "staticfiles"
 MEDIA_ROOT = BASE_DIR / "protected_media"
 MEDIA_URL = "/protected-media/"
 INTEGRATION_ENCRYPTION_KEY = os.environ.get("INTEGRATION_ENCRYPTION_KEY", "")
 INTEGRATION_ENCRYPTION_KEY_FILE = BASE_DIR / ".integration-encryption-key"
+def _resource_token_encryption_key():
+    configured = os.environ.get("RESOURCE_TOKEN_ENCRYPTION_KEY", "").strip()
+    key_path = Path(os.environ.get(
+        "RESOURCE_TOKEN_ENCRYPTION_KEY_FILE",
+        BASE_DIR / ".resource-token-encryption-key",
+    ))
+    if not configured:
+        try:
+            descriptor = os.open(key_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        except FileExistsError:
+            for _ in range(40):
+                configured = key_path.read_text(encoding="ascii").strip()
+                try:
+                    Fernet(configured.encode("ascii"))
+                    break
+                except (ValueError, UnicodeEncodeError):
+                    time.sleep(0.05)
+        else:
+            configured = Fernet.generate_key().decode("ascii")
+            with os.fdopen(descriptor, "w", encoding="ascii") as key_file:
+                key_file.write(configured)
+                key_file.flush()
+                os.fsync(key_file.fileno())
+    try:
+        Fernet(configured.encode("ascii"))
+    except (ValueError, UnicodeEncodeError):
+        raise ImproperlyConfigured("RESOURCE_TOKEN_ENCRYPTION_KEY must be a Fernet URL-safe base64 key") from None
+    return configured
+
+
+RESOURCE_TOKEN_ENCRYPTION_KEY = _resource_token_encryption_key()
 AVITO_API_BASE_URL = "https://api.avito.ru"
 AVITO_API_TIMEOUT_SECONDS = int(os.environ.get("AVITO_API_TIMEOUT_SECONDS", "10"))
 AVITO_SYNC_DEBOUNCE_SECONDS = int(os.environ.get("AVITO_SYNC_DEBOUNCE_SECONDS", "3"))
+YANDEX_MARKET_API_KEY = os.environ.get("YANDEX_MARKET_API_KEY", "")
+YANDEX_MARKET_KEY_FILE = BASE_DIR / ".yandex-market-key"
+YANDEX_MARKET_TIMEOUT = 20
+YANDEX_MARKET_PUBLIC_URL = os.environ.get("YANDEX_MARKET_PUBLIC_URL", "").rstrip("/")
+YANDEX_MARKET_TRUSTED_PROXIES = tuple(filter(None, os.environ.get("YANDEX_MARKET_TRUSTED_PROXIES", "").split(",")))
+YANDEX_MARKET_WEBHOOK_NETWORKS = ("5.45.207.0/25", "141.8.142.0/25", "5.255.253.0/25")
+GOOGLE_SERVICE_ACCOUNT_FILE = os.environ.get("GOOGLE_SERVICE_ACCOUNT_FILE", "")
+GOOGLE_SHEETS_DEFAULT_URL = os.environ.get(
+    "GOOGLE_SHEETS_DEFAULT_URL",
+    "https://docs.google.com/spreadsheets/d/1bNKeWmFyoWZOQDEuhCXxltv0YkK6ykW20tXI9uI2tiI/edit?usp=sharing",
+)
+GOOGLE_SHEETS_DEFAULT_TAB = os.environ.get("GOOGLE_SHEETS_DEFAULT_TAB", "Прайс CRM")
 RAPIRA_MARKET_RATES_URL = "https://api.rapira.net/open/market/rates"
 RAPIRA_API_TIMEOUT_SECONDS = 4
 RAPIRA_RATES_CACHE_TTL_SECONDS = 15
@@ -140,8 +198,12 @@ LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
     "formatters": {"business": {"format": "{asctime} {levelname} {name}: {message}", "style": "{"}},
-    "handlers": {"console": {"class": "logging.StreamHandler", "formatter": "business"}},
+    "filters": {"retail_tokens": {"()": "resource_storefront.log_filters.RetailTokenFilter"}},
+    "handlers": {"console": {"class": "logging.StreamHandler", "formatter": "business", "filters": ["retail_tokens"]}},
     "loggers": {
+        "django.server": {"handlers": ["console"], "level": "INFO", "propagate": False},
+        "django.request": {"handlers": ["console"], "level": "WARNING", "propagate": False},
+        "django.security": {"handlers": ["console"], "level": "WARNING", "propagate": False},
         "gamebat.business": {"handlers": ["console"], "level": os.environ.get("DJANGO_LOG_LEVEL", "INFO"), "propagate": False}
     },
 }

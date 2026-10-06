@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.core.exceptions import ValidationError
+from django.core.validators import MinValueValidator
 from django.db import models
 
 from catalog.models import CD, Tech
@@ -182,6 +183,42 @@ class TechWarehouseStorageAssignment(WarehouseStorageAssignmentBase):
         ]
 
 
+class WarehouseRevision(models.Model):
+    warehouse = models.ForeignKey(Warehouse, on_delete=models.PROTECT, related_name="revisions")
+    started_at = models.DateTimeField(auto_now_add=True)
+    started_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name="warehouse_revisions_started")
+    is_active = models.BooleanField(default=True)
+    closed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = "ревизия склада"
+        verbose_name_plural = "ревизии складов"
+        constraints = [
+            models.UniqueConstraint(fields=("warehouse",), condition=models.Q(is_active=True), name="one_active_warehouse_revision"),
+            models.CheckConstraint(condition=(models.Q(is_active=True, closed_at__isnull=True) | models.Q(is_active=False, closed_at__isnull=False)), name="warehouse_revision_closed_state"),
+        ]
+
+
+class WarehouseRevisionItem(models.Model):
+    revision = models.ForeignKey(WarehouseRevision, on_delete=models.CASCADE, related_name="items")
+    cd = models.ForeignKey(CD, null=True, blank=True, on_delete=models.PROTECT, related_name="warehouse_revision_items")
+    tech = models.ForeignKey(Tech, null=True, blank=True, on_delete=models.PROTECT, related_name="warehouse_revision_items")
+    checked = models.BooleanField(default=False)
+    checked_at = models.DateTimeField(null=True, blank=True)
+    checked_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name="warehouse_revision_checks")
+    invalidated_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = "отметка ревизии склада"
+        verbose_name_plural = "отметки ревизии склада"
+        constraints = [
+            models.CheckConstraint(condition=(models.Q(cd__isnull=False, tech__isnull=True) | models.Q(cd__isnull=True, tech__isnull=False)), name="revision_item_one_product"),
+            models.UniqueConstraint(fields=("revision", "cd"), condition=models.Q(cd__isnull=False), name="unique_revision_cd"),
+            models.UniqueConstraint(fields=("revision", "tech"), condition=models.Q(tech__isnull=False), name="unique_revision_tech"),
+            models.CheckConstraint(condition=models.Q(checked=False) | models.Q(checked_at__isnull=False), name="revision_checked_has_date"),
+        ]
+
+
 class WarehouseTransfer(models.Model):
     class Status(models.TextChoices):
         CREATED = "created", "Создан"
@@ -251,6 +288,10 @@ class WarehouseTransfer(models.Model):
 
 class WarehouseTransferItemBase(models.Model):
     quantity = models.PositiveIntegerField("Количество")
+    unit_cost_snapshot = models.DecimalField(
+        "Себестоимость единицы", max_digits=20, decimal_places=2,
+        default=0, validators=[MinValueValidator(0)], editable=False,
+    )
 
     class Meta:
         abstract = True

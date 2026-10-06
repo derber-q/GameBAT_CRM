@@ -76,7 +76,7 @@ class ProductAdminMixin:
         return actions
 
     def get_readonly_fields(self, request, obj=None):
-        readonly = ["quantity_on_consignment", "cost", "is_archived"]
+        readonly = ["quantity_on_consignment", "cost", "is_archived", "title_image"]
         for field, permission in field_permissions_for(self.model).items():
             enforce_permission = field in PRICING_FIELDS or obj is not None
             if enforce_permission and not (
@@ -188,6 +188,7 @@ class TechBarcodeInline(BarcodeInlineBase):
 
 @admin.register(CD)
 class CDAdmin(ProductAdminMixin, admin.ModelAdmin):
+    exclude = ("wholesale_site_enabled",)
     list_display = (
         "id", "name", "is_archived", "platform", "game_series", "sku", "weight_grams", "quantity_on_consignment",
         "cost", "avito_price",
@@ -200,6 +201,7 @@ class CDAdmin(ProductAdminMixin, admin.ModelAdmin):
 
 @admin.register(Tech)
 class TechAdmin(ProductAdminMixin, admin.ModelAdmin):
+    exclude = ("wholesale_site_enabled",)
     list_display = (
         "id", "name", "is_archived", "brand", "product_type", "sku", "weight_grams",
         "quantity_on_consignment", "cost", "avito_price",

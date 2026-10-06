@@ -1,5 +1,6 @@
 from decimal import Decimal
 from django.contrib.auth.models import Permission
+from django.core.exceptions import ValidationError
 from django.db import connection
 from django.test import TestCase, Client
 from django.test.utils import CaptureQueriesContext
@@ -46,7 +47,7 @@ class SaleListingTests(TestCase):
             self.assertEqual([g['kind'] for g in groups], Sale.SaleType.values)
             self.assertEqual(sorted(row['sale'].pk for g in groups for row in g['rows']), sorted(pks))
             for group in groups:
-                self.assertTrue(all(row['sale'].sale_type == group['kind'] for row in group['rows']))
+                self.assertTrue(all(row['sale'].sale_type in group['sale_types'] for row in group['rows']))
                 self.assertContains(response, f'aria-controls="sales-group-{group["kind"]}" data-collapse-toggle')
                 self.assertContains(response, f'id="sales-group-{group["kind"]}" class="collapsible-content"')
             self.assertContains(response, 'Keep this note')
@@ -57,11 +58,20 @@ class SaleListingTests(TestCase):
 
     def test_navigation_and_old_list_url(self):
         response = self.client.get(reverse('sales:list'))
-        self.assertContains(response, 'href="/sales/new/" aria-haspopup="true">Продажа</a>')
+        self.assertContains(response, f'href="{reverse("sales:create")}" aria-haspopup="true">Продажа</a>')
         for name in ('incomplete', 'completed', 'cancelled'):
             self.assertContains(response, reverse('sales:' + name))
         self.assertEqual(response.context['state'], 'incomplete')
         self.assertEqual(self.client.get(reverse('sales:create')).status_code, 200)
+
+    def test_new_sale_form_has_one_wholesale_type_and_legacy_values_are_rejected(self):
+        response = self.client.get(reverse('sales:create'))
+        sale_type_values = [value for value, _label in response.context['form'].fields['sale_type'].choices]
+        self.assertIn(Sale.SaleType.WHOLESALE, sale_type_values)
+        self.assertNotIn('wholesale_pickup', sale_type_values)
+        self.assertNotIn('wholesale_delivery', sale_type_values)
+        with self.assertRaisesMessage(ValidationError, 'Выберите тип продажи.'):
+            self.sale('wholesale_pickup')
 
     def test_order_steps_payment_completion_and_actual_row_version(self):
         sale = self.sale()
@@ -164,4 +174,14 @@ class SaleListingTests(TestCase):
         response = self.client.get(url, {'page_retail': 2})
         groups = {group['kind']: group for group in response.context['groups']}
         self.assertEqual(len(groups['retail']['rows']), 2)
+        self.assertEqual(len(groups['avito']['rows']), 1)
+        Sale.objects.bulk_create([
+            Sale(warehouse=self.warehouse, created_by=self.actor, price_type='wholesale',
+                 sale_type=Sale.SaleType.WHOLESALE,
+                 payment_method='bank_account')
+            for index in range(51)
+        ])
+        response = self.client.get(url, {'page_wholesale': 2})
+        groups = {group['kind']: group for group in response.context['groups']}
+        self.assertEqual(len(groups['wholesale']['rows']), 1)
         self.assertEqual(len(groups['avito']['rows']), 1)

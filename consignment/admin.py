@@ -16,14 +16,14 @@ class CurrentStockAdmin(admin.ModelAdmin):
 
 @admin.register(CDConsignmentStock)
 class CDConsignmentStockAdmin(CurrentStockAdmin):
-    list_display = ("platform", "warehouse", "cd", "quantity", "receivable_per_unit")
+    list_display = ("platform", "warehouse", "cd", "quantity", "unit_cost", "receivable_per_unit")
     list_filter = ("platform", "warehouse")
     search_fields = ("cd__name", "cd__sku", "platform__name", "warehouse__name")
 
 
 @admin.register(TechConsignmentStock)
 class TechConsignmentStockAdmin(CurrentStockAdmin):
-    list_display = ("platform", "warehouse", "tech", "quantity", "receivable_per_unit")
+    list_display = ("platform", "warehouse", "tech", "quantity", "unit_cost", "receivable_per_unit")
     list_filter = ("platform", "warehouse")
     search_fields = ("tech__name", "tech__sku", "platform__name", "warehouse__name")
 
@@ -34,7 +34,7 @@ class ConsignmentMovementItemInline(admin.TabularInline):
     can_delete = False
     fields = (
         "product_kind", "product_name_snapshot", "product_sku_snapshot", "quantity",
-        "receivable_per_unit", "warehouse_quantity_before", "warehouse_quantity_after",
+        "unit_cost_snapshot", "receivable_per_unit", "warehouse_quantity_before", "warehouse_quantity_after",
         "consignment_quantity_before", "consignment_quantity_after",
     )
     readonly_fields = fields

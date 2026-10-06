@@ -249,7 +249,7 @@
 
     const refresh = async () => {
       try {
-        const response = await fetch("/api/exchange-rates/", {
+        const response = await fetch(document.body.dataset.exchangeRatesUrl || "/api/exchange-rates/", {
           cache: "no-store",
           headers: { "Accept": "application/json", "X-Requested-With": "XMLHttpRequest" },
         });
@@ -338,6 +338,7 @@
     });
     form.querySelector('[data-avito-highlight-toggle]')?.addEventListener("change", () => form.requestSubmit());
     form.querySelector('[data-zero-stock-highlight-toggle]')?.addEventListener("change", () => form.requestSubmit());
+    form.querySelector('[data-in-stock-toggle]')?.addEventListener("change", () => form.requestSubmit());
     syncFilters(null);
   });
 

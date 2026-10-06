@@ -1,7 +1,7 @@
 {% for row in section_rows %}
 <tr class="finalization-row" data-product-key="{{ row.product_type }}:{{ row.product_id }}" data-product-type="{{ row.product_type }}" data-quantity="{{ row.global_quantity }}" data-baseline-cost="{{ row.current_cost }}">
   <td class="finalization-select-cell">
-    <input type="checkbox" name="selected_product" value="{{ row.product_type }}:{{ row.product_id }}" aria-label="Участвует в автораспределении: {{ row.product.name }}" {% if not row.global_quantity %}disabled title="Нулевой глобальный остаток — товар не участвует в распределении."{% endif %}>
+    <input type="checkbox" name="selected_product" value="{{ row.product_type }}:{{ row.product_id }}" aria-label="Участвует в автораспределении: {{ row.product.name }}" {% if not row.global_quantity %}disabled title="Нулевой складской остаток — товар не участвует в распределении."{% endif %}>
     <input type="hidden" name="product_type" value="{{ row.product_type }}">
     <input type="hidden" name="product_id" value="{{ row.product_id }}">
     <input type="hidden" name="baseline_quantity" value="{{ row.global_quantity }}">

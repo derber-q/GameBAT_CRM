@@ -1,0 +1,26 @@
+/* Размеры ограничены таблицей Avito Check; название получает всю свободную ширину. */
+.avito-list-table { width: 100%; min-width: 1040px; table-layout: fixed; }
+.avito-list-table .avito-col-cost { width: 112px; }
+.avito-list-table .avito-col-price { width: 114px; }
+.avito-list-table .avito-col-save { width: 92px; }
+.avito-list-table .avito-col-found { width: 124px; }
+.avito-list-table .avito-col-date { width: 104px; }
+.avito-list-table .avito-col-search { width: 138px; }
+.avito-list-table th, .avito-list-table td { padding: 9px 8px; white-space: normal; vertical-align: middle; }
+.avito-list-table th { line-height: 1.35; }
+.avito-list-table .avito-product-name { line-height: 1.4; overflow-wrap: anywhere; }
+.avito-list-table .avito-product-name small { display: block; margin-top: 3px; font-weight: 400; }
+.avito-list-table .compact-input { box-sizing: border-box; width: 100%; min-width: 0; max-width: none; padding: 7px 8px; }
+.avito-list-table .inline-price-form { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; min-width: 0; margin: 0; }
+/* Общий обработчик задаёт размеры статуса inline; здесь не резервируем пустое место. */
+.avito-list-table .inline-price-form [role="status"] { width: auto !important; min-height: 0 !important; overflow-wrap: anywhere; }
+.avito-list-table [role="status"]:empty { display: none !important; }
+.avito-list-table [data-found-price-form] { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; margin: 0; }
+.avito-list-table [data-save-status] { font-size: 11px; line-height: 1.3; }
+.avito-list-table .table-action { font-size: 12px; line-height: 1.4; padding: 4px 0; }
+.avito-list-table .avito-found-date { font-size: 12px; line-height: 1.5; }
+.avito-list-table .avito-manual-search { box-sizing: border-box; width: 100%; padding: 9px 6px; font-size: 12px; white-space: nowrap; }
+.avito-list-filters { padding: 14px 16px; }
+.avito-list-filters .form-actions { align-items: end; gap: 12px; flex-wrap: wrap; }
+.avito-list-filters .field:first-child { flex: 1 1 300px; }
+.avito-list-filters .muted { margin: 8px 0 0; font-size: 12px; }

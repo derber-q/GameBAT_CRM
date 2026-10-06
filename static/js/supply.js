@@ -9,6 +9,13 @@
   const expenses = document.getElementById("expense-lines");
   const warehouse = document.getElementById("id_warehouse");
   const csrfToken = form.querySelector('input[name="csrfmiddlewaretoken"]').value;
+  let pendingBarcodeSaves = 0;
+  form.addEventListener("submit", (event) => {
+    if (pendingBarcodeSaves) {
+      event.preventDefault();
+      form.querySelector('[data-barcode-saving="true"]')?.focus();
+    }
+  });
 
   function removeButton(row) {
     const cell = document.createElement("td");
@@ -50,6 +57,108 @@
     weightPrompt.hidden = true;
     wrap.append(search, type, id, suggestionBox, weightPrompt);
     productCell.append(wrap);
+
+    if (form.dataset.barcodeUrl) {
+      let selectedProduct = null;
+      const addBarcode = document.createElement("button");
+      addBarcode.type = "button";
+      addBarcode.className = "button button-secondary button-small supply-add-barcode";
+      addBarcode.textContent = "Добавить новый штрихкод";
+      addBarcode.hidden = true;
+      const editor = document.createElement("div");
+      editor.className = "supply-barcode-editor";
+      editor.hidden = true;
+      const label = document.createElement("label");
+      label.textContent = "Новый штрихкод";
+      const barcodeInput = document.createElement("input");
+      barcodeInput.type = "text";
+      barcodeInput.maxLength = 100;
+      barcodeInput.autocomplete = "off";
+      barcodeInput.setAttribute("aria-label", "Новый штрихкод");
+      label.append(barcodeInput);
+      const actions = document.createElement("div");
+      actions.className = "heading-actions";
+      const saveBarcode = document.createElement("button");
+      saveBarcode.type = "button";
+      saveBarcode.className = "button button-small";
+      saveBarcode.textContent = "Сохранить штрихкод";
+      const cancel = document.createElement("button");
+      cancel.type = "button";
+      cancel.className = "button button-secondary button-small";
+      cancel.textContent = "Отмена";
+      const feedback = document.createElement("span");
+      feedback.className = "help-text";
+      feedback.setAttribute("role", "status");
+      const help = document.createElement("small");
+      help.className = "help-text";
+      help.textContent = "Сохраняется сразу в карточке товара, до приёмки прихода.";
+      actions.append(saveBarcode, cancel);
+      editor.append(label, actions, help);
+      productCell.append(addBarcode, editor, feedback);
+      function selectBarcodeProduct(result) {
+        selectedProduct = result && result.id ? {type: result.type, id: result.id} : null;
+        const allowed = selectedProduct && (
+          selectedProduct.type === "cd" ? form.dataset.canCdBarcode : form.dataset.canTechBarcode
+        ) === "true";
+        addBarcode.hidden = !allowed;
+        editor.hidden = true;
+        barcodeInput.value = "";
+        feedback.textContent = "";
+      }
+      row.selectBarcodeProduct = selectBarcodeProduct;
+      selectBarcodeProduct({type: value.product_type, id: value.product_id});
+      search.addEventListener("input", () => selectBarcodeProduct(null));
+      addBarcode.addEventListener("click", () => {
+        editor.hidden = false;
+        feedback.textContent = "";
+        barcodeInput.focus();
+      });
+      cancel.addEventListener("click", () => { editor.hidden = true; barcodeInput.value = ""; });
+      saveBarcode.addEventListener("click", async () => {
+        if (!selectedProduct || saveBarcode.disabled) return;
+        const barcode = barcodeInput.value.trim();
+        feedback.classList.remove("error-text");
+        if (!barcode) {
+          feedback.textContent = "Введите штрихкод.";
+          barcodeInput.focus();
+          return;
+        }
+        saveBarcode.disabled = true;
+        cancel.disabled = true;
+        search.disabled = true;
+        addBarcode.disabled = true;
+        barcodeInput.readOnly = true;
+        barcodeInput.dataset.barcodeSaving = "true";
+        pendingBarcodeSaves += 1;
+        feedback.textContent = "Сохранение штрихкода… Дождитесь завершения перед приёмкой прихода.";
+        try {
+          const payload = new URLSearchParams({product_type: selectedProduct.type, product_id: selectedProduct.id, barcode, csrfmiddlewaretoken: csrfToken});
+          const response = await fetch(form.dataset.barcodeUrl, {
+            method: "POST", body: payload,
+            headers: {"Accept": "application/json", "X-Requested-With": "XMLHttpRequest"},
+          });
+          const data = await response.json().catch(() => ({}));
+          if (!response.ok || !data.ok) throw new Error(data.error || "Не удалось добавить штрихкод. Проверьте доступ и повторите.");
+          editor.hidden = true;
+          barcodeInput.value = "";
+          feedback.textContent = `Штрихкод ${data.barcode} добавлен в карточку товара.`;
+        } catch (error) {
+          feedback.classList.add("error-text");
+          feedback.textContent = error.message || "Нет соединения. Повторите сохранение.";
+        } finally {
+          pendingBarcodeSaves -= 1;
+          saveBarcode.disabled = false;
+          cancel.disabled = false;
+          search.disabled = false;
+          addBarcode.disabled = false;
+          barcodeInput.readOnly = false;
+          delete barcodeInput.dataset.barcodeSaving;
+        }
+      });
+      barcodeInput.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") { event.preventDefault(); saveBarcode.click(); }
+      });
+    }
 
     function hideWeightPrompt() {
       weightPrompt.hidden = true;
@@ -171,7 +280,10 @@
       endpoint: form.dataset.autocompleteUrl,
       warehouseInput: warehouse,
       searchContext: form.dataset.searchContext,
-      onSelect: requestProductWeight,
+      onSelect: (result) => {
+        row.selectBarcodeProduct?.(result);
+        requestProductWeight(result);
+      },
     });
     if (value.product_id && !value.weight_grams) {
       requestProductWeight({
@@ -205,7 +317,9 @@
     expenses.append(row);
   }
 
-  document.getElementById("add-line").addEventListener("click", addProductLine);
+  document.querySelectorAll(".add-supply-line").forEach((button) => {
+    button.addEventListener("click", () => addProductLine());
+  });
   document.getElementById("add-expense").addEventListener("click", addExpenseLine);
   form.addEventListener("submit", (event) => {
     const selected = [...lines.querySelectorAll('input[name="product_id"]')].every((input) => input.value);

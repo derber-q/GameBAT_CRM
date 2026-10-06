@@ -37,12 +37,13 @@ class SalesStatisticsTests(TestCase):
         CDWarehouseStock.objects.create(warehouse=self.other_warehouse, cd=self.product, quantity=30)
 
     def sale(self, *, sale_type=Sale.SaleType.AVITO, payment=Sale.PaymentMethod.CASH,
-             quantity=1, warehouse=None, received=None):
+             quantity=1, warehouse=None, received=None, note=""):
         return create_sale(
             actor=self.user, warehouse_id=(warehouse or self.warehouse).pk,
             price_type=Sale.PriceType.RETAIL, sale_type=sale_type, payment_method=payment,
             lines=[{"product_type": "cd", "product_id": self.product.pk, "quantity": quantity}],
             cash_received_amount=received,
+            note=note,
         )
 
     def report(self, **filters):
@@ -57,11 +58,11 @@ class SalesStatisticsTests(TestCase):
         report = self.report()
         row = report.sales[0]
         self.assertEqual((row.lines[0].revenue, row.lines[0].cost, row.lines[0].profit),
-                         (Decimal("4500"), Decimal("3000"), Decimal("1500")))
+                         (Decimal("4500"), Decimal("3000"), Decimal("1477.50")))
         self.assertEqual((row.overpayment, row.actual_revenue, row.profit),
-                         (Decimal("500"), Decimal("5000"), Decimal("2000")))
-        self.assertEqual(row.margin, Decimal("40.00"))
-        self.assertEqual(row.markup, Decimal("66.67"))
+                         (Decimal("500"), Decimal("5000"), Decimal("1977.50")))
+        self.assertEqual(row.margin, Decimal("39.55"))
+        self.assertEqual(row.markup, Decimal("65.92"))
         self.assertEqual(report.totals.average_check, Decimal("5000.00"))
 
     def test_only_completed_not_cancelled_and_completed_date_not_created_date(self):
@@ -114,13 +115,13 @@ class SalesStatisticsTests(TestCase):
     def test_multi_channel_wholesale_warehouse_and_sale_ids(self):
         avito = self.sale()
         yandex = self.sale(sale_type=Sale.SaleType.YANDEX_MARKET)
-        pickup = self.sale(sale_type=Sale.SaleType.WHOLESALE_PICKUP)
-        delivery = self.sale(sale_type=Sale.SaleType.WHOLESALE_DELIVERY, warehouse=self.other_warehouse)
+        wholesale = self.sale(sale_type=Sale.SaleType.WHOLESALE)
+        other_wholesale = self.sale(sale_type=Sale.SaleType.WHOLESALE, warehouse=self.other_warehouse)
         self.assertEqual(self.report(channels=["avito", "yandex_market"]).totals.sales_count, 2)
         self.assertEqual(self.report(channels=["wholesale"]).totals.sales_count, 2)
         self.assertEqual(self.report(warehouse=self.warehouse).totals.sales_count, 3)
-        self.assertEqual({row.sale.pk for row in self.report(sale_ids={avito.pk, delivery.pk}).sales},
-                         {avito.pk, delivery.pk})
+        self.assertEqual({row.sale.pk for row in self.report(sale_ids={avito.pk, other_wholesale.pk}).sales},
+                         {avito.pk, other_wholesale.pk})
         self.assertEqual({row.key for row in self.report(channels=["avito", "yandex_market"]).channels},
                          {"avito", "yandex_market"})
 
@@ -132,20 +133,21 @@ class SalesStatisticsTests(TestCase):
         report = self.report(grouping="day", product_sort="-units")
         product = report.products[0]
         self.assertEqual((product.units, product.sales_count, product.revenue, product.cost, product.profit),
-                         (5, 2, Decimal("7500"), Decimal("5000"), Decimal("2500")))
-        self.assertEqual(report.time_series[0].totals.profit, Decimal("2500"))
+                         (5, 2, Decimal("7500"), Decimal("5000"), Decimal("2462.50")))
+        self.assertEqual(report.time_series[0].totals.profit, Decimal("2462.50"))
         self.assertEqual(report.time_series[0].label, "05.09.2026")
         self.assertEqual(self.report(grouping="week").time_series[0].label, "31.08.2026–06.09.2026")
         self.assertEqual(self.report(grouping="month").time_series[0].label, "Сентябрь 2026")
         self.assertEqual(len(report.chart["series"]), 3)
 
     def test_web_excel_same_selection_and_permissions(self):
-        chosen = self.sale()
+        chosen = self.sale(note="Проверка примечания в статистике")
         self.sale(warehouse=self.other_warehouse)
         params = {"warehouse": self.warehouse.pk, "channels": "avito", "sale_ids_text": str(chosen.pk)}
         page = self.client.get(reverse("statistics:index"), params)
         self.assertEqual(page.status_code, 200)
         self.assertEqual(page.context["report"].totals.sales_count, 1)
+        self.assertContains(page, "Проверка примечания в статистике")
         excel = self.client.get(reverse("statistics:export"), params)
         self.assertEqual(excel.status_code, 200)
         workbook = load_workbook(BytesIO(excel.content), read_only=True, data_only=True)
@@ -174,21 +176,21 @@ class SalesStatisticsTests(TestCase):
         self.assertEqual(self.report(platform=self.platform, game_series=series).totals.sales_count, 2)
         self.assertEqual(self.report(payment_methods=[Sale.PaymentMethod.CASH]).totals.sales_count, 1)
         self.assertEqual(self.report(min_profit=Decimal("501")).totals.sales_count, 0)
-        self.assertEqual(self.report(min_profit=Decimal("500"), max_profit=Decimal("500")).totals.sales_count, 2)
+        self.assertEqual(self.report(min_profit=Decimal("492.50"), max_profit=Decimal("492.50")).totals.sales_count, 2)
 
     def test_negative_profit_and_zero_cost_percentage_rules(self):
         self.product.cost = Decimal("1600")
         self.product.save(update_fields=("cost",))
         loss = self.sale()
         loss_row = self.report().sales[0]
-        self.assertEqual(loss_row.profit, Decimal("-100"))
-        self.assertEqual(loss_row.margin, Decimal("-6.67"))
-        self.assertEqual(loss_row.markup, Decimal("-6.25"))
+        self.assertEqual(loss_row.profit, Decimal("-107.50"))
+        self.assertEqual(loss_row.margin, Decimal("-7.17"))
+        self.assertEqual(loss_row.markup, Decimal("-6.72"))
         self.product.cost = Decimal("0")
         self.product.save(update_fields=("cost",))
         zero = self.sale()
         zero_row = next(row for row in self.report().sales if row.sale.pk == zero.pk)
-        self.assertEqual(zero_row.profit, Decimal("1500"))
+        self.assertEqual(zero_row.profit, Decimal("1492.50"))
         self.assertIsNone(zero_row.markup)
 
     def test_report_queries_do_not_grow_per_sale_or_item(self):

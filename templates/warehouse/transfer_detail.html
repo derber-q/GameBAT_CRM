@@ -20,14 +20,14 @@
 {% for group, rows in cd_groups %}
   <section class="panel inventory-section">
     <div class="section-heading"><div><span class="category-tag">CD</span><h2>{{ group.name }}</h2></div><span class="count">{{ rows|length }} поз.</span></div>
-    <div class="table-scroll"><table><thead><tr><th>ID</th><th>Название</th><th>Артикул</th><th class="numeric">Количество</th></tr></thead><tbody>{% for row in rows %}<tr><td class="mono">{{ row.product.id }}</td><td class="strong">{{ row.product.name }}</td><td class="mono">{{ row.product.sku }}</td><td class="numeric stock-number">{{ row.quantity }}</td></tr>{% endfor %}</tbody></table></div>
+    <div class="table-scroll"><table><thead><tr><th>ID</th><th>Название</th><th>Артикул</th><th class="numeric">Количество</th><th class="numeric">Себестоимость / ед.</th></tr></thead><tbody>{% for row in rows %}<tr><td class="mono">{{ row.product.id }}</td><td class="strong">{{ row.product.name }}</td><td class="mono">{{ row.product.sku }}</td><td class="numeric stock-number">{{ row.quantity }}</td><td class="numeric">{{ row.unit_cost_snapshot|floatformat:2 }} ₽</td></tr>{% endfor %}</tbody></table></div>
   </section>
 {% endfor %}
 
 {% for group, rows in tech_groups %}
   <section class="panel inventory-section">
     <div class="section-heading"><div><span class="category-tag category-tag-tech">TECH</span><h2>{{ group.name }}</h2></div><span class="count">{{ rows|length }} поз.</span></div>
-    <div class="table-scroll"><table><thead><tr><th>ID</th><th>Название</th><th>Бренд</th><th>Артикул</th><th class="numeric">Количество</th></tr></thead><tbody>{% for row in rows %}<tr><td class="mono">{{ row.product.id }}</td><td class="strong">{{ row.product.name }}</td><td>{{ row.product.brand.name }}</td><td class="mono">{{ row.product.sku }}</td><td class="numeric stock-number">{{ row.quantity }}</td></tr>{% endfor %}</tbody></table></div>
+    <div class="table-scroll"><table><thead><tr><th>ID</th><th>Название</th><th>Бренд</th><th>Артикул</th><th class="numeric">Количество</th><th class="numeric">Себестоимость / ед.</th></tr></thead><tbody>{% for row in rows %}<tr><td class="mono">{{ row.product.id }}</td><td class="strong">{{ row.product.name }}</td><td>{{ row.product.brand.name }}</td><td class="mono">{{ row.product.sku }}</td><td class="numeric stock-number">{{ row.quantity }}</td><td class="numeric">{{ row.unit_cost_snapshot|floatformat:2 }} ₽</td></tr>{% endfor %}</tbody></table></div>
   </section>
 {% endfor %}
 {% endblock %}

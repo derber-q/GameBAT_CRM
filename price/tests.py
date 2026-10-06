@@ -1,11 +1,13 @@
 from decimal import Decimal
 from io import BytesIO
+from urllib.parse import quote
 
 from django.contrib.auth.models import Permission
 from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from django.urls import reverse
+from django.utils import timezone
 from openpyxl import load_workbook
 
 from accounts.models import User
@@ -90,6 +92,7 @@ class PriceExcelTests(TestCase):
         self.assertIn("Игра", names)
         self.assertNotIn("Без цены", names)
         self.assertEqual(skipped, 1)
+
         self.assertIn("1", sheet["A7"].value)
         workbook.close()
 
@@ -98,6 +101,22 @@ class PriceExcelTests(TestCase):
         self.assertEqual(workbook[MAIN_SHEET].max_row, HEADER_ROW)
         self.assertEqual(skipped, 0)
         workbook.close()
+
+    def test_retail_and_wholesale_download_names_follow_resource_template(self):
+        self.client.force_login(self.user)
+        date = timezone.localdate().strftime("%d.%m.%Y")
+
+        for url_name, kind in (("retail_export", "Розница"), ("wholesale_export", "Опт")):
+            with self.subTest(kind=kind):
+                response = self.client.post(reverse(f"price:{url_name}"), {
+                    "warehouse": self.moscow.pk,
+                })
+                expected = f"ReSOURCE Price List {kind} {date}.xlsx"
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(
+                    response["Content-Disposition"],
+                    f"attachment; filename*=utf-8''{quote(expected)}",
+                )
 
     def test_retail_and_wholesale_prices_are_grouped_like_nomenclature(self):
         switch = Platform.objects.create(name="Nintendo Switch")
@@ -114,10 +133,10 @@ class PriceExcelTests(TestCase):
         TechWarehouseStock.objects.create(warehouse=self.moscow, tech=gamepad, quantity=3)
         TechWarehouseStock.objects.filter(warehouse=self.moscow, tech=self.tech).update(quantity=1)
         expected = [
+            "Tech · Sony · Консоли", self.tech.name,
+            "Tech · Sony · Аксессуары", "Gamepad",
             "CD · Платформа: Nintendo Switch", "Zelda",
             "CD · Платформа: PS5", self.cd.name,
-            "Техника · Тип товара: Аксессуары", "Gamepad",
-            "Техника · Тип товара: Консоли", self.tech.name,
         ]
 
         retail, _skipped = generate_retail_price_xlsx(
@@ -196,7 +215,7 @@ class PriceExcelTests(TestCase):
         response = self.client.post(reverse("sales:create"), {
             "warehouse": self.spb.pk,
             "price_type": Sale.PriceType.RETAIL,
-            "sale_type": Sale.SaleType.WHOLESALE_PICKUP,
+            "sale_type": Sale.SaleType.WHOLESALE,
             "payment_method": Sale.PaymentMethod.BANK_ACCOUNT,
             "product_type": ["cd"], "product_id": [self.cd.pk], "quantity": [2],
         })

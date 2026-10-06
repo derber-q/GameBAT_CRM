@@ -32,7 +32,12 @@ def add_opening_balances(*, actor, warehouse_id, source_key, rows):
         lookup = dict(platform=platform, warehouse=warehouse, lot_key=lot_key, **{product_field: product})
         if stock_model.objects.filter(**lookup).exists():
             raise ValidationError('Этот источник уже загружен. Повторная загрузка запрещена.')
-        stock = stock_model(**lookup, quantity=quantity, receivable_per_unit=reward)
+        stock = stock_model(
+            **lookup,
+            quantity=quantity,
+            receivable_per_unit=reward,
+            unit_cost=Decimal(str(row.get('cost', product.cost))),
+        )
         stock.full_clean()
         stock.save()
         before = product.quantity_on_consignment

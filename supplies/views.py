@@ -1,16 +1,21 @@
+import logging
+
 from django.contrib import messages
 from django.contrib.auth.decorators import permission_required
 from django.core.exceptions import PermissionDenied, ValidationError
+from django.db import OperationalError
 from django.db.models import Count, Sum
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
 from catalog.models import CD, Tech
-from catalog.product_identifiers import set_product_weight
+from catalog.product_fields import PRICING_FIELDS
+from catalog.product_identifiers import add_product_barcode, set_product_weight
 from catalog.product_search import search_product_querysets
 from core.decorators import permission_required_any
 from partners.models import Supplier
+from pricing.warnings import price_warning, MARKUP_FOR_PRICE
 from warehouse.models import (
     CDWarehouseStock, CDWarehouseStorageAssignment,
     TechWarehouseStock, TechWarehouseStorageAssignment, Warehouse,
@@ -21,7 +26,10 @@ from .finalization import (
     apply_supply_finalization, rows_from_inputs, supply_has_complete_cost_calculations,
 )
 from .models import Supply, SupplyRevision
-from .services import accept_supply, cancel_supply, revise_supply
+from .services import accept_supply, cancel_supply, confirm_supply_price_review, revise_supply
+
+
+logger = logging.getLogger("gamebat.business")
 
 
 @permission_required("supplies.view_supply", raise_exception=True)
@@ -169,12 +177,24 @@ def supply_create(request):
             supply = accept_supply(
                 accepted_by=request.user, warehouse_id=request.POST.get("warehouse_id"),
                 lines=lines, expenses=expenses, weight_transport_cost=weight_transport_cost,
+                defer_balance=True,
             )
         except ValidationError as exc:
             messages.error(request, " ".join(exc.messages))
+        except OperationalError as exc:
+            if "locked" not in str(exc).lower():
+                raise
+            logger.warning(
+                "База данных занята при создании поставки; форма сохранена для повтора: user_id=%s",
+                request.user.pk,
+            )
+            messages.error(
+                request,
+                "База данных была временно занята. Данные формы сохранены — повторите создание прихода.",
+            )
         else:
-            messages.success(request, f"Поставка №{supply.pk} принята.")
-            return redirect("supplies:detail", pk=supply.pk)
+            messages.success(request, f"Расчёт поставки №{supply.pk} готов. Проверьте цены перед постановкой на баланс.")
+            return redirect("supplies:price_review", pk=supply.pk)
     return render(request, "supplies/create.html", {
         "suppliers": suppliers, "warehouses": Warehouse.objects.all(),
         "selected_warehouse": request.POST.get("warehouse_id", ""),
@@ -279,15 +299,78 @@ def supply_detail(request, pk):
         "can_cancel": not supply.is_cancelled and (
             request.user.is_superuser or request.user.has_perm("supplies.cancel_supply")
         ),
-        "can_edit": not supply.is_cancelled and (
+        "can_edit": supply.status == Supply.Status.ACCEPTED and not supply.is_cancelled and (
             request.user.is_superuser or request.user.has_perm("supplies.edit_accepted_supply")
         ),
+        "needs_price_review": supply.status == Supply.Status.PRICE_REVIEW_REQUIRED,
         "can_finalize": not supply.is_cancelled and supply_has_complete_cost_calculations(supply) and (
             request.user.is_superuser or request.user.has_perm("supplies.finalize_supply")
         ),
         "revisions": supply.revisions.select_related("created_by", "warehouse"),
         "finalizations": supply.finalizations.select_related("created_by").prefetch_related("items"),
     })
+
+
+PRICE_PERMISSIONS = {
+    "avito_price": "pricing.change_retail_price",
+    "wholesale_price": "pricing.change_wholesale_price",
+    "yandex_market_price": "pricing.change_yandex_market_price",
+    "avito_markup_from_wholesale": "pricing.change_retail_price",
+    "yandex_markup_from_wholesale": "pricing.change_yandex_market_price",
+}
+
+
+@permission_required("supplies.add_supply", raise_exception=True)
+def supply_price_review(request, pk):
+    supply = get_object_or_404(
+        Supply.objects.select_related("warehouse", "accepted_by").prefetch_related(
+            "cost_calculations__cd", "cost_calculations__tech",
+        ), pk=pk,
+    )
+    if supply.status != Supply.Status.PRICE_REVIEW_REQUIRED:
+        return redirect("supplies:detail", pk=supply.pk)
+    rows = []
+    for calculation in supply.cost_calculations.all():
+        product = calculation.product
+        values = {field: getattr(product, field) for field in PRICING_FIELDS}
+        warnings = {
+            field: price_warning(
+                price=values[field], wholesale=values["wholesale_price"],
+                cost=calculation.resulting_unit_cost,
+                markup=values.get(MARKUP_FOR_PRICE.get(field)) if field in MARKUP_FOR_PRICE else None,
+            ) for field in ("avito_price", "wholesale_price", "yandex_market_price")
+        }
+        rows.append({
+            "calculation": calculation, "product": product, "values": values,
+            "warnings": warnings,
+            "editable": {field: request.user.is_superuser or request.user.has_perm(permission)
+                         for field, permission in PRICE_PERMISSIONS.items()},
+        })
+    if request.method == "POST":
+        price_changes = {}
+        try:
+            for row in rows:
+                calculation = row["calculation"]
+                key = (calculation.product_kind, calculation.cd_id or calculation.tech_id)
+                changes = {}
+                for field, permission in PRICE_PERMISSIONS.items():
+                    input_name = f"{key[0]}_{key[1]}_{field}"
+                    if input_name not in request.POST:
+                        continue
+                    if not (request.user.is_superuser or request.user.has_perm(permission)):
+                        raise PermissionDenied("Недостаточно прав для изменения этой цены.")
+                    changes[field] = request.POST[input_name]
+                if changes:
+                    price_changes[key] = changes
+            confirmed_supply, changed = confirm_supply_price_review(
+                actor=request.user, supply_id=supply.pk, price_changes=price_changes,
+            )
+        except ValidationError as exc:
+            messages.error(request, " ".join(exc.messages))
+        else:
+            messages.success(request, "Цены сохранены, поставка поставлена на физический склад.")
+            return redirect("supplies:detail", pk=confirmed_supply.pk)
+    return render(request, "supplies/price_review.html", {"supply": supply, "rows": rows})
 
 
 @permission_required("supplies.finalize_supply", raise_exception=True)
@@ -600,3 +683,24 @@ def supply_product_weight(request):
     except ValidationError as exc:
         return JsonResponse({"ok": False, "error": " ".join(exc.messages)}, status=400)
     return JsonResponse({"ok": True, "weight_grams": product.weight_grams})
+
+
+@require_POST
+@permission_required("supplies.add_supply", raise_exception=True)
+def supply_product_barcode(request):
+    product_kind = request.POST.get("product_type", "").lower()
+    permission = {"cd": "catalog.change_cd_barcode", "tech": "catalog.change_tech_barcode"}.get(product_kind)
+    if permission is None or not (request.user.is_superuser or request.user.has_perm(permission)):
+        raise PermissionDenied
+    try:
+        entry = add_product_barcode(
+            actor=request.user, product_kind=product_kind,
+            product_id=request.POST.get("product_id"), value=request.POST.get("barcode"),
+        )
+    except ValidationError as exc:
+        return JsonResponse({"ok": False, "error": " ".join(exc.messages)}, status=400)
+    except OperationalError as exc:
+        if "locked" not in str(exc).lower():
+            raise
+        return JsonResponse({"ok": False, "error": "База данных занята. Повторите сохранение штрихкода."}, status=503)
+    return JsonResponse({"ok": True, "barcode": entry.value})

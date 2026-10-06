@@ -1,9 +1,13 @@
 from django.urls import path
 
 from . import views
+from . import revision_views
 
 app_name = "warehouse"
 urlpatterns = [
+    path("<int:pk>/revision/", revision_views.revision_page, name="revision"),
+    path("<int:pk>/revision/start/", revision_views.revision_start, name="revision_start"),
+    path("<int:pk>/revision/check/", revision_views.revision_check, name="revision_check"),
     path("global/", views.global_stock, name="global_stock"),
     path("transfers/", views.transfer_list, name="transfer_list"),
     path("transfers/new/", views.transfer_start, name="transfer_start"),

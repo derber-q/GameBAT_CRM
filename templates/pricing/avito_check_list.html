@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% load static l10n %}
+{% block body_class %}avito-check-page{% endblock %}
+{% block title %}Avito Check · ReSOURCE{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{% static 'css/avito-check-list.css' %}?v=1"><script src="{% static 'js/avito-check-list.js' %}?v=1" defer></script><script src="{% static 'js/pricing.js' %}?v=price-control-2" defer></script><script src="{% static 'js/pricing-scroll.js' %}?v=2" defer></script>{% endblock %}
+{% block content %}
+<div class="page-heading">
+  <div><p class="eyebrow">Ценообразование</p><h1>Avito Check</h1><p class="muted">CD с привязкой к Avito и остатком на складах · {{ total }} поз.</p></div>
+  <a class="button button-secondary" href="{% url 'pricing:avito_check_automatic' %}">Автоматическая проверка</a>
+</div>
+<section class="panel avito-list-filters">
+  <form method="get" class="form-actions">
+    <div class="field"><label for="avito-product-search">Название, штрихкод или артикул</label><input id="avito-product-search" name="q" value="{{ query }}" type="search" placeholder="Введите название или отсканируйте штрихкод"></div>
+    <div class="field"><label for="avito-price-sort">Сортировка</label><select id="avito-price-sort" name="sort">
+      <option value="name"{% if sort == 'name' %} selected{% endif %}>По названию</option>
+      <option value="oldest"{% if sort == 'oldest' %} selected{% endif %}>Дата минимальной цены: сначала старые</option>
+      <option value="newest"{% if sort == 'newest' %} selected{% endif %}>Дата минимальной цены: сначала новые</option>
+    </select></div>
+    <button class="button button-secondary" type="submit">Применить</button>{% if query or sort != 'name' %}<a href="{% url 'pricing:avito_check' %}">Сбросить</a>{% endif %}
+  </form>
+  <p class="muted">Дата минимальной цены обновляется при сохранении. Ручной поиск не расходует кредиты.</p>
+</section>
+<section class="panel table-panel"><div class="table-scroll">
+<table class="global-stock-table pricing-table avito-list-table">
+  <colgroup><col class="avito-col-title"><col class="avito-col-cost"><col class="avito-col-price"><col class="avito-col-price"><col class="avito-col-save"><col class="avito-col-found"><col class="avito-col-date"><col class="avito-col-search"></colgroup>
+  <thead><tr><th>Товар</th><th class="numeric">Себестоимость, ₽</th><th class="numeric">Опт, ₽</th><th class="numeric">Avito, ₽</th><th>Цены</th><th>Мин. цена, ₽</th><th>Обновлена</th><th>Ручной поиск</th></tr></thead>
+  <tbody>{% for row in rows %}
+    <tr data-found-price-row data-price-row data-cost="{{ row.product.cost|default_if_none:''|unlocalize }}">
+      <td class="strong avito-product-name"><span{% if row.product.title_image %} data-product-title-image="{% url 'nomenclature:product_title_image' row.kind row.product.pk %}" tabindex="0"{% endif %}>{{ row.product.name }}</span><small class="muted">{{ row.kind|upper }} #{{ row.product.pk }}{% if row.product.is_archived %} · Архив{% endif %}</small></td>
+      <td class="numeric">{{ row.product.cost|default_if_none:"—" }}</td>
+      {% include "pricing/_price_cell.html" with field="wholesale_price" label="Оптовая цена" value=row.product.wholesale_price warning=row.warnings.wholesale_price can_change=row.can_change_wholesale markup_field="" %}
+      {% include "pricing/_price_cell.html" with field="avito_price" label="Цена Avito" value=row.product.avito_price warning=row.warnings.avito_price can_change=row.can_change_avito markup_field="avito_markup_from_wholesale" markup=row.product.avito_markup_from_wholesale %}
+      <td>{% if row.can_change_avito or row.can_change_wholesale %}
+        <form id="product-price-{{ row.type }}-{{ row.product.pk }}" method="post" action="{% url 'pricing:product_update' %}" class="inline-price-form">
+          {% csrf_token %}<input type="hidden" name="product_type" value="{{ row.type }}"><input type="hidden" name="product_id" value="{{ row.product.pk }}">
+          <button class="table-action" type="submit" aria-label="Сохранить оптовую цену и цену Avito: {{ row.product.name }}">Сохранить</button>
+        </form>
+      {% else %}—{% endif %}</td>
+      <td>{% if can_record %}
+        <form method="post" action="{% url 'pricing:avito_check_found_price' %}" data-found-price-form>
+          {% csrf_token %}<input type="hidden" name="kind" value="{{ row.kind }}"><input type="hidden" name="product_id" value="{{ row.product.pk }}">
+          <input class="compact-input" aria-label="Найденная цена: {{ row.product.name }}" name="price" type="number" min="0.01" step="0.01" required value="{{ row.found.price|default_if_none:''|unlocalize }}">
+          <button class="table-action" type="submit">Сохранить</button><span class="muted" role="status" data-save-status></span>
+        </form>
+        {% else %}{{ row.found.price|default_if_none:"—" }}{% endif %}</td>
+      <td class="avito-found-date" data-found-date>{{ row.found.recorded_at|date:"d.m.Y H:i"|default:"—" }}</td>
+      <td><a class="button button-secondary avito-manual-search" href="{{ row.manual_url }}" target="_blank" rel="noopener noreferrer">Ручной поиск ↗</a></td>
+    </tr>
+  {% empty %}<tr><td colspan="8">{% if query %}По запросу ничего не найдено.{% else %}Товаров с привязкой к Avito и ненулевым остатком пока нет.{% endif %}</td></tr>{% endfor %}</tbody>
+</table></div></section>
+{% endblock %}

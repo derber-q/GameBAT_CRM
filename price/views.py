@@ -4,11 +4,16 @@ from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.utils import timezone
+from django.utils.http import content_disposition_header
 from django.views.decorators.http import require_GET, require_POST
 
 from core.decorators import permission_required_any
 from partners.models import Supplier
 from pricing.models import SupplierCDPrice, SupplierTechPrice
+from resource_storefront.models import WholesaleContact
+from resource_storefront.security import recover_token
+from resource_storefront.retail_security import retail_link
 
 from .excel import (
     generate_procurement_customer_xlsx,
@@ -29,12 +34,16 @@ from .services import create_procurement_price_list, update_procurement_pricing
 logger = logging.getLogger("gamebat.business")
 
 
+def _price_filename(kind):
+    return f"ReSOURCE Price List {kind} {timezone.localdate():%d.%m.%Y}.xlsx"
+
+
 def _xlsx_response(content, filename):
     response = HttpResponse(
         content,
         content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
-    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    response["Content-Disposition"] = content_disposition_header(True, filename)
     response["X-Content-Type-Options"] = "nosniff"
     return response
 
@@ -56,6 +65,15 @@ def price_page(request):
                     + SupplierTechPrice.objects.filter(supplier=supplier, price__gt=0).count()
                 ) if can_view_supplier else None,
             })
+    can_manage_wholesale_contacts = request.user.is_superuser or request.user.has_perm("resource_storefront.manage_wholesale_contacts")
+    wholesale_contacts = []
+    can_manage_retail = request.user.is_superuser or request.user.has_perm("resource_storefront.manage_retail_storefront")
+    retail_config = retail_link(actor=request.user) if can_manage_retail else None
+    if can_manage_wholesale_contacts:
+        for contact in WholesaleContact.objects.filter(is_archived=False).prefetch_related("access_links"):
+            contact.active_link = contact.access_links.filter(is_active=True).first()
+            contact.copy_token = recover_token(contact.active_link) if contact.active_link else ""
+            wholesale_contacts.append(contact)
     return render(request, "price/index.html", {
         "settings_form": PriceDocumentSettingsForm(instance=settings),
         "warehouse_form": WarehousePriceForm(),
@@ -69,6 +87,10 @@ def price_page(request):
         "can_download_supplier": request.user.is_superuser or request.user.has_perm("price.download_supplier_template"),
         "can_upload_supplier": request.user.is_superuser or request.user.has_perm("price.upload_supplier_price"),
         "can_create_procurement": request.user.is_superuser or request.user.has_perm("price.create_procurement_price_list"),
+        "can_manage_wholesale_contacts": can_manage_wholesale_contacts,
+        "wholesale_contacts": wholesale_contacts,
+        "can_manage_retail": can_manage_retail,
+        "retail_token": recover_token(retail_config) if retail_config else "",
     })
 
 
@@ -95,7 +117,7 @@ def retail_export(request):
     content, skipped = generate_retail_price_xlsx(
         warehouse_id=form.cleaned_data["warehouse"].pk, actor=request.user
     )
-    response = _xlsx_response(content, "resource-retail-price.xlsx")
+    response = _xlsx_response(content, _price_filename("Розница"))
     response["X-ReSOURCE-Skipped-No-Price"] = str(skipped)
     return response
 
@@ -110,7 +132,7 @@ def wholesale_export(request):
     content = generate_wholesale_price_xlsx(
         warehouse_id=form.cleaned_data["warehouse"].pk, actor=request.user
     )
-    return _xlsx_response(content, "resource-wholesale-price.xlsx")
+    return _xlsx_response(content, _price_filename("Опт"))
 
 
 @require_GET

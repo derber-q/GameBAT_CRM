@@ -4,11 +4,12 @@
 
 | Задача | Файлы для первичного изучения |
 | --- | --- |
-| Поля карточки и права редактирования | `catalog/models.py`, `product_fields.py`, `nomenclature_forms.py`, `nomenclature_services.py`, `nomenclature_views.py`, `admin.py` |
+| Поля карточки, изображения и права редактирования | `catalog/models.py`, `product_fields.py`, `nomenclature_forms.py`, `nomenclature_services.py`, `product_media.py`, `nomenclature_views.py`, `admin.py` |
 | Аудит товара | `catalog/audit.py`, модели `ProductChangeEvent`/`ProductFieldChange` |
 | Поиск, штрихкоды, фильтры | `catalog/product_search.py`, `product_identifiers.py`, `product_filters.py`, `static/js/app.js` |
 | Места хранения | `warehouse/storage_locations.py`, `storage_services.py`, локальные модели назначений |
 | Остатки и перемещения | `warehouse/services.py`, `models.py` |
+| Ревизия локального склада | `warehouse/revision_services.py`, `revision_views.py`, `templates/warehouse/revision.html`; отметки не меняют остатки |
 | Приход и себестоимость | `supplies/services.py`, `finalization.py`, ревизии в `models.py` |
 | Реализация по строкам | `consignment/services.py`, `row_actions.py`, `opening_balances.py`, `static/js/consignment-actions.js` |
 | Цены и предупреждения | `pricing/services.py`, `warnings.py`, `views.py`, `static/js/pricing.js`, `pricing-scroll.js` |
@@ -17,7 +18,14 @@
 | Деньги | `cash/services.py`, `models.py`, `creditors/services.py`, `orders/services.py` |
 | Прайсы | `price/services.py`, `excel.py`, `views.py`; импорт в продажу — `sales/views.py` |
 | Avito | `integrations/client.py`, `services.py`, `queue.py`, `tasks.py`, `manual_sync.py`, `verification.py`, `required_actions.py` |
+| Avito Check | `integrations/avito_check.py`, `reef_api.py`, `reef_settings.py`, `pricing/avito_check_views.py`; результат и ключ — `integrations/models.py` |
+| Google Sheets | `integrations/google_sheets.py`, `google_tasks.py`, блок в `api_keys.html`, общий integration worker |
+| Оптовая витрина ReSOURCE | `resource_storefront/` — доступ, выборка товаров, редактор и checkout; продажа создаётся через `sales.services.create_sale` |
 | Шапка и сотрудники | `templates/base.html`, `core/context_processors.py`, `accounts/views.py`, `accounts/urls.py`, `staff_by_group.html` |
+
+## Яндекс Маркет
+
+`yandex_market/models.py` — состояния и ограничения; `client.py/contracts.json` — официальный API; `services.py/content.py/forms.py` — товары; `orders.py/packing.py/documents.py` — заказы и документы; `queue.py/tasks.py/signals.py` — обмен; `views.py/webhooks.py` — права и HTTP. Общий физический остаток вынесен в `warehouse/inventory.py`, приём физического возврата — в `warehouse/receipts.py`. Подробности и результаты: [отчёт](yandex_market_report.md).
 
 ## Как вносить изменения
 

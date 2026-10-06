@@ -1,0 +1,3 @@
+{% extends 'resource_storefront/base.html' %}{% load storefront %}
+{% block title %}Корзина — ReSOURCE{% endblock %}
+{% block content %}<div class="rs-page-head"><p class="rs-eyebrow">ReSOURCE / Заказ</p><h1>Корзина</h1><a class="rs-reset" href="{% storefront_url 'catalogue' %}">Продолжить покупки →</a></div><div id="rs-cart-content">{% include 'resource_storefront/_cart_content.html' %}</div>{% endblock %}

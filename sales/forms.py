@@ -8,7 +8,7 @@ class SaleCreateForm(forms.Form):
     warehouse = forms.ModelChoiceField(label="Склад", queryset=Warehouse.objects.all())
     price_type = forms.ChoiceField(label="Тип цены", choices=Sale.PriceType.choices)
     sale_type = forms.ChoiceField(label="Тип продажи", choices=Sale.SaleType.choices)
-    payment_method = forms.ChoiceField(label="Способ оплаты", choices=Sale.PaymentMethod.choices)
+    payment_method = forms.ChoiceField(label="Способ оплаты", choices=[choice for choice in Sale.PaymentMethod.choices if choice[0] != Sale.PaymentMethod.UNDEFINED])
     cash_received_amount = forms.DecimalField(
         label="Получено от покупателя", required=False, min_value=0,
         max_digits=20, decimal_places=2,

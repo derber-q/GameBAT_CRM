@@ -1,0 +1,4 @@
+{% extends "base.html" %}
+{% block body_class %}avito-check-page{% endblock %}
+{% block title %}Avito Check завершён · ReSOURCE{% endblock %}
+{% block content %}<section class="panel"><p class="eyebrow">Ценообразование</p><h1>Проверка списка завершена</h1><p>Всего товаров в очереди: {{ total }}.</p><a class="button" href="{% url 'pricing:avito_check_automatic' %}">Начать сначала</a> <a class="button button-secondary" href="{% url 'pricing:avito_check' %}">Все товары</a></section>{% endblock %}

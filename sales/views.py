@@ -1,11 +1,12 @@
 from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.db import transaction, OperationalError
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.views.decorators.http import require_POST
 
+from consignment.models import CDConsignmentStock, TechConsignmentStock
 from core.decorators import permission_required_all, permission_required_any
 from price.excel import import_wholesale_price_to_sale
 from .forms import SaleCreateForm, WholesalePriceImportForm
@@ -13,11 +14,29 @@ from .models import Sale
 from .listing import list_groups, sales_queryset, status_context
 from .services import (
     advance_order_status, cancel_sale, create_sale, edit_postpay_sale_items,
-    mark_sale_paid, update_sale_note, next_order_status,
+    set_sale_payment_method, mark_sale_paid, update_sale_note, next_order_status,
 )
 
 
 WHOLESALE_DRAFT_SESSION_KEY = "sale_wholesale_import_draft"
+
+
+def _detail_financials(item, *, commission_applicable=True):
+    commission = item.avito_commission_amount if commission_applicable else 0
+    net_revenue = item.line_total - commission
+    cost_total = (
+        item.unit_cost_snapshot * item.quantity
+        if item.unit_cost_snapshot is not None else None
+    )
+    return {
+        "avito_commission_enabled": bool(
+            commission_applicable and item.avito_commission_enabled
+        ),
+        "avito_commission_amount": commission,
+        "revenue_after_commission": net_revenue,
+        "cost_total": cost_total,
+        "profit": net_revenue - cost_total if cost_total is not None else None,
+    }
 
 
 def _sale_destination(request, sale):
@@ -32,12 +51,69 @@ def _parse_lines(post):
     types = post.getlist("product_type")
     ids = post.getlist("product_id")
     quantities = post.getlist("quantity")
+    discounts = post.getlist("unit_discount")
+    commissions = post.getlist("avito_commission_enabled")
     if not (len(types) == len(ids) == len(quantities)):
         raise ValidationError("Заполните все поля товарных позиций.")
-    return [
-        {"product_type": types[index], "product_id": ids[index], "quantity": quantities[index]}
+    if discounts and len(discounts) != len(types):
+        raise ValidationError("Заполните все поля товарных позиций.")
+    if not discounts:
+        discounts = ["0"] * len(types)
+    if commissions and len(commissions) != len(types):
+        raise ValidationError("Заполните флаг комиссии Avito для каждой товарной позиции.")
+    if not commissions:
+        commissions = ["0"] * len(types)
+    lines = [
+        {"product_type": types[index], "product_id": ids[index], "quantity": quantities[index],
+         "unit_discount": discounts[index], "avito_commission_enabled": commissions[index]}
         for index in range(len(types))
+        if any((types[index], ids[index], quantities[index]))
     ]
+    custom_names = post.getlist("custom_name")
+    custom_prices = post.getlist("custom_unit_price")
+    custom_quantities = post.getlist("custom_quantity")
+    custom_costs = post.getlist("custom_unit_cost")
+    custom_discounts = post.getlist("custom_unit_discount")
+    custom_commissions = post.getlist("custom_avito_commission_enabled")
+    if not custom_discounts:
+        custom_discounts = ["0"] * len(custom_names)
+    if not custom_commissions:
+        custom_commissions = ["0"] * len(custom_names)
+    lengths = {
+        len(custom_names), len(custom_prices), len(custom_quantities),
+        len(custom_costs), len(custom_discounts), len(custom_commissions),
+    }
+    if lengths != {0} and len(lengths) != 1:
+        raise ValidationError("Заполните все поля произвольных позиций.")
+    lines.extend({
+        "product_type": "custom", "name": custom_names[index],
+        "unit_price": custom_prices[index], "quantity": custom_quantities[index],
+        "unit_cost": custom_costs[index], "unit_discount": custom_discounts[index],
+        "avito_commission_enabled": custom_commissions[index],
+    } for index in range(len(custom_names)))
+    consignment_kinds = post.getlist("consignment_product_type")
+    consignment_stock_ids = post.getlist("consignment_stock_id")
+    consignment_quantities = post.getlist("consignment_quantity")
+    if not (len(consignment_kinds) == len(consignment_stock_ids) == len(consignment_quantities)):
+        raise ValidationError("Заполните все поля позиций реализации.")
+    lines.extend({
+        "product_type": "consignment", "product_kind": consignment_kinds[index],
+        "stock_id": consignment_stock_ids[index], "quantity": consignment_quantities[index],
+    } for index in range(len(consignment_kinds)))
+    return lines
+
+
+def _consignment_options():
+    options = []
+    for kind, model, field in (("cd", CDConsignmentStock, "cd"), ("tech", TechConsignmentStock, "tech")):
+        for stock in model.objects.filter(quantity__gt=0).select_related(field, "platform", "warehouse"):
+            product = getattr(stock, field)
+            options.append({
+                "kind": kind, "stock_id": stock.pk, "quantity": stock.quantity,
+                "unit_price": f"{stock.receivable_per_unit:.2f}",
+                "label": f"{stock.platform.name} — {product.name} — {stock.warehouse.name} ({stock.quantity} шт.)",
+            })
+    return sorted(options, key=lambda row: row["label"].casefold())
 
 
 @permission_required_any("sales.view_sales")
@@ -117,7 +193,7 @@ def sale_create(request):
         initial = {
             "warehouse": draft["warehouse_id"],
             "price_type": Sale.PriceType.WHOLESALE,
-            "sale_type": Sale.SaleType.WHOLESALE_PICKUP,
+            "sale_type": Sale.SaleType.WHOLESALE,
         }
     form = SaleCreateForm(
         request.POST or None, initial=initial, imported_wholesale=bool(draft)
@@ -146,6 +222,7 @@ def sale_create(request):
         "can_import_wholesale": request.user.is_superuser or request.user.has_perm("sales.import_wholesale_price"),
         "initial_items": draft["lines"] if draft else [],
         "imported_wholesale": bool(draft),
+        "consignment_options": _consignment_options(),
     })
 
 
@@ -172,18 +249,39 @@ def sale_detail(request, pk):
     sale = get_object_or_404(
         Sale.objects.select_related(
             "warehouse", "created_by", "consignment_platform"
-        ).prefetch_related("cd_items__cd", "tech_items__tech"),
+        ).prefetch_related("cd_items__cd", "tech_items__tech", "custom_items", "consignment_items"),
         pk=pk,
     )
+    legacy_consignment_mirror = sale.sale_type == Sale.SaleType.CONSIGNMENT and bool(sale.consignment_items.all())
+    can_view_financials = request.user.is_superuser or request.user.has_perm("sales.view_sales_statistics")
     rows = [
         {"type": "CD", "name": item.product_name_snapshot, "sku": item.article_snapshot,
-         "quantity": item.quantity, "unit_price": item.unit_price, "line_total": item.line_total}
-        for item in sale.cd_items.all()
+         "quantity": item.quantity, "unit_price": item.unit_price, "unit_discount": item.unit_discount,
+         "effective_unit_price": item.effective_unit_price, "line_total": item.line_total,
+         **_detail_financials(item)}
+        for item in sale.cd_items.all() if not legacy_consignment_mirror
     ] + [
         {"type": "Tech", "name": item.product_name_snapshot, "sku": item.article_snapshot,
-         "quantity": item.quantity, "unit_price": item.unit_price, "line_total": item.line_total}
-        for item in sale.tech_items.all()
+         "quantity": item.quantity, "unit_price": item.unit_price, "unit_discount": item.unit_discount,
+         "effective_unit_price": item.effective_unit_price, "line_total": item.line_total,
+         **_detail_financials(item)}
+        for item in sale.tech_items.all() if not legacy_consignment_mirror
+    ] + [
+        {"type": "Произвольная позиция", "name": item.product_name_snapshot,
+         "sku": "—", "quantity": item.quantity, "unit_price": item.unit_price,
+         "unit_discount": item.unit_discount, "effective_unit_price": item.effective_unit_price,
+         "line_total": item.line_total, "unit_cost": item.unit_cost_snapshot,
+         **_detail_financials(item)}
+        for item in sale.custom_items.all()
+    ] + [
+        {"type": f"Реализация · {item.platform_name_snapshot}", "name": item.product_name_snapshot,
+         "sku": item.article_snapshot or "—", "quantity": item.quantity,
+         "unit_price": item.unit_price, "unit_discount": 0,
+         "effective_unit_price": item.unit_price, "line_total": item.line_total,
+         **_detail_financials(item, commission_applicable=False)}
+        for item in sale.consignment_items.all()
     ]
+    custom_items = list(sale.custom_items.all())
     next_order = next_order_status(sale)
     labels = {
         Sale.OrderStatus.ASSEMBLED: "Отметить как собранный",
@@ -191,45 +289,106 @@ def sale_detail(request, pk):
         Sale.OrderStatus.DELIVERED: "Отметить как доставленный",
     }
     next_status = (next_order, labels[next_order]) if next_order else None
-    if sale.is_cancelled or not (request.user.is_superuser or request.user.has_perm("sales.advance_order_status")):
+    if sale.is_cancelled or hasattr(sale, "yandex_order") or not (request.user.is_superuser or request.user.has_perm("sales.advance_order_status")):
         next_status = None
     cash_transactions = []
     if request.user.is_superuser or request.user.has_perm("cash.view_cash_history"):
         cash_transactions = sale.cash_transactions.all()
     return render(request, "sales/detail.html", {
-        "sale": sale, "rows": rows, "next_status": next_status,
+        "sale": sale, "rows": rows, "custom_items": custom_items, "next_status": next_status,
         "cash_transactions": cash_transactions,
-        "can_cancel": not sale.is_cancelled and (
+        "can_cancel": not sale.is_cancelled and not hasattr(sale, "yandex_order") and (
             request.user.is_superuser or request.user.has_perm("sales.cancel_sale")
         ),
         "can_edit_note": request.user.is_superuser or request.user.has_perm("sales.change_sale"),
+        "can_view_financials": can_view_financials,
+        "avito_commission_total": sum(
+            (row["avito_commission_amount"] for row in rows), 0
+        ),
     })
+
+
+@permission_required_any("sales.view_sale_detail")
+def sale_invoice(request, pk):
+    """Скачать простой чек по снимкам строк продажи в любом статусе."""
+    sale = get_object_or_404(
+        Sale.objects.select_related("warehouse", "created_by").prefetch_related(
+            "cd_items", "tech_items", "custom_items", "consignment_items"
+        ),
+        pk=pk,
+    )
+    legacy_consignment_mirror = sale.sale_type == Sale.SaleType.CONSIGNMENT and bool(sale.consignment_items.all())
+    rows = [
+        {"kind": "CD", "name": item.product_name_snapshot, "article": item.article_snapshot,
+         "quantity": item.quantity, "unit_price": item.effective_unit_price, "line_total": item.line_total}
+        for item in sale.cd_items.all() if not legacy_consignment_mirror
+    ] + [
+        {"kind": "Tech", "name": item.product_name_snapshot, "article": item.article_snapshot,
+         "quantity": item.quantity, "unit_price": item.effective_unit_price, "line_total": item.line_total}
+        for item in sale.tech_items.all() if not legacy_consignment_mirror
+    ] + [
+        {"kind": "Произвольная позиция", "name": item.product_name_snapshot, "article": "—",
+         "quantity": item.quantity, "unit_price": item.effective_unit_price, "line_total": item.line_total}
+        for item in sale.custom_items.all()
+    ] + [
+        {"kind": f"Реализация · {item.platform_name_snapshot}", "name": item.product_name_snapshot,
+         "article": item.article_snapshot or "—", "quantity": item.quantity,
+         "unit_price": item.unit_price, "line_total": item.line_total}
+        for item in sale.consignment_items.all()
+    ]
+    html = render_to_string("sales/invoice.html", {"sale": sale, "rows": rows})
+    filename = "".join(char if char.isalnum() or char in "-_." else "_" for char in sale.visible_id)
+    response = HttpResponse(html, content_type="text/html; charset=utf-8")
+    response["Content-Disposition"] = f'attachment; filename="nakladnaya-{filename}.html"'
+    return response
 
 
 @permission_required_any("sales.edit_unpaid_postpay_sale")
 def sale_edit(request, pk):
-    sale = get_object_or_404(Sale.objects.prefetch_related("cd_items", "tech_items"), pk=pk)
+    sale = get_object_or_404(
+        Sale.objects.prefetch_related("cd_items", "tech_items", "custom_items", "consignment_items"), pk=pk,
+    )
     if not sale.is_postpay_editable:
         messages.error(request, "Состав этой продажи изменять нельзя.")
         return _sale_destination(request, sale)
     initial_items = [
         {"product_type": "cd", "product_id": item.cd_id, "quantity": item.quantity,
-         "label": f"CD — {item.product_name_snapshot}", "unit_price": f"{item.unit_price:.2f}"}
+         "label": f"CD — {item.product_name_snapshot}", "unit_price": f"{item.unit_price:.2f}",
+         "unit_discount": f"{item.unit_discount:.2f}",
+         "avito_commission_enabled": item.avito_commission_enabled}
         for item in sale.cd_items.all()
     ] + [
         {"product_type": "tech", "product_id": item.tech_id, "quantity": item.quantity,
-         "label": f"Tech — {item.product_name_snapshot}", "unit_price": f"{item.unit_price:.2f}"}
+         "label": f"Tech — {item.product_name_snapshot}", "unit_price": f"{item.unit_price:.2f}",
+         "unit_discount": f"{item.unit_discount:.2f}",
+         "avito_commission_enabled": item.avito_commission_enabled}
         for item in sale.tech_items.all()
+    ] + [
+        {"custom": True, "name": item.product_name_snapshot,
+         "quantity": item.quantity, "unit_price": f"{item.unit_price:.2f}",
+         "unit_cost": f"{item.unit_cost_snapshot:.2f}", "unit_discount": f"{item.unit_discount:.2f}",
+         "avito_commission_enabled": item.avito_commission_enabled}
+        for item in sale.custom_items.all()
+    ] + [
+        {"consignment": True, "product_kind": item.product_kind, "stock_id": item.source_stock_id,
+         "quantity": item.quantity, "label": f"{item.platform_name_snapshot} — {item.product_name_snapshot}",
+         "unit_price": f"{item.unit_price:.2f}"}
+        for item in sale.consignment_items.all()
     ]
     if request.method == "POST":
         try:
-            edit_postpay_sale_items(actor=request.user, sale_id=sale.pk, lines=_parse_lines(request.POST))
+            edit_postpay_sale_items(
+                actor=request.user, sale_id=sale.pk, lines=_parse_lines(request.POST),
+                note=request.POST.get("note"),
+            )
         except ValidationError as exc:
             messages.error(request, " ".join(exc.messages))
         else:
             messages.success(request, "Состав продажи обновлён.")
             return _sale_destination(request, sale)
-    return render(request, "sales/edit.html", {"sale": sale, "initial_items": initial_items})
+    return render(request, "sales/edit.html", {
+        "sale": sale, "initial_items": initial_items, "consignment_options": _consignment_options(),
+    })
 
 
 @require_POST
@@ -241,6 +400,19 @@ def sale_advance(request, pk):
         messages.error(request, " ".join(exc.messages) if isinstance(exc, ValidationError) else "Продажа не найдена.")
     else:
         messages.success(request, "Статус заказа изменён.")
+    sale = Sale.objects.filter(pk=pk).first()
+    return _sale_destination(request, sale) if sale else redirect("core:home")
+
+
+@require_POST
+@permission_required_any("sales.mark_sale_paid")
+def sale_payment_method(request, pk):
+    try:
+        set_sale_payment_method(actor=request.user, sale_id=pk, payment_method=request.POST.get("payment_method"))
+    except (ValidationError, Sale.DoesNotExist) as exc:
+        messages.error(request, " ".join(exc.messages) if isinstance(exc, ValidationError) else "Продажа не найдена.")
+    else:
+        messages.success(request, "Способ оплаты выбран. Оплату подтвердите после получения денег.")
     sale = Sale.objects.filter(pk=pk).first()
     return _sale_destination(request, sale) if sale else redirect("core:home")
 

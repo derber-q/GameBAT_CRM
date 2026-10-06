@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% load static l10n %}
+{% block title %}Ревизия · {{ warehouse.name }} · ReSOURCE{% endblock %}
+{% block body_class %}warehouse-revision-page{% endblock %}
+{% block extra_head %}
+<link rel="stylesheet" href="{% static 'css/warehouse-revision.css' %}?v=1">
+<script src="{% static 'js/warehouse-revision.js' %}?v=2" defer></script>
+{% endblock %}
+{% block content %}
+<div class="revision-heading"><a href="{% url 'warehouse:detail' warehouse.pk %}">← К складу</a><h1>Ревизия · {{ warehouse.name }}</h1></div>
+<section class="panel revision-toolbar" aria-label="Управление ревизией">
+  <div class="revision-toolbar-top">
+    <div role="status" aria-live="polite" data-revision-progress>Проверено: <strong data-progress-count>{{ progress.checked }} / {{ progress.total }}</strong> · <span data-progress-percent>{{ progress.percent }}%</span></div>
+    {% if can_start %}<button class="button button-secondary" type="button" data-revision-new>Новая ревизия</button>{% endif %}
+  </div>
+  <progress max="{{ progress.total|default:1 }}" value="{{ progress.checked }}" aria-label="Прогресс ревизии" data-progress-bar></progress>
+  <nav class="revision-modes" aria-label="Порядок проверки">
+    <a href="?mode=products"{% if mode == 'products' %} aria-current="page"{% endif %}>По товарам</a>
+    <a href="?mode=locations"{% if mode == 'locations' %} aria-current="page"{% endif %}>По местам хранения</a>
+  </nav>
+</section>
+{% if partial_access %}<p class="muted">Показаны только доступные вам типы товаров. Прогресс относится к ним. Общий цикл начинает сотрудник с правом просмотра всех остатков склада.</p>{% endif %}
+{% if not revision %}<p class="panel" data-revision-initial>{% if can_start %}Отметьте первый товар — ревизия начнётся автоматически.{% else %}Попросите сотрудника с доступом ко всем остаткам склада начать ревизию.{% endif %}</p>{% else %}<p class="muted revision-cycle">Ревизия №{{ revision.pk }} · начата {{ revision.started_at|date:"d.m.Y H:i" }}. Отметки общие для склада.</p>{% endif %}
+<div data-revision-list data-check-url="{% url 'warehouse:revision_check' warehouse.pk %}" data-revision-id="{{ revision.pk|default:'' }}">
+  {% csrf_token %}
+  {% for group in groups %}
+  <section class="revision-group" aria-labelledby="revision-group-{{ forloop.counter }}">
+    <h2 id="revision-group-{{ forloop.counter }}">{{ group.title }} <small class="muted">{{ group.rows|length }}</small></h2>
+    <div class="revision-cards">
+    {% for row in group.rows %}
+      <article class="revision-card{% if row.checked %} is-checked{% endif %}" data-revision-card data-kind="{{ row.kind }}" data-product-id="{{ row.product.pk }}">
+        <h3>{{ row.product.name }}</h3>
+        <div class="revision-card-info"><div><span class="muted">Место хранения</span><strong class="revision-location">{{ row.locations|default:"Без места хранения" }}</strong></div><div class="revision-quantity"><span class="muted">Остаток</span><strong><span data-quantity>{{ row.quantity }}</span> шт.</strong></div></div>
+        <label class="revision-check"><input type="checkbox" data-revision-check{% if row.checked %} checked{% endif %}{% if not revision and not can_start %} disabled{% endif %}><span>Остаток сходится</span><small class="muted">{{ row.kind|upper }}</small></label>
+        <p class="revision-feedback" role="status" aria-live="polite" data-revision-feedback></p>
+      </article>
+    {% endfor %}
+    </div>
+  </section>
+  {% empty %}<p class="panel">На этом складе нет доступных товаров с положительным остатком.</p>{% endfor %}
+</div>
+{% if can_start %}
+<dialog class="confirmation-dialog revision-dialog" data-revision-dialog aria-labelledby="revision-dialog-title">
+  <h2 id="revision-dialog-title">Новая ревизия</h2>
+  <p>Начать новую ревизию? Все текущие отметки этого склада будут сброшены.</p>
+  <form method="post" action="{% url 'warehouse:revision_start' warehouse.pk %}">
+    {% csrf_token %}<input type="hidden" name="revision_id" value="{{ revision.pk|default:'' }}"><input type="hidden" name="confirm" value="yes">
+    <div class="revision-dialog-actions"><button class="button button-secondary" type="button" data-revision-cancel>Отмена</button><button class="button" type="submit">Начать ревизию</button></div>
+  </form>
+</dialog>
+{% endif %}
+<noscript><p class="panel">Для сохранения отметок включите JavaScript в браузере.</p></noscript>
+{% endblock %}

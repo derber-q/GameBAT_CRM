@@ -23,7 +23,7 @@
       </select>
     {% else %}<span class="sale-status sale-status-{{ sale.payment_status }}">{{ sale.get_payment_status_display }}</span>{% endif %}
   </td>
-  <td>{{ sale.created_by.full_name|default:sale.created_by.username }}</td>
+  <td>{% if sale.created_by %}{{ sale.created_by.full_name|default:sale.created_by.username }}{% elif sale.storefront_source %}Оптовый сайт{% else %}—{% endif %}</td>
   {% if state == 'completed' %}<td>{{ sale.completed_at|date:"d.m.Y H:i" }}</td>{% endif %}
   {% if state == 'cancelled' %}<td>{{ sale.refunded_amount }}</td><td>{{ sale.cancelled_at|date:"d.m.Y H:i" }}<br>{{ sale.cancelled_by.full_name|default:sale.cancelled_by.username }}</td>{% endif %}
 </tr>

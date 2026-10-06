@@ -4,13 +4,14 @@ from dataclasses import dataclass, field
 from datetime import timedelta
 from decimal import Decimal, ROUND_HALF_UP
 
+from django.db import models
 from django.db.models import Prefetch
 from django.utils import timezone
 
 from catalog.models import CD, Tech
 from catalog.product_search import filter_products_by_text
 
-from .models import Sale, SaleCDItem, SaleTechItem
+from .models import Sale, SaleCDItem, SaleConsignmentItem, SaleTechItem, SaleCustomItem
 
 
 ZERO = Decimal("0.00")
@@ -27,8 +28,6 @@ MONTH_NAMES = (
 
 
 def channel_for_sale(sale):
-    if sale.sale_type in (Sale.SaleType.WHOLESALE_PICKUP, Sale.SaleType.WHOLESALE_DELIVERY):
-        return "wholesale"
     return sale.sale_type
 
 
@@ -42,7 +41,7 @@ def percentage(part, total):
 class LineRow:
     item: object
     kind: str
-    product_id: int
+    product_id: int | None
     name: str
     sku: str
     category: str
@@ -50,6 +49,8 @@ class LineRow:
     unit_price: Decimal
     unit_cost: Decimal | None
     revenue: Decimal
+    commission: Decimal
+    net_revenue: Decimal
     cost: Decimal | None
     profit: Decimal | None
     margin: Decimal | None
@@ -65,6 +66,7 @@ class SaleRow:
     goods_total: Decimal
     overpayment: Decimal
     actual_revenue: Decimal
+    commission: Decimal
     cost: Decimal | None
     items_profit: Decimal | None
     profit: Decimal | None
@@ -82,6 +84,7 @@ class Aggregate:
     goods_total: Decimal = ZERO
     overpayment: Decimal = ZERO
     actual_revenue: Decimal = ZERO
+    commission: Decimal = ZERO
     cost: Decimal | None = ZERO
     profit: Decimal | None = ZERO
     margin: Decimal | None = None
@@ -101,6 +104,7 @@ class ProductAggregate:
     units: int = 0
     sales_ids: set[int] = field(default_factory=set)
     revenue: Decimal = ZERO
+    commission: Decimal = ZERO
     cost: Decimal | None = ZERO
     profit: Decimal | None = ZERO
     margin: Decimal | None = None
@@ -139,6 +143,7 @@ def _matching_sale_ids(filters):
     tech_fields = ("brand", "product_type")
     if not query and not any(filters.get(name) for name in (*cd_fields, *tech_fields)):
         return None
+    custom_ids = set(SaleCustomItem.objects.filter(product_name_snapshot__icontains=query).values_list("sale_id", flat=True)) if query else set()
     cd_queryset = CD.objects.all()
     tech_queryset = Tech.objects.all()
     if query:
@@ -159,7 +164,10 @@ def _matching_sale_ids(filters):
         ids.update(SaleCDItem.objects.filter(cd__in=cd_queryset).values_list("sale_id", flat=True))
     if not cd_restricted or tech_restricted:
         ids.update(SaleTechItem.objects.filter(tech__in=tech_queryset).values_list("sale_id", flat=True))
-    return ids
+    ids.update(SaleConsignmentItem.objects.filter(
+        models.Q(cd__in=cd_queryset) | models.Q(tech__in=tech_queryset)
+    ).values_list("sale_id", flat=True))
+    return ids | (custom_ids or set())
 
 
 def _base_queryset(filters):
@@ -183,7 +191,7 @@ def _base_queryset(filters):
         sale_types = []
         for channel in filters["channels"]:
             if channel == "wholesale":
-                sale_types.extend((Sale.SaleType.WHOLESALE_PICKUP, Sale.SaleType.WHOLESALE_DELIVERY))
+                sale_types.append(Sale.SaleType.WHOLESALE)
             else:
                 sale_types.append(channel)
         queryset = queryset.filter(sale_type__in=sale_types)
@@ -193,43 +201,64 @@ def _base_queryset(filters):
     return queryset.select_related("warehouse", "consignment_platform").prefetch_related(
         Prefetch("cd_items", queryset=SaleCDItem.objects.select_related("cd__platform", "cd__game_series")),
         Prefetch("tech_items", queryset=SaleTechItem.objects.select_related("tech__brand", "tech__product_type")),
+        Prefetch("custom_items", queryset=SaleCustomItem.objects.all()),
+        Prefetch("consignment_items", queryset=SaleConsignmentItem.objects.select_related("cd", "tech", "platform")),
     ).order_by("completed_at", "pk")
 
 
 def _line(item, kind):
-    product = item.cd if kind == "cd" else item.tech
-    category = (
-        product.platform.name if kind == "cd" and product.platform_id else
-        product.product_type.name if kind == "tech" and product.product_type_id else "—"
+    if kind == "custom":
+        product = None
+        category = "Произвольная позиция"
+    elif kind == "consignment":
+        product = item.cd if item.product_kind == "cd" else item.tech
+        category = f"Реализация · {item.platform_name_snapshot}"
+    else:
+        product = item.cd if kind == "cd" else item.tech
+        category = (
+            product.platform.name if kind == "cd" and product.platform_id else
+            product.product_type.name if kind == "tech" and product.product_type_id else "—"
+        )
+    revenue = item.line_total.quantize(CENT, rounding=ROUND_HALF_UP)
+    commission = (
+        ZERO if kind == "consignment"
+        else item.avito_commission_amount.quantize(CENT, rounding=ROUND_HALF_UP)
     )
-    revenue = (item.unit_price * item.quantity).quantize(CENT, rounding=ROUND_HALF_UP)
+    net_revenue = revenue - commission
     unit_cost = item.unit_cost_snapshot
     cost = (unit_cost * item.quantity).quantize(CENT, rounding=ROUND_HALF_UP) if unit_cost is not None else None
-    profit = revenue - cost if cost is not None else None
+    profit = net_revenue - cost if cost is not None else None
     return LineRow(
-        item=item, kind=kind, product_id=product.pk,
+        item=item, kind=kind, product_id=product.pk if product else None,
         name=item.product_name_snapshot, sku=item.article_snapshot, category=category,
-        quantity=item.quantity, unit_price=item.unit_price, unit_cost=unit_cost,
-        revenue=revenue, cost=cost, profit=profit,
+        quantity=item.quantity, unit_price=(revenue / item.quantity).quantize(CENT), unit_cost=unit_cost,
+        revenue=revenue, commission=commission, net_revenue=net_revenue,
+        cost=cost, profit=profit,
         margin=percentage(profit, revenue), markup=percentage(profit, cost),
     )
 
 
 def _sale_row(sale):
-    lines = [_line(item, "cd") for item in sale.cd_items.all()]
-    lines.extend(_line(item, "tech") for item in sale.tech_items.all())
+    legacy_consignment_mirror = sale.sale_type == Sale.SaleType.CONSIGNMENT and bool(sale.consignment_items.all())
+    lines = [] if legacy_consignment_mirror else [_line(item, "cd") for item in sale.cd_items.all()]
+    if not legacy_consignment_mirror:
+        lines.extend(_line(item, "tech") for item in sale.tech_items.all())
+    lines.extend(_line(item, "custom") for item in sale.custom_items.all())
+    lines.extend(_line(item, "consignment") for item in sale.consignment_items.all())
     missing = sum(line.cost is None for line in lines)
     cost = sum((line.cost for line in lines), ZERO) if not missing else None
     items_profit = sum((line.profit for line in lines), ZERO) if not missing else None
     goods_total = sale.total_amount
     overpayment = sale.extra_cash_amount
     actual = goods_total + overpayment
+    commission = sum((line.commission for line in lines), ZERO)
     profit = items_profit + overpayment if items_profit is not None else None
     channel = channel_for_sale(sale)
     return SaleRow(
         sale=sale, lines=lines, channel=channel,
         channel_label=CHANNEL_LABELS.get(channel, sale.get_sale_type_display()),
         goods_total=goods_total, overpayment=overpayment, actual_revenue=actual,
+        commission=commission,
         cost=cost, items_profit=items_profit, profit=profit,
         margin=percentage(profit, actual), markup=percentage(profit, cost),
         units=sum(line.quantity for line in lines), positions=len(lines), missing_lines=missing,
@@ -243,6 +272,7 @@ def _aggregate(rows):
         goods_total=sum((row.goods_total for row in rows), ZERO),
         overpayment=sum((row.overpayment for row in rows), ZERO),
         actual_revenue=sum((row.actual_revenue for row in rows), ZERO),
+        commission=sum((row.commission for row in rows), ZERO),
         missing_sales=sum(row.cost is None for row in rows),
         missing_lines=sum(row.missing_lines for row in rows),
     )
@@ -265,7 +295,7 @@ def _product_rows(rows):
     groups = {}
     for row in rows:
         for line in row.lines:
-            key = (line.kind, line.product_id)
+            key = (line.kind, line.product_id if line.kind != "custom" else line.name)
             if key not in groups:
                 groups[key] = ProductAggregate(
                     kind=line.kind, product_id=line.product_id, name=line.name,
@@ -275,6 +305,7 @@ def _product_rows(rows):
             group.units += line.quantity
             group.sales_ids.add(row.sale.pk)
             group.revenue += line.revenue
+            group.commission += line.commission
             if line.cost is None:
                 group.cost = None
                 group.profit = None

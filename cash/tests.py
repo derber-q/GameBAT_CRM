@@ -46,7 +46,7 @@ class CashRegisterTests(TestCase):
         self.assertContains(response, expected_cash_link, html=True)
         self.assertContains(
             response,
-            '<a class="nav-sale nav-dropdown-trigger active" href="/sales/new/" aria-haspopup="true">Продажа</a>',
+            f'<a class="nav-sale nav-dropdown-trigger active" href="{reverse("sales:create")}" aria-haspopup="true">Продажа</a>',
             html=True,
         )
 

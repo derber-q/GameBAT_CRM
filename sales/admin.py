@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Sale, SaleCDItem, SaleTechItem
+from .models import Sale, SaleCDItem, SaleConsignmentItem, SaleTechItem, SaleCustomItem
 
 
 class SaleHistoryAdmin(admin.ModelAdmin):
@@ -31,11 +31,35 @@ class SaleAdmin(SaleHistoryAdmin):
 
 @admin.register(SaleCDItem)
 class SaleCDItemAdmin(SaleHistoryAdmin):
-    list_display = ("sale", "product_name_snapshot", "quantity", "unit_price", "unit_cost_snapshot", "line_total")
+    list_display = (
+        "sale", "product_name_snapshot", "quantity", "unit_price", "unit_cost_snapshot",
+        "line_total", "avito_commission_enabled", "avito_commission_amount",
+    )
     search_fields = ("sale__visible_id", "product_name_snapshot", "article_snapshot")
 
 
 @admin.register(SaleTechItem)
 class SaleTechItemAdmin(SaleHistoryAdmin):
-    list_display = ("sale", "product_name_snapshot", "quantity", "unit_price", "unit_cost_snapshot", "line_total")
+    list_display = (
+        "sale", "product_name_snapshot", "quantity", "unit_price", "unit_cost_snapshot",
+        "line_total", "avito_commission_enabled", "avito_commission_amount",
+    )
+    search_fields = ("sale__visible_id", "product_name_snapshot", "article_snapshot")
+
+
+@admin.register(SaleCustomItem)
+class SaleCustomItemAdmin(SaleHistoryAdmin):
+    list_display = (
+        "sale", "product_name_snapshot", "quantity", "unit_price", "unit_cost_snapshot",
+        "line_total", "avito_commission_enabled", "avito_commission_amount",
+    )
+    search_fields = ("sale__visible_id", "product_name_snapshot")
+
+
+@admin.register(SaleConsignmentItem)
+class SaleConsignmentItemAdmin(SaleHistoryAdmin):
+    list_display = (
+        "sale", "platform", "product_name_snapshot", "quantity", "unit_price",
+        "unit_cost_snapshot", "source_stock_id", "line_total",
+    )
     search_fields = ("sale__visible_id", "product_name_snapshot", "article_snapshot")

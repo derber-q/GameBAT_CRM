@@ -13,6 +13,7 @@ from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.datavalidation import DataValidation
 
 from catalog.models import CD, Tech
+from catalog.product_ordering import tech_price_order
 from partners.models import Supplier
 from pricing.models import SupplierCDPrice, SupplierTechPrice
 from warehouse.models import CDWarehouseStock, TechWarehouseStock, Warehouse
@@ -141,59 +142,93 @@ def _bytes(workbook):
     return output.getvalue()
 
 
-def _warehouse_price_groups(warehouse, *, price_field):
-    """Return stocked products grouped like the nomenclature page."""
-    groups = []
-    skipped = 0
-    specifications = (
-        (
-            "cd", CDWarehouseStock, "cd", "platform",
-            "CD · Платформа: {name}",
-        ),
-        (
-            "tech", TechWarehouseStock, "tech", "product_type",
-            "Техника · Тип товара: {name}",
-        ),
-    )
-    for kind, stock_model, product_field, group_field, title_template in specifications:
-        stocks = stock_model.objects.filter(
-            warehouse=warehouse,
-            quantity__gt=0,
-            **{f"{product_field}__is_archived": False},
-        ).select_related(product_field, f"{product_field}__{group_field}")
-        entries = []
-        for stock in stocks:
-            product = getattr(stock, product_field)
-            price = getattr(product, price_field)
-            if price is None:
-                skipped += 1
-                continue
-            group_name = getattr(product, group_field).name
-            entries.append((group_name, product, stock.quantity, price))
-        entries.sort(key=lambda row: (row[0].casefold(), row[1].name.casefold(), row[1].pk))
+def _norm(value):
+    return " ".join(str(value or "").casefold().replace("ё", "е").split())
 
-        current_name = None
-        current_rows = []
-        for group_name, product, quantity, price in entries:
-            if current_name is not None and group_name != current_name:
-                groups.append((title_template.format(name=current_name), current_rows))
-                current_rows = []
-            current_name = group_name
-            current_rows.append((kind, product, quantity, price))
-        if current_name is not None:
-            groups.append((title_template.format(name=current_name), current_rows))
+
+def _tech_rows(warehouse, *, price_field):
+    stocks = TechWarehouseStock.objects.filter(
+        warehouse=warehouse, quantity__gt=0, tech__is_archived=False,
+    ).select_related("tech__brand", "tech__product_type")
+    rows, skipped = [], 0
+    for stock in stocks:
+        product = stock.tech
+        price = getattr(product, price_field)
+        if price is None:
+            skipped += 1
+            continue
+        sort_key, group = tech_price_order(product, for_excel=True)
+        rows.append((sort_key, group, ("tech", product, stock.quantity, price)))
+    rows.sort(key=lambda row: row[0])
+    groups = []
+    for _key, title, item in rows:
+        if not groups or groups[-1][0] != title: groups.append((title, []))
+        groups[-1][1].append(item)
     return groups, skipped
 
 
+def _cd_rows(warehouse, *, price_field):
+    stocks = CDWarehouseStock.objects.filter(
+        warehouse=warehouse, quantity__gt=0, cd__is_archived=False,
+    ).select_related("cd__platform")
+    entries, skipped = [], 0
+    for stock in stocks:
+        product = stock.cd
+        price = getattr(product, price_field)
+        if price is None:
+            skipped += 1
+            continue
+        entries.append((_norm(product.platform.name if product.platform_id else ""), product, stock.quantity, price))
+    entries.sort(key=lambda row: (row[0], _norm(row[1].name), row[1].pk))
+    groups = []
+    for platform, product, quantity, price in entries:
+        title = f"CD · Платформа: {product.platform.name if product.platform_id else 'Без платформы'}"
+        if not groups or groups[-1][0] != title:
+            groups.append((title, []))
+        groups[-1][1].append(("cd", product, quantity, price))
+    return groups, skipped
+
+
+def _warehouse_price_groups(warehouse, *, price_field):
+    """Единая структура для розничного и оптового прайса: Tech перед CD."""
+    tech_groups, tech_skipped = _tech_rows(warehouse, price_field=price_field)
+    cd_groups, cd_skipped = _cd_rows(warehouse, price_field=price_field)
+    return tech_groups + cd_groups, tech_skipped + cd_skipped
+
+
+DOT = "\u00b7"
+SECTION_FILLS = {
+    f"Tech {DOT} VR-шлемы": "DDEEEA",
+    f"Tech {DOT} Sony": "D9EAF7",
+    f"Tech {DOT} Nintendo": "FCE4E4",
+    f"Tech {DOT} \u041f\u043e\u0440\u0442\u0430\u0442\u0438\u0432\u043d\u044b\u0435 \u043a\u043e\u043d\u0441\u043e\u043b\u0438": "E8DDF5",
+    f"Tech {DOT} \u041f\u0440\u043e\u0447\u0438\u0435 \u0442\u043e\u0432\u0430\u0440\u044b": "F9EAD8",
+    f"CD {DOT} \u041f\u043b\u0430\u0442\u0444\u043e\u0440\u043c\u0430: Nintendo Switch 2": "FCE4E4",
+    f"CD {DOT} \u041f\u043b\u0430\u0442\u0444\u043e\u0440\u043c\u0430: PlayStation 4": "E3F0FA",
+    f"CD {DOT} \u041f\u043b\u0430\u0442\u0444\u043e\u0440\u043c\u0430: PlayStation 5": "D9EAF7",
+    f"CD {DOT} ": "EEEAF7",
+}
+
+
+def _group_fill(title):
+    for prefix, color in SECTION_FILLS.items():
+        if title.startswith(prefix):
+            return color
+    return GROUP_FILL
+
+
 def _style_group_rows(sheet, rows, *, columns):
-    thin = Side(style="thin", color=GRAY)
+    thin = Side(style="thin", color="8A9AA8")
+    strong = Side(style="medium", color="334660")
     for row_number in rows:
+        title = str(sheet.cell(row_number, 1).value or "")
+        fill = _group_fill(title)
         for column in range(1, columns + 1):
             cell = sheet.cell(row_number, column)
-            cell.fill = PatternFill("solid", fgColor=GROUP_FILL)
-            cell.border = Border(top=thin, bottom=thin)
+            cell.fill = PatternFill("solid", fgColor=fill)
+            cell.border = Border(top=strong, bottom=thin)
             cell.protection = Protection(locked=True)
-        sheet.cell(row_number, 1).font = Font(bold=True, color=BLUE)
+        sheet.cell(row_number, 1).font = Font(bold=True, color=BLUE, size=11)
 
 
 def generate_retail_price_xlsx(*, warehouse_id, actor):

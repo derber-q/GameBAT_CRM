@@ -63,6 +63,7 @@ class ConsignmentServiceTests(TestCase):
         self.assertEqual(stock.quantity, 3)
         self.assertEqual(stock.warehouse, self.warehouse)
         self.assertEqual(stock.receivable_per_unit, Decimal("2500.00"))
+        self.assertEqual(stock.unit_cost, Decimal("2400.00"))
         other_stock.refresh_from_db()
         self.assertEqual(other_stock.quantity, 6)
 
@@ -72,6 +73,7 @@ class ConsignmentServiceTests(TestCase):
         self.assertEqual(item.product, self.product)
         self.assertEqual(item.warehouse_quantity_before, 10)
         self.assertEqual(item.warehouse_quantity_after, 7)
+        self.assertEqual(item.unit_cost_snapshot, Decimal("2400.00"))
         self.assertEqual(event.action_kind, ProductChangeEvent.ActionKind.CONSIGNMENT)
         self.assertEqual(event.action_label, movement.action_label)
         self.assertEqual(event.action_url, reverse("consignment:movement_detail", args=(movement.pk,)))
@@ -144,6 +146,40 @@ class ConsignmentServiceTests(TestCase):
         item = movements[1].items.get()
         self.assertEqual(item.warehouse_quantity_before, 6)
         self.assertEqual(item.warehouse_quantity_after, 8)
+
+    def test_consignment_cost_is_independent_and_return_recalculates_warehouse_average(self):
+        stock = self.transfer(quantity=4)
+        self.product.cost = Decimal("3000.00")
+        self.product.save(update_fields=("cost",))
+
+        sale = record_consignment_sale(
+            actor=self.user,
+            product_type="cd",
+            stock_id=stock.pk,
+            quantity=1,
+            payment_method=Sale.PaymentMethod.BANK_ACCOUNT,
+        )
+        self.assertEqual(sale.cd_items.get().unit_cost_snapshot, Decimal("2400.00"))
+
+        return_from_consignment(
+            actor=self.user,
+            warehouse_id=self.warehouse.pk,
+            platform_id=self.sales_platform.pk,
+            product_type="cd",
+            product_id=self.product.pk,
+            quantity=2,
+        )
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.cost, Decimal("2850.00"))
+
+    def test_repeated_transfer_averages_cost_inside_consignment_lot(self):
+        stock = self.transfer(quantity=2)
+        self.product.cost = Decimal("3000.00")
+        self.product.save(update_fields=("cost",))
+        self.transfer(quantity=2)
+        stock.refresh_from_db()
+        self.assertEqual(stock.quantity, 4)
+        self.assertEqual(stock.unit_cost, Decimal("2700.00"))
 
     def test_cannot_return_more_than_platform_balance(self):
         self.transfer(quantity=2)

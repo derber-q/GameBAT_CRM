@@ -6,7 +6,7 @@
   <div>
     <p class="eyebrow">Приход №{{ supply.pk }} · редакция {{ supply.revision_number }}</p>
     <h1>Финализация прихода</h1>
-    <p class="muted">Перераспределение глобальной себестоимости без изменения количества и общей стоимости запасов.</p>
+    <p class="muted">Перераспределение складской себестоимости без изменения количества и общей стоимости товара на физических складах.</p>
   </div>
   <div class="heading-actions"><a class="button button-secondary" href="{% url 'supplies:detail' supply.pk %}">Вернуться к приходу</a></div>
 </div>
@@ -25,18 +25,18 @@
       <button class="button button-secondary" type="button" data-select-kind="none">Снять выделение</button>
       <button class="button" type="button" data-auto-distribute>Распределить текущую неустойку</button>
     </div>
-    <p class="muted finalization-help">Ручное изменение фиксирует строку и исключает её из последующего автораспределения. Автораспределение делит сумму по общему количеству единиц выбранных товаров.</p>
+    <p class="muted finalization-help">Ручное изменение фиксирует строку и исключает её из последующего автораспределения. Автораспределение делит сумму по количеству единиц на физических складах; реализация и товар в пути не участвуют.</p>
     <p class="error-text finalization-error" data-finalization-error role="alert"></p>
   </section>
 
   <section class="panel inventory-section finalization-section">
     <div class="section-heading"><div><span class="category-tag">CD</span><h2>Диски</h2></div><span class="count">{{ cd_rows|length }} товаров</span></div>
-    <div class="table-scroll"><table class="finalization-table"><thead><tr><th>Авто</th><th>Тип</th><th>ID</th><th>Артикул</th><th>Название</th><th class="numeric">Глобальный остаток</th><th class="numeric">Текущая себестоимость</th><th class="numeric">Откорректированная</th><th class="numeric">Изменение / ед.</th><th class="numeric">Неустойка строки</th></tr></thead><tbody>{% include "supplies/_finalization_rows.html" with section_rows=cd_rows %}</tbody></table></div>
+    <div class="table-scroll"><table class="finalization-table"><thead><tr><th>Авто</th><th>Тип</th><th>ID</th><th>Артикул</th><th>Название</th><th class="numeric">На физических складах</th><th class="numeric">Текущая себестоимость</th><th class="numeric">Откорректированная</th><th class="numeric">Изменение / ед.</th><th class="numeric">Неустойка строки</th></tr></thead><tbody>{% include "supplies/_finalization_rows.html" with section_rows=cd_rows %}</tbody></table></div>
   </section>
 
   <section class="panel inventory-section finalization-section">
     <div class="section-heading"><div><span class="category-tag category-tag-tech">Tech</span><h2>Техника</h2></div><span class="count">{{ tech_rows|length }} товаров</span></div>
-    <div class="table-scroll"><table class="finalization-table"><thead><tr><th>Авто</th><th>Тип</th><th>ID</th><th>Артикул</th><th>Название</th><th class="numeric">Глобальный остаток</th><th class="numeric">Текущая себестоимость</th><th class="numeric">Откорректированная</th><th class="numeric">Изменение / ед.</th><th class="numeric">Неустойка строки</th></tr></thead><tbody>{% include "supplies/_finalization_rows.html" with section_rows=tech_rows %}</tbody></table></div>
+    <div class="table-scroll"><table class="finalization-table"><thead><tr><th>Авто</th><th>Тип</th><th>ID</th><th>Артикул</th><th>Название</th><th class="numeric">На физических складах</th><th class="numeric">Текущая себестоимость</th><th class="numeric">Откорректированная</th><th class="numeric">Изменение / ед.</th><th class="numeric">Неустойка строки</th></tr></thead><tbody>{% include "supplies/_finalization_rows.html" with section_rows=tech_rows %}</tbody></table></div>
   </section>
 
   <div class="submit-bar finalization-submit-bar">

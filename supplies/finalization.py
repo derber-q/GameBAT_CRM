@@ -7,21 +7,17 @@ from math import gcd
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import Q
 
 from catalog.audit import field_change, record_product_changes
 from catalog.models import CD, ProductChangeEvent, Tech
-from consignment.models import CDConsignmentStock, TechConsignmentStock
-from warehouse.models import (
-    CDWarehouseStock, CDWarehouseTransferItem, TechWarehouseStock,
-    TechWarehouseTransferItem, WarehouseTransfer,
-)
+from warehouse.models import CDWarehouseStock, TechWarehouseStock
+from warehouse.valuation import warehouse_owned_quantity
 
 from .models import Supply, SupplyFinalization, SupplyFinalizationItem
-from .services import global_owned_quantity
 
 logger = logging.getLogger("gamebat.business")
 CENT = Decimal("0.01")
+UNIT = Decimal("0.000001")
 
 
 @dataclass(frozen=True)
@@ -131,25 +127,16 @@ def supply_has_complete_cost_calculations(supply):
 
 
 def _lock_global_quantity_records(keys):
-    """Блокирует все строки, из которых складывается глобальное количество."""
+    """Блокирует складские строки, участвующие в расчёте себестоимости."""
     cd_ids = [product_id for kind, product_id in keys if kind == "cd"]
     tech_ids = [product_id for kind, product_id in keys if kind == "tech"]
-    transfer_filter = Q(cd_items__cd_id__in=cd_ids) | Q(tech_items__tech_id__in=tech_ids)
-    list(
-        WarehouseTransfer.objects.select_for_update()
-        .filter(transfer_filter).distinct().order_by("id")
-    )
     list(CDWarehouseStock.objects.select_for_update().filter(cd_id__in=cd_ids).order_by("id"))
     list(TechWarehouseStock.objects.select_for_update().filter(tech_id__in=tech_ids).order_by("id"))
-    list(CDConsignmentStock.objects.select_for_update().filter(cd_id__in=cd_ids).order_by("id"))
-    list(TechConsignmentStock.objects.select_for_update().filter(tech_id__in=tech_ids).order_by("id"))
-    list(CDWarehouseTransferItem.objects.select_for_update().filter(cd_id__in=cd_ids).order_by("id"))
-    list(TechWarehouseTransferItem.objects.select_for_update().filter(tech_id__in=tech_ids).order_by("id"))
 
 
 def get_supply_finalization_context(*, supply, lock=False):
-    """Возвращает уникальные товары актуальной редакции с global qty/cost."""
-    if supply.status != Supply.Status.ACCEPTED or supply.is_cancelled:
+    """Возвращает товары актуальной редакции со складским количеством и cost."""
+    if supply.status not in (Supply.Status.ACCEPTED, Supply.Status.PRICE_REVIEW_REQUIRED) or supply.is_cancelled:
         raise ValidationError("Финализировать можно только действующий принятый приход.")
     keys = _supply_product_keys(supply)
     if not keys:
@@ -173,11 +160,19 @@ def get_supply_finalization_context(*, supply, lock=False):
         raise ValidationError("Один из товаров прихода больше не существует.")
     if lock:
         _lock_global_quantity_records(keys)
+    calculations = {
+        (row.product_kind, row.cd_id or row.tech_id): row
+        for row in supply.cost_calculations.all()
+    }
     rows = []
     for key in keys:
         product = products[key]
-        quantity = global_owned_quantity(*key)
-        current_cost = product.cost.quantize(CENT)
+        if supply.status == Supply.Status.PRICE_REVIEW_REQUIRED:
+            quantity = calculations[key].resulting_quantity
+            current_cost = calculations[key].resulting_unit_cost.quantize(CENT)
+        else:
+            quantity = warehouse_owned_quantity(*key)
+            current_cost = product.cost.quantize(CENT)
         rows.append(FinalizationRow(
             product_type=key[0], product_id=key[1], product=product,
             global_quantity=quantity, current_cost=current_cost,
@@ -385,7 +380,20 @@ def apply_supply_finalization(*, actor, supply_id, expected_revision_number, raw
                     **{row.product_type: row.product},
                 ))
             SupplyFinalizationItem.objects.bulk_create(history_items)
+            pending_review = supply.status == Supply.Status.PRICE_REVIEW_REQUIRED
+            calculation_by_key = {
+                (calculation.product_kind, calculation.cd_id or calculation.tech_id): calculation
+                for calculation in supply.cost_calculations.select_for_update()
+            }
             for row in changed:
+                if pending_review:
+                    calculation = calculation_by_key[row.key]
+                    calculation.resulting_unit_cost = row.corrected_cost
+                    calculation.resulting_value = (
+                        row.corrected_cost * Decimal(calculation.resulting_quantity)
+                    ).quantize(UNIT)
+                    calculation.save(update_fields=("resulting_unit_cost", "resulting_value"))
+                    continue
                 product = row.product
                 product.cost = row.corrected_cost
                 product.full_clean(exclude=[

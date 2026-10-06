@@ -6,11 +6,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}ReSOURCE{% endblock %}</title>
   <link rel="icon" href="{% static 'img/gamebat-favicon.ico' %}" sizes="32x32" type="image/x-icon">
-  <link rel="stylesheet" href="{% static 'css/gamebat.css' %}?v=price-control-2">
-  <script src="{% static 'js/app.js' %}?v=collapse-fix-3" defer></script>
+  <link rel="stylesheet" href="{% static 'css/gamebat.css' %}?v=price-control-3-avito-commission-4-product-media-1-pricing-stock-filter-1-resource-crm-routes-1-avito-check-4-pricing-columns-1-sale-layout-1-supply-barcode-1">
+  <script src="{% static 'js/app.js' %}?v=collapse-fix-3-pricing-stock-filter-1-resource-crm-routes-1" defer></script>
+  <script src="{% static 'js/product-image-preview.js' %}?v=product-media-1" defer></script>
   {% block extra_head %}{% endblock %}
 </head>
-<body>
+<body class="{% block body_class %}{% endblock %}" data-exchange-rates-url="{% url 'core:exchange_rates' %}">
   {% if user.is_authenticated %}
     <header class="topbar">
       <a class="brand" href="{% url 'core:home' %}"><span class="brand-mark">RS</span><span>Re<b>SOURCE</b></span></a>
@@ -57,7 +58,7 @@
             </div>
           </div>
         {% endif %}
-        {% if nav.pricing %}<a class="{% if request.resolver_match.namespace == 'pricing' %}active{% endif %}" href="{% url 'pricing:list' %}">Ценообразование</a>{% endif %}
+        {% if nav.pricing %}<div class="nav-dropdown"><a class="nav-dropdown-trigger {% if request.resolver_match.namespace == 'pricing' %}active{% endif %}" href="{% url 'pricing:list' %}" aria-haspopup="true">Ценообразование</a><div class="nav-dropdown-menu"><a href="{% url 'pricing:list' %}">Ценообразование</a><a href="{% url 'pricing:avito_check' %}">Avito Check</a></div></div>{% endif %}
         {% if nav.price %}<a class="{% if request.resolver_match.namespace == 'price' %}active{% endif %}" href="{% url 'price:index' %}">Прайс</a>{% endif %}
         {% if nav.stuf %}
           <div class="nav-dropdown">
@@ -71,10 +72,12 @@
         {% endif %}
         {% if nav.integrations %}
           <div class="nav-dropdown">
-            <a class="nav-dropdown-trigger {% if request.resolver_match.namespace == 'integrations' %}active{% endif %}" href="{% url 'integrations:api_keys' %}" aria-haspopup="true">Интеграции</a>
+            <a class="nav-dropdown-trigger {% if request.resolver_match.namespace == 'integrations' or request.resolver_match.namespace == 'yandex_market' %}active{% endif %}" href="{% if nav.integration_keys %}{% url 'integrations:api_keys' %}{% elif nav.integration_yandex %}{% url 'yandex_market:dashboard' %}{% else %}{% url 'integrations:avito' %}{% endif %}" aria-haspopup="true">Интеграции</a>
             <div class="nav-dropdown-menu">
               {% if nav.integration_keys %}<a href="{% url 'integrations:api_keys' %}">API ключи</a>{% endif %}
               {% if nav.integration_avito %}<a href="{% url 'integrations:avito' %}">Avito</a>{% endif %}
+              {% if nav.integration_yandex %}<a href="{% url 'yandex_market:dashboard' %}">Яндекс Маркет</a>{% endif %}
+              {% if nav.integration_storefront %}<a href="{% url 'resource_storefront:manage' %}">Оптовый сайт</a>{% endif %}
             </div>
           </div>
         {% endif %}

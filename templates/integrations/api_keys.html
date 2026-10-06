@@ -28,4 +28,33 @@
   </form>
   {% if credential.is_configured %}<form method="post" action="{% url 'integrations:credentials_check' %}">{% csrf_token %}<button class="button button-secondary" type="submit">Проверить подключение</button></form>{% endif %}
 </section>
+<section class="panel">
+  <div class="section-heading section-heading-plain"><div><h2>ReefAPI</h2><p class="muted">Доступ к объявлениям для ручной проверки цен Avito Check.</p></div><span class="badge {% if reef_credential.is_configured %}badge-success{% endif %}">{% if reef_credential.is_configured %}Ключ настроен{% else %}Ключ не настроен{% endif %}</span></div>
+  {% if reef_credential.last_checked_at %}<p class="muted">Последняя проверка: {{ reef_credential.last_checked_at|date:"d.m.Y H:i" }}</p>{% endif %}
+  {% if reef_credential.last_error %}<div class="alert alert-error">{{ reef_credential.last_error }}</div>{% endif %}
+  <form method="post" action="{% url 'integrations:reef_key_save' %}" class="stacked-form">{% csrf_token %}<div class="field"><label for="reef-api-key">API key</label><input id="reef-api-key" type="password" name="api_key" autocomplete="new-password" required><small>Сохранённое значение не выводится на страницу.</small></div><div class="form-actions"><button class="button" type="submit">Сохранить ключ</button></div></form>
+  {% if reef_credential.is_configured %}<form method="post" action="{% url 'integrations:reef_check' %}">{% csrf_token %}<button class="button button-secondary" type="submit">Проверить подключение</button></form>{% endif %}
+</section>
+<section class="panel">
+  <div class="section-heading section-heading-plain">
+    <div><h2>Google Sheets</h2><p class="muted">Одностороннее зеркало физического складского остатка. Товары в пути и на реализации не учитываются.</p></div>
+    <span class="badge {% if google_sheets.status == 'ok' %}badge-success{% elif google_sheets.status == 'error' %}badge-danger{% endif %}">{{ google_sheets.get_status_display }}</span>
+  </div>
+  {% if not google_credentials_configured %}<div class="alert alert-error">На сервере не указан путь GOOGLE_SERVICE_ACCOUNT_FILE. Предоставьте сервисному аккаунту право редактора этой таблицы.</div>{% endif %}
+  <dl class="details integration-details">
+    <dt>Управляемый лист</dt><dd>{{ google_sheets.sheet_name }}</dd>
+    <dt>Последняя попытка</dt><dd>{{ google_sheets.last_attempt_at|date:"d.m.Y H:i"|default:"—" }}</dd>
+    <dt>Последний успех</dt><dd>{{ google_sheets.last_success_at|date:"d.m.Y H:i"|default:"—" }}</dd>
+    <dt>Фоновая задача</dt><dd>{% if google_job %}{{ google_job.get_status_display }}{% else %}—{% endif %}</dd>
+  </dl>
+  {% if google_sheets.last_error %}<div class="alert alert-error">{{ google_sheets.last_error }}</div>{% endif %}
+  <form method="post" action="{% url 'integrations:google_sheets_settings' %}" class="stacked-form">
+    {% csrf_token %}
+    <div class="field"><label for="google-spreadsheet-url">Ссылка на таблицу</label><input id="google-spreadsheet-url" type="url" name="spreadsheet_url" value="{{ google_sheets.spreadsheet_url }}" required></div>
+    <div class="field"><label for="google-sheet-name">Название листа CRM</label><input id="google-sheet-name" name="sheet_name" value="{{ google_sheets.sheet_name }}" required></div>
+    <label><input type="checkbox" name="enabled" {% if google_sheets.enabled %}checked{% endif %}> Автоматически обновлять каждые 10 минут</label>
+    <div class="form-actions"><button class="button button-secondary" type="submit">Сохранить параметры</button></div>
+  </form>
+  <form method="post" action="{% url 'integrations:google_sheets_sync' %}">{% csrf_token %}<button class="button" type="submit" {% if not google_credentials_configured or not google_sheets.enabled %}disabled{% endif %}>Синхронизировать сейчас</button></form>
+</section>
 {% endblock %}

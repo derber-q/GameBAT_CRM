@@ -1,0 +1,3784 @@
+{
+  "getBusinessSettings": {
+    "path": "/v2/businesses/{businessId}/settings",
+    "method": "POST",
+    "scopes": [
+      "all-methods",
+      "all-methods:read-only",
+      "settings-management",
+      "finance-and-accounting",
+      "offers-and-cards-management",
+      "offers-and-cards-management:read-only",
+      "pricing",
+      "pricing:read-only",
+      "inventory-and-order-processing",
+      "inventory-and-order-processing:read-only",
+      "promotion",
+      "promotion:read-only",
+      "communication",
+      "supplies-management:read-only"
+    ],
+    "limits": {
+      "path": "resp",
+      "none": {
+        "amount": 100,
+        "period": "hours",
+        "period-duration": 1
+      },
+      "medium": {
+        "amount": 100,
+        "period": "hours",
+        "period-duration": 1
+      }
+    },
+    "parameters": [
+      {
+        "name": "businessId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 1
+        }
+      }
+    ],
+    "request": {}
+  },
+  "getCampaigns": {
+    "path": "/v2/campaigns",
+    "method": "GET",
+    "scopes": [
+      "all-methods",
+      "all-methods:read-only",
+      "settings-management",
+      "finance-and-accounting",
+      "offers-and-cards-management",
+      "offers-and-cards-management:read-only",
+      "pricing",
+      "pricing:read-only",
+      "inventory-and-order-processing",
+      "inventory-and-order-processing:read-only",
+      "promotion",
+      "promotion:read-only",
+      "communication",
+      "supplies-management:read-only"
+    ],
+    "limits": {
+      "path": "resp",
+      "none": {
+        "amount": 1000,
+        "period": "hours",
+        "period-duration": 1
+      },
+      "medium": {
+        "amount": 1000,
+        "period": "hours",
+        "period-duration": 1
+      }
+    },
+    "parameters": [
+      {
+        "name": "pageToken",
+        "in": "query",
+        "required": false,
+        "x-transform": "token",
+        "x-aliases": [
+          "pageToken",
+          "page_token"
+        ],
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "limit",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "maximum": 100
+        }
+      },
+      {
+        "name": "page",
+        "in": "query",
+        "required": false,
+        "deprecated": true,
+        "x-deprecation-config": {
+          "shutdown-date": "2026-10-05",
+          "replacement-field": "pageToken"
+        },
+        "schema": {
+          "type": "integer",
+          "format": "int32",
+          "default": 1,
+          "maximum": 10000
+        }
+      },
+      {
+        "name": "pageSize",
+        "in": "query",
+        "required": false,
+        "deprecated": true,
+        "x-deprecation-config": {
+          "shutdown-date": "2026-10-05",
+          "replacement-field": "limit"
+        },
+        "schema": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    ],
+    "request": {}
+  },
+  "getBusinessOrders": {
+    "path": "/v1/businesses/{businessId}/orders",
+    "method": "POST",
+    "scopes": [
+      "all-methods",
+      "all-methods:read-only",
+      "inventory-and-order-processing",
+      "inventory-and-order-processing:read-only",
+      "finance-and-accounting"
+    ],
+    "limits": {
+      "path": "resp",
+      "parallel-limit-value": 6,
+      "none": {
+        "amount": 10000,
+        "period": "hours",
+        "period-duration": 1
+      },
+      "medium": {
+        "amount": 10000,
+        "period": "hours",
+        "period-duration": 1
+      }
+    },
+    "parameters": [
+      {
+        "name": "businessId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 1
+        }
+      },
+      {
+        "name": "pageToken",
+        "in": "query",
+        "required": false,
+        "x-transform": "token",
+        "x-aliases": [
+          "pageToken",
+          "page_token"
+        ],
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "limit",
+        "in": "query",
+        "required": false,
+        "x-transform": "truncateLimit",
+        "schema": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "default": 50,
+          "maximum": 50
+        }
+      }
+    ],
+    "request": {
+      "type": "object",
+      "properties": {
+        "orderIds": {
+          "nullable": true,
+          "uniqueItems": true,
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "minItems": 1,
+          "maxItems": 50
+        },
+        "externalOrderIds": {
+          "nullable": true,
+          "uniqueItems": true,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1,
+          "maxItems": 50
+        },
+        "programTypes": {
+          "nullable": true,
+          "uniqueItems": true,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "FBY",
+              "FBS",
+              "DBS",
+              "EXPRESS",
+              "LAAS"
+            ]
+          },
+          "minItems": 1
+        },
+        "campaignIds": {
+          "nullable": true,
+          "uniqueItems": true,
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "minItems": 1,
+          "maxItems": 50
+        },
+        "statuses": {
+          "nullable": true,
+          "uniqueItems": true,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "PLACING",
+              "RESERVED",
+              "UNPAID",
+              "PROCESSING",
+              "DELIVERY",
+              "PICKUP",
+              "DELIVERED",
+              "CANCELLED",
+              "PENDING",
+              "PARTIALLY_RETURNED",
+              "RETURNED",
+              "UNKNOWN"
+            ]
+          },
+          "minItems": 1
+        },
+        "substatuses": {
+          "nullable": true,
+          "uniqueItems": true,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "RESERVATION_EXPIRED",
+              "USER_NOT_PAID",
+              "USER_UNREACHABLE",
+              "USER_CHANGED_MIND",
+              "USER_REFUSED_DELIVERY",
+              "USER_REFUSED_PRODUCT",
+              "SHOP_FAILED",
+              "USER_REFUSED_QUALITY",
+              "REPLACING_ORDER",
+              "PROCESSING_EXPIRED",
+              "PENDING_EXPIRED",
+              "SHOP_PENDING_CANCELLED",
+              "PENDING_CANCELLED",
+              "USER_FRAUD",
+              "RESERVATION_FAILED",
+              "USER_PLACED_OTHER_ORDER",
+              "USER_BOUGHT_CHEAPER",
+              "MISSING_ITEM",
+              "BROKEN_ITEM",
+              "WRONG_ITEM",
+              "PICKUP_EXPIRED",
+              "DELIVERY_PROBLEMS",
+              "LATE_CONTACT",
+              "CUSTOM",
+              "DELIVERY_SERVICE_FAILED",
+              "WAREHOUSE_FAILED_TO_SHIP",
+              "DELIVERY_SERVICE_UNDELIVERED",
+              "PREORDER",
+              "AWAIT_CONFIRMATION",
+              "STARTED",
+              "PACKAGING",
+              "READY_TO_SHIP",
+              "SHIPPED",
+              "ASYNC_PROCESSING",
+              "WAITING_USER_INPUT",
+              "WAITING_BANK_DECISION",
+              "BANK_REJECT_CREDIT_OFFER",
+              "CUSTOMER_REJECT_CREDIT_OFFER",
+              "CREDIT_OFFER_FAILED",
+              "AWAIT_DELIVERY_DATES_CONFIRMATION",
+              "SERVICE_FAULT",
+              "DELIVERY_SERVICE_RECEIVED",
+              "USER_RECEIVED",
+              "WAITING_FOR_STOCKS",
+              "AS_PART_OF_MULTI_ORDER",
+              "READY_FOR_LAST_MILE",
+              "LAST_MILE_STARTED",
+              "ANTIFRAUD",
+              "DELIVERY_USER_NOT_RECEIVED",
+              "DELIVERY_SERVICE_DELIVERED",
+              "DELIVERED_USER_NOT_RECEIVED",
+              "USER_WANTED_ANOTHER_PAYMENT_METHOD",
+              "USER_RECEIVED_TECHNICAL_ERROR",
+              "USER_FORGOT_TO_USE_BONUS",
+              "DELIVERY_SERVICE_NOT_RECEIVED",
+              "DELIVERY_SERVICE_LOST",
+              "SHIPPED_TO_WRONG_DELIVERY_SERVICE",
+              "DELIVERED_USER_RECEIVED",
+              "WAITING_TINKOFF_DECISION",
+              "COURIER_SEARCH",
+              "COURIER_FOUND",
+              "COURIER_IN_TRANSIT_TO_SENDER",
+              "COURIER_ARRIVED_TO_SENDER",
+              "COURIER_RECEIVED",
+              "COURIER_NOT_FOUND",
+              "COURIER_NOT_DELIVER_ORDER",
+              "COURIER_RETURNS_ORDER",
+              "COURIER_RETURNED_ORDER",
+              "WAITING_USER_DELIVERY_INPUT",
+              "PICKUP_SERVICE_RECEIVED",
+              "PICKUP_USER_RECEIVED",
+              "CANCELLED_COURIER_NOT_FOUND",
+              "COURIER_NOT_COME_FOR_ORDER",
+              "DELIVERY_NOT_MANAGED_REGION",
+              "INCOMPLETE_CONTACT_INFORMATION",
+              "INCOMPLETE_MULTI_ORDER",
+              "INAPPROPRIATE_WEIGHT_SIZE",
+              "TECHNICAL_ERROR",
+              "SORTING_CENTER_LOST",
+              "COURIER_SEARCH_NOT_STARTED",
+              "LOST",
+              "AWAIT_PAYMENT",
+              "AWAIT_LAVKA_RESERVATION",
+              "USER_WANTS_TO_CHANGE_ADDRESS",
+              "FULL_NOT_RANSOM",
+              "PRESCRIPTION_MISMATCH",
+              "DROPOFF_LOST",
+              "DROPOFF_CLOSED",
+              "DELIVERY_TO_STORE_STARTED",
+              "USER_WANTS_TO_CHANGE_DELIVERY_DATE",
+              "WRONG_ITEM_DELIVERED",
+              "DAMAGED_BOX",
+              "AWAIT_DELIVERY_DATES",
+              "LAST_MILE_COURIER_SEARCH",
+              "PICKUP_POINT_CLOSED",
+              "LEGAL_INFO_CHANGED",
+              "USER_HAS_NO_TIME_TO_PICKUP_ORDER",
+              "DELIVERY_CUSTOMS_ARRIVED",
+              "DELIVERY_CUSTOMS_CLEARED",
+              "FIRST_MILE_DELIVERY_SERVICE_RECEIVED",
+              "AWAIT_AUTO_DELIVERY_DATES",
+              "AWAIT_USER_PERSONAL_DATA",
+              "NO_PERSONAL_DATA_EXPIRED",
+              "CUSTOMS_PROBLEMS",
+              "AWAIT_CASHIER",
+              "WAITING_POSTPAID_BUDGET_RESERVATION",
+              "AWAIT_SERVICEABLE_CONFIRMATION",
+              "POSTPAID_BUDGET_RESERVATION_FAILED",
+              "AWAIT_CUSTOM_PRICE_CONFIRMATION",
+              "READY_FOR_PICKUP",
+              "TOO_MANY_DELIVERY_DATE_CHANGES",
+              "TOO_LONG_DELIVERY",
+              "DEFERRED_PAYMENT",
+              "POSTPAID_FAILED",
+              "INCORRECT_PERSONAL_DATA",
+              "CUSTOMS_FAILED_MARKET",
+              "CUSTOMS_FAILED_USER_COMMERCIAL_ITEMS",
+              "CUSTOMS_FAILED_USER_DUTY_NOT_PAID",
+              "CUSTOMS_FAILED_USER_INVALID_PERSONAL_DATA",
+              "CUSTOMS_FAILED_USER_ADDITIONAL_DATA_NOT_PROVIDED",
+              "AWAIT_PAYMENT_AFTER_DELIVERY",
+              "AWAIT_USER_STEAM_FAST_URL",
+              "USER_IDENTIFICATION_MISMATCH",
+              "PURCHASE_GROUP_THRESHOLD_NOT_REACHED_CANCELLED",
+              "UNKNOWN"
+            ]
+          },
+          "minItems": 1
+        },
+        "dates": {
+          "type": "object",
+          "properties": {
+            "creationDateFrom": {
+              "type": "string",
+              "format": "date"
+            },
+            "creationDateTo": {
+              "type": "string",
+              "format": "date"
+            },
+            "shipmentDateFrom": {
+              "type": "string",
+              "format": "date"
+            },
+            "shipmentDateTo": {
+              "type": "string",
+              "format": "date"
+            },
+            "updateDateFrom": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "updateDateTo": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        },
+        "fake": {
+          "type": "boolean"
+        },
+        "waitingForCancellationApprove": {
+          "type": "boolean"
+        },
+        "sourcePlatforms": {
+          "nullable": true,
+          "uniqueItems": true,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "MARKET",
+              "OZON",
+              "WILDBERRIES",
+              "OTHER"
+            ]
+          },
+          "minItems": 1
+        }
+      }
+    }
+  },
+  "updateOrderStatus": {
+    "path": "/v2/campaigns/{campaignId}/orders/{orderId}/status",
+    "method": "PUT",
+    "scopes": [
+      "all-methods",
+      "inventory-and-order-processing"
+    ],
+    "limits": {
+      "path": "resp",
+      "none": {
+        "amount": 10000,
+        "period": "hours",
+        "period-duration": 1
+      },
+      "medium": {
+        "amount": 10000,
+        "period": "hours",
+        "period-duration": 1
+      }
+    },
+    "parameters": [
+      {
+        "name": "campaignId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 1
+        }
+      },
+      {
+        "name": "orderId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "integer",
+          "format": "int64"
+        }
+      }
+    ],
+    "request": {
+      "type": "object",
+      "required": [
+        "order"
+      ],
+      "properties": {
+        "order": {
+          "type": "object",
+          "required": [
+            "status"
+          ],
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": [
+                "PLACING",
+                "RESERVED",
+                "UNPAID",
+                "PROCESSING",
+                "DELIVERY",
+                "PICKUP",
+                "DELIVERED",
+                "CANCELLED",
+                "PENDING",
+                "PARTIALLY_RETURNED",
+                "RETURNED",
+                "UNKNOWN"
+              ]
+            },
+            "substatus": {
+              "type": "string",
+              "enum": [
+                "RESERVATION_EXPIRED",
+                "USER_NOT_PAID",
+                "USER_UNREACHABLE",
+                "USER_CHANGED_MIND",
+                "USER_REFUSED_DELIVERY",
+                "USER_REFUSED_PRODUCT",
+                "SHOP_FAILED",
+                "USER_REFUSED_QUALITY",
+                "REPLACING_ORDER",
+                "PROCESSING_EXPIRED",
+                "PENDING_EXPIRED",
+                "SHOP_PENDING_CANCELLED",
+                "PENDING_CANCELLED",
+                "USER_FRAUD",
+                "RESERVATION_FAILED",
+                "USER_PLACED_OTHER_ORDER",
+                "USER_BOUGHT_CHEAPER",
+                "MISSING_ITEM",
+                "BROKEN_ITEM",
+                "WRONG_ITEM",
+                "PICKUP_EXPIRED",
+                "DELIVERY_PROBLEMS",
+                "LATE_CONTACT",
+                "CUSTOM",
+                "DELIVERY_SERVICE_FAILED",
+                "WAREHOUSE_FAILED_TO_SHIP",
+                "DELIVERY_SERVICE_UNDELIVERED",
+                "PREORDER",
+                "AWAIT_CONFIRMATION",
+                "STARTED",
+                "PACKAGING",
+                "READY_TO_SHIP",
+                "SHIPPED",
+                "ASYNC_PROCESSING",
+                "WAITING_USER_INPUT",
+                "WAITING_BANK_DECISION",
+                "BANK_REJECT_CREDIT_OFFER",
+                "CUSTOMER_REJECT_CREDIT_OFFER",
+                "CREDIT_OFFER_FAILED",
+                "AWAIT_DELIVERY_DATES_CONFIRMATION",
+                "SERVICE_FAULT",
+                "DELIVERY_SERVICE_RECEIVED",
+                "USER_RECEIVED",
+                "WAITING_FOR_STOCKS",
+                "AS_PART_OF_MULTI_ORDER",
+                "READY_FOR_LAST_MILE",
+                "LAST_MILE_STARTED",
+                "ANTIFRAUD",
+                "DELIVERY_USER_NOT_RECEIVED",
+                "DELIVERY_SERVICE_DELIVERED",
+                "DELIVERED_USER_NOT_RECEIVED",
+                "USER_WANTED_ANOTHER_PAYMENT_METHOD",
+                "USER_RECEIVED_TECHNICAL_ERROR",
+                "USER_FORGOT_TO_USE_BONUS",
+                "DELIVERY_SERVICE_NOT_RECEIVED",
+                "DELIVERY_SERVICE_LOST",
+                "SHIPPED_TO_WRONG_DELIVERY_SERVICE",
+                "DELIVERED_USER_RECEIVED",
+                "WAITING_TINKOFF_DECISION",
+                "COURIER_SEARCH",
+                "COURIER_FOUND",
+                "COURIER_IN_TRANSIT_TO_SENDER",
+                "COURIER_ARRIVED_TO_SENDER",
+                "COURIER_RECEIVED",
+                "COURIER_NOT_FOUND",
+                "COURIER_NOT_DELIVER_ORDER",
+                "COURIER_RETURNS_ORDER",
+                "COURIER_RETURNED_ORDER",
+                "WAITING_USER_DELIVERY_INPUT",
+                "PICKUP_SERVICE_RECEIVED",
+                "PICKUP_USER_RECEIVED",
+                "CANCELLED_COURIER_NOT_FOUND",
+                "COURIER_NOT_COME_FOR_ORDER",
+                "DELIVERY_NOT_MANAGED_REGION",
+                "INCOMPLETE_CONTACT_INFORMATION",
+                "INCOMPLETE_MULTI_ORDER",
+                "INAPPROPRIATE_WEIGHT_SIZE",
+                "TECHNICAL_ERROR",
+                "SORTING_CENTER_LOST",
+                "COURIER_SEARCH_NOT_STARTED",
+                "LOST",
+                "AWAIT_PAYMENT",
+                "AWAIT_LAVKA_RESERVATION",
+                "USER_WANTS_TO_CHANGE_ADDRESS",
+                "FULL_NOT_RANSOM",
+                "PRESCRIPTION_MISMATCH",
+                "DROPOFF_LOST",
+                "DROPOFF_CLOSED",
+                "DELIVERY_TO_STORE_STARTED",
+                "USER_WANTS_TO_CHANGE_DELIVERY_DATE",
+                "WRONG_ITEM_DELIVERED",
+                "DAMAGED_BOX",
+                "AWAIT_DELIVERY_DATES",
+                "LAST_MILE_COURIER_SEARCH",
+                "PICKUP_POINT_CLOSED",
+                "LEGAL_INFO_CHANGED",
+                "USER_HAS_NO_TIME_TO_PICKUP_ORDER",
+                "DELIVERY_CUSTOMS_ARRIVED",
+                "DELIVERY_CUSTOMS_CLEARED",
+                "FIRST_MILE_DELIVERY_SERVICE_RECEIVED",
+                "AWAIT_AUTO_DELIVERY_DATES",
+                "AWAIT_USER_PERSONAL_DATA",
+                "NO_PERSONAL_DATA_EXPIRED",
+                "CUSTOMS_PROBLEMS",
+                "AWAIT_CASHIER",
+                "WAITING_POSTPAID_BUDGET_RESERVATION",
+                "AWAIT_SERVICEABLE_CONFIRMATION",
+                "POSTPAID_BUDGET_RESERVATION_FAILED",
+                "AWAIT_CUSTOM_PRICE_CONFIRMATION",
+                "READY_FOR_PICKUP",
+                "TOO_MANY_DELIVERY_DATE_CHANGES",
+                "TOO_LONG_DELIVERY",
+                "DEFERRED_PAYMENT",
+                "POSTPAID_FAILED",
+                "INCORRECT_PERSONAL_DATA",
+                "CUSTOMS_FAILED_MARKET",
+                "CUSTOMS_FAILED_USER_COMMERCIAL_ITEMS",
+                "CUSTOMS_FAILED_USER_DUTY_NOT_PAID",
+                "CUSTOMS_FAILED_USER_INVALID_PERSONAL_DATA",
+                "CUSTOMS_FAILED_USER_ADDITIONAL_DATA_NOT_PROVIDED",
+                "AWAIT_PAYMENT_AFTER_DELIVERY",
+                "AWAIT_USER_STEAM_FAST_URL",
+                "USER_IDENTIFICATION_MISMATCH",
+                "PURCHASE_GROUP_THRESHOLD_NOT_REACHED_CANCELLED",
+                "UNKNOWN"
+              ]
+            },
+            "delivery": {
+              "type": "object",
+              "properties": {
+                "dates": {
+                  "type": "object",
+                  "properties": {
+                    "realDeliveryDate": {
+                      "type": "string",
+                      "format": "date"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "setOrderBoxLayout": {
+    "path": "/v2/campaigns/{campaignId}/orders/{orderId}/boxes",
+    "method": "PUT",
+    "scopes": [
+      "all-methods",
+      "inventory-and-order-processing"
+    ],
+    "limits": {
+      "path": "resp",
+      "none": {
+        "amount": 10000,
+        "period": "hours",
+        "period-duration": 1
+      },
+      "medium": {
+        "amount": 10000,
+        "period": "hours",
+        "period-duration": 1
+      }
+    },
+    "parameters": [
+      {
+        "name": "campaignId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 1
+        }
+      },
+      {
+        "name": "orderId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "integer",
+          "format": "int64"
+        }
+      }
+    ],
+    "request": {
+      "type": "object",
+      "required": [
+        "boxes"
+      ],
+      "properties": {
+        "boxes": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": [
+              "items"
+            ],
+            "properties": {
+              "items": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "id"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "integer",
+                      "format": "int64"
+                    },
+                    "fullCount": {
+                      "type": "integer",
+                      "format": "int32",
+                      "minimum": 1
+                    },
+                    "partialCount": {
+                      "type": "object",
+                      "required": [
+                        "current",
+                        "total"
+                      ],
+                      "properties": {
+                        "current": {
+                          "type": "integer",
+                          "format": "int32",
+                          "minimum": 1
+                        },
+                        "total": {
+                          "type": "integer",
+                          "format": "int32",
+                          "minimum": 2
+                        }
+                      }
+                    },
+                    "instances": {
+                      "type": "array",
+                      "nullable": true,
+                      "minItems": 1,
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "cis": {
+                            "type": "string"
+                          },
+                          "uin": {
+                            "type": "string"
+                          },
+                          "rnpt": {
+                            "type": "string"
+                          },
+                          "gtd": {
+                            "type": "string"
+                          },
+                          "countryCode": {
+                            "type": "string",
+                            "minLength": 2,
+                            "maxLength": 2,
+                            "pattern": "^[A-Z]{2}$"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "allowRemove": {
+          "type": "boolean",
+          "default": false
+        }
+      }
+    }
+  },
+  "generateOrderLabel": {
+    "path": "/v2/campaigns/{campaignId}/orders/{orderId}/delivery/shipments/{shipmentId}/boxes/{boxId}/label",
+    "method": "GET",
+    "scopes": [
+      "all-methods",
+      "inventory-and-order-processing"
+    ],
+    "limits": {
+      "path": "resp",
+      "none": {
+        "amount": 10000,
+        "period": "hours",
+        "period-duration": 1
+      },
+      "medium": {
+        "amount": 10000,
+        "period": "hours",
+        "period-duration": 1
+      }
+    },
+    "parameters": [
+      {
+        "name": "campaignId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 1
+        }
+      },
+      {
+        "name": "orderId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "integer",
+          "format": "int64"
+        }
+      },
+      {
+        "deprecated": true,
+        "x-deprecation-config": {
+          "shutdown-date": "2026-10-12"
+        },
+        "name": "shipmentId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "integer",
+          "format": "int64"
+        }
+      },
+      {
+        "name": "boxId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "integer",
+          "format": "int64"
+        }
+      },
+      {
+        "name": "format",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "enum": [
+            "A9_HORIZONTALLY",
+            "A9",
+            "A7",
+            "A4"
+          ]
+        }
+      }
+    ],
+    "request": {}
+  },
+  "generateOrderLabels": {
+    "path": "/v2/campaigns/{campaignId}/orders/{orderId}/delivery/labels",
+    "method": "GET",
+    "scopes": [
+      "all-methods",
+      "inventory-and-order-processing"
+    ],
+    "limits": {
+      "path": "resp",
+      "none": {
+        "amount": 10000,
+        "period": "hours",
+        "period-duration": 1
+      },
+      "medium": {
+        "amount": 10000,
+        "period": "hours",
+        "period-duration": 1
+      }
+    },
+    "parameters": [
+      {
+        "name": "campaignId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 1
+        }
+      },
+      {
+        "name": "orderId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "integer",
+          "format": "int64"
+        }
+      },
+      {
+        "name": "format",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "enum": [
+            "A9_HORIZONTALLY",
+            "A9",
+            "A7",
+            "A4"
+          ]
+        }
+      }
+    ],
+    "request": {}
+  },
+  "getOrderLabelsData": {
+    "path": "/v2/campaigns/{campaignId}/orders/{orderId}/delivery/labels/data",
+    "method": "GET",
+    "scopes": [
+      "all-methods",
+      "all-methods:read-only",
+      "inventory-and-order-processing",
+      "inventory-and-order-processing:read-only"
+    ],
+    "limits": {
+      "path": "resp",
+      "none": {
+        "amount": 10000,
+        "period": "hours",
+        "period-duration": 1
+      },
+      "medium": {
+        "amount": 10000,
+        "period": "hours",
+        "period-duration": 1
+      }
+    },
+    "parameters": [
+      {
+        "name": "campaignId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 1
+        }
+      },
+      {
+        "name": "orderId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "integer",
+          "format": "int64"
+        }
+      }
+    ],
+    "request": {}
+  },
+  "getReturns": {
+    "path": "/v2/campaigns/{campaignId}/returns",
+    "method": "GET",
+    "scopes": [
+      "all-methods",
+      "all-methods:read-only",
+      "inventory-and-order-processing",
+      "inventory-and-order-processing:read-only"
+    ],
+    "limits": {
+      "path": "resp",
+      "none": {
+        "amount": 5000,
+        "period": "hours",
+        "period-duration": 1
+      },
+      "medium": {
+        "amount": 5000,
+        "period": "hours",
+        "period-duration": 1
+      }
+    },
+    "parameters": [
+      {
+        "name": "campaignId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 1
+        }
+      },
+      {
+        "name": "pageToken",
+        "in": "query",
+        "required": false,
+        "x-transform": "token",
+        "x-aliases": [
+          "pageToken",
+          "page_token"
+        ],
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "limit",
+        "in": "query",
+        "required": false,
+        "x-transform": "truncateLimit",
+        "schema": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "default": 50,
+          "maximum": 100
+        }
+      },
+      {
+        "in": "query",
+        "name": "orderIds",
+        "required": false,
+        "schema": {
+          "type": "array",
+          "maxItems": 50,
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      {
+        "in": "query",
+        "name": "statuses",
+        "required": false,
+        "schema": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "STARTED_BY_USER",
+              "REFUND_IN_PROGRESS",
+              "REFUNDED",
+              "FAILED",
+              "WAITING_FOR_DECISION",
+              "DECISION_MADE",
+              "REFUNDED_WITH_BONUSES",
+              "REFUNDED_BY_SHOP",
+              "CANCELLED",
+              "REJECTED",
+              "COMPLETE_WITHOUT_REFUND",
+              "PREMODERATION_DISPUTE",
+              "PREMODERATION_DECISION_WAITING",
+              "PREMODERATION_DECISION_MADE",
+              "PREMODERATION_SELECT_DELIVERY",
+              "UNKNOWN"
+            ]
+          }
+        }
+      },
+      {
+        "in": "query",
+        "name": "shipmentStatuses",
+        "required": false,
+        "schema": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "CREATED",
+              "RECEIVED",
+              "IN_TRANSIT",
+              "READY_FOR_PICKUP",
+              "PICKED",
+              "LOST",
+              "EXPIRED",
+              "CANCELLED",
+              "FULFILMENT_RECEIVED",
+              "PREPARED_FOR_UTILIZATION",
+              "NOT_IN_DEMAND",
+              "UTILIZED",
+              "READY_FOR_EXPROPRIATION",
+              "RECEIVED_FOR_EXPROPRIATION",
+              "UNKNOWN"
+            ]
+          }
+        }
+      },
+      {
+        "in": "query",
+        "name": "type",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "enum": [
+            "UNREDEEMED",
+            "RETURN"
+          ]
+        }
+      },
+      {
+        "in": "query",
+        "name": "fromDate",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "format": "date"
+        }
+      },
+      {
+        "in": "query",
+        "name": "toDate",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "format": "date"
+        }
+      },
+      {
+        "deprecated": true,
+        "x-deprecation-config": {
+          "shutdown-date": "2026-10-12",
+          "replacement-field": "fromDate"
+        },
+        "in": "query",
+        "name": "from_date",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "format": "date"
+        }
+      },
+      {
+        "deprecated": true,
+        "x-deprecation-config": {
+          "shutdown-date": "2026-10-12",
+          "replacement-field": "toDate"
+        },
+        "in": "query",
+        "name": "to_date",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "format": "date"
+        }
+      }
+    ],
+    "request": {}
+  },
+  "getReturn": {
+    "path": "/v2/campaigns/{campaignId}/orders/{orderId}/returns/{returnId}",
+    "method": "GET",
+    "scopes": [
+      "all-methods",
+      "all-methods:read-only",
+      "inventory-and-order-processing",
+      "inventory-and-order-processing:read-only"
+    ],
+    "limits": {
+      "path": "resp",
+      "none": {
+        "amount": 7000,
+        "period": "hours",
+        "period-duration": 1
+      },
+      "medium": {
+        "amount": 7000,
+        "period": "hours",
+        "period-duration": 1
+      }
+    },
+    "parameters": [
+      {
+        "name": "campaignId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 1
+        }
+      },
+      {
+        "name": "orderId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "integer",
+          "format": "int64"
+        }
+      },
+      {
+        "name": "returnId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "integer",
+          "format": "int64"
+        }
+      }
+    ],
+    "request": {}
+  },
+  "getOfferMappings": {
+    "path": "/v2/businesses/{businessId}/offer-mappings",
+    "method": "POST",
+    "scopes": [
+      "all-methods",
+      "all-methods:read-only",
+      "offers-and-cards-management",
+      "offers-and-cards-management:read-only"
+    ],
+    "limits": {
+      "path": "resp",
+      "none": {
+        "amount": 100,
+        "period": "minutes",
+        "period-duration": 1
+      },
+      "medium": {
+        "amount": 600,
+        "period": "minutes",
+        "period-duration": 1
+      }
+    },
+    "parameters": [
+      {
+        "name": "businessId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 1
+        }
+      },
+      {
+        "name": "pageToken",
+        "in": "query",
+        "required": false,
+        "x-transform": "token",
+        "x-aliases": [
+          "pageToken",
+          "page_token"
+        ],
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "limit",
+        "in": "query",
+        "required": false,
+        "x-transform": "truncateLimit",
+        "schema": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "default": 50,
+          "maximum": 100
+        }
+      },
+      {
+        "name": "language",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "enum": [
+            "RU",
+            "UZ"
+          ]
+        }
+      }
+    ],
+    "request": {
+      "type": "object",
+      "properties": {
+        "offerIds": {
+          "type": "array",
+          "nullable": true,
+          "minItems": 1,
+          "maxItems": 100,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^(?=.*\\S.*)[^\\x00-\\x08\\x0A-\\x1f\\x7f]{1,255}$",
+            "x-transform": "trim",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        },
+        "cardStatuses": {
+          "type": "array",
+          "nullable": true,
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "HAS_CARD_CAN_NOT_UPDATE",
+              "HAS_CARD_CAN_UPDATE",
+              "HAS_CARD_CAN_UPDATE_ERRORS",
+              "HAS_CARD_CAN_UPDATE_PROCESSING",
+              "NO_CARD_NEED_CONTENT",
+              "NO_CARD_MARKET_WILL_CREATE",
+              "NO_CARD_ERRORS",
+              "NO_CARD_PROCESSING",
+              "NO_CARD_ADD_TO_CAMPAIGN"
+            ]
+          }
+        },
+        "categoryIds": {
+          "type": "array",
+          "nullable": true,
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0,
+            "exclusiveMinimum": true
+          }
+        },
+        "vendorNames": {
+          "type": "array",
+          "nullable": true,
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          }
+        },
+        "tags": {
+          "type": "array",
+          "nullable": true,
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          }
+        },
+        "archived": {
+          "type": "boolean"
+        }
+      }
+    }
+  },
+  "updateOfferMappings": {
+    "path": "/v2/businesses/{businessId}/offer-mappings/update",
+    "method": "POST",
+    "scopes": [
+      "all-methods",
+      "offers-and-cards-management"
+    ],
+    "limits": {
+      "path": "req.offerMappings",
+      "none": {
+        "amount": 5000,
+        "period": "minutes",
+        "period-duration": 1
+      },
+      "medium": {
+        "amount": 10000,
+        "period": "minutes",
+        "period-duration": 1
+      }
+    },
+    "parameters": [
+      {
+        "name": "businessId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 1
+        }
+      },
+      {
+        "name": "language",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "enum": [
+            "RU",
+            "UZ"
+          ]
+        }
+      }
+    ],
+    "request": {
+      "type": "object",
+      "required": [
+        "offerMappings"
+      ],
+      "properties": {
+        "offerMappings": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 500,
+          "items": {
+            "type": "object",
+            "required": [
+              "offer"
+            ],
+            "properties": {
+              "offer": {
+                "type": "object",
+                "required": [
+                  "offerId"
+                ],
+                "properties": {
+                  "offerId": {
+                    "type": "string",
+                    "pattern": "^(?=.*\\S.*)[^\\x00-\\x08\\x0A-\\x1f\\x7f]{1,255}$",
+                    "x-transform": "trim",
+                    "minLength": 1,
+                    "maxLength": 255
+                  },
+                  "name": {
+                    "type": "string",
+                    "maxLength": 256
+                  },
+                  "marketCategoryId": {
+                    "type": "integer",
+                    "format": "int64",
+                    "minimum": 0,
+                    "exclusiveMinimum": true
+                  },
+                  "category": {
+                    "type": "string",
+                    "deprecated": true,
+                    "x-deprecation-config": {
+                      "shutdown-date": "2026-10-12",
+                      "replacement-field": "marketCategoryId"
+                    }
+                  },
+                  "pictures": {
+                    "type": "array",
+                    "nullable": true,
+                    "minItems": 1,
+                    "maxItems": 30,
+                    "uniqueItems": false,
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2000
+                    }
+                  },
+                  "videos": {
+                    "type": "array",
+                    "nullable": true,
+                    "minItems": 1,
+                    "maxItems": 6,
+                    "uniqueItems": false,
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2000
+                    }
+                  },
+                  "manuals": {
+                    "type": "array",
+                    "nullable": true,
+                    "minItems": 1,
+                    "maxItems": 6,
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "url"
+                      ],
+                      "properties": {
+                        "url": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 2000
+                        },
+                        "title": {
+                          "type": "string",
+                          "maxLength": 500
+                        }
+                      }
+                    }
+                  },
+                  "vendor": {
+                    "type": "string"
+                  },
+                  "barcodes": {
+                    "type": "array",
+                    "nullable": true,
+                    "minItems": 1,
+                    "uniqueItems": true,
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 6000
+                  },
+                  "manufacturerCountries": {
+                    "type": "array",
+                    "nullable": true,
+                    "minItems": 1,
+                    "uniqueItems": true,
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "weightDimensions": {
+                    "type": "object",
+                    "required": [
+                      "length",
+                      "width",
+                      "height",
+                      "weight"
+                    ],
+                    "properties": {
+                      "length": {
+                        "type": "number",
+                        "minimum": 0
+                      },
+                      "width": {
+                        "type": "number",
+                        "minimum": 0
+                      },
+                      "height": {
+                        "type": "number",
+                        "minimum": 0
+                      },
+                      "weight": {
+                        "type": "number",
+                        "minimum": 0
+                      }
+                    }
+                  },
+                  "vendorCode": {
+                    "type": "string"
+                  },
+                  "tags": {
+                    "type": "array",
+                    "nullable": true,
+                    "minItems": 1,
+                    "maxItems": 50,
+                    "uniqueItems": true,
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "shelfLife": {
+                    "type": "object",
+                    "required": [
+                      "timePeriod",
+                      "timeUnit"
+                    ],
+                    "properties": {
+                      "timePeriod": {
+                        "type": "integer"
+                      },
+                      "timeUnit": {
+                        "type": "string",
+                        "enum": [
+                          "HOUR",
+                          "DAY",
+                          "WEEK",
+                          "MONTH",
+                          "YEAR"
+                        ]
+                      },
+                      "comment": {
+                        "type": "string",
+                        "maxLength": 500
+                      }
+                    }
+                  },
+                  "lifeTime": {
+                    "type": "object",
+                    "required": [
+                      "timePeriod",
+                      "timeUnit"
+                    ],
+                    "properties": {
+                      "timePeriod": {
+                        "type": "integer"
+                      },
+                      "timeUnit": {
+                        "type": "string",
+                        "enum": [
+                          "HOUR",
+                          "DAY",
+                          "WEEK",
+                          "MONTH",
+                          "YEAR"
+                        ]
+                      },
+                      "comment": {
+                        "type": "string",
+                        "maxLength": 500
+                      }
+                    }
+                  },
+                  "guaranteePeriod": {
+                    "type": "object",
+                    "required": [
+                      "timePeriod",
+                      "timeUnit"
+                    ],
+                    "properties": {
+                      "timePeriod": {
+                        "type": "integer"
+                      },
+                      "timeUnit": {
+                        "type": "string",
+                        "enum": [
+                          "HOUR",
+                          "DAY",
+                          "WEEK",
+                          "MONTH",
+                          "YEAR"
+                        ]
+                      },
+                      "comment": {
+                        "type": "string",
+                        "maxLength": 500
+                      }
+                    }
+                  },
+                  "customsCommodityCode": {
+                    "deprecated": true,
+                    "x-deprecation-config": {
+                      "shutdown-date": "2026-10-12",
+                      "replacement-field": "commodityCodes"
+                    },
+                    "type": "string"
+                  },
+                  "commodityCodes": {
+                    "type": "array",
+                    "nullable": true,
+                    "minItems": 1,
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "type"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "CUSTOMS_COMMODITY_CODE",
+                            "IKPU_CODE",
+                            "OKPD2_CODE"
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "certificates": {
+                    "type": "array",
+                    "nullable": true,
+                    "minItems": 1,
+                    "maxItems": 6,
+                    "uniqueItems": true,
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "boxCount": {
+                    "type": "integer",
+                    "format": "int32",
+                    "minimum": 1
+                  },
+                  "condition": {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "enum": [
+                          "PREOWNED",
+                          "SHOWCASESAMPLE",
+                          "REFURBISHED",
+                          "REDUCTION",
+                          "RENOVATED",
+                          "NOT_SPECIFIED"
+                        ]
+                      },
+                      "quality": {
+                        "type": "string",
+                        "enum": [
+                          "PERFECT",
+                          "EXCELLENT",
+                          "GOOD",
+                          "NOT_SPECIFIED"
+                        ]
+                      },
+                      "reason": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "DEFAULT",
+                      "MEDICINE",
+                      "BOOK",
+                      "AUDIOBOOK",
+                      "ARTIST_TITLE",
+                      "ON_DEMAND",
+                      "ALCOHOL"
+                    ]
+                  },
+                  "downloadable": {
+                    "type": "boolean"
+                  },
+                  "adult": {
+                    "type": "boolean"
+                  },
+                  "age": {
+                    "type": "object",
+                    "required": [
+                      "value",
+                      "ageUnit"
+                    ],
+                    "properties": {
+                      "value": {
+                        "type": "number",
+                        "minimum": 0
+                      },
+                      "ageUnit": {
+                        "type": "string",
+                        "enum": [
+                          "YEAR",
+                          "MONTH"
+                        ]
+                      }
+                    }
+                  },
+                  "params": {
+                    "type": "array",
+                    "nullable": true,
+                    "minItems": 1,
+                    "deprecated": true,
+                    "x-deprecation-config": {
+                      "shutdown-date": "2026-10-12",
+                      "replacement-field": "parameterValues"
+                    },
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "name",
+                        "value"
+                      ],
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "maxLength": 200
+                        },
+                        "value": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "parameterValues": {
+                    "type": "array",
+                    "nullable": true,
+                    "minItems": 1,
+                    "maxItems": 300,
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "parameterId"
+                      ],
+                      "properties": {
+                        "parameterId": {
+                          "type": "integer",
+                          "format": "int64",
+                          "minimum": 1
+                        },
+                        "unitId": {
+                          "type": "integer",
+                          "format": "int64"
+                        },
+                        "valueId": {
+                          "type": "integer",
+                          "format": "int64"
+                        },
+                        "value": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "basicPrice": {
+                    "type": "object",
+                    "required": [
+                      "value",
+                      "currencyId"
+                    ],
+                    "properties": {
+                      "value": {
+                        "type": "number",
+                        "minimum": 0,
+                        "exclusiveMinimum": true
+                      },
+                      "currencyId": {
+                        "type": "string",
+                        "enum": [
+                          "RUR",
+                          "USD",
+                          "EUR",
+                          "UAH",
+                          "AUD",
+                          "GBP",
+                          "BYR",
+                          "BYN",
+                          "DKK",
+                          "ISK",
+                          "KZT",
+                          "CAD",
+                          "CNY",
+                          "NOK",
+                          "XDR",
+                          "SGD",
+                          "TRY",
+                          "SEK",
+                          "CHF",
+                          "JPY",
+                          "AZN",
+                          "ALL",
+                          "DZD",
+                          "AOA",
+                          "ARS",
+                          "AMD",
+                          "AFN",
+                          "BHD",
+                          "BGN",
+                          "BOB",
+                          "BWP",
+                          "BND",
+                          "BRL",
+                          "BIF",
+                          "HUF",
+                          "VEF",
+                          "KPW",
+                          "VND",
+                          "GMD",
+                          "GHS",
+                          "GNF",
+                          "HKD",
+                          "GEL",
+                          "AED",
+                          "EGP",
+                          "ZMK",
+                          "ILS",
+                          "INR",
+                          "IDR",
+                          "JOD",
+                          "IQD",
+                          "IRR",
+                          "YER",
+                          "QAR",
+                          "KES",
+                          "KGS",
+                          "COP",
+                          "CDF",
+                          "CRC",
+                          "KWD",
+                          "CUP",
+                          "LAK",
+                          "LVL",
+                          "SLL",
+                          "LBP",
+                          "LYD",
+                          "SZL",
+                          "LTL",
+                          "MUR",
+                          "MRO",
+                          "MKD",
+                          "MWK",
+                          "MGA",
+                          "MYR",
+                          "MAD",
+                          "MXN",
+                          "MZN",
+                          "MDL",
+                          "MNT",
+                          "NPR",
+                          "NGN",
+                          "NIO",
+                          "NZD",
+                          "OMR",
+                          "PKR",
+                          "PYG",
+                          "PEN",
+                          "PLN",
+                          "KHR",
+                          "SAR",
+                          "RON",
+                          "SCR",
+                          "SYP",
+                          "SKK",
+                          "SOS",
+                          "SDG",
+                          "SRD",
+                          "TJS",
+                          "THB",
+                          "TWD",
+                          "BDT",
+                          "TZS",
+                          "TND",
+                          "TMM",
+                          "UGX",
+                          "UZS",
+                          "UYU",
+                          "PHP",
+                          "DJF",
+                          "XAF",
+                          "XOF",
+                          "HRK",
+                          "CZK",
+                          "CLP",
+                          "LKR",
+                          "EEK",
+                          "ETB",
+                          "RSD",
+                          "ZAR",
+                          "KRW",
+                          "NAD",
+                          "TL",
+                          "UE"
+                        ]
+                      },
+                      "discountBase": {
+                        "type": "number",
+                        "minimum": 0,
+                        "exclusiveMinimum": true
+                      }
+                    }
+                  },
+                  "purchasePrice": {
+                    "type": "object",
+                    "required": [
+                      "value",
+                      "currencyId"
+                    ],
+                    "properties": {
+                      "value": {
+                        "type": "number",
+                        "minimum": 0,
+                        "exclusiveMinimum": true
+                      },
+                      "currencyId": {
+                        "type": "string",
+                        "enum": [
+                          "RUR",
+                          "USD",
+                          "EUR",
+                          "UAH",
+                          "AUD",
+                          "GBP",
+                          "BYR",
+                          "BYN",
+                          "DKK",
+                          "ISK",
+                          "KZT",
+                          "CAD",
+                          "CNY",
+                          "NOK",
+                          "XDR",
+                          "SGD",
+                          "TRY",
+                          "SEK",
+                          "CHF",
+                          "JPY",
+                          "AZN",
+                          "ALL",
+                          "DZD",
+                          "AOA",
+                          "ARS",
+                          "AMD",
+                          "AFN",
+                          "BHD",
+                          "BGN",
+                          "BOB",
+                          "BWP",
+                          "BND",
+                          "BRL",
+                          "BIF",
+                          "HUF",
+                          "VEF",
+                          "KPW",
+                          "VND",
+                          "GMD",
+                          "GHS",
+                          "GNF",
+                          "HKD",
+                          "GEL",
+                          "AED",
+                          "EGP",
+                          "ZMK",
+                          "ILS",
+                          "INR",
+                          "IDR",
+                          "JOD",
+                          "IQD",
+                          "IRR",
+                          "YER",
+                          "QAR",
+                          "KES",
+                          "KGS",
+                          "COP",
+                          "CDF",
+                          "CRC",
+                          "KWD",
+                          "CUP",
+                          "LAK",
+                          "LVL",
+                          "SLL",
+                          "LBP",
+                          "LYD",
+                          "SZL",
+                          "LTL",
+                          "MUR",
+                          "MRO",
+                          "MKD",
+                          "MWK",
+                          "MGA",
+                          "MYR",
+                          "MAD",
+                          "MXN",
+                          "MZN",
+                          "MDL",
+                          "MNT",
+                          "NPR",
+                          "NGN",
+                          "NIO",
+                          "NZD",
+                          "OMR",
+                          "PKR",
+                          "PYG",
+                          "PEN",
+                          "PLN",
+                          "KHR",
+                          "SAR",
+                          "RON",
+                          "SCR",
+                          "SYP",
+                          "SKK",
+                          "SOS",
+                          "SDG",
+                          "SRD",
+                          "TJS",
+                          "THB",
+                          "TWD",
+                          "BDT",
+                          "TZS",
+                          "TND",
+                          "TMM",
+                          "UGX",
+                          "UZS",
+                          "UYU",
+                          "PHP",
+                          "DJF",
+                          "XAF",
+                          "XOF",
+                          "HRK",
+                          "CZK",
+                          "CLP",
+                          "LKR",
+                          "EEK",
+                          "ETB",
+                          "RSD",
+                          "ZAR",
+                          "KRW",
+                          "NAD",
+                          "TL",
+                          "UE"
+                        ]
+                      }
+                    }
+                  },
+                  "additionalExpenses": {
+                    "type": "object",
+                    "required": [
+                      "value",
+                      "currencyId"
+                    ],
+                    "properties": {
+                      "value": {
+                        "type": "number",
+                        "minimum": 0,
+                        "exclusiveMinimum": true
+                      },
+                      "currencyId": {
+                        "type": "string",
+                        "enum": [
+                          "RUR",
+                          "USD",
+                          "EUR",
+                          "UAH",
+                          "AUD",
+                          "GBP",
+                          "BYR",
+                          "BYN",
+                          "DKK",
+                          "ISK",
+                          "KZT",
+                          "CAD",
+                          "CNY",
+                          "NOK",
+                          "XDR",
+                          "SGD",
+                          "TRY",
+                          "SEK",
+                          "CHF",
+                          "JPY",
+                          "AZN",
+                          "ALL",
+                          "DZD",
+                          "AOA",
+                          "ARS",
+                          "AMD",
+                          "AFN",
+                          "BHD",
+                          "BGN",
+                          "BOB",
+                          "BWP",
+                          "BND",
+                          "BRL",
+                          "BIF",
+                          "HUF",
+                          "VEF",
+                          "KPW",
+                          "VND",
+                          "GMD",
+                          "GHS",
+                          "GNF",
+                          "HKD",
+                          "GEL",
+                          "AED",
+                          "EGP",
+                          "ZMK",
+                          "ILS",
+                          "INR",
+                          "IDR",
+                          "JOD",
+                          "IQD",
+                          "IRR",
+                          "YER",
+                          "QAR",
+                          "KES",
+                          "KGS",
+                          "COP",
+                          "CDF",
+                          "CRC",
+                          "KWD",
+                          "CUP",
+                          "LAK",
+                          "LVL",
+                          "SLL",
+                          "LBP",
+                          "LYD",
+                          "SZL",
+                          "LTL",
+                          "MUR",
+                          "MRO",
+                          "MKD",
+                          "MWK",
+                          "MGA",
+                          "MYR",
+                          "MAD",
+                          "MXN",
+                          "MZN",
+                          "MDL",
+                          "MNT",
+                          "NPR",
+                          "NGN",
+                          "NIO",
+                          "NZD",
+                          "OMR",
+                          "PKR",
+                          "PYG",
+                          "PEN",
+                          "PLN",
+                          "KHR",
+                          "SAR",
+                          "RON",
+                          "SCR",
+                          "SYP",
+                          "SKK",
+                          "SOS",
+                          "SDG",
+                          "SRD",
+                          "TJS",
+                          "THB",
+                          "TWD",
+                          "BDT",
+                          "TZS",
+                          "TND",
+                          "TMM",
+                          "UGX",
+                          "UZS",
+                          "UYU",
+                          "PHP",
+                          "DJF",
+                          "XAF",
+                          "XOF",
+                          "HRK",
+                          "CZK",
+                          "CLP",
+                          "LKR",
+                          "EEK",
+                          "ETB",
+                          "RSD",
+                          "ZAR",
+                          "KRW",
+                          "NAD",
+                          "TL",
+                          "UE"
+                        ]
+                      }
+                    }
+                  },
+                  "firstVideoAsCover": {
+                    "deprecated": true,
+                    "x-deprecation-config": {
+                      "shutdown-date": "2026-10-12"
+                    },
+                    "type": "boolean"
+                  },
+                  "deleteParameters": {
+                    "type": "array",
+                    "nullable": true,
+                    "minItems": 1,
+                    "uniqueItems": true,
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "ADDITIONAL_EXPENSES",
+                        "ADULT",
+                        "AGE",
+                        "BARCODES",
+                        "BOX_COUNT",
+                        "CERTIFICATES",
+                        "COMMODITY_CODES",
+                        "CONDITION",
+                        "CUSTOMS_COMMODITY_CODE",
+                        "DESCRIPTION",
+                        "DOWNLOADABLE",
+                        "GUARANTEE_PERIOD",
+                        "LIFE_TIME",
+                        "MANUALS",
+                        "MANUFACTURER_COUNTRIES",
+                        "PARAMETERS",
+                        "PICTURES",
+                        "PURCHASE_PRICE",
+                        "SHELF_LIFE",
+                        "TAGS",
+                        "TYPE",
+                        "VENDOR_CODE",
+                        "VIDEOS"
+                      ]
+                    }
+                  }
+                }
+              },
+              "mapping": {
+                "type": "object",
+                "properties": {
+                  "marketSku": {
+                    "type": "integer",
+                    "format": "int64",
+                    "minimum": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        "onlyPartnerMediaContent": {
+          "type": "boolean"
+        }
+      }
+    }
+  },
+  "updateBusinessPrices": {
+    "path": "/v2/businesses/{businessId}/offer-prices/updates",
+    "method": "POST",
+    "scopes": [
+      "all-methods",
+      "pricing"
+    ],
+    "limits": {
+      "path": "req.offers",
+      "none": {
+        "amount": 10000,
+        "period": "minutes",
+        "period-duration": 1
+      },
+      "medium": {
+        "amount": 10000,
+        "period": "minutes",
+        "period-duration": 1
+      }
+    },
+    "parameters": [
+      {
+        "name": "businessId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 1
+        }
+      }
+    ],
+    "request": {
+      "type": "object",
+      "required": [
+        "offers"
+      ],
+      "properties": {
+        "offers": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 500,
+          "items": {
+            "type": "object",
+            "required": [
+              "offerId",
+              "price"
+            ],
+            "properties": {
+              "offerId": {
+                "type": "string",
+                "pattern": "^(?=.*\\S.*)[^\\x00-\\x08\\x0A-\\x1f\\x7f]{1,255}$",
+                "x-transform": "trim",
+                "minLength": 1,
+                "maxLength": 255
+              },
+              "price": {
+                "type": "object",
+                "required": [
+                  "value",
+                  "currencyId"
+                ],
+                "properties": {
+                  "value": {
+                    "type": "number",
+                    "minimum": 0,
+                    "exclusiveMinimum": true
+                  },
+                  "currencyId": {
+                    "type": "string",
+                    "enum": [
+                      "RUR",
+                      "USD",
+                      "EUR",
+                      "UAH",
+                      "AUD",
+                      "GBP",
+                      "BYR",
+                      "BYN",
+                      "DKK",
+                      "ISK",
+                      "KZT",
+                      "CAD",
+                      "CNY",
+                      "NOK",
+                      "XDR",
+                      "SGD",
+                      "TRY",
+                      "SEK",
+                      "CHF",
+                      "JPY",
+                      "AZN",
+                      "ALL",
+                      "DZD",
+                      "AOA",
+                      "ARS",
+                      "AMD",
+                      "AFN",
+                      "BHD",
+                      "BGN",
+                      "BOB",
+                      "BWP",
+                      "BND",
+                      "BRL",
+                      "BIF",
+                      "HUF",
+                      "VEF",
+                      "KPW",
+                      "VND",
+                      "GMD",
+                      "GHS",
+                      "GNF",
+                      "HKD",
+                      "GEL",
+                      "AED",
+                      "EGP",
+                      "ZMK",
+                      "ILS",
+                      "INR",
+                      "IDR",
+                      "JOD",
+                      "IQD",
+                      "IRR",
+                      "YER",
+                      "QAR",
+                      "KES",
+                      "KGS",
+                      "COP",
+                      "CDF",
+                      "CRC",
+                      "KWD",
+                      "CUP",
+                      "LAK",
+                      "LVL",
+                      "SLL",
+                      "LBP",
+                      "LYD",
+                      "SZL",
+                      "LTL",
+                      "MUR",
+                      "MRO",
+                      "MKD",
+                      "MWK",
+                      "MGA",
+                      "MYR",
+                      "MAD",
+                      "MXN",
+                      "MZN",
+                      "MDL",
+                      "MNT",
+                      "NPR",
+                      "NGN",
+                      "NIO",
+                      "NZD",
+                      "OMR",
+                      "PKR",
+                      "PYG",
+                      "PEN",
+                      "PLN",
+                      "KHR",
+                      "SAR",
+                      "RON",
+                      "SCR",
+                      "SYP",
+                      "SKK",
+                      "SOS",
+                      "SDG",
+                      "SRD",
+                      "TJS",
+                      "THB",
+                      "TWD",
+                      "BDT",
+                      "TZS",
+                      "TND",
+                      "TMM",
+                      "UGX",
+                      "UZS",
+                      "UYU",
+                      "PHP",
+                      "DJF",
+                      "XAF",
+                      "XOF",
+                      "HRK",
+                      "CZK",
+                      "CLP",
+                      "LKR",
+                      "EEK",
+                      "ETB",
+                      "RSD",
+                      "ZAR",
+                      "KRW",
+                      "NAD",
+                      "TL",
+                      "UE"
+                    ]
+                  },
+                  "discountBase": {
+                    "type": "number",
+                    "minimum": 0,
+                    "exclusiveMinimum": true
+                  },
+                  "minimumForBestseller": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 100000000,
+                    "exclusiveMinimum": true
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "updatePrices": {
+    "path": "/v2/campaigns/{campaignId}/offer-prices/updates",
+    "method": "POST",
+    "scopes": [
+      "all-methods",
+      "pricing"
+    ],
+    "limits": {
+      "path": "req.offers",
+      "parallel-limit-value": 12,
+      "none": {
+        "amount": 10000,
+        "period": "minutes",
+        "period-duration": 1
+      },
+      "medium": {
+        "amount": 10000,
+        "period": "minutes",
+        "period-duration": 1
+      }
+    },
+    "parameters": [
+      {
+        "name": "campaignId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 1
+        }
+      }
+    ],
+    "request": {
+      "type": "object",
+      "required": [
+        "offers"
+      ],
+      "properties": {
+        "offers": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 2000,
+          "items": {
+            "type": "object",
+            "properties": {
+              "offerId": {
+                "type": "string",
+                "pattern": "^(?=.*\\S.*)[^\\x00-\\x08\\x0A-\\x1f\\x7f]{1,255}$",
+                "x-transform": "trim",
+                "minLength": 1,
+                "maxLength": 255
+              },
+              "price": {
+                "type": "object",
+                "properties": {
+                  "value": {
+                    "type": "number",
+                    "minimum": 0,
+                    "exclusiveMinimum": true
+                  },
+                  "discountBase": {
+                    "type": "number",
+                    "minimum": 0,
+                    "exclusiveMinimum": true
+                  },
+                  "currencyId": {
+                    "type": "string",
+                    "enum": [
+                      "RUR",
+                      "USD",
+                      "EUR",
+                      "UAH",
+                      "AUD",
+                      "GBP",
+                      "BYR",
+                      "BYN",
+                      "DKK",
+                      "ISK",
+                      "KZT",
+                      "CAD",
+                      "CNY",
+                      "NOK",
+                      "XDR",
+                      "SGD",
+                      "TRY",
+                      "SEK",
+                      "CHF",
+                      "JPY",
+                      "AZN",
+                      "ALL",
+                      "DZD",
+                      "AOA",
+                      "ARS",
+                      "AMD",
+                      "AFN",
+                      "BHD",
+                      "BGN",
+                      "BOB",
+                      "BWP",
+                      "BND",
+                      "BRL",
+                      "BIF",
+                      "HUF",
+                      "VEF",
+                      "KPW",
+                      "VND",
+                      "GMD",
+                      "GHS",
+                      "GNF",
+                      "HKD",
+                      "GEL",
+                      "AED",
+                      "EGP",
+                      "ZMK",
+                      "ILS",
+                      "INR",
+                      "IDR",
+                      "JOD",
+                      "IQD",
+                      "IRR",
+                      "YER",
+                      "QAR",
+                      "KES",
+                      "KGS",
+                      "COP",
+                      "CDF",
+                      "CRC",
+                      "KWD",
+                      "CUP",
+                      "LAK",
+                      "LVL",
+                      "SLL",
+                      "LBP",
+                      "LYD",
+                      "SZL",
+                      "LTL",
+                      "MUR",
+                      "MRO",
+                      "MKD",
+                      "MWK",
+                      "MGA",
+                      "MYR",
+                      "MAD",
+                      "MXN",
+                      "MZN",
+                      "MDL",
+                      "MNT",
+                      "NPR",
+                      "NGN",
+                      "NIO",
+                      "NZD",
+                      "OMR",
+                      "PKR",
+                      "PYG",
+                      "PEN",
+                      "PLN",
+                      "KHR",
+                      "SAR",
+                      "RON",
+                      "SCR",
+                      "SYP",
+                      "SKK",
+                      "SOS",
+                      "SDG",
+                      "SRD",
+                      "TJS",
+                      "THB",
+                      "TWD",
+                      "BDT",
+                      "TZS",
+                      "TND",
+                      "TMM",
+                      "UGX",
+                      "UZS",
+                      "UYU",
+                      "PHP",
+                      "DJF",
+                      "XAF",
+                      "XOF",
+                      "HRK",
+                      "CZK",
+                      "CLP",
+                      "LKR",
+                      "EEK",
+                      "ETB",
+                      "RSD",
+                      "ZAR",
+                      "KRW",
+                      "NAD",
+                      "TL",
+                      "UE"
+                    ]
+                  },
+                  "vat": {
+                    "type": "integer",
+                    "format": "int32"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "getPricesByOfferIds": {
+    "path": "/v2/campaigns/{campaignId}/offer-prices",
+    "method": "POST",
+    "scopes": [
+      "all-methods",
+      "all-methods:read-only",
+      "pricing",
+      "pricing:read-only"
+    ],
+    "limits": {
+      "path": "resp.result.offers",
+      "none": {
+        "amount": 10000,
+        "period": "minutes",
+        "period-duration": 1
+      },
+      "medium": {
+        "amount": 100000,
+        "period": "minutes",
+        "period-duration": 1
+      }
+    },
+    "parameters": [
+      {
+        "name": "campaignId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 1
+        }
+      },
+      {
+        "name": "pageToken",
+        "in": "query",
+        "required": false,
+        "x-transform": "token",
+        "x-aliases": [
+          "pageToken",
+          "page_token"
+        ],
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "limit",
+        "in": "query",
+        "required": false,
+        "x-transform": "truncateLimit",
+        "schema": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "default": 250,
+          "maximum": 500
+        }
+      }
+    ],
+    "request": {
+      "type": "object",
+      "properties": {
+        "offerIds": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 500,
+          "nullable": true,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^(?=.*\\S.*)[^\\x00-\\x08\\x0A-\\x1f\\x7f]{1,255}$",
+            "x-transform": "trim",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        }
+      }
+    }
+  },
+  "getDefaultPrices": {
+    "path": "/v2/businesses/{businessId}/offer-prices",
+    "method": "POST",
+    "scopes": [
+      "all-methods",
+      "all-methods:read-only",
+      "pricing",
+      "pricing:read-only"
+    ],
+    "limits": {
+      "path": "resp.result.offers",
+      "none": {
+        "amount": 5000,
+        "period": "minutes",
+        "period-duration": 1
+      },
+      "medium": {
+        "amount": 10000,
+        "period": "minutes",
+        "period-duration": 1
+      }
+    },
+    "parameters": [
+      {
+        "name": "businessId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 1
+        }
+      },
+      {
+        "name": "pageToken",
+        "in": "query",
+        "required": false,
+        "x-transform": "token",
+        "x-aliases": [
+          "pageToken",
+          "page_token"
+        ],
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "limit",
+        "in": "query",
+        "required": false,
+        "x-transform": "truncateLimit",
+        "schema": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "default": 250,
+          "maximum": 500
+        }
+      }
+    ],
+    "request": {
+      "type": "object",
+      "properties": {
+        "offerIds": {
+          "type": "array",
+          "nullable": true,
+          "minItems": 1,
+          "maxItems": 200,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^(?=.*\\S.*)[^\\x00-\\x08\\x0A-\\x1f\\x7f]{1,255}$",
+            "x-transform": "trim",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        },
+        "archived": {
+          "type": "boolean"
+        }
+      }
+    }
+  },
+  "updateStocks": {
+    "path": "/v2/campaigns/{campaignId}/offers/stocks",
+    "method": "PUT",
+    "scopes": [
+      "all-methods",
+      "offers-and-cards-management"
+    ],
+    "limits": {
+      "path": "req.skus",
+      "none": {
+        "amount": 100000,
+        "period": "minutes",
+        "period-duration": 1
+      },
+      "medium": {
+        "amount": 100000,
+        "period": "minutes",
+        "period-duration": 1
+      }
+    },
+    "parameters": [
+      {
+        "name": "campaignId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 1
+        }
+      }
+    ],
+    "request": {
+      "type": "object",
+      "required": [
+        "skus"
+      ],
+      "properties": {
+        "skus": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 2000,
+          "items": {
+            "type": "object",
+            "required": [
+              "sku",
+              "items"
+            ],
+            "properties": {
+              "sku": {
+                "type": "string",
+                "pattern": "^(?=.*\\S.*)[^\\x00-\\x08\\x0A-\\x1f\\x7f]{1,255}$",
+                "x-transform": "trim",
+                "minLength": 1,
+                "maxLength": 255
+              },
+              "items": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 1,
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "count"
+                  ],
+                  "properties": {
+                    "count": {
+                      "format": "int64",
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 2000000000
+                    },
+                    "updatedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "getStocks": {
+    "path": "/v2/campaigns/{campaignId}/offers/stocks",
+    "method": "POST",
+    "scopes": [
+      "all-methods",
+      "all-methods:read-only",
+      "offers-and-cards-management",
+      "offers-and-cards-management:read-only"
+    ],
+    "limits": {
+      "path": "resp.result.warehouses.offers.offerId",
+      "none": {
+        "amount": 100000,
+        "period": "minutes",
+        "period-duration": 1
+      },
+      "medium": {
+        "amount": 100000,
+        "period": "minutes",
+        "period-duration": 1
+      }
+    },
+    "parameters": [
+      {
+        "name": "campaignId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 1
+        }
+      },
+      {
+        "name": "pageToken",
+        "in": "query",
+        "required": false,
+        "x-transform": "token",
+        "x-aliases": [
+          "pageToken",
+          "page_token"
+        ],
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "limit",
+        "in": "query",
+        "required": false,
+        "x-transform": "truncateLimit",
+        "schema": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "default": 50,
+          "maximum": 100
+        }
+      }
+    ],
+    "request": {
+      "type": "object",
+      "properties": {
+        "stocksWarehouseId": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 1
+        },
+        "hasStocks": {
+          "type": "boolean"
+        },
+        "withTurnover": {
+          "type": "boolean",
+          "default": false
+        },
+        "archived": {
+          "type": "boolean"
+        },
+        "offerIds": {
+          "type": "array",
+          "uniqueItems": true,
+          "minItems": 1,
+          "maxItems": 500,
+          "nullable": true,
+          "items": {
+            "type": "string",
+            "pattern": "^(?=.*\\S.*)[^\\x00-\\x08\\x0A-\\x1f\\x7f]{1,255}$",
+            "x-transform": "trim",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        }
+      }
+    }
+  },
+  "updateStocksOnPartnerWarehouses": {
+    "path": "/v3/businesses/{businessId}/offers/stocks/update",
+    "method": "POST",
+    "scopes": [
+      "all-methods",
+      "offers-and-cards-management"
+    ],
+    "limits": {
+      "path": "resp",
+      "none": {
+        "amount": 50,
+        "period": "minutes",
+        "period-duration": 1
+      },
+      "medium": {
+        "amount": 50,
+        "period": "minutes",
+        "period-duration": 1
+      }
+    },
+    "parameters": [
+      {
+        "name": "businessId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 1
+        }
+      }
+    ],
+    "request": {
+      "type": "object",
+      "required": [
+        "skuItems"
+      ],
+      "properties": {
+        "skuItems": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 2000,
+          "items": {
+            "type": "object",
+            "required": [
+              "sku",
+              "partnerWarehouseId",
+              "count"
+            ],
+            "properties": {
+              "sku": {
+                "type": "string",
+                "pattern": "^(?=.*\\S.*)[^\\x00-\\x08\\x0A-\\x1f\\x7f]{1,255}$",
+                "x-transform": "trim",
+                "minLength": 1,
+                "maxLength": 255
+              },
+              "partnerWarehouseId": {
+                "type": "integer",
+                "format": "int64",
+                "minimum": 1
+              },
+              "count": {
+                "format": "int64",
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2000000000
+              },
+              "updatedAt": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "getStocksOnPartnerWarehouses": {
+    "path": "/v3/businesses/{businessId}/offers/stocks",
+    "method": "POST",
+    "scopes": [
+      "all-methods",
+      "all-methods:read-only",
+      "offers-and-cards-management",
+      "offers-and-cards-management:read-only"
+    ],
+    "limits": {
+      "path": "resp",
+      "none": {
+        "amount": 500,
+        "period": "minutes",
+        "period-duration": 1
+      },
+      "medium": {
+        "amount": 500,
+        "period": "minutes",
+        "period-duration": 1
+      }
+    },
+    "parameters": [
+      {
+        "name": "businessId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 1
+        }
+      },
+      {
+        "name": "pageToken",
+        "in": "query",
+        "required": false,
+        "x-transform": "token",
+        "x-aliases": [
+          "pageToken",
+          "page_token"
+        ],
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "limit",
+        "in": "query",
+        "required": false,
+        "x-transform": "truncateLimit",
+        "schema": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "default": 50,
+          "maximum": 100
+        }
+      }
+    ],
+    "request": {
+      "type": "object",
+      "required": [
+        "partnerWarehouseId"
+      ],
+      "properties": {
+        "partnerWarehouseId": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 1
+        },
+        "archived": {
+          "type": "boolean"
+        },
+        "offerIds": {
+          "type": "array",
+          "uniqueItems": true,
+          "minItems": 1,
+          "maxItems": 500,
+          "nullable": true,
+          "items": {
+            "type": "string",
+            "pattern": "^(?=.*\\S.*)[^\\x00-\\x08\\x0A-\\x1f\\x7f]{1,255}$",
+            "x-transform": "trim",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        }
+      }
+    }
+  },
+  "getReportInfo": {
+    "path": "/v2/reports/info/{reportId}",
+    "method": "GET",
+    "scopes": [
+      "all-methods",
+      "all-methods:read-only",
+      "settings-management",
+      "finance-and-accounting",
+      "offers-and-cards-management",
+      "offers-and-cards-management:read-only",
+      "pricing",
+      "pricing:read-only",
+      "inventory-and-order-processing",
+      "inventory-and-order-processing:read-only",
+      "promotion",
+      "promotion:read-only",
+      "communication",
+      "supplies-management:read-only"
+    ],
+    "limits": {
+      "path": "resp",
+      "none": {
+        "amount": 100,
+        "period": "minutes",
+        "period-duration": 1
+      },
+      "medium": {
+        "amount": 100,
+        "period": "minutes",
+        "period-duration": 1
+      }
+    },
+    "parameters": [
+      {
+        "name": "reportId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        }
+      },
+      {
+        "name": "sourceType",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "enum": [
+            "SELLER",
+            "ADVERTISER"
+          ],
+          "default": "SELLER"
+        }
+      }
+    ],
+    "request": {}
+  },
+  "generateMassOrderLabelsReport": {
+    "path": "/v2/reports/documents/labels/generate",
+    "method": "POST",
+    "scopes": [
+      "all-methods",
+      "all-methods:read-only",
+      "inventory-and-order-processing",
+      "inventory-and-order-processing:read-only"
+    ],
+    "limits": {
+      "path": "resp",
+      "none": {
+        "amount": 1000,
+        "period": "hours",
+        "period-duration": 1
+      },
+      "medium": {
+        "amount": 1000,
+        "period": "hours",
+        "period-duration": 1
+      }
+    },
+    "parameters": [
+      {
+        "name": "format",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "enum": [
+            "A9_HORIZONTALLY",
+            "A9",
+            "A7",
+            "A4"
+          ]
+        }
+      }
+    ],
+    "request": {
+      "type": "object",
+      "required": [
+        "businessId",
+        "orderIds"
+      ],
+      "properties": {
+        "businessId": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 1
+        },
+        "orderIds": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1000,
+          "uniqueItems": true,
+          "items": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "sortingType": {
+          "type": "string",
+          "enum": [
+            "SORT_BY_GIVEN_ORDER",
+            "SORT_BY_ORDER_CREATED_AT"
+          ]
+        }
+      }
+    }
+  },
+  "getPagedWarehouses": {
+    "path": "/v2/businesses/{businessId}/warehouses",
+    "method": "POST",
+    "scopes": [
+      "all-methods",
+      "all-methods:read-only",
+      "inventory-and-order-processing",
+      "inventory-and-order-processing:read-only"
+    ],
+    "limits": {
+      "path": "resp",
+      "none": {
+        "amount": 100,
+        "period": "hours",
+        "period-duration": 1
+      },
+      "medium": {
+        "amount": 100,
+        "period": "hours",
+        "period-duration": 1
+      }
+    },
+    "parameters": [
+      {
+        "name": "businessId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 1
+        }
+      },
+      {
+        "name": "pageToken",
+        "in": "query",
+        "required": false,
+        "x-transform": "token",
+        "x-aliases": [
+          "pageToken",
+          "page_token"
+        ],
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "limit",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "default": 15,
+          "maximum": 30
+        }
+      }
+    ],
+    "request": {
+      "type": "object",
+      "properties": {
+        "components": {
+          "type": "array",
+          "nullable": true,
+          "uniqueItems": true,
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "enum": [
+              "ADDRESS",
+              "STATUS"
+            ]
+          }
+        },
+        "campaignIds": {
+          "type": "array",
+          "nullable": true,
+          "uniqueItems": true,
+          "minItems": 1,
+          "maxItems": 25,
+          "items": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          }
+        }
+      }
+    }
+  },
+  "getPartnerWarehouses": {
+    "path": "/v3/businesses/{businessId}/warehouses",
+    "method": "POST",
+    "scopes": [
+      "all-methods",
+      "all-methods:read-only",
+      "inventory-and-order-processing",
+      "inventory-and-order-processing:read-only"
+    ],
+    "limits": {
+      "path": "resp",
+      "none": {
+        "amount": 100,
+        "period": "hours",
+        "period-duration": 1
+      },
+      "medium": {
+        "amount": 100,
+        "period": "hours",
+        "period-duration": 1
+      }
+    },
+    "parameters": [
+      {
+        "name": "businessId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 1
+        }
+      },
+      {
+        "name": "pageToken",
+        "in": "query",
+        "required": false,
+        "x-transform": "token",
+        "x-aliases": [
+          "pageToken",
+          "page_token"
+        ],
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "limit",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "default": 15,
+          "maximum": 30
+        }
+      }
+    ],
+    "request": {
+      "type": "object",
+      "properties": {
+        "warehouseIds": {
+          "type": "array",
+          "nullable": true,
+          "uniqueItems": true,
+          "minItems": 1,
+          "items": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "components": {
+          "type": "array",
+          "nullable": true,
+          "uniqueItems": true,
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "enum": [
+              "ADDRESS"
+            ]
+          }
+        }
+      }
+    }
+  },
+  "getCategoryContentParameters": {
+    "path": "/v2/category/{categoryId}/parameters",
+    "method": "POST",
+    "scopes": [
+      "all-methods",
+      "all-methods:read-only",
+      "offers-and-cards-management",
+      "offers-and-cards-management:read-only"
+    ],
+    "limits": {
+      "path": "resp",
+      "none": {
+        "amount": 100,
+        "period": "minutes",
+        "period-duration": 1
+      },
+      "medium": {
+        "amount": 100,
+        "period": "minutes",
+        "period-duration": 1
+      }
+    },
+    "parameters": [
+      {
+        "in": "path",
+        "name": "categoryId",
+        "required": true,
+        "schema": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0,
+          "exclusiveMinimum": true
+        }
+      },
+      {
+        "name": "businessId",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 1
+        }
+      }
+    ],
+    "request": {}
+  },
+  "getOfferCardsContentStatus": {
+    "path": "/v2/businesses/{businessId}/offer-cards",
+    "method": "POST",
+    "scopes": [
+      "all-methods",
+      "all-methods:read-only",
+      "offers-and-cards-management",
+      "offers-and-cards-management:read-only"
+    ],
+    "limits": {
+      "path": "resp",
+      "none": {
+        "amount": 100,
+        "period": "minutes",
+        "period-duration": 1
+      },
+      "medium": {
+        "amount": 600,
+        "period": "minutes",
+        "period-duration": 1
+      }
+    },
+    "parameters": [
+      {
+        "name": "businessId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 1
+        }
+      },
+      {
+        "name": "pageToken",
+        "in": "query",
+        "required": false,
+        "x-transform": "token",
+        "x-aliases": [
+          "pageToken",
+          "page_token"
+        ],
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "limit",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "default": 100,
+          "maximum": 200
+        }
+      }
+    ],
+    "request": {
+      "type": "object",
+      "properties": {
+        "offerIds": {
+          "type": "array",
+          "maxItems": 200,
+          "uniqueItems": true,
+          "nullable": true,
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "pattern": "^(?=.*\\S.*)[^\\x00-\\x08\\x0A-\\x1f\\x7f]{1,255}$",
+            "x-transform": "trim",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        },
+        "cardStatuses": {
+          "type": "array",
+          "uniqueItems": true,
+          "nullable": true,
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "enum": [
+              "HAS_CARD_CAN_NOT_UPDATE",
+              "HAS_CARD_CAN_UPDATE",
+              "HAS_CARD_CAN_UPDATE_ERRORS",
+              "HAS_CARD_CAN_UPDATE_PROCESSING",
+              "NO_CARD_NEED_CONTENT",
+              "NO_CARD_MARKET_WILL_CREATE",
+              "NO_CARD_ERRORS",
+              "NO_CARD_PROCESSING",
+              "NO_CARD_ADD_TO_CAMPAIGN"
+            ]
+          }
+        },
+        "categoryIds": {
+          "type": "array",
+          "maxItems": 200,
+          "uniqueItems": true,
+          "nullable": true,
+          "minItems": 1,
+          "items": {
+            "format": "int32",
+            "type": "integer",
+            "minimum": 0,
+            "exclusiveMinimum": true
+          }
+        },
+        "withRecommendations": {
+          "type": "boolean",
+          "default": false
+        }
+      }
+    }
+  },
+  "getCategoriesTree": {
+    "path": "/v2/categories/tree",
+    "method": "POST",
+    "scopes": [
+      "all-methods",
+      "all-methods:read-only",
+      "settings-management",
+      "finance-and-accounting",
+      "offers-and-cards-management",
+      "offers-and-cards-management:read-only",
+      "pricing",
+      "pricing:read-only",
+      "inventory-and-order-processing",
+      "inventory-and-order-processing:read-only",
+      "promotion",
+      "promotion:read-only",
+      "communication",
+      "supplies-management:read-only"
+    ],
+    "limits": {
+      "path": "resp",
+      "none": {
+        "amount": 50,
+        "period": "hours",
+        "period-duration": 1
+      },
+      "medium": {
+        "amount": 100,
+        "period": "hours",
+        "period-duration": 1
+      }
+    },
+    "parameters": [],
+    "request": {
+      "type": "object",
+      "properties": {
+        "language": {
+          "type": "string",
+          "enum": [
+            "RU",
+            "EN"
+          ]
+        }
+      }
+    }
+  }
+}

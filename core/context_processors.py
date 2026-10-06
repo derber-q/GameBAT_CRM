@@ -69,6 +69,7 @@ def crm_header(request):
                 user.is_superuser
                 or user.has_perm("integrations.view_integrations")
                 or user.has_perm("integrations.view_avito_integration")
+                or user.has_perm("yandex_market.view_integration")
             ),
             "integration_keys": authenticated and (
                 user.is_superuser or user.has_perm("integrations.view_integrations")
@@ -76,6 +77,8 @@ def crm_header(request):
             "integration_avito": authenticated and (
                 user.is_superuser or user.has_perm("integrations.view_avito_integration")
             ),
+            "integration_yandex": authenticated and user.has_perm("yandex_market.view_integration"),
+            "integration_storefront": authenticated and (user.is_superuser or user.has_perm("resource_storefront.manage_storefront")),
             "users": authenticated and user.is_superuser,
             "stuf": authenticated and user.is_superuser,
             "admin": authenticated and (user.is_superuser or user.has_perm("core.access_admin_panel")),

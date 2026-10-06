@@ -1,11 +1,14 @@
 import re
 import unicodedata
 from decimal import Decimal
+from pathlib import Path
+from uuid import uuid4
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from django.db import models, transaction
+from django.db.models.functions import Lower
 from django.urls import reverse
 
 
@@ -24,6 +27,9 @@ class Platform(NamedReference):
     class Meta(NamedReference.Meta):
         verbose_name = "платформа"
         verbose_name_plural = "платформы"
+        constraints = [
+            models.UniqueConstraint(Lower("name"), name="platform_name_ci_unique"),
+        ]
 
 
 class Brand(NamedReference):
@@ -79,14 +85,42 @@ class ProductQuerySet(models.QuerySet):
         return self.filter(is_archived=False)
 
 
+def _product_image_extension(filename):
+    extension = Path(filename or "").suffix.lower()
+    return extension if extension in {".jpg", ".jpeg", ".png", ".webp"} else ".jpg"
+
+
+def product_title_image_upload_to(instance, filename):
+    """Хранит титульные фото отдельно по типу и ID товара."""
+    return (
+        f"catalog/{instance._meta.model_name}/{instance.pk or 'new'}/title/"
+        f"{uuid4().hex}{_product_image_extension(filename)}"
+    )
+
+
+def product_gallery_image_upload_to(instance, filename):
+    """Хранит галереи отдельно от титульного изображения."""
+    product_id = instance.cd_id if instance.product_kind == "cd" else instance.tech_id
+    return (
+        f"catalog/{instance.product_kind}/{product_id}/{instance.image_kind}/"
+        f"{uuid4().hex}{_product_image_extension(filename)}"
+    )
+
+
 class ProductBase(models.Model):
     objects = ProductQuerySet.as_manager()
     name = models.CharField("Название", max_length=255)
     description = models.TextField("Описание", blank=True)
+    title_image = models.ImageField(
+        "Титульное фото", upload_to=product_title_image_upload_to, blank=True,
+    )
     sku = models.CharField("Артикул", max_length=100, blank=True)
     # Производный агрегат всех партий площадок; источник истины — consignment_stocks.
     # Сервисы меняют обе стороны атомарно, verify_inventory выявляет расхождения.
     quantity_on_consignment = models.PositiveIntegerField("На реализации", default=0, editable=False)
+    zero_stock_since = models.DateTimeField(
+        "Нулевой складской остаток с", null=True, blank=True, editable=False, db_index=True,
+    )
     cost = models.DecimalField(
         "Средняя себестоимость", max_digits=20, decimal_places=2,
         default=0, validators=[MinValueValidator(0)],
@@ -97,6 +131,7 @@ class ProductBase(models.Model):
     wholesale_price = models.DecimalField(
         "Оптовая цена", max_digits=20, decimal_places=2, null=True, blank=True, validators=[MinValueValidator(0)]
     )
+    wholesale_site_enabled = models.BooleanField("Публиковать на оптовой витрине", default=True, db_index=True)
     yandex_market_price = models.DecimalField(
         "Цена Яндекс Маркет", max_digits=20, decimal_places=2, null=True, blank=True,
         validators=[MinValueValidator(0)],
@@ -198,6 +233,7 @@ class CD(ProductBase):
             ("change_cd_weight", "CD: изменение веса"),
             ("change_cd_cusa_ppsa_code", "CD: изменение CUSA/PPSA"),
             ("change_cd_comment", "CD: изменение комментария"),
+            ("change_cd_media", "CD: изменение изображений"),
         ]
         constraints = [
             models.CheckConstraint(condition=models.Q(quantity_on_consignment__gte=0), name="cd_consignment_nonnegative"),
@@ -230,6 +266,7 @@ class Tech(ProductBase):
             ("change_tech_barcode", "Tech: изменение штрихкода"),
             ("change_tech_weight", "Tech: изменение веса"),
             ("change_tech_comment", "Tech: изменение комментария"),
+            ("change_tech_media", "Tech: изменение изображений"),
         ]
         constraints = [
             models.CheckConstraint(condition=models.Q(quantity_on_consignment__gte=0), name="tech_consignment_nonnegative"),
@@ -244,6 +281,69 @@ class Tech(ProductBase):
                 name="tech_weight_positive_or_null",
             ),
         ]
+
+
+class ProductImage(models.Model):
+    class ProductKind(models.TextChoices):
+        CD = "cd", "CD"
+        TECH = "tech", "Tech"
+
+    class ImageKind(models.TextChoices):
+        ADDITIONAL = "additional", "Дополнительное фото"
+        PRODUCT = "product", "Изображение продукта"
+
+    product_kind = models.CharField("Тип товара", max_length=8, choices=ProductKind.choices)
+    cd = models.ForeignKey(
+        CD, on_delete=models.CASCADE, related_name="catalog_images",
+        null=True, blank=True, verbose_name="CD",
+    )
+    tech = models.ForeignKey(
+        Tech, on_delete=models.CASCADE, related_name="catalog_images",
+        null=True, blank=True, verbose_name="Tech",
+    )
+    image_kind = models.CharField("Категория", max_length=16, choices=ImageKind.choices)
+    image = models.ImageField("Изображение", upload_to=product_gallery_image_upload_to)
+    sort_order = models.PositiveIntegerField("Порядок", default=0)
+    created_at = models.DateTimeField("Добавлено", auto_now_add=True)
+
+    class Meta:
+        ordering = ("image_kind", "sort_order", "id")
+        verbose_name = "изображение товара"
+        verbose_name_plural = "изображения товаров"
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(product_kind="cd", cd__isnull=False, tech__isnull=True)
+                    | models.Q(product_kind="tech", cd__isnull=True, tech__isnull=False)
+                ),
+                name="product_image_exact_product",
+            ),
+        ]
+
+    @property
+    def product(self):
+        return self.cd if self.product_kind == self.ProductKind.CD else self.tech
+
+    def clean(self):
+        super().clean()
+        if self.cd_id and not self.tech_id:
+            self.product_kind = self.ProductKind.CD
+        elif self.tech_id and not self.cd_id:
+            self.product_kind = self.ProductKind.TECH
+        valid = (
+            self.product_kind == self.ProductKind.CD and self.cd_id and not self.tech_id
+        ) or (
+            self.product_kind == self.ProductKind.TECH and self.tech_id and not self.cd_id
+        )
+        if not valid:
+            raise ValidationError("Изображение должно относиться ровно к одному товару.")
+
+    def save(self, *args, **kwargs):
+        self.clean()
+        return super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.get_image_kind_display()}: {self.product}"
 
 
 class ProductRemovalEvent(models.Model):

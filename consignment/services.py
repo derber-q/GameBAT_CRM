@@ -10,9 +10,10 @@ from cash.services import credit_sale_payment
 from catalog.audit import field_change, record_product_changes, stock_change
 from catalog.models import CD, ProductChangeEvent, Tech
 from partners.models import SalesPlatform
-from sales.models import Sale, SaleCDItem, SaleTechItem
+from sales.models import Sale, SaleCDItem, SaleConsignmentItem, SaleTechItem
 from warehouse.models import CDWarehouseStock, TechWarehouseStock, Warehouse
 from warehouse.storage_services import clear_storage_locations_if_zero
+from warehouse.valuation import warehouse_owned_quantity, weighted_warehouse_cost
 from .models import (
     CDConsignmentStock,
     ConsignmentMovement,
@@ -163,10 +164,19 @@ def transfer_many_to_consignment(*, actor, warehouse_id, platform_id, lines):
                 platform=platform,
                 quantity=0,
                 receivable_per_unit=line["receivable_per_unit"],
+                unit_cost=product.cost,
                 **{product_field: product},
             )
         elif consignment_stock.quantity == 0:
             consignment_stock.receivable_per_unit = line["receivable_per_unit"]
+            consignment_stock.unit_cost = product.cost
+        else:
+            consignment_stock.unit_cost = weighted_warehouse_cost(
+                old_quantity=consignment_stock.quantity,
+                old_unit_cost=consignment_stock.unit_cost,
+                incoming_quantity=line["quantity"],
+                incoming_unit_cost=product.cost,
+            )
 
         old_warehouse_quantity = warehouse_stock.quantity
         old_consignment_quantity = product.quantity_on_consignment
@@ -188,6 +198,7 @@ def transfer_many_to_consignment(*, actor, warehouse_id, platform_id, lines):
             product_sku_snapshot=product.sku,
             quantity=line["quantity"],
             receivable_per_unit=line["receivable_per_unit"],
+            unit_cost_snapshot=product.cost,
             warehouse_quantity_before=old_warehouse_quantity,
             warehouse_quantity_after=warehouse_stock.quantity,
             consignment_quantity_before=old_consignment_quantity,
@@ -321,19 +332,28 @@ def return_from_consignment(*, actor, warehouse_id, platform_id, product_type, p
     if warehouse_stock is None:
         warehouse_stock = warehouse_stock_model(warehouse=warehouse, **{product_field: product})
     old_warehouse_quantity = warehouse_stock.quantity
+    old_total_warehouse_quantity = warehouse_owned_quantity(product_type, product.pk)
     old_consignment_quantity = product.quantity_on_consignment
     old_row_quantity = stock.quantity
+    old_cost = product.cost
+    product.cost = weighted_warehouse_cost(
+        old_quantity=old_total_warehouse_quantity,
+        old_unit_cost=old_cost,
+        incoming_quantity=quantity,
+        incoming_unit_cost=stock.unit_cost,
+    )
     stock.quantity -= quantity
     product.quantity_on_consignment -= quantity
     warehouse_stock.quantity += quantity
     warehouse_stock.full_clean()
     product.full_clean(exclude=[
-        field.name for field in product._meta.fields if field.name != "quantity_on_consignment"
+        field.name for field in product._meta.fields
+        if field.name not in {"quantity_on_consignment", "cost"}
     ])
     stock.full_clean()
     stock.save(update_fields=("quantity",))
     warehouse_stock.save()
-    product.save(update_fields=("quantity_on_consignment",))
+    product.save(update_fields=("quantity_on_consignment", "cost"))
     movement = ConsignmentMovement.objects.create(
         operation_type=ConsignmentMovement.OperationType.RETURN,
         platform=stock.platform,
@@ -347,6 +367,7 @@ def return_from_consignment(*, actor, warehouse_id, platform_id, product_type, p
         product_sku_snapshot=product.sku,
         quantity=quantity,
         receivable_per_unit=stock.receivable_per_unit,
+        unit_cost_snapshot=stock.unit_cost,
         warehouse_quantity_before=old_warehouse_quantity,
         warehouse_quantity_after=warehouse_stock.quantity,
         consignment_quantity_before=old_consignment_quantity,
@@ -377,7 +398,12 @@ def return_from_consignment(*, actor, warehouse_id, platform_id, product_type, p
                 old_value=old_consignment_quantity,
                 new_value=product.quantity_on_consignment,
             ),
-        ],
+        ] + ([field_change(
+            field_name="cost",
+            field_label="Средняя себестоимость на физических складах",
+            old_value=f"{old_cost:.2f}",
+            new_value=f"{product.cost:.2f}",
+        )] if old_cost != product.cost else []),
     )
     logger.info(
         "Товар возвращён с реализации: user_id=%s movement_id=%s type=%s product_id=%s quantity=%s",
@@ -386,91 +412,180 @@ def return_from_consignment(*, actor, warehouse_id, platform_id, product_type, p
     return stock
 
 
+def consume_consignment_sale_lines(*, actor, sale, lines):
+    """Списывает выбранные партии реализации и создаёт неизменяемые снимки продажи."""
+    grouped = {}
+    for raw in lines:
+        product_type = str(raw.get("product_kind") or raw.get("product_type") or "").lower()
+        try:
+            stock_id = int(raw.get("stock_id"))
+        except (TypeError, ValueError) as exc:
+            raise ValidationError("Выберите товар на реализации.") from exc
+        quantity = _positive_quantity(raw.get("quantity"))
+        key = (product_type, stock_id)
+        grouped[key] = grouped.get(key, 0) + quantity
+    created = []
+    for (product_type, stock_id), quantity in sorted(grouped.items()):
+        product_model, stock_model, _, _, product_field = _configuration(product_type)
+        try:
+            stock = stock_model.objects.select_for_update().select_related(
+                "warehouse", "platform", product_field,
+            ).get(pk=stock_id)
+        except stock_model.DoesNotExist as exc:
+            raise ValidationError("Остаток товара на реализации не найден.") from exc
+        try:
+            product = product_model.objects.active().select_for_update().get(
+                pk=getattr(stock, f"{product_field}_id"),
+            )
+        except product_model.DoesNotExist as exc:
+            raise ValidationError("Товар партии реализации больше не доступен.") from exc
+        if stock.quantity < quantity:
+            raise ValidationError(f"На реализации осталось только {stock.quantity} единиц товара «{product.name}».")
+        unit_price = stock.receivable_per_unit.quantize(CENT, rounding=ROUND_HALF_UP)
+        if unit_price <= 0:
+            raise ValidationError(f"Для товара «{product.name}» не задана сумма к получению.")
+        total = (unit_price * quantity).quantize(CENT, rounding=ROUND_HALF_UP)
+        old_stock_quantity = stock.quantity
+        old_consignment_quantity = product.quantity_on_consignment
+        stock.quantity -= quantity
+        product.quantity_on_consignment -= quantity
+        stock.full_clean()
+        product.full_clean(exclude=[
+            field.name for field in product._meta.fields if field.name != "quantity_on_consignment"
+        ])
+        stock.save(update_fields=("quantity",))
+        product.save(update_fields=("quantity_on_consignment",))
+        created.append(SaleConsignmentItem.objects.create(
+            sale=sale, product_kind=product_type, platform=stock.platform,
+            source_stock_id=stock.pk, quantity=quantity, unit_price=unit_price,
+            line_total=total, unit_cost_snapshot=stock.unit_cost,
+            product_name_snapshot=product.name, article_snapshot=product.sku,
+            platform_name_snapshot=stock.platform.name, **{product_field: product},
+        ))
+        record_product_changes(
+            actor=actor, instance=product, source=ProductChangeEvent.Source.CRM,
+            action_kind=ProductChangeEvent.ActionKind.SALE, action_object_id=sale.pk,
+            action_label=f"Продажа {sale.visible_id}",
+            changes=[
+                field_change(
+                    field_name=f"consignment_stock_{product_type}_{stock.pk}",
+                    field_label=f"На реализации: {stock.platform.name} ({stock.warehouse.name})",
+                    old_value=old_stock_quantity, new_value=stock.quantity,
+                ),
+                field_change(
+                    field_name="quantity_on_consignment", field_label="Всего на реализации",
+                    old_value=old_consignment_quantity, new_value=product.quantity_on_consignment,
+                ),
+            ],
+        )
+    return created
+
+
+def quote_consignment_sale_lines(lines):
+    """Блокирует партии и возвращает сумму; consume повторно проверяет те же строки."""
+    total = Decimal("0.00")
+    grouped = {}
+    for raw in lines:
+        product_type = str(raw.get("product_kind") or raw.get("product_type") or "").lower()
+        try:
+            stock_id = int(raw.get("stock_id"))
+        except (TypeError, ValueError) as exc:
+            raise ValidationError("Выберите товар на реализации.") from exc
+        grouped[(product_type, stock_id)] = grouped.get((product_type, stock_id), 0) + _positive_quantity(raw.get("quantity"))
+    for (product_type, stock_id), quantity in sorted(grouped.items()):
+        _, stock_model, _, _, product_field = _configuration(product_type)
+        try:
+            stock = stock_model.objects.select_for_update().select_related(product_field).get(pk=stock_id)
+        except stock_model.DoesNotExist as exc:
+            raise ValidationError("Остаток товара на реализации не найден.") from exc
+        if stock.quantity < quantity:
+            raise ValidationError(f"На реализации осталось только {stock.quantity} единиц товара.")
+        if stock.receivable_per_unit <= 0:
+            raise ValidationError("Для товара не задана сумма к получению при продаже.")
+        total += stock.receivable_per_unit * quantity
+    return total.quantize(CENT, rounding=ROUND_HALF_UP)
+
+
+def restore_consignment_sale_lines(*, actor, sale, delete=False):
+    items = list(sale.consignment_items.select_for_update().order_by("product_kind", "source_stock_id"))
+    for item in items:
+        product_type = item.product_kind
+        product_model, stock_model, _, _, product_field = _configuration(product_type)
+        product = product_model.objects.select_for_update().get(pk=item.cd_id or item.tech_id)
+        try:
+            stock = stock_model.objects.select_for_update().select_related("platform", "warehouse").get(
+                pk=item.source_stock_id,
+            )
+        except stock_model.DoesNotExist as exc:
+            raise ValidationError("Исходная партия реализации больше не существует.") from exc
+        if getattr(stock, f"{product_field}_id") != product.pk or stock.platform_id != item.platform_id:
+            raise ValidationError("Исходная партия реализации не соответствует снимку продажи.")
+        old_stock_quantity = stock.quantity
+        old_total = product.quantity_on_consignment
+        stock.quantity += item.quantity
+        product.quantity_on_consignment += item.quantity
+        stock.save(update_fields=("quantity",))
+        product.save(update_fields=("quantity_on_consignment",))
+        record_product_changes(
+            actor=actor, instance=product, source=ProductChangeEvent.Source.CRM,
+            action_kind=ProductChangeEvent.ActionKind.SALE, action_object_id=sale.pk,
+            action_label=f"Отмена/изменение {sale.visible_id}",
+            changes=[
+                field_change(
+                    field_name=f"consignment_stock_{product_type}_{stock.pk}",
+                    field_label=f"На реализации: {stock.platform.name}",
+                    old_value=old_stock_quantity, new_value=stock.quantity,
+                ),
+                field_change(
+                    field_name="quantity_on_consignment", field_label="Всего на реализации",
+                    old_value=old_total, new_value=product.quantity_on_consignment,
+                ),
+            ],
+        )
+    if delete:
+        SaleConsignmentItem.objects.filter(sale=sale).delete()
+    return items
+
+
 @transaction.atomic
 def record_consignment_sale(*, actor, product_type, stock_id, quantity, payment_method):
     """Фиксирует продажу с реализации без повторного списания со склада."""
-    quantity = _positive_quantity(quantity)
     allowed_payment_methods = {Sale.PaymentMethod.CASH, Sale.PaymentMethod.BANK_ACCOUNT}
     if payment_method not in allowed_payment_methods:
         raise ValidationError("Выберите наличные или банковский счёт.")
-    product_model, stock_model, _, sale_item_model, product_field = _configuration(product_type)
+    _, stock_model, _, sale_item_model, product_field = _configuration(product_type)
     try:
-        stock = stock_model.objects.select_for_update().select_related(
-            "warehouse", "platform", product_field
-        ).get(pk=stock_id)
+        stock = stock_model.objects.select_related("warehouse", "platform").get(pk=stock_id)
     except stock_model.DoesNotExist as exc:
         raise ValidationError("Остаток товара на реализации не найден.") from exc
-    product = product_model.objects.active().select_for_update().get(pk=getattr(stock, f"{product_field}_id"))
-    if stock.quantity < quantity:
-        raise ValidationError(f"На реализации осталось только {stock.quantity} единиц товара.")
-    unit_price = stock.receivable_per_unit.quantize(CENT, rounding=ROUND_HALF_UP)
-    if unit_price <= 0:
-        raise ValidationError("Для товара не задана сумма к получению при продаже.")
-    total = (unit_price * quantity).quantize(CENT, rounding=ROUND_HALF_UP)
     now = timezone.now()
     sale = Sale.objects.create(
-        warehouse=stock.warehouse,
-        consignment_platform=stock.platform,
-        price_type=Sale.PriceType.CONSIGNMENT,
-        sale_type=Sale.SaleType.CONSIGNMENT,
-        payment_method=payment_method,
-        order_status=Sale.OrderStatus.DELIVERED,
-        payment_status=Sale.PaymentStatus.PAID,
-        completed_at=now,
-        total_amount=total,
-        cash_received_amount=total if payment_method == Sale.PaymentMethod.CASH else None,
-        extra_cash_amount=Decimal("0.00"),
-        created_by=actor,
+        warehouse=stock.warehouse, consignment_platform=stock.platform,
+        price_type=Sale.PriceType.CONSIGNMENT, sale_type=Sale.SaleType.CONSIGNMENT,
+        payment_method=payment_method, order_status=Sale.OrderStatus.DELIVERED,
+        payment_status=Sale.PaymentStatus.PAID, completed_at=now, total_amount=0,
+        cash_received_amount=0 if payment_method == Sale.PaymentMethod.CASH else None,
+        extra_cash_amount=Decimal("0.00"), created_by=actor,
     )
     sale.visible_id = f"SALE-{sale.pk:06d}"
     sale.save(update_fields=("visible_id",))
+    items = consume_consignment_sale_lines(
+        actor=actor, sale=sale,
+        lines=[{"product_type": product_type, "stock_id": stock_id, "quantity": quantity}],
+    )
+    snapshot = items[0]
     sale_item_model.objects.create(
-        sale=sale,
-        quantity=quantity,
-        unit_price=unit_price,
-        line_total=total,
-        product_name_snapshot=product.name,
-        article_snapshot=product.sku,
-        unit_cost_snapshot=product.cost,
-        **{product_field: product},
+        sale=sale, quantity=snapshot.quantity, unit_price=snapshot.unit_price,
+        unit_discount=0, line_total=snapshot.line_total,
+        product_name_snapshot=snapshot.product_name_snapshot,
+        article_snapshot=snapshot.article_snapshot,
+        unit_cost_snapshot=snapshot.unit_cost_snapshot,
+        **{product_field: snapshot.product},
     )
-
-    old_stock_quantity = stock.quantity
-    old_consignment_quantity = product.quantity_on_consignment
-    stock.quantity -= quantity
-    product.quantity_on_consignment -= quantity
-    stock.full_clean()
-    product.full_clean(exclude=[
-        field.name for field in product._meta.fields if field.name != "quantity_on_consignment"
-    ])
-    stock.save(update_fields=("quantity",))
-    product.save(update_fields=("quantity_on_consignment",))
-    record_product_changes(
-        actor=actor,
-        instance=product,
-        source=ProductChangeEvent.Source.CRM,
-        action_kind=ProductChangeEvent.ActionKind.SALE,
-        action_object_id=sale.pk,
-        action_label=f"Продажа {sale.visible_id}",
-        changes=[
-            field_change(
-                field_name=f"consignment_stock_{product_type}_{stock.pk}",
-                field_label=f"На реализации: {stock.platform.name} ({stock.warehouse.name})",
-                old_value=old_stock_quantity,
-                new_value=stock.quantity,
-            ),
-            field_change(
-                field_name="quantity_on_consignment",
-                field_label="Всего на реализации",
-                old_value=old_consignment_quantity,
-                new_value=product.quantity_on_consignment,
-            ),
-        ],
-    )
+    sale.total_amount = items[0].line_total
+    if payment_method == Sale.PaymentMethod.CASH:
+        sale.cash_received_amount = sale.total_amount
+    sale.save(update_fields=("total_amount", "cash_received_amount"))
     if payment_method == Sale.PaymentMethod.CASH:
         credit_sale_payment(sale=sale, actor=actor)
-    logger.info(
-        "Товар реализован: user_id=%s sale_id=%s platform_id=%s type=%s product_id=%s quantity=%s total=%s",
-        actor.pk, sale.pk, stock.platform_id, product_type, product.pk, quantity, total,
-    )
     return sale

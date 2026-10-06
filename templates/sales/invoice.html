@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>Накладная {{ sale.visible_id }}</title>
+  <style>
+    body { font-family: Arial, sans-serif; color: #1f2933; margin: 32px; }
+    h1 { margin: 0 0 8px; font-size: 22px; }
+    .muted { color: #667085; margin: 0 0 24px; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #cbd5e1; padding: 8px 10px; text-align: left; }
+    th { background: #eaf2f8; }
+    .num { text-align: right; white-space: nowrap; }
+    tfoot td { font-weight: 700; background: #f3f6f9; }
+    @media print { body { margin: 12mm; } }
+  </style>
+</head>
+<body>
+  <h1>Накладная по продаже {{ sale.visible_id }}</h1>
+  <p class="muted">Дата: {{ sale.created_at|date:"d.m.Y H:i" }} · Склад: {{ sale.warehouse.name }}</p>
+  <table>
+    <thead><tr><th>№</th><th>Тип</th><th>Наименование</th><th>Артикул</th><th class="num">Количество</th><th class="num">Цена</th><th class="num">Сумма</th></tr></thead>
+    <tbody>
+      {% for row in rows %}<tr><td>{{ forloop.counter }}</td><td>{{ row.kind }}</td><td>{{ row.name }}</td><td>{{ row.article }}</td><td class="num">{{ row.quantity }}</td><td class="num">{{ row.unit_price }}</td><td class="num">{{ row.line_total }}</td></tr>{% empty %}<tr><td colspan="7">В продаже пока нет товарных позиций.</td></tr>{% endfor %}
+    </tbody>
+    <tfoot><tr><td colspan="6" class="num">Итого по заказу</td><td class="num">{{ sale.total_amount }}</td></tr></tfoot>
+  </table>
+</body>
+</html>

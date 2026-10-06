@@ -8,7 +8,8 @@ from django.urls import reverse
 
 from accounts.models import User
 from catalog.models import CD, Platform
-from partners.models import Supplier
+from partners.models import SalesPlatform, Supplier
+from consignment.services import return_from_consignment, transfer_to_consignment
 from sales.models import Sale
 from sales.services import create_sale
 from warehouse.models import CDWarehouseStock, Warehouse
@@ -145,6 +146,33 @@ class SupplyRevisionServiceTests(TestCase):
         self.assertEqual(calculation.old_unit_cost, Decimal("141.18"))
         self.assertEqual(calculation.resulting_quantity, 22)
         self.assertEqual(self.cd.cost, Decimal("213.37"))
+
+    def test_revision_replays_consignment_return_at_its_saved_cost(self):
+        first = self.accept()
+        platform = SalesPlatform.objects.create(name="Площадка")
+        stock = transfer_to_consignment(
+            actor=self.actor,
+            warehouse_id=self.warehouse.pk,
+            platform_id=platform.pk,
+            product_type="cd",
+            product_id=self.cd.pk,
+            quantity=5,
+            receivable_per_unit="500",
+        )
+        self.assertEqual(stock.unit_cost, Decimal("150.00"))
+        self.accept(lines=[self.line(quantity=10, cost="300")])
+        return_from_consignment(
+            actor=self.actor,
+            warehouse_id=self.warehouse.pk,
+            platform_id=platform.pk,
+            product_type="cd",
+            product_id=self.cd.pk,
+            quantity=5,
+        )
+
+        self.revise(first, lines=[self.line(quantity=7)])
+        self.cd.refresh_from_db()
+        self.assertEqual(self.cd.cost, Decimal("201.63"))
 
     def test_cancelled_later_supply_is_excluded_from_replay(self):
         first = self.accept()

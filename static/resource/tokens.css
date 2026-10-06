@@ -1,0 +1,36 @@
+/* ReSOURCE storefront only. Attach class resource-storefront to its root. */
+.resource-storefront {
+  --rs-bg: #061B16;
+  --rs-header: #071A16;
+  --rs-surface: #0D2620;
+  --rs-surface-raised: #15352D;
+  --rs-border: #315148;
+  --rs-text: #F4F3EC;
+  --rs-text-muted: #B6C3BD;
+  --rs-text-subtle: #94AAA0;
+  --rs-primary: #087565;
+  --rs-primary-hover: #0A8975;
+  --rs-primary-text: #FFFFFF;
+  --rs-gold: #D5B16B;
+  --rs-gold-light: #E8CB89;
+  --rs-gold-dark: #B38A48;
+  --rs-gold-text: #14231C;
+  --rs-success: #8FE8AE;
+  --rs-error: #FFB4AB;
+  --rs-focus: #E8CB89;
+  --rs-photo-bg: #D1D7D3;
+  --rs-radius-card: 12px;
+  --rs-radius-control: 8px;
+  --rs-content-max: 1440px;
+  --rs-space-unit: 4px;
+  --rs-font-body: "Manrope", "Inter", Arial, sans-serif;
+  --rs-font-heading: "Playfair Display", Georgia, serif;
+  background: var(--rs-bg);
+  color: var(--rs-text);
+}
+.resource-storefront :focus-visible { outline: 2px solid var(--rs-focus); outline-offset: 3px; }
+@media (prefers-reduced-motion: reduce) {
+  .resource-storefront *, .resource-storefront *::before, .resource-storefront *::after {
+    animation-duration: .01ms !important; transition-duration: .01ms !important;
+  }
+}

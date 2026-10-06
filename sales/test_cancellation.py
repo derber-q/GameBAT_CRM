@@ -76,7 +76,7 @@ class SaleCancellationTests(TestCase):
         tech_stock.refresh_from_db()
         self.assertEqual((self.stock.quantity, tech_stock.quantity), (10, 5))
 
-    def test_consignment_sale_returns_item_to_sale_warehouse(self):
+    def test_consignment_sale_cancellation_restores_original_consignment_lot(self):
         shop = SalesPlatform.objects.create(
             name="Площадка", address="Адрес", legal_entity="ООО", phone_1="1",
         )
@@ -92,9 +92,9 @@ class SaleCancellationTests(TestCase):
         self.stock.refresh_from_db()
         consignment_stock = CDConsignmentStock.objects.get(pk=consignment_stock.pk)
         self.product.refresh_from_db()
-        self.assertEqual(self.stock.quantity, 9)
-        self.assertEqual(consignment_stock.quantity, 1)
-        self.assertEqual(self.product.quantity_on_consignment, 1)
+        self.assertEqual(self.stock.quantity, 8)
+        self.assertEqual(consignment_stock.quantity, 2)
+        self.assertEqual(self.product.quantity_on_consignment, 2)
 
     def test_paid_cash_sale_refunds_actual_payment_and_is_idempotent(self):
         sale = self.create(Sale.PaymentMethod.CASH)

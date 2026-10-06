@@ -9,6 +9,7 @@ from warehouse.models import Warehouse
 
 class Supply(models.Model):
     class Status(models.TextChoices):
+        PRICE_REVIEW_REQUIRED = "price_review", "Требуется проверка цен"
         ACCEPTED = "accepted", "Принята"
         CANCELLED = "cancelled", "Отменена"
 
@@ -41,6 +42,11 @@ class Supply(models.Model):
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="revised_supplies",
         verbose_name="Последним изменил", null=True, blank=True, editable=False,
     )
+    price_reviewed_at = models.DateTimeField("Цены подтверждены", null=True, blank=True, editable=False)
+    price_reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="reviewed_supply_prices",
+        verbose_name="Цены подтвердил", null=True, blank=True, editable=False,
+    )
 
     class Meta:
         ordering = ("-accepted_at", "-id")
@@ -71,6 +77,10 @@ class Supply(models.Model):
                 condition=(
                     models.Q(
                         status="accepted", cancelled_at__isnull=True,
+                        cancelled_by__isnull=True, cancellation_comment="",
+                    )
+                    | models.Q(
+                        status="price_review", cancelled_at__isnull=True,
                         cancelled_by__isnull=True, cancellation_comment="",
                     )
                     | (
@@ -187,7 +197,9 @@ class SupplyCostCalculation(models.Model):
     )
     product_name_snapshot = models.CharField("Название товара", max_length=255, editable=False)
     product_sku_snapshot = models.CharField("Артикул", max_length=100, editable=False)
-    old_owned_quantity = models.PositiveIntegerField("Количество до поставки", editable=False)
+    old_owned_quantity = models.PositiveIntegerField(
+        "Количество на физических складах до поставки", editable=False
+    )
     old_unit_cost = models.DecimalField(
         "Себестоимость до поставки", max_digits=20, decimal_places=2, editable=False
     )
@@ -440,7 +452,9 @@ class SupplyFinalizationItem(models.Model):
     )
     product_name_snapshot = models.CharField("Название товара", max_length=255, editable=False)
     product_sku_snapshot = models.CharField("Артикул", max_length=100, blank=True, editable=False)
-    global_quantity_snapshot = models.PositiveIntegerField("Глобальный остаток", editable=False)
+    global_quantity_snapshot = models.PositiveIntegerField(
+        "Остаток на физических складах", editable=False
+    )
     old_global_cost = models.DecimalField(
         "Старая себестоимость", max_digits=20, decimal_places=2, editable=False
     )

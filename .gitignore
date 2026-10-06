@@ -60,11 +60,15 @@ cover/
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
+db.sqlite3-wal
+db.sqlite3-shm
 db.sqlite3.*.bak
 protected_media/
 staticfiles/
 .django-secret-key
 .integration-encryption-key
+.resource-token-encryption-key
+.yandex-market-key
 backups/
 reports/
 outputs/

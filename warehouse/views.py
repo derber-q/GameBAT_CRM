@@ -8,6 +8,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_GET, require_POST
 
 from catalog.models import CD, Tech
+from catalog.product_ordering import cd_order_key, tech_brand_groups
 from catalog.product_filters import (
     ProductFilterState,
     filter_product_querysets,
@@ -98,7 +99,7 @@ def _warehouse_stock_groups(
         products = cd_products
         if only_available:
             products = products.filter(pk__in=[pk for pk, quantity in cd_quantities.items() if quantity > 0])
-        for product in products:
+        for product in sorted(products, key=cd_order_key):
             cd_groups[product.platform].append({
                 "product": product,
                 "quantity": cd_quantities.get(product.pk, 0),
@@ -164,12 +165,13 @@ def global_stock_context(*, include_cd=True, include_tech=True, query="", filter
     cd_products, tech_products = filter_product_querysets(cd_products, tech_products, filters)
     if include_cd:
         products = cd_products
-        for product in products:
+        for product in sorted(products, key=cd_order_key):
             quantities = [cd_stocks.get((warehouse.pk, product.pk), 0) for warehouse in warehouses]
             row = {
                 "type": "CD",
                 "id": product.pk,
                 "name": product.name,
+                "has_title_image": bool(product.title_image),
                 "sku": product.sku,
                 "group": product.platform.name,
                 "quantities": quantities,
@@ -185,8 +187,10 @@ def global_stock_context(*, include_cd=True, include_tech=True, query="", filter
             quantities = [tech_stocks.get((warehouse.pk, product.pk), 0) for warehouse in warehouses]
             row = {
                 "type": "Tech",
+                "product": product,
                 "id": product.pk,
                 "name": product.name,
+                "has_title_image": bool(product.title_image),
                 "sku": product.sku,
                 "group": product.product_type.name,
                 "quantities": quantities,
@@ -201,6 +205,9 @@ def global_stock_context(*, include_cd=True, include_tech=True, query="", filter
         "rows": rows,
         "cd_groups": list(cd_groups.items()),
         "tech_groups": list(tech_groups.items()),
+        "tech_brand_groups": tech_brand_groups(
+            [row for group_rows in tech_groups.values() for row in group_rows], product_of=lambda row: row["product"],
+        ),
         "query": filters.search,
     }
 
@@ -248,6 +255,9 @@ def warehouse_detail(request, pk):
         "warehouse": warehouse,
         "cd_groups": cd_groups,
         "tech_groups": tech_groups,
+        "tech_brand_groups": tech_brand_groups(
+            [row for _group, group_rows in tech_groups for row in group_rows], product_of=lambda row: row["product"],
+        ),
         "query": filters.search,
         "location_query": location_query,
         "location_filter_error": location_filter_error,

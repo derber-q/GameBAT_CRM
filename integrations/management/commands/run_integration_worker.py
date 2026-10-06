@@ -3,6 +3,8 @@ import time
 from django.core.management.base import BaseCommand
 
 from integrations.tasks import process_one_job
+from integrations.google_tasks import process_one_google_sheets_job
+from yandex_market.tasks import process_one_job as process_yandex_job
 
 
 class Command(BaseCommand):
@@ -15,6 +17,8 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         while True:
             processed = process_one_job()
+            processed = process_one_google_sheets_job() or processed
+            processed = process_yandex_job() or processed
             if options["once"]:
                 break
             if not processed:

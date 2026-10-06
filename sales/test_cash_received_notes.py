@@ -172,7 +172,7 @@ class SaleNoteAndUiTests(TestCase):
     def test_create_page_contains_dynamic_total_received_and_note(self):
         self.client.force_login(self.actor)
         response = self.client.get(reverse("sales:create"))
-        self.assertContains(response, "Стоимость товаров")
+        self.assertContains(response, "К оплате покупателем")
         self.assertContains(response, "Получено от покупателя")
         self.assertContains(response, "Примечание")
         self.assertContains(response, "data-sale-intermediate-total")

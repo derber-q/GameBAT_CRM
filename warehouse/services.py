@@ -6,9 +6,10 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
 
-from catalog.audit import record_product_changes, stock_change
+from catalog.audit import field_change, record_product_changes, stock_change
 from catalog.models import CD, ProductChangeEvent, Tech
 from .storage_services import clear_storage_locations_if_zero
+from .valuation import warehouse_owned_quantity, weighted_warehouse_cost
 from .models import (
     CDWarehouseStock,
     CDWarehouseTransferItem,
@@ -128,10 +129,20 @@ def create_transfer(*, actor, source_warehouse_id, destination_warehouse_id, lin
             action_label=f"Перемещение №{transfer.pk}",
         )
         if line["product_type"] == "cd":
-            cd_items.append(CDWarehouseTransferItem(transfer=transfer, cd=products[key], quantity=line["quantity"]))
+            cd_items.append(CDWarehouseTransferItem(
+                transfer=transfer,
+                cd=products[key],
+                quantity=line["quantity"],
+                unit_cost_snapshot=products[key].cost,
+            ))
         else:
             tech_items.append(
-                TechWarehouseTransferItem(transfer=transfer, tech=products[key], quantity=line["quantity"])
+                TechWarehouseTransferItem(
+                    transfer=transfer,
+                    tech=products[key],
+                    quantity=line["quantity"],
+                    unit_cost_snapshot=products[key].cost,
+                )
             )
     CDWarehouseTransferItem.objects.bulk_create(cd_items)
     TechWarehouseTransferItem.objects.bulk_create(tech_items)
@@ -171,12 +182,16 @@ def advance_transfer_status(*, actor, transfer_id, next_status):
     else:
         # Блокировка склада-получателя сериализует создание отсутствующих stock rows.
         Warehouse.objects.select_for_update().get(pk=transfer.destination_warehouse_id)
-        for product_type, stock_model, product_field, items in (
-            ("cd", CDWarehouseStock, "cd", transfer.cd_items.all()),
-            ("tech", TechWarehouseStock, "tech", transfer.tech_items.all()),
+        for product_type, product_model, stock_model, product_field, items in (
+            ("cd", CD, CDWarehouseStock, "cd", transfer.cd_items.all()),
+            ("tech", Tech, TechWarehouseStock, "tech", transfer.tech_items.all()),
         ):
             item_list = list(items)
             ids = [getattr(item, f"{product_field}_id") for item in item_list]
+            products = {
+                product.pk: product
+                for product in product_model.objects.active().select_for_update().filter(pk__in=ids)
+            }
             existing = {
                 getattr(stock, f"{product_field}_id"): stock
                 for stock in stock_model.objects.select_for_update().filter(
@@ -186,6 +201,7 @@ def advance_transfer_status(*, actor, transfer_id, next_status):
             }
             for item in item_list:
                 product_id = getattr(item, f"{product_field}_id")
+                product = products[product_id]
                 stock = existing.get(product_id)
                 if stock is None:
                     stock = stock_model(
@@ -193,21 +209,41 @@ def advance_transfer_status(*, actor, transfer_id, next_status):
                         **{f"{product_field}_id": product_id},
                     )
                 old_quantity = stock.quantity
+                old_total_quantity = warehouse_owned_quantity(product_type, product_id)
+                old_cost = product.cost
+                product.cost = weighted_warehouse_cost(
+                    old_quantity=old_total_quantity,
+                    old_unit_cost=old_cost,
+                    incoming_quantity=item.quantity,
+                    incoming_unit_cost=item.unit_cost_snapshot,
+                )
                 stock.quantity += item.quantity
                 stock.full_clean()
                 stock.save()
+                product.full_clean(exclude=[
+                    field.name for field in product._meta.fields if field.name != "cost"
+                ])
+                product.save(update_fields=("cost",))
+                changes = [stock_change(
+                    warehouse=transfer.destination_warehouse,
+                    old_quantity=old_quantity,
+                    new_quantity=stock.quantity,
+                )]
+                if old_cost != product.cost:
+                    changes.append(field_change(
+                        field_name="cost",
+                        field_label="Средняя себестоимость на физических складах",
+                        old_value=f"{old_cost:.2f}",
+                        new_value=f"{product.cost:.2f}",
+                    ))
                 record_product_changes(
                     actor=actor,
-                    instance=getattr(item, product_field),
+                    instance=product,
                     source=ProductChangeEvent.Source.CRM,
                     action_kind=ProductChangeEvent.ActionKind.WAREHOUSE_TRANSFER,
                     action_object_id=transfer.pk,
                     action_label=f"Перемещение №{transfer.pk}",
-                    changes=[stock_change(
-                        warehouse=transfer.destination_warehouse,
-                        old_quantity=old_quantity,
-                        new_quantity=stock.quantity,
-                    )],
+                    changes=changes,
                 )
         transfer.accepted_at = now
         transfer.accepted_by = actor

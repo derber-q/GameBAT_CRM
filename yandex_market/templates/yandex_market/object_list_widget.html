@@ -1,0 +1,6 @@
+<div data-object-list>
+<input type="hidden" name="{{ widget.name }}" value="{{ widget.value|default:'[]' }}" id="{{ widget.attrs.id }}" {% if widget.attrs.disabled %}disabled{% endif %}>
+<div data-object-rows></div>
+<template>{% for col in widget.columns %}<label>{{ col.label }} {% if col.choices %}<select data-object-key="{{ col.key }}"><option value="">Не задано</option>{% for choice in col.choices %}<option>{{ choice }}</option>{% endfor %}</select>{% else %}<input data-object-key="{{ col.key }}">{% endif %}</label>{% endfor %}<button type="button" class="button button-ghost" data-object-remove>Убрать строку</button></template>
+{% if not widget.attrs.disabled %}<button type="button" class="button button-secondary" data-object-add>Добавить строку</button>{% endif %}
+</div>

@@ -66,7 +66,7 @@ class PriceControlTests(TestCase):
 
     def test_price_page_has_warnings_but_no_markup_inputs(self):
         self.client.force_login(self.actor)
-        page=self.client.get(reverse('pricing:list'))
+        page=self.client.get(reverse('pricing:list'), {'in_stock': '0'})
         self.assertContains(page,'price-warning')
         self.assertContains(page,'data-markup-for="avito_price"')
         for field in MARKUP_FIELDS:

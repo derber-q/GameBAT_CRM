@@ -1,0 +1,23 @@
+{% extends 'resource_storefront/base.html' %}{% load storefront %}
+{% block title %}Каталог — ReSOURCE{% endblock %}
+{% block content %}
+<div class="rs-page-head"><p class="rs-eyebrow">ReSOURCE / Каталог</p><h1>{% if request.resolver_match.url_name == 'new' %}Новые поступления{% else %}Каталог товаров{% endif %}</h1><p>{% if not is_retail %}Оптовые цены · {% endif %}Игры, консоли и аксессуары</p></div>
+<section class="rs-mineral-banner" aria-label="ReSOURCE"><strong>Игровая индустрия. <span>Ваш следующий уровень.</span></strong><a href="{% storefront_url 'home' %}">ReSOURCE →</a></section>
+{% if filter_form.errors %}<div class="rs-alert" role="alert"><strong>Проверьте фильтры</strong>{{ filter_form.non_field_errors }}{% for field in filter_form %}{% if field.errors %}<p><a href="#{{ field.id_for_label }}">{{ field.label }}</a>: {{ field.errors|striptags }}</p>{% endif %}{% endfor %}</div>{% endif %}
+{% if active_filters %}<ul class="rs-filter-chips">{% for label,value in active_filters %}<li>{{ label }}: {{ value }}</li>{% endfor %}</ul>{% endif %}<div class="rs-catalog-layout">
+<aside class="rs-filter-slot" aria-label="Фильтры каталога"><div class="rs-filters" id="rs-filters">
+<div class="rs-filter-heading"><h2>Фильтры</h2><button type="button" class="rs-filter-close rs-link-button" aria-label="Закрыть фильтры">Закрыть ×</button></div>
+<form method="get" id="rs-catalog-form" action="{{ request.path }}">
+<div class="rs-field">{{ filter_form.category.label_tag }}{{ filter_form.category }}</div>
+<div class="rs-field" data-filter-kind="cd">{{ filter_form.platform.label_tag }}{{ filter_form.platform }}{{ filter_form.platform.errors }}</div>
+<div class="rs-field" data-filter-kind="tech">{{ filter_form.brand.label_tag }}{{ filter_form.brand }}{{ filter_form.brand.errors }}</div><div class="rs-field" data-filter-kind="tech">{{ filter_form.product_type.label_tag }}{{ filter_form.product_type }}{{ filter_form.product_type.errors }}</div>
+<fieldset class="rs-price-range"><legend>{% if is_retail %}Цена{% else %}Оптовая цена{% endif %}</legend><div class="rs-field">{{ filter_form.price_min.label_tag }}{{ filter_form.price_min }}</div><div class="rs-field">{{ filter_form.price_max.label_tag }}{{ filter_form.price_max }}</div></fieldset>
+<div class="rs-filter-actions"><button class="rs-button" type="submit">Применить</button><a class="rs-reset" href="{{ request.path }}">Сбросить всё</a></div>
+</form></div></aside>
+<section class="rs-catalog-results" aria-label="Товары">
+<div class="rs-toolbar"><div class="rs-field rs-toolbar-search">{{ filter_form.q.label_tag }}{{ filter_form.q }}</div><div class="rs-field rs-toolbar-sort">{{ filter_form.sort.label_tag }}{{ filter_form.sort }}</div><button class="rs-button" type="submit" form="rs-catalog-form">Найти</button></div>
+<div class="rs-results-head"><p class="rs-result-count" role="status">Найдено товаров: {{ page_obj.paginator.count }}</p><button type="button" class="rs-button rs-filter-open" aria-haspopup="dialog" aria-controls="rs-filter-dialog" aria-expanded="false">Фильтры <span>({{ active_filters|length }})</span></button></div>
+{% if page_obj.object_list %}<div class="rs-grid">{% for row in page_obj %}{% include 'resource_storefront/_card.html' %}{% endfor %}</div>{% else %}<div class="rs-empty"><h2>{% if filter_form.errors %}Исправьте значения фильтров{% else %}Товары не найдены{% endif %}</h2><p>Измените условия поиска или вернитесь ко всем товарам.</p><a class="rs-reset" href="{{ request.path }}">Сбросить всё</a></div>{% endif %}
+{% if page_obj.paginator.num_pages > 1 %}<nav class="rs-pagination" aria-label="Страницы каталога">{% if previous_url %}<a href="{{ previous_url }}" rel="prev" aria-label="Предыдущая страница">←</a>{% endif %}{% for item in pagination %}{% if item.ellipsis %}<span aria-hidden="true">…</span>{% elif item.number == page_obj.number %}<span class="is-current" aria-current="page">{{ item.number }}</span>{% else %}<a href="{{ item.url }}" aria-label="Страница {{ item.number }}">{{ item.number }}</a>{% endif %}{% endfor %}{% if next_url %}<a href="{{ next_url }}" rel="next" aria-label="Следующая страница">→</a>{% endif %}</nav>{% endif %}
+</section></div><dialog id="rs-filter-dialog" class="rs-filter-dialog" aria-label="Фильтры каталога"></dialog>
+{% endblock %}

@@ -29,6 +29,39 @@ def _registry_lookup(product):
     return {"cd": product} if isinstance(product, CD) else {"tech": product}
 
 
+@transaction.atomic
+def add_product_barcode(*, actor, product_kind, product_id, value):
+    """Добавить код в общий реестр, сохранив прежние коды и запись аудита."""
+    model, _ = product_configuration(product_kind)
+    try:
+        product = model.objects.active().select_for_update().get(pk=product_id)
+    except (model.DoesNotExist, TypeError, ValueError) as exc:
+        raise ValidationError("Товар не найден.") from exc
+    value = str(value or "").strip()
+    existing = BarcodeRegistry.objects.filter(value=value).first()
+    if existing:
+        owner_id = existing.cd_id if product_kind == "cd" else existing.tech_id
+        same_product = existing.product_kind == product_kind and owner_id == product.pk
+        message = (
+            "У этого товара уже есть такой штрихкод." if same_product
+            else "Этот штрихкод уже используется другим товаром."
+        )
+        raise ValidationError(message)
+    entry = BarcodeRegistry(value=value, product_kind=product_kind, **_registry_lookup(product))
+    entry.full_clean()
+    try:
+        with transaction.atomic():
+            entry.save()
+    except IntegrityError as exc:
+        raise ValidationError("Этот штрихкод уже добавлен в реестр. Обновите данные и повторите.") from exc
+    record_product_changes(
+        actor=actor, instance=product,
+        changes=[field_change(field_name="barcode_added", field_label="Штрихкод добавлен", old_value="", new_value=value)],
+        source=ProductChangeEvent.Source.CRM,
+    )
+    return entry
+
+
 def validate_barcode_uniqueness(*, product, barcode):
     barcode = str(barcode or "").strip()
     if not barcode:

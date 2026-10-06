@@ -103,7 +103,8 @@ def filter_product_querysets(cd_queryset, tech_queryset, state):
     return search_product_querysets(cd_queryset, tech_queryset, state.search)
 
 
-def product_filter_query_string(params):
+def product_filter_query_string(params, *, extra_keys=()):
     """Сохраняет только разрешённые параметры после inline POST на Pricing."""
-    values = {key: params.get(key) for key in FILTER_KEYS if params.get(key)}
+    keys = (*FILTER_KEYS, *extra_keys)
+    values = {key: params.get(key) for key in keys if params.get(key)}
     return urlencode(values)

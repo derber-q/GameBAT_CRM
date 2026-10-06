@@ -3,6 +3,7 @@ from unittest.mock import patch
 
 from django.contrib.auth.models import Permission
 from django.core.exceptions import ValidationError
+from django.db import OperationalError
 from django.test import TestCase
 from django.urls import reverse
 
@@ -89,7 +90,7 @@ class SupplyServiceTests(TestCase):
         self.assertEqual(cd_item.effective_unit_cost, Decimal("120.000000"))
         self.assertEqual(tech_item.effective_unit_cost, Decimal("220.000000"))
 
-    def test_weighted_average_uses_old_warehouse_and_consignment_quantity(self):
+    def test_weighted_average_uses_only_old_warehouse_quantity(self):
         CDWarehouseStock.objects.create(warehouse=self.warehouse, cd=self.cd, quantity=5)
         self.cd.quantity_on_consignment = 5
         self.cd.cost = Decimal("100")
@@ -109,19 +110,19 @@ class SupplyServiceTests(TestCase):
         self.cd.refresh_from_db()
         self.assertEqual(CDWarehouseStock.objects.get(warehouse=self.warehouse, cd=self.cd).quantity, 15)
         self.assertEqual(self.cd.quantity_on_consignment, 5)
-        self.assertEqual(self.cd.cost, Decimal("150.00"))
+        self.assertEqual(self.cd.cost, Decimal("166.67"))
         self.assertEqual(self.cd.cost.as_tuple().exponent, -2)
         calculation = supply.cost_calculations.get()
-        self.assertEqual(calculation.old_owned_quantity, 10)
+        self.assertEqual(calculation.old_owned_quantity, 5)
         self.assertEqual(calculation.old_unit_cost, Decimal("100.00"))
-        self.assertEqual(calculation.old_inventory_value, Decimal("1000.000000"))
+        self.assertEqual(calculation.old_inventory_value, Decimal("500.000000"))
         self.assertEqual(calculation.incoming_quantity, 10)
         self.assertEqual(calculation.incoming_value, Decimal("2000.000000"))
-        self.assertEqual(calculation.resulting_quantity, 20)
-        self.assertEqual(calculation.resulting_value, Decimal("3000.000000"))
-        self.assertEqual(calculation.resulting_unit_cost, Decimal("150.00"))
+        self.assertEqual(calculation.resulting_quantity, 15)
+        self.assertEqual(calculation.resulting_value, Decimal("2500.000000"))
+        self.assertEqual(calculation.resulting_unit_cost, Decimal("166.67"))
 
-    def test_weighted_average_includes_all_warehouses_consignment_and_transit_once(self):
+    def test_weighted_average_includes_all_warehouses_but_excludes_consignment_and_transit(self):
         other = Warehouse.objects.create(name="Второй склад")
         CDWarehouseStock.objects.create(warehouse=self.warehouse, cd=self.cd, quantity=4)
         CDWarehouseStock.objects.create(warehouse=other, cd=self.cd, quantity=3)
@@ -143,7 +144,7 @@ class SupplyServiceTests(TestCase):
             accepted_by=self.user, warehouse_id=other.pk, lines=[self.line(quantity=1, cost="200")]
         )
         self.cd.refresh_from_db()
-        self.assertEqual(self.cd.cost, Decimal("110.00"))
+        self.assertEqual(self.cd.cost, Decimal("114.29"))
         self.assertEqual(self.cd.cost.as_tuple().exponent, -2)
 
     def test_same_product_in_multiple_lines_is_aggregated(self):
@@ -213,6 +214,27 @@ class SupplyServiceTests(TestCase):
         self.assertEqual(response.context["initial_supply_lines"][0]["product_id"], str(self.cd.pk))
         self.assertEqual(response.context["initial_supply_lines"][0]["purchase_unit_cost"], "125.50")
         self.assertEqual(response.context["initial_expenses"][0]["name"], "Доставка")
+
+    @patch("supplies.views.accept_supply", side_effect=OperationalError("database is locked"))
+    def test_create_page_preserves_rows_when_database_is_temporarily_locked(self, _accept_supply):
+        self.client.force_login(self.user)
+        response = self.client.post(reverse("supplies:create"), {
+            "warehouse_id": self.warehouse.pk,
+            "weight_transport_cost": "0",
+            "product_search": "CD — Игра — PlayStation 5",
+            "product_type": "cd",
+            "product_id": self.cd.pk,
+            "supplier_id": self.supplier.pk,
+            "quantity": "2",
+            "purchase_unit_cost": "125.50",
+            "expense_name": "Доставка",
+            "expense_amount": "50.00",
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "База данных была временно занята")
+        self.assertEqual(response.context["initial_supply_lines"][0]["product_id"], str(self.cd.pk))
+        self.assertEqual(response.context["initial_supply_lines"][0]["quantity"], "2")
 
     def test_detail_uses_historical_cost_not_current_product_cost(self):
         supply = accept_supply(accepted_by=self.user, warehouse_id=self.warehouse.pk, lines=[self.line(quantity=1, cost="140")])

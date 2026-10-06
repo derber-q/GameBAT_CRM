@@ -90,6 +90,23 @@ class WarehouseTransferTests(TestCase):
                 actor=self.user, transfer_id=transfer.pk, next_status=WarehouseTransfer.Status.ACCEPTED
             )
 
+    def test_transit_keeps_its_cost_and_is_averaged_only_on_acceptance(self):
+        transfer = self.make_transfer()
+        item = transfer.cd_items.get()
+        self.assertEqual(item.unit_cost_snapshot, Decimal("100.00"))
+        self.cd.cost = Decimal("200.00")
+        self.cd.save(update_fields=("cost",))
+
+        for status in (
+            WarehouseTransfer.Status.ASSEMBLED,
+            WarehouseTransfer.Status.SHIPPED,
+            WarehouseTransfer.Status.ACCEPTED,
+        ):
+            advance_transfer_status(actor=self.user, transfer_id=transfer.pk, next_status=status)
+
+        self.cd.refresh_from_db()
+        self.assertEqual(self.cd.cost, Decimal("170.00"))
+
     def test_cannot_transfer_too_much_or_to_same_warehouse(self):
         with self.assertRaises(ValidationError):
             create_transfer(
