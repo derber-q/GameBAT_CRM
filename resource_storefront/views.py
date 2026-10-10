@@ -599,13 +599,18 @@ def contact_save(request, pk=None):
 @require_POST
 def link_issue(request, pk):
     contact = get_object_or_404(WholesaleContact, pk=pk, is_archived=False)
+    return_page = "resource_storefront:contacts"
+    if request.POST.get("return_to") == "price_site_links" and (
+        request.user.is_superuser or request.user.has_perm("price.view_price_page")
+    ):
+        return_page = "price:site_links"
     try:
         _, token = issue_link(contact, request.user)
     except ImproperlyConfigured:
         messages.error(request, "Не удалось создать ссылку: ключ шифрования не настроен. Обратитесь к администратору CRM.")
-        return redirect("resource_storefront:contacts")
+        return redirect(return_page)
     request.session["resource_issued_link"] = {"contact": contact.pk, "url": request.build_absolute_uri(reverse("resource_storefront:access", kwargs={"token": token}))}
-    return redirect("resource_storefront:contacts")
+    return redirect(return_page)
 
 
 @permission_required_any("resource_storefront.manage_wholesale_contacts")

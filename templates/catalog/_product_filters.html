@@ -14,6 +14,7 @@
       {% if location_filter_error %}<span class="error-text">{{ location_filter_error }}</span>{% endif %}
     </div>
     {% endif %}
+    {% if not hide_cd_filters %}
     <div class="field">
       <label for="product-platform">Платформа</label>
       <select id="product-platform" name="platform" data-product-filter="platform" {% if filter_state.tech_filters_active %}disabled{% endif %}>
@@ -31,6 +32,8 @@
       </select>
     </div>
     {% endif %}
+    {% endif %}
+    {% if not hide_tech_filters %}
     <div class="field">
       <label for="product-brand">Бренд</label>
       <select id="product-brand" name="brand" data-product-filter="brand" {% if filter_state.platform_id or filter_state.game_series_id or filter_state.without_series %}disabled{% endif %}>
@@ -45,6 +48,7 @@
         {% for option in product_type_options %}<option value="{{ option.pk }}" {% if filter_state.product_type_id == option.pk %}selected{% endif %}>{{ option.name }}</option>{% endfor %}
       </select>
     </div>
+    {% endif %}
     {% if show_avito_highlight_toggle %}
     <div class="field product-avito-toggle-field">
       <label for="product-avito-highlight">Интеграция Avito</label>

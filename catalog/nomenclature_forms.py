@@ -18,6 +18,28 @@ from .product_fields import (
     TECH_CARD_FIELDS,
     TECH_FIELD_PERMISSIONS,
 )
+from .removal import normalize_removal_selection
+
+
+class BulkProductDeleteForm(forms.Form):
+    selection = forms.JSONField(label="Выбранные товары")
+    confirm = forms.ChoiceField(choices=(("yes", "Подтверждаю удаление"),))
+    query = forms.CharField(required=False, max_length=4000)
+    list_kind = forms.ChoiceField(
+        required=False, choices=(("", "Все товары"), ("cd", "Диски"), ("tech", "Техника")),
+    )
+
+    def clean_selection(self):
+        return normalize_removal_selection(self.cleaned_data["selection"])
+
+    def clean(self):
+        data = super().clean()
+        list_kind = data.get("list_kind")
+        if list_kind and any(
+            not token.startswith(f"{list_kind}:") for token in data.get("selection", ())
+        ):
+            self.add_error("selection", "Выбраны товары из другого раздела номенклатуры.")
+        return data
 
 
 def product_version(instance):
@@ -27,8 +49,9 @@ def product_version(instance):
     for field_name in field_names:
         field = instance._meta.get_field(field_name)
         value = getattr(instance, field.attname if field.is_relation else field_name)
-        if isinstance(value, Decimal):
-            value = format(value, "f")
+        if value is not None and hasattr(field, "decimal_places"):
+            # После чтения из БД Decimal получает точность поля. Это не изменение карточки.
+            value = format(Decimal(str(value)), f".{field.decimal_places}f")
         values[field_name] = value
     if instance.pk:
         values["barcodes"] = list(instance.barcodes.order_by("id").values_list("value", flat=True))
@@ -61,6 +84,7 @@ class ProductCardFormMixin(forms.ModelForm):
     def __init__(self, *args, user, **kwargs):
         super().__init__(*args, **kwargs)
         self.user = user
+        self.fields["weight_grams"].label = "Вес с упаковкой, г"
         self.allowed_fields = {
             field_name
             for field_name, permission in self.field_permissions.items()
@@ -226,6 +250,7 @@ class ProductCreateFormMixin:
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["sku"].required = False
+        self.fields["weight_grams"].label = "Вес с упаковкой, г"
         for field_name in ("description", "comment"):
             self.fields[field_name].widget.attrs.setdefault("rows", 4)
 
@@ -235,16 +260,20 @@ class CDCreateForm(ProductCreateFormMixin, forms.ModelForm):
         model = CD
         fields = (
             "platform", "game_series", "name", "description", "sku", "cusa_ppsa_code",
-            "weight_grams", "comment",
+            "weight_grams", "length_cm", "width_cm", "height_cm", "comment", "exclude_from_supplier_template",
         )
 
 
 class TechCreateForm(ProductCreateFormMixin, forms.ModelForm):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["length_cm"].help_text = "Для геймпадов пустые размеры заполнятся значениями 21 × 20 × 11 см."
+
     class Meta:
         model = Tech
         fields = (
             "brand", "product_type", "name", "description", "sku",
-            "weight_grams", "comment",
+            "weight_grams", "length_cm", "width_cm", "height_cm", "comment", "exclude_from_supplier_template",
         )
 
 

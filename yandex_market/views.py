@@ -264,6 +264,10 @@ def connection_detail(request, pk):
                         raise ValidationError("Удаление характеристик выполняется отдельным действием очистки.")
                     dirty.add("parameterValues")
                 OfferConnection.objects.filter(pk=pk).update(content=content, parameters=parameters if form.parameter_schema else connection.parameters, dirty_fields=sorted(dirty))
+                if form.cleaned_data["content"].get("weightDimensions"):
+                    from .product_dimensions import save_dimensions
+                    save_dimensions(connection.product, form.cleaned_data["content"]["weightDimensions"], actor=request.user,
+                                    only_missing=False, source="Редактор карточки Яндекс Маркета")
                 audit(connection.integration, request.user, "content_saved", pk, fields=sorted(dirty))
                 product_after_commit(pk)
             messages.success(request, "Изменения сохранены; у управляемого товара поставлены в очередь.")

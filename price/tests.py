@@ -21,6 +21,7 @@ from .excel import (
     HEADER_ROW,
     MAIN_SHEET,
     META_SHEET,
+    SUPPLIER_HEADER_ROW,
     generate_procurement_customer_xlsx,
     generate_retail_price_xlsx,
     generate_supplier_template,
@@ -232,11 +233,14 @@ class PriceExcelTests(TestCase):
         content = generate_supplier_template(actor=self.user)
         workbook = load_workbook(BytesIO(content), data_only=False)
         sheet = workbook[MAIN_SHEET]
-        names = [sheet.cell(row, 4).value for row in range(HEADER_ROW + 1, sheet.max_row + 1)]
+        names = [
+            sheet.cell(row, 4).value for row in range(SUPPLIER_HEADER_ROW + 1, sheet.max_row + 1)
+            if sheet.cell(row, 1).value in ("CD", "TECH")
+        ]
         self.assertCountEqual(names, [self.cd.name, self.no_price_cd.name, self.tech.name])
-        for row in range(HEADER_ROW + 1, sheet.max_row + 1):
+        for row in range(SUPPLIER_HEADER_ROW + 1, sheet.max_row + 1):
             if sheet.cell(row, 1).value == "CD" and sheet.cell(row, 2).value == self.cd.pk:
-                sheet.cell(row, 5, 100)
+                sheet.cell(row, 6, 100)
         count = import_supplier_price(
             supplier_id=self.alpha.pk, upload=uploaded(workbook_bytes(workbook)), actor=self.user
         )
@@ -247,7 +251,12 @@ class PriceExcelTests(TestCase):
     def test_failed_supplier_import_keeps_previous_snapshot(self):
         original = SupplierCDPrice.objects.create(supplier=self.alpha, cd=self.cd, price=77)
         workbook = load_workbook(BytesIO(generate_supplier_template(actor=self.user)), data_only=False)
-        workbook[MAIN_SHEET].cell(HEADER_ROW + 1, 5, -1)
+        sheet = workbook[MAIN_SHEET]
+        product_row = next(
+            row for row in range(SUPPLIER_HEADER_ROW + 1, sheet.max_row + 1)
+            if sheet.cell(row, 1).value == "CD" and sheet.cell(row, 2).value == self.cd.pk
+        )
+        sheet.cell(product_row, 6, -1)
         with self.assertRaisesMessage(ValidationError, "больше нуля"):
             import_supplier_price(
                 supplier_id=self.alpha.pk, upload=uploaded(workbook_bytes(workbook)), actor=self.user
@@ -267,15 +276,20 @@ class PriceExcelTests(TestCase):
         original.refresh_from_db()
         self.assertEqual(original.price, Decimal("77"))
 
-    def test_best_supplier_tie_uses_unique_wins_then_alphabetical(self):
+    def test_best_supplier_tie_uses_higher_priority_then_alphabetical(self):
+        self.alpha.priority = 100
+        self.alpha.save(update_fields=("priority",))
+        self.beta.priority = 200
+        self.beta.save(update_fields=("priority",))
         SupplierCDPrice.objects.create(supplier=self.alpha, cd=self.cd, price=100)
         SupplierCDPrice.objects.create(supplier=self.beta, cd=self.cd, price=100)
         SupplierCDPrice.objects.create(supplier=self.alpha, cd=self.no_price_cd, price=90)
         SupplierCDPrice.objects.create(supplier=self.beta, cd=self.no_price_cd, price=95)
         winners, counts = resolve_best_suppliers()
-        self.assertEqual(winners[("cd", self.cd.pk)][0], self.alpha)
+        self.assertEqual(winners[("cd", self.cd.pk)][0], self.beta)
         self.assertEqual(counts[self.alpha.pk], 1)
 
+        self.alpha.priority = self.beta.priority
         tie_offers = {("tech", self.tech.pk): [
             (self.beta, Decimal("10"), self.tech),
             (self.alpha, Decimal("10"), self.tech),
@@ -292,7 +306,9 @@ class PriceExcelTests(TestCase):
 
     def test_procurement_snapshot_client_privacy_and_imported_price_is_ignored(self):
         SupplierCDPrice.objects.create(supplier=self.alpha, cd=self.cd, price=100)
-        price_list = create_procurement_price_list(actor=self.user, exchange_rate="20")
+        price_list = create_procurement_price_list(
+            actor=self.user, exchange_rate_usdt_aed="4", exchange_rate_usdt_rub="80",
+        )
         item = price_list.items.get()
         SupplierCDPrice.objects.filter(supplier=self.alpha, cd=self.cd).update(price=1)
         item.refresh_from_db()
@@ -327,7 +343,9 @@ class PriceExcelTests(TestCase):
 
     def test_internal_supplier_prices_and_identity_follow_separate_permissions(self):
         SupplierCDPrice.objects.create(supplier=self.alpha, cd=self.cd, price=100)
-        price_list = create_procurement_price_list(actor=self.user, exchange_rate=20)
+        price_list = create_procurement_price_list(
+            actor=self.user, exchange_rate_usdt_aed=4, exchange_rate_usdt_rub=80,
+        )
         worker = User.objects.create_user("viewer", password="StrongWorker!123")
         worker.user_permissions.add(Permission.objects.get(
             content_type__app_label="price", codename="view_price_page"
@@ -374,7 +392,9 @@ class PriceExcelTests(TestCase):
             ("post", reverse("price:wholesale_export"), {"warehouse": self.moscow.pk}),
             ("get", reverse("price:supplier_template"), {}),
             ("post", reverse("price:supplier_upload"), {}),
-            ("post", reverse("price:procurement_create"), {"exchange_rate": 20}),
+            ("post", reverse("price:procurement_create"), {
+                "exchange_rate_usdt_aed": 4, "exchange_rate_usdt_rub": 80,
+            }),
             ("get", reverse("price:procurement_detail", args=(1,)), {}),
             ("post", reverse("price:procurement_update", args=(1,)), {}),
             ("get", reverse("price:procurement_export", args=(1,)), {}),

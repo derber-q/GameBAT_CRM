@@ -148,7 +148,7 @@ def build_content(connection):
     if connection.is_new or "parameterValues" in fields:
         from .models import CategorySchema
         schema = CategorySchema.objects.filter(category_id=connection.category_id).first()
-        if not schema:
+        if not schema or "parameters" not in schema.schema:
             raise ValidationError("Сначала загрузите характеристики категории.")
         validate_parameters(connection.parameters, schema.schema)
         if connection.parameters:
@@ -157,12 +157,8 @@ def build_content(connection):
         base = public_https(settings.YANDEX_MARKET_PUBLIC_URL)
         payload["pictures"] = [f"{base}/integrations/yandex/media/{media.public_id}/" for media in connection.media.filter(active=True)]
     if "weightDimensions" in payload:
-        payload["weightDimensions"] = dict(payload["weightDimensions"])
-        if not connection.product.weight_grams:
-            raise ValidationError("Укажите вес в карточке товара CRM.")
-        payload["weightDimensions"]["weight"] = Decimal(connection.product.weight_grams) / 1000
-        if any(Decimal(str(v)) <= 0 for v in payload["weightDimensions"].values()):
-            raise ValidationError("Вес и размеры должны быть больше нуля.")
+        from .product_dimensions import dimensions_payload
+        payload["weightDimensions"] = dimensions_payload(connection.product, payload["weightDimensions"])
     if connection.delete_fields:
         payload["deleteParameters"] = connection.delete_fields
         for name in connection.delete_fields:

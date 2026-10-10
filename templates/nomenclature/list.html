@@ -1,16 +1,55 @@
 {% extends "base.html" %}
-{% block title %}Номенклатура · ReSOURCE{% endblock %}
+{% load static %}
+{% block title %}{{ nomenclature_title }}{% if nomenclature_kind %} · Номенклатура{% endif %} · ReSOURCE{% endblock %}
+{% block extra_head %}
+  {% if can_bulk_delete %}
+    <link rel="stylesheet" href="{% static 'css/nomenclature-bulk-delete.css' %}?v=1">
+    <script src="{% static 'js/nomenclature-bulk-delete.js' %}?v=1" defer></script>
+  {% endif %}
+{% endblock %}
 {% block content %}
 <div class="page-heading">
   <div>
-    <p class="eyebrow">Глобальный каталог</p>
-    <h1>Номенклатура</h1>
-    <p class="muted">Все карточки CD и техники независимо от текущих остатков.</p>
+    <p class="eyebrow">{% if nomenclature_kind %}Номенклатура{% else %}Глобальный каталог{% endif %}</p>
+    <h1>{{ nomenclature_title }}</h1>
+    <p class="muted">{% if nomenclature_kind == 'tech' %}Все карточки техники независимо от текущих остатков.{% elif nomenclature_kind == 'cd' %}Все карточки дисков независимо от текущих остатков.{% else %}Все карточки CD и техники независимо от текущих остатков.{% endif %}</p>
   </div>
-  {% if can_add_cd or can_add_tech %}<a class="button button-large" href="{% url 'nomenclature:create' %}">Новое наименование</a>{% endif %}
+  {% if can_add_cd or can_add_tech %}<a class="button button-large" href="{% url 'nomenclature:create' %}{% if nomenclature_kind %}?kind={{ nomenclature_kind }}{% endif %}">Новое наименование</a>{% endif %}
 </div>
 
+{% if bulk_delete_result %}
+<section class="panel bulk-delete-result" role="status">
+  <h2>Результат удаления</h2>
+  <p>Выбрано: <strong>{{ bulk_delete_result.selected }}</strong> · Удалено из базы: <strong>{{ bulk_delete_result.deleted }}</strong> · Убрано в архив с сохранением истории: <strong>{{ bulk_delete_result.archived }}</strong> · Не удалено: <strong>{{ bulk_delete_result.blocked|length }}</strong>.</p>
+  {% if bulk_delete_result.blocked %}
+    <details>
+      <summary>Почему некоторые товары не удалены</summary>
+      <ul class="bulk-delete-result-list">
+      {% for item in bulk_delete_result.blocked %}
+        <li><strong>{{ item.name }}</strong> <span class="muted">{{ item.kind|upper }} #{{ item.id }}</span><p>{{ item.reason }}</p></li>
+      {% endfor %}
+      </ul>
+    </details>
+  {% endif %}
+</section>
+{% endif %}
+
 {% include "catalog/_product_filters.html" %}
+
+<div data-nomenclature-bulk>
+{% if can_bulk_delete %}
+<section class="panel bulk-delete-toolbar" aria-label="Множественное удаление">
+  <label class="bulk-delete-switch"><input type="checkbox" data-bulk-mode disabled autocomplete="off" aria-controls="nomenclature-bulk-actions"> <span>Множественное удаление</span></label>
+  <div id="nomenclature-bulk-actions" class="bulk-delete-actions" data-bulk-actions hidden>
+    <span class="bulk-delete-count" data-bulk-count aria-live="polite">Выбрано: 0</span>
+    <button type="button" class="button button-secondary" data-bulk-select-all>Выбрать все найденные</button>
+    <button type="button" class="button button-secondary" data-bulk-clear disabled>Снять выбор</button>
+    <button type="button" class="button button-danger" data-bulk-open disabled>Удалить выбранные</button>
+    <p class="muted bulk-delete-hint">Выбираются товары по текущим фильтрам, включая свёрнутые группы. Отключение режима сбрасывает выбор.</p>
+  </div>
+  <noscript><p class="muted">Для выбора нескольких товаров включите JavaScript в браузере.</p></noscript>
+</section>
+{% endif %}
 
 {% for brand_group in tech_brand_groups %}
 <section class="panel inventory-section collapsible-section">
@@ -27,11 +66,12 @@
     </button>
     <div id="nomenclature-tech-{{ brand_group.brand.pk }}-{{ product_type.pk }}" class="collapsible-content table-scroll">
       <table class="nomenclature-table">
-        <colgroup><col class="nomenclature-col-id"><col class="nomenclature-col-sku"><col class="nomenclature-col-name"><col class="nomenclature-col-meta"><col class="nomenclature-col-action"></colgroup>
-        <thead><tr><th>ID</th><th>Артикул</th><th>Название</th><th>Бренд</th><th></th></tr></thead>
+        <colgroup>{% if can_bulk_delete %}<col class="nomenclature-col-select" data-bulk-column hidden>{% endif %}<col class="nomenclature-col-id"><col class="nomenclature-col-sku"><col class="nomenclature-col-name"><col class="nomenclature-col-meta"><col class="nomenclature-col-action"></colgroup>
+        <thead><tr>{% if can_bulk_delete %}<th class="bulk-delete-cell" data-bulk-cell hidden>{% if can_delete_tech %}<label class="bulk-delete-check"><input type="checkbox" data-bulk-group aria-label="Выбрать все товары группы {{ brand_group.brand.name }} · {{ product_type.name }}" autocomplete="off"></label>{% endif %}</th>{% endif %}<th>ID</th><th>Артикул</th><th>Название</th><th>Бренд</th><th></th></tr></thead>
         <tbody>
           {% for product in products %}
             <tr class="{% if avito_highlight and product.avito_connected %}avito-connected-row{% elif zero_stock_highlight and product.global_stock == 0 %}zero-stock-row{% endif %}">
+              {% if can_bulk_delete %}<td class="bulk-delete-cell" data-bulk-cell hidden>{% if can_delete_tech %}<label class="bulk-delete-check"><input type="checkbox" value="tech:{{ product.pk }}" data-bulk-product data-product-name="{{ product.name }}" aria-label="Выбрать {{ product.name }} для удаления" autocomplete="off"></label>{% endif %}</td>{% endif %}
               <td class="mono">{{ product.id }}</td>
               <td class="mono">{{ product.sku|default:"—" }}</td>
               <td><a class="strong" href="{% url 'nomenclature:tech_detail' product.pk %}"{% if product.title_image %} data-product-title-image="{% url 'nomenclature:product_title_image' 'tech' product.pk %}"{% endif %}>{{ product.name }}</a></td>
@@ -63,11 +103,12 @@
         </button>
         <div id="nomenclature-series-{{ platform.pk }}-{% if series %}{{ series.pk }}{% else %}none{% endif %}" class="collapsible-content table-scroll">
       <table class="nomenclature-table">
-        <colgroup><col class="nomenclature-col-id"><col class="nomenclature-col-sku"><col class="nomenclature-col-name"><col class="nomenclature-col-meta"><col class="nomenclature-col-action"></colgroup>
-        <thead><tr><th>ID</th><th>Артикул</th><th>Название</th><th>CUSA/PPSA</th><th></th></tr></thead>
+        <colgroup>{% if can_bulk_delete %}<col class="nomenclature-col-select" data-bulk-column hidden>{% endif %}<col class="nomenclature-col-id"><col class="nomenclature-col-sku"><col class="nomenclature-col-name"><col class="nomenclature-col-meta"><col class="nomenclature-col-action"></colgroup>
+        <thead><tr>{% if can_bulk_delete %}<th class="bulk-delete-cell" data-bulk-cell hidden>{% if can_delete_cd %}<label class="bulk-delete-check"><input type="checkbox" data-bulk-group aria-label="Выбрать все товары группы {{ platform.name }} · {{ series.name|default:'Без серии' }}" autocomplete="off"></label>{% endif %}</th>{% endif %}<th>ID</th><th>Артикул</th><th>Название</th><th>CUSA/PPSA</th><th></th></tr></thead>
         <tbody>
           {% for product in products %}
             <tr class="{% if avito_highlight and product.avito_connected %}avito-connected-row{% elif zero_stock_highlight and product.global_stock == 0 %}zero-stock-row{% endif %}">
+              {% if can_bulk_delete %}<td class="bulk-delete-cell" data-bulk-cell hidden>{% if can_delete_cd %}<label class="bulk-delete-check"><input type="checkbox" value="cd:{{ product.pk }}" data-bulk-product data-product-name="{{ product.name }}" aria-label="Выбрать {{ product.name }} для удаления" autocomplete="off"></label>{% endif %}</td>{% endif %}
               <td class="mono">{{ product.id }}</td>
               <td class="mono">{{ product.sku|default:"—" }}</td>
               <td><a class="strong" href="{% url 'nomenclature:cd_detail' product.pk %}"{% if product.title_image %} data-product-title-image="{% url 'nomenclature:product_title_image' 'cd' product.pk %}"{% endif %}>{{ product.name }}</a></td>
@@ -88,7 +129,29 @@
   <section class="empty-state">
     <span class="empty-code">0</span>
     {% if filter_state.is_active %}<h2>Товары по заданным параметрам не найдены</h2><p>Измените условия или сбросьте фильтры.</p>
-    {% else %}<h2>Номенклатура пока пуста</h2><p>Товарные карточки ещё не созданы.</p>{% endif %}
+    {% else %}<h2>{% if nomenclature_kind %}В разделе «{{ nomenclature_title }}» пока нет товаров{% else %}Номенклатура пока пуста{% endif %}</h2><p>Товарные карточки ещё не созданы.</p>{% endif %}
   </section>
 {% endif %}
+
+{% if can_bulk_delete %}
+<dialog id="nomenclature-bulk-dialog" class="confirmation-dialog bulk-delete-dialog" aria-labelledby="nomenclature-bulk-title" data-bulk-dialog>
+  <h2 id="nomenclature-bulk-title">Удалить выбранные товары?</h2>
+  <p>Выбрано: <strong data-bulk-dialog-count>0</strong>. Проверьте список перед подтверждением.</p>
+  <ul class="bulk-delete-preview" data-bulk-preview></ul>
+  <p class="muted">Карточки без истории будут удалены из базы. Для товаров с операциями история сохранится, а карточки уйдут в архив.</p>
+  <p class="muted">Товары с остатками, штрихкодами или связями с площадками не удаляются. После выполнения появится список причин.</p>
+  <form method="post" action="{% url 'nomenclature:bulk_delete' %}" data-bulk-form>
+    {% csrf_token %}
+    <input type="hidden" name="selection" data-bulk-selection>
+    <input type="hidden" name="confirm" value="yes">
+    <input type="hidden" name="query" value="{{ request.GET.urlencode }}">
+    <input type="hidden" name="list_kind" value="{{ nomenclature_kind }}">
+    <div class="dialog-actions">
+      <button type="button" class="button button-secondary" data-bulk-cancel>Отмена</button>
+      <button type="submit" class="button button-danger" data-bulk-submit>Да, удалить выбранные</button>
+    </div>
+  </form>
+</dialog>
+{% endif %}
+</div>
 {% endblock %}

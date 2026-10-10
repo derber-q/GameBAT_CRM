@@ -116,6 +116,8 @@ def store_offer(integration, row, card=None):
     if card is not None:
         values.update(card=card, card_status=card.get("cardStatus", values["card_status"]), content_rating=card.get("contentRating"))
     result, _ = RemoteOffer.objects.update_or_create(integration=integration, offer_id=offer["offerId"], defaults=values)
+    from .product_dimensions import fill_remote_dimensions
+    fill_remote_dimensions(result)
     return result
 
 

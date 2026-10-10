@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Импортные прайсы · ReSOURCE{% endblock %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">Прайс · поставщики и закупки</p><h1>Импортные прайсы</h1><p class="muted">Прайсы поставщиков и закупочный прайс.</p></div></div>
+<div class="price-section-grid">
+  <section class="panel"><h2>Прайсы поставщиков</h2><p class="muted">Диски и техника загружаются отдельно. Новый файл заменяет только цены своего типа у выбранного поставщика. Цены — только AED.</p>
+    {% if can_download_supplier %}<div class="heading-actions"><a class="button button-secondary" href="{% url 'price:supplier_template_kind' 'cd' %}">Шаблон дисков</a><a class="button button-secondary" href="{% url 'price:supplier_template_kind' 'tech' %}">Шаблон техники</a></div>{% endif %}
+    {% if can_upload_supplier %}<form method="post" enctype="multipart/form-data" action="{% url 'price:supplier_upload' %}" class="stacked-form price-form-gap">{% csrf_token %}{% for field in supplier_upload_form %}<div class="field"><label for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}</div>{% endfor %}<p class="muted">Можно загрузить один файл или оба. Если в одном из двух файлов ошибка, оба прежних прайса сохранятся.</p><button class="button" type="submit">Загрузить выбранные прайсы</button></form>{% endif %}
+    {% if suppliers %}<div class="supplier-snapshot-list">{% for row in suppliers %}<span class="badge">{{ row.label }}{% if row.cd_price_count != None %}: диски — {{ row.cd_price_count }}, техника — {{ row.tech_price_count }}{% endif %}</span>{% endfor %}</div>{% endif %}
+  </section>
+  <section class="panel"><h2>Закупочный прайс</h2><p class="muted">Выбирается минимальная цена поставщика. При равной цене — поставщик с большим значением приоритета, затем по алфавиту.</p>
+    {% if can_create_procurement %}<form method="post" action="{% url 'price:procurement_create' %}" class="stacked-form">{% csrf_token %}{% for field in procurement_form %}<div class="field"><label for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}<span class="muted">{{ field.help_text }}</span></div>{% endfor %}<p class="muted">База в рублях = цена AED ÷ AED за 1 USDT × RUB за 1 USDT.</p><button class="button" type="submit">Создать закупочный прайс</button></form>{% endif %}
+    {% if price_lists %}<div class="price-history"><h3>Последние версии</h3>{% for item in price_lists %}<a href="{% url 'price:procurement_detail' item.pk %}">№{{ item.pk }} · {{ item.created_at|date:"d.m.Y H:i" }} · {{ item.items.count }} поз.</a>{% endfor %}</div>{% endif %}
+  </section>
+
+</div>
+{% endblock %}

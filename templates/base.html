@@ -7,7 +7,7 @@
   <title>{% block title %}ReSOURCE{% endblock %}</title>
   <link rel="icon" href="{% static 'img/gamebat-favicon.ico' %}" sizes="32x32" type="image/x-icon">
   <link rel="stylesheet" href="{% static 'css/gamebat.css' %}?v=price-control-3-avito-commission-4-product-media-1-pricing-stock-filter-1-resource-crm-routes-1-avito-check-4-pricing-columns-1-sale-layout-1-supply-barcode-1">
-  <script src="{% static 'js/app.js' %}?v=collapse-fix-3-pricing-stock-filter-1-resource-crm-routes-1" defer></script>
+  <script src="{% static 'js/app.js' %}?v=collapse-fix-3-pricing-stock-filter-1-resource-crm-routes-1-nomenclature-split-1" defer></script>
   <script src="{% static 'js/product-image-preview.js' %}?v=product-media-1" defer></script>
   {% block extra_head %}{% endblock %}
 </head>
@@ -32,7 +32,16 @@
         </div>{% endif %}
         {% if nav.orders %}<a class="{% if request.resolver_match.namespace == 'orders' %}active{% endif %}" href="{% url 'orders:list' %}">Заказы</a>{% endif %}
         {% if nav.creditors %}<a class="{% if request.resolver_match.namespace == 'creditors' %}active{% endif %}" href="{% url 'creditors:list' %}">Кредиторы</a>{% endif %}
-        {% if nav.nomenclature %}<a class="{% if request.resolver_match.namespace == 'nomenclature' %}active{% endif %}" href="{% url 'nomenclature:list' %}">Номенклатура</a>{% endif %}
+        {% if nav.nomenclature %}
+          <div class="nav-dropdown">
+            <a class="nav-dropdown-trigger {% if request.resolver_match.namespace == 'nomenclature' %}active{% endif %}" href="{% url 'nomenclature:list' %}" aria-haspopup="true">Номенклатура</a>
+            <div class="nav-dropdown-menu">
+              <a class="{% if request.resolver_match.namespace == 'nomenclature' and request.resolver_match.url_name == 'cd_list' %}active{% endif %}" href="{% url 'nomenclature:cd_list' %}">Диски</a>
+              <a class="{% if request.resolver_match.namespace == 'nomenclature' and request.resolver_match.url_name == 'tech_list' %}active{% endif %}" href="{% url 'nomenclature:tech_list' %}">Техника</a>
+              {% if perms.catalog.add_cd or perms.catalog.add_tech or user.is_superuser %}<a class="{% if request.resolver_match.namespace == 'nomenclature' and request.resolver_match.url_name == 'create' %}active{% endif %}" href="{% url 'nomenclature:create' %}">Создать наименование</a>{% endif %}
+            </div>
+          </div>
+        {% endif %}
         {% if nav.warehouse %}
           <div class="nav-dropdown">
             {% if nav.warehouse_global %}
@@ -59,7 +68,16 @@
           </div>
         {% endif %}
         {% if nav.pricing %}<div class="nav-dropdown"><a class="nav-dropdown-trigger {% if request.resolver_match.namespace == 'pricing' %}active{% endif %}" href="{% url 'pricing:list' %}" aria-haspopup="true">Ценообразование</a><div class="nav-dropdown-menu"><a href="{% url 'pricing:list' %}">Ценообразование</a><a href="{% url 'pricing:avito_check' %}">Avito Check</a></div></div>{% endif %}
-        {% if nav.price %}<a class="{% if request.resolver_match.namespace == 'price' %}active{% endif %}" href="{% url 'price:index' %}">Прайс</a>{% endif %}
+        {% if nav.price %}
+          <div class="nav-dropdown">
+            <a class="nav-dropdown-trigger {% if request.resolver_match.namespace == 'price' %}active{% endif %}" href="{% url 'price:index' %}" aria-haspopup="true">Прайс</a>
+            <div class="nav-dropdown-menu">
+              <a href="{% url 'price:site_links' %}">Ссылки на сайт</a>
+              <a href="{% url 'price:index' %}">Прайсы наличие</a>
+              <a href="{% url 'price:imports' %}">Импортные прайсы</a>
+            </div>
+          </div>
+        {% endif %}
         {% if nav.stuf %}
           <div class="nav-dropdown">
             <a class="nav-dropdown-trigger {% if request.resolver_match.namespace == 'statistics' or request.resolver_match.namespace == 'partners' or request.resolver_match.namespace == 'accounts' %}active{% endif %}" href="{% url 'accounts:staff_by_group' %}" aria-haspopup="true">stuf</a>

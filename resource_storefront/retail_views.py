@@ -41,7 +41,7 @@ def access(request, token):
 def regenerate(request):
     retail_link(actor=request.user, regenerate=True)
     messages.success(request, "Розничная ссылка обновлена. Старая ссылка и её сеансы закрыты.")
-    return redirect("price:index")
+    return redirect("price:site_links")
 
 
 def retail_checkout_status(request):

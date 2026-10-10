@@ -47,9 +47,12 @@ class ProcurementPriceListItemInline(admin.TabularInline):
 
 @admin.register(ProcurementPriceList)
 class ProcurementPriceListAdmin(admin.ModelAdmin):
-    list_display = ("id", "exchange_rate_aed_rub", "created_by", "created_at")
+    list_display = ("id", "exchange_rate_usdt_aed", "exchange_rate_usdt_rub", "exchange_rate_aed_rub", "created_by", "created_at")
     search_fields = ("public_token", "created_by__username", "created_by__full_name")
-    readonly_fields = ("public_token", "exchange_rate_aed_rub", "created_by", "created_at")
+    readonly_fields = (
+        "public_token", "exchange_rate_usdt_aed", "exchange_rate_usdt_rub",
+        "exchange_rate_aed_rub", "created_by", "created_at",
+    )
     inlines = (ProcurementPriceListItemInline,)
 
     def get_inline_instances(self, request, obj=None):

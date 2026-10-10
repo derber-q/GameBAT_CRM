@@ -38,10 +38,12 @@ class GoogleSheetsPriceTests(TestCase):
         recent = CD.objects.create(
             platform=self.platform, name="Recent zero", sku="ZERO-NEW",
             cost=Decimal("100.00"), zero_stock_since=timezone.now() - timedelta(days=10),
+            has_been_in_stock=True,
         )
         old = CD.objects.create(
             platform=self.platform, name="Old zero", sku="ZERO-OLD",
             cost=Decimal("200.00"), zero_stock_since=timezone.now() - timedelta(days=40),
+            has_been_in_stock=True,
         )
         CDWarehouseStock.objects.create(warehouse=self.warehouse, cd=recent, quantity=0)
         CDWarehouseStock.objects.create(warehouse=self.warehouse, cd=old, quantity=0)

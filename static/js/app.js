@@ -305,6 +305,10 @@
   });
 
   document.querySelectorAll("[data-product-filters]").forEach((form) => {
+    // В отдельных разделах есть только фильтры CD или Tech; подсветка работает в обоих.
+    form.querySelector('[data-avito-highlight-toggle]')?.addEventListener("change", () => form.requestSubmit());
+    form.querySelector('[data-zero-stock-highlight-toggle]')?.addEventListener("change", () => form.requestSubmit());
+    form.querySelector('[data-in-stock-toggle]')?.addEventListener("change", () => form.requestSubmit());
     const platform = form.querySelector('[data-product-filter="platform"]');
     const gameSeries = form.querySelector('[data-product-filter="game_series"]');
     const brand = form.querySelector('[data-product-filter="brand"]');
@@ -336,9 +340,6 @@
     [platform, gameSeries, brand, productType].filter(Boolean).forEach((select) => {
       select.addEventListener("change", () => syncFilters(select));
     });
-    form.querySelector('[data-avito-highlight-toggle]')?.addEventListener("change", () => form.requestSubmit());
-    form.querySelector('[data-zero-stock-highlight-toggle]')?.addEventListener("change", () => form.requestSubmit());
-    form.querySelector('[data-in-stock-toggle]')?.addEventListener("change", () => form.requestSubmit());
     syncFilters(null);
   });
 

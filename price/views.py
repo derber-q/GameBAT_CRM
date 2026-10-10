@@ -2,7 +2,7 @@ import logging
 
 from django.contrib import messages
 from django.core.exceptions import ValidationError
-from django.http import HttpResponse
+from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.utils.http import content_disposition_header
@@ -20,7 +20,7 @@ from .excel import (
     generate_retail_price_xlsx,
     generate_supplier_template,
     generate_wholesale_price_xlsx,
-    import_supplier_price,
+    import_supplier_price_files,
 )
 from .forms import (
     PriceDocumentSettingsForm,
@@ -51,7 +51,21 @@ def _xlsx_response(content, filename):
 @require_GET
 @permission_required_any("price.view_price_page")
 def price_page(request):
+    """Складские прайсы и данные документов — раздел по умолчанию."""
     settings = PriceDocumentSettings.get_solo()
+    return render(request, "price/index.html", {
+        "settings_form": PriceDocumentSettingsForm(instance=settings),
+        "warehouse_form": WarehousePriceForm(),
+        "can_change_settings": request.user.is_superuser or request.user.has_perm("price.change_document_settings"),
+        "can_generate_retail": request.user.is_superuser or request.user.has_perm("price.generate_retail_price"),
+        "can_generate_wholesale": request.user.is_superuser or request.user.has_perm("price.generate_wholesale_price"),
+    })
+
+
+@require_GET
+@permission_required_any("price.view_price_page")
+def import_prices(request):
+    """Прайсы поставщиков и закупочные версии."""
     can_view_supplier = request.user.is_superuser or request.user.has_perm("price.view_supplier_prices")
     can_view_details = request.user.is_superuser or request.user.has_perm("partners.view_supplier_details")
     suppliers = []
@@ -60,11 +74,24 @@ def price_page(request):
             suppliers.append({
                 "supplier": supplier,
                 "label": supplier.name if can_view_details else supplier.safe_label,
-                "price_count": (
-                    SupplierCDPrice.objects.filter(supplier=supplier, price__gt=0).count()
-                    + SupplierTechPrice.objects.filter(supplier=supplier, price__gt=0).count()
-                ) if can_view_supplier else None,
+                "cd_price_count": SupplierCDPrice.objects.filter(supplier=supplier, price__gt=0).count() if can_view_supplier else None,
+                "tech_price_count": SupplierTechPrice.objects.filter(supplier=supplier, price__gt=0).count() if can_view_supplier else None,
             })
+    return render(request, "price/imports.html", {
+        "supplier_upload_form": SupplierPriceUploadForm(),
+        "procurement_form": ProcurementPriceCreateForm(),
+        "suppliers": suppliers,
+        "price_lists": ProcurementPriceList.objects.select_related("created_by").prefetch_related("items")[:30],
+        "can_download_supplier": request.user.is_superuser or request.user.has_perm("price.download_supplier_template"),
+        "can_upload_supplier": request.user.is_superuser or request.user.has_perm("price.upload_supplier_price"),
+        "can_create_procurement": request.user.is_superuser or request.user.has_perm("price.create_procurement_price_list"),
+    })
+
+
+@require_GET
+@permission_required_any("price.view_price_page")
+def site_links(request):
+    """Допуски на розничный и оптовый сайты по существующим правам."""
     can_manage_wholesale_contacts = request.user.is_superuser or request.user.has_perm("resource_storefront.manage_wholesale_contacts")
     wholesale_contacts = []
     can_manage_retail = request.user.is_superuser or request.user.has_perm("resource_storefront.manage_retail_storefront")
@@ -74,19 +101,7 @@ def price_page(request):
             contact.active_link = contact.access_links.filter(is_active=True).first()
             contact.copy_token = recover_token(contact.active_link) if contact.active_link else ""
             wholesale_contacts.append(contact)
-    return render(request, "price/index.html", {
-        "settings_form": PriceDocumentSettingsForm(instance=settings),
-        "warehouse_form": WarehousePriceForm(),
-        "supplier_upload_form": SupplierPriceUploadForm(),
-        "procurement_form": ProcurementPriceCreateForm(),
-        "suppliers": suppliers,
-        "price_lists": ProcurementPriceList.objects.select_related("created_by").prefetch_related("items")[:30],
-        "can_change_settings": request.user.is_superuser or request.user.has_perm("price.change_document_settings"),
-        "can_generate_retail": request.user.is_superuser or request.user.has_perm("price.generate_retail_price"),
-        "can_generate_wholesale": request.user.is_superuser or request.user.has_perm("price.generate_wholesale_price"),
-        "can_download_supplier": request.user.is_superuser or request.user.has_perm("price.download_supplier_template"),
-        "can_upload_supplier": request.user.is_superuser or request.user.has_perm("price.upload_supplier_price"),
-        "can_create_procurement": request.user.is_superuser or request.user.has_perm("price.create_procurement_price_list"),
+    return render(request, "price/site_links.html", {
         "can_manage_wholesale_contacts": can_manage_wholesale_contacts,
         "wholesale_contacts": wholesale_contacts,
         "can_manage_retail": can_manage_retail,
@@ -137,8 +152,15 @@ def wholesale_export(request):
 
 @require_GET
 @permission_required_any("price.download_supplier_template")
-def supplier_template_export(request):
-    return _xlsx_response(generate_supplier_template(actor=request.user), "resource-supplier-template.xlsx")
+def supplier_template_export(request, product_kind=None):
+    if product_kind is None:
+        return redirect("price:imports")
+    if product_kind not in ("cd", "tech"):
+        raise Http404
+    return _xlsx_response(
+        generate_supplier_template(actor=request.user, product_kind=product_kind),
+        f"resource-supplier-{product_kind}-template.xlsx",
+    )
 
 
 @require_POST
@@ -146,11 +168,14 @@ def supplier_template_export(request):
 def supplier_price_upload(request):
     form = SupplierPriceUploadForm(request.POST, request.FILES)
     if not form.is_valid():
-        messages.error(request, "Выберите поставщика и корректный XLSX-файл.")
-        return redirect("price:index")
+        messages.error(request, "Выберите поставщика и прайс дисков, техники или оба XLSX-файла.")
+        return redirect("price:imports")
     supplier = form.cleaned_data["supplier"]
     try:
-        count = import_supplier_price(supplier_id=supplier.pk, upload=form.cleaned_data["file"], actor=request.user)
+        counts = import_supplier_price_files(
+            supplier_id=supplier.pk, actor=request.user,
+            uploads={kind: form.cleaned_data[f"{kind}_file"] for kind in ("cd", "tech") if form.cleaned_data[f"{kind}_file"]},
+        )
     except ValidationError as exc:
         logger.warning(
             "Ошибка импорта прайса поставщика: user_id=%s supplier_id=%s error=%s",
@@ -158,8 +183,9 @@ def supplier_price_upload(request):
         )
         messages.error(request, " ".join(exc.messages))
     else:
-        messages.success(request, f"Прайс поставщика заменён: {count} актуальных цен.")
-    return redirect("price:index")
+        labels = {"cd": "Диски", "tech": "Техника"}
+        messages.success(request, "Прайсы поставщика обновлены: " + "; ".join(f"{labels[kind]} — {count} цен" for kind, count in counts.items()) + ".")
+    return redirect("price:imports")
 
 
 @require_POST
@@ -167,15 +193,17 @@ def supplier_price_upload(request):
 def procurement_create(request):
     form = ProcurementPriceCreateForm(request.POST)
     if not form.is_valid():
-        messages.error(request, "Укажите положительный курс AED → RUB.")
-        return redirect("price:index")
+        messages.error(request, "Укажите два положительных курса: AED за 1 USDT и RUB за 1 USDT (не более 6 знаков после запятой).")
+        return redirect("price:imports")
     try:
         price_list = create_procurement_price_list(
-            actor=request.user, exchange_rate=form.cleaned_data["exchange_rate"]
+            actor=request.user,
+            exchange_rate_usdt_aed=form.cleaned_data["exchange_rate_usdt_aed"],
+            exchange_rate_usdt_rub=form.cleaned_data["exchange_rate_usdt_rub"],
         )
     except ValidationError as exc:
         messages.error(request, " ".join(exc.messages))
-        return redirect("price:index")
+        return redirect("price:imports")
     messages.success(request, f"Закупочный прайс №{price_list.pk} создан.")
     return redirect("price:procurement_detail", pk=price_list.pk)
 
@@ -231,6 +259,10 @@ def procurement_update(request, pk):
 
 @require_GET
 @permission_required_any("price.export_procurement_price_list")
-def procurement_export(request, pk):
-    content = generate_procurement_customer_xlsx(price_list_id=pk, actor=request.user)
-    return _xlsx_response(content, f"resource-procurement-{pk}.xlsx")
+def procurement_export(request, pk, product_kind=None):
+    if product_kind is None:
+        return redirect("price:procurement_detail", pk=pk)
+    if product_kind not in ("cd", "tech"):
+        raise Http404
+    content = generate_procurement_customer_xlsx(price_list_id=pk, actor=request.user, product_kind=product_kind)
+    return _xlsx_response(content, f"resource-procurement-{pk}-{product_kind}.xlsx")

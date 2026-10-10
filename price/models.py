@@ -54,6 +54,14 @@ class PriceDocumentSettings(models.Model):
 
 class ProcurementPriceList(models.Model):
     public_token = models.UUIDField("Публичный токен", default=uuid.uuid4, unique=True, editable=False)
+    exchange_rate_usdt_aed = models.DecimalField(
+        "Курс AED → USDT (AED за 1 USDT)", max_digits=20, decimal_places=6,
+        null=True, blank=True, validators=[MinValueValidator(0.000001)],
+    )
+    exchange_rate_usdt_rub = models.DecimalField(
+        "Курс USDT → RUB (RUB за 1 USDT)", max_digits=20, decimal_places=6,
+        null=True, blank=True, validators=[MinValueValidator(0.000001)],
+    )
     exchange_rate_aed_rub = models.DecimalField(
         "Курс AED → RUB", max_digits=20, decimal_places=6, validators=[MinValueValidator(0.000001)]
     )

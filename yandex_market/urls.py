@@ -1,11 +1,12 @@
 from django.urls import path
-from . import views, webhooks
+from . import views, webhooks, pricing_views
 
 app_name = "yandex_market"
 urlpatterns = [
     path("", views.dashboard, name="dashboard"),
     path("settings/new/", views.settings_view, name="settings_new"),
     path("settings/<int:pk>/", views.settings_view, name="settings"),
+    path("settings/<int:pk>/pricing/", pricing_views.settings_view, name="pricing_settings"),
     path("settings/<int:pk>/check/", views.check, name="check"),
     path("sync/<int:pk>/", views.synchronize, name="sync"),
     path("offers/<int:pk>/bind/", views.bind, name="bind"),

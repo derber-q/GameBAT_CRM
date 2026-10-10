@@ -8,7 +8,7 @@ from .models import OfferConnection
 from .queue import product_after_commit
 
 
-PRODUCT_FIELDS = ("name", "description", "sku", "weight_grams", "yandex_market_price", "is_archived")
+PRODUCT_FIELDS = ("name", "description", "sku", "weight_grams", "length_cm", "width_cm", "height_cm", "yandex_market_price", "is_archived")
 
 
 @receiver(pre_save, sender=CD, dispatch_uid="ym_cd_before")
@@ -36,7 +36,7 @@ def stock_changed(sender, instance, raw=False, **kwargs):
 @receiver(post_save, sender=CD, dispatch_uid="ym_cd_after")
 @receiver(post_save, sender=Tech, dispatch_uid="ym_tech_after")
 def product_changed(sender, instance, raw=False, update_fields=None, **kwargs):
-    if raw or (update_fields and not set(update_fields) & {"yandex_market_price", "is_archived", "name", "description", "weight_grams", "sku"}):
+    if raw or (update_fields and not set(update_fields).intersection(PRODUCT_FIELDS)):
         return
     kind = "cd" if sender is CD else "tech"
     previous = getattr(instance, "_ym_previous_fields", None)
@@ -52,8 +52,10 @@ def product_changed(sender, instance, raw=False, update_fields=None, **kwargs):
                 if source in changed and getattr(instance, source):
                     content[target] = getattr(instance, source)
                     dirty.add(target)
-            if "weight_grams" in changed:
-                dimensions = content.get("weightDimensions") or connection.remote_offer.snapshot.get("offer", {}).get("weightDimensions")
+            if changed.intersection({"weight_grams", "length_cm", "width_cm", "height_cm"}):
+                dimensions = content.get("weightDimensions") or connection.remote_offer.snapshot.get("offer", {}).get("weightDimensions") or {}
+                if any(getattr(instance, field) is not None for field in ("length_cm", "width_cm", "height_cm")):
+                    dimensions = {"length": instance.length_cm, "width": instance.width_cm, "height": instance.height_cm}
                 if dimensions:
                     content["weightDimensions"] = dimensions
                     dirty.add("weightDimensions")

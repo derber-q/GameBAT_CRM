@@ -12,6 +12,7 @@ from price.excel import import_wholesale_price_to_sale
 from .forms import SaleCreateForm, WholesalePriceImportForm
 from .models import Sale
 from .listing import list_groups, sales_queryset, status_context
+from .storage_locations import sale_storage_locations
 from .services import (
     advance_order_status, cancel_sale, create_sale, edit_postpay_sale_items,
     set_sale_payment_method, mark_sale_paid, update_sale_note, next_order_status,
@@ -254,14 +255,23 @@ def sale_detail(request, pk):
     )
     legacy_consignment_mirror = sale.sale_type == Sale.SaleType.CONSIGNMENT and bool(sale.consignment_items.all())
     can_view_financials = request.user.is_superuser or request.user.has_perm("sales.view_sales_statistics")
+    show_storage_locations = (
+        not sale.is_cancelled and not sale.is_completed
+        and sale.sale_type != Sale.SaleType.CONSIGNMENT
+    )
+    storage_locations = sale_storage_locations(sale)
     rows = [
         {"type": "CD", "name": item.product_name_snapshot, "sku": item.article_snapshot,
+         "show_storage_location": show_storage_locations,
+         **storage_locations.get(("cd", item.cd_id), {}),
          "quantity": item.quantity, "unit_price": item.unit_price, "unit_discount": item.unit_discount,
          "effective_unit_price": item.effective_unit_price, "line_total": item.line_total,
          **_detail_financials(item)}
         for item in sale.cd_items.all() if not legacy_consignment_mirror
     ] + [
         {"type": "Tech", "name": item.product_name_snapshot, "sku": item.article_snapshot,
+         "show_storage_location": show_storage_locations,
+         **storage_locations.get(("tech", item.tech_id), {}),
          "quantity": item.quantity, "unit_price": item.unit_price, "unit_discount": item.unit_discount,
          "effective_unit_price": item.effective_unit_price, "line_total": item.line_total,
          **_detail_financials(item)}

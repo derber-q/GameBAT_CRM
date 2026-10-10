@@ -71,6 +71,8 @@ class ContentForm(forms.Form):
                 continue
             self._add_field((key,), schema, self.baseline.get(key))
         self.parameter_schema = CategorySchema.objects.filter(category_id=connection.category_id).first()
+        if self.parameter_schema and "parameters" not in self.parameter_schema.schema:
+            self.parameter_schema = None
         self.initial_parameters = connection.parameters if "parameterValues" in connection.dirty_fields else (connection.remote_offer.card.get("parameterValues") or [])
         for parameter in (self.parameter_schema.schema.get("parameters", []) if self.parameter_schema else []):
             name = f"param_{parameter['id']}"
@@ -127,6 +129,10 @@ class ContentForm(forms.Form):
         if path == ("weightDimensions", "weight"):
             field.disabled = True
             field.initial = Decimal(self.connection.product.weight_grams) / 1000 if self.connection.product.weight_grams else None
+        if len(path) == 2 and path[0] == "weightDimensions" and path[1] in {"length", "width", "height"}:
+            current = getattr(self.connection.product, path[1] + "_cm")
+            if current is not None:
+                field.initial = current
         self.fields[name] = field
 
     def clean(self):
@@ -160,6 +166,9 @@ class ContentForm(forms.Form):
             content.pop("weightDimensions")
         for key, value in content.items():
             validate_schema(value, CONTENT_FIELDS[key], LABELS.get(key, key))
+        for key, value in content.get("weightDimensions", {}).items():
+            if value <= 0:
+                raise ValidationError("Вес и размеры упаковки должны быть больше нуля.")
         parameters = []
         for parameter in (self.parameter_schema.schema.get("parameters", []) if self.parameter_schema else []):
             name = f"param_{parameter['id']}"

@@ -1,0 +1,4 @@
+{% extends 'base.html' %}{% load static %}
+{% block title %}Яндекс Маркет FBS · {{ product.name }}{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{% static 'css/fbs-pricing.css' %}?v=2-dimensions"><script src="{% static 'js/fbs-pricing.js' %}?v=2-dimensions" defer></script>{% endblock %}
+{% block content %}<div class="page-heading"><h1>Яндекс Маркет FBS</h1><a class="button button-secondary" href="{% url 'pricing:list' %}">Ценообразование</a></div><section class="panel">{% include 'pricing/_fbs_form.html' %}</section>{% endblock %}

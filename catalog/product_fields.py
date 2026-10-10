@@ -1,6 +1,7 @@
 PRICE_FIELDS = ("avito_price", "wholesale_price", "yandex_market_price")
 MARKUP_FIELDS = ("avito_markup_from_wholesale", "yandex_markup_from_wholesale")
 PRICING_FIELDS = (*PRICE_FIELDS, *MARKUP_FIELDS)
+MARKETPLACE_CARD_FIELDS = ("length_cm", "width_cm", "height_cm", "yandex_desired_profit", "yandex_pricing_integration", "yandex_pricing_category")
 
 CD_CARD_FIELDS = (
     "platform",
@@ -11,6 +12,8 @@ CD_CARD_FIELDS = (
     "weight_grams",
     "description",
     "comment",
+    "exclude_from_supplier_template",
+    *MARKETPLACE_CARD_FIELDS,
     *PRICING_FIELDS,
 )
 
@@ -22,6 +25,8 @@ TECH_CARD_FIELDS = (
     "weight_grams",
     "description",
     "comment",
+    "exclude_from_supplier_template",
+    *MARKETPLACE_CARD_FIELDS,
     *PRICING_FIELDS,
 )
 
@@ -34,6 +39,13 @@ CD_FIELD_PERMISSIONS = {
     "weight_grams": "catalog.change_cd_weight",
     "cusa_ppsa_code": "catalog.change_cd_cusa_ppsa_code",
     "comment": "catalog.change_cd_comment",
+    "exclude_from_supplier_template": "catalog.change_cd",
+    "length_cm": "catalog.change_cd_weight",
+    "width_cm": "catalog.change_cd_weight",
+    "height_cm": "catalog.change_cd_weight",
+    "yandex_desired_profit": "pricing.change_yandex_market_price",
+    "yandex_pricing_integration": "pricing.change_yandex_market_price",
+    "yandex_pricing_category": "pricing.change_yandex_market_price",
     "avito_price": "pricing.change_retail_price",
     "wholesale_price": "pricing.change_wholesale_price",
     "yandex_market_price": "pricing.change_yandex_market_price",
@@ -49,6 +61,13 @@ TECH_FIELD_PERMISSIONS = {
     "sku": "catalog.change_tech_sku",
     "weight_grams": "catalog.change_tech_weight",
     "comment": "catalog.change_tech_comment",
+    "exclude_from_supplier_template": "catalog.change_tech",
+    "length_cm": "catalog.change_tech_weight",
+    "width_cm": "catalog.change_tech_weight",
+    "height_cm": "catalog.change_tech_weight",
+    "yandex_desired_profit": "pricing.change_yandex_market_price",
+    "yandex_pricing_integration": "pricing.change_yandex_market_price",
+    "yandex_pricing_category": "pricing.change_yandex_market_price",
     "avito_price": "pricing.change_retail_price",
     "wholesale_price": "pricing.change_wholesale_price",
     "yandex_market_price": "pricing.change_yandex_market_price",

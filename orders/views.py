@@ -6,7 +6,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_GET, require_POST
 
 from core.decorators import permission_required_all, permission_required_any
-from price.excel import import_procurement_order_xlsx
+from price.excel import import_procurement_order_files
 from price.models import ProcurementPriceListItem
 
 from .forms import ProcurementOrderHeaderForm, ProcurementOrderUploadForm, ReceivingAdjustmentForm
@@ -73,9 +73,9 @@ def order_upload(request):
     form = ProcurementOrderUploadForm(request.POST or None, request.FILES or None)
     if request.method == "POST" and form.is_valid():
         try:
-            price_list, lines = import_procurement_order_xlsx(form.cleaned_data["file"])
+            price_list, lines = import_procurement_order_files(form.cleaned_data["uploads"])
         except ValidationError as exc:
-            form.add_error("file", exc)
+            form.add_error(None, exc)
         else:
             request.session[DRAFT_SESSION_KEY] = {
                 "price_list_id": price_list.pk,

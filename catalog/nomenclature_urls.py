@@ -6,7 +6,10 @@ app_name = "nomenclature"
 
 urlpatterns = [
     path("", views.nomenclature_list, name="list"),
+    path("cd/", views.nomenclature_list, {"product_kind": "cd"}, name="cd_list"),
+    path("tech/", views.nomenclature_list, {"product_kind": "tech"}, name="tech_list"),
     path("new/", views.product_create, name="create"),
+    path("bulk-delete/", views.product_bulk_delete, name="bulk_delete"),
     path("cd/<int:pk>/", views.cd_detail, name="cd_detail"),
     path("tech/<int:pk>/", views.tech_detail, name="tech_detail"),
     path(

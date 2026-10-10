@@ -4,9 +4,10 @@
 технические связи разрешено удалять вместе с никогда не использованной карточкой.
 """
 
+import re
 from dataclasses import dataclass
 
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
 from django.db.models.deletion import ProtectedError
 from django.utils import timezone
@@ -47,6 +48,72 @@ class RemovalAssessment:
     action: str
     reasons: tuple[str, ...] = ()
     history_relations: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class BulkRemovalItem:
+    product_kind: str
+    product_id: int
+    product_name: str
+    action: str
+    messages: tuple[str, ...] = ()
+
+
+def normalize_removal_selection(selection):
+    """Проверяет весь список до начала удаления и убирает повторные ID."""
+    if not isinstance(selection, (list, tuple)) or not selection:
+        raise ValidationError("Выберите хотя бы один товар.")
+    if len(selection) > 10000:
+        raise ValidationError("За один раз можно выбрать не более 10 000 товаров.")
+    tokens = []
+    seen = set()
+    for token in selection:
+        if not isinstance(token, str) or not re.fullmatch(r"(?:cd|tech):[1-9][0-9]{0,18}", token):
+            raise ValidationError("Некорректный список выбранных товаров. Обновите страницу и повторите выбор.")
+        kind, value = token.split(":")
+        product_id = int(value)
+        if product_id > 9223372036854775807:
+            raise ValidationError("Некорректный ID товара.")
+        key = (kind, product_id)
+        if key not in seen:
+            seen.add(key)
+            tokens.append(token)
+    return tuple(tokens)
+
+
+@transaction.atomic
+def remove_products(*, selection, actor):
+    """Удаляет группу штатным сервисом; защищённые карточки остаются с пояснением."""
+    tokens = normalize_removal_selection(selection)
+    kinds = {token.split(":", 1)[0] for token in tokens}
+    if not actor.is_authenticated or any(
+        not (actor.is_superuser or actor.has_perm(f"catalog.delete_{kind}"))
+        for kind in kinds
+    ):
+        # Проверяем всю группу заранее: недостаток прав не должен дать частичное удаление.
+        raise PermissionDenied("Нет права удаления выбранного типа товаров.")
+    list(Warehouse.objects.select_for_update().order_by("pk"))
+    results = []
+    product_keys = [(kind, int(value)) for kind, value in (token.split(":") for token in tokens)]
+    for kind, product_id in sorted(product_keys):
+        model = CD if kind == "cd" else Tech
+        product = model.objects.select_for_update().filter(pk=product_id).only("name").first()
+        if product is None:
+            results.append(BulkRemovalItem(kind, product_id, "Товар не найден", "BLOCKED", (
+                "Карточка уже удалена или больше не существует.",
+            )))
+            continue
+        try:
+            # Отдельный savepoint откатывает очистку технических связей при отказе FK.
+            assessment = remove_product(product_kind=kind, product_id=product_id, actor=actor)
+        except ValidationError as exc:
+            results.append(BulkRemovalItem(kind, product_id, product.name, "BLOCKED", tuple(exc.messages)))
+        else:
+            results.append(BulkRemovalItem(
+                kind, product_id, product.name, assessment.action,
+                tuple(BLOCK_MESSAGES[reason] for reason in assessment.reasons),
+            ))
+    return tuple(results)
 
 
 def _product_kind(product):

@@ -39,7 +39,9 @@ class ProcurementOrderTests(TestCase):
         )
         SupplierCDPrice.objects.create(supplier=self.supplier, cd=self.cd, price=100)
         SupplierTechPrice.objects.create(supplier=self.supplier, tech=self.tech, price=150)
-        self.price_list = create_procurement_price_list(actor=self.user, exchange_rate=20)
+        self.price_list = create_procurement_price_list(
+            actor=self.user, exchange_rate_usdt_aed=4, exchange_rate_usdt_rub=80,
+        )
         self.cd_source = self.price_list.items.get(product_kind="cd")
         self.tech_source = self.price_list.items.get(product_kind="tech")
 
@@ -213,7 +215,9 @@ class ProcurementOrderTests(TestCase):
     def test_supplier_batch_uses_weighted_snapshot_when_versions_have_different_prices(self):
         old_order = self.create_order(pre=2, post=0)
         SupplierCDPrice.objects.filter(supplier=self.supplier, cd=self.cd).update(price=120)
-        newer_price_list = create_procurement_price_list(actor=self.user, exchange_rate=20)
+        newer_price_list = create_procurement_price_list(
+            actor=self.user, exchange_rate_usdt_aed=4, exchange_rate_usdt_rub=80,
+        )
         newer_source = newer_price_list.items.get(product_kind="cd")
         new_order = self.create_order(pre=3, post=0, source=newer_source)
         batch = create_supplier_order_batch(actor=self.user, order_ids=[old_order.pk, new_order.pk])

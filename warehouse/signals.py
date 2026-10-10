@@ -9,14 +9,21 @@ from .models import CDWarehouseStock, TechWarehouseStock, WarehouseRevisionItem
 
 
 def _refresh_zero_stock_marker(*, product_model, product_id):
-    product = product_model.objects.filter(pk=product_id).only("zero_stock_since").first()
+    product = product_model.objects.filter(pk=product_id).only("zero_stock_since", "has_been_in_stock").first()
     if product is None:
         return
     total = product.warehouse_stocks.aggregate(total=Sum("quantity"))["total"] or 0
-    if total > 0 and product.zero_stock_since is not None:
-        product_model.objects.filter(pk=product_id).update(zero_stock_since=None)
-    elif total == 0 and product.zero_stock_since is None:
-        product_model.objects.filter(pk=product_id).update(zero_stock_since=timezone.now())
+    marker_updates = {}
+    if total > 0:
+        if not product.has_been_in_stock:
+            marker_updates["has_been_in_stock"] = True
+        if product.zero_stock_since is not None:
+            marker_updates["zero_stock_since"] = None
+    elif total == 0 and product.has_been_in_stock and product.zero_stock_since is None:
+        marker_updates["zero_stock_since"] = timezone.now()
+    if marker_updates:
+        # Производные признаки не меняют запас и не создают повторную синхронизацию Avito.
+        product_model.objects.filter(pk=product_id).update(**marker_updates)
 
 
 @receiver(post_save, sender=CDWarehouseStock)

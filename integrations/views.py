@@ -32,7 +32,7 @@ from .models import (
 )
 from .reef_api import ReefApiError
 from .reef_settings import check_connection as check_reef_connection, save_key as save_reef_key
-from .google_sheets import get_google_sheets_integration, save_google_sheets_settings
+from .google_sheets import NOMENCLATURE_SHEET_NAME, get_google_sheets_integration, save_google_sheets_settings
 from .google_tasks import enqueue_google_sheets_sync
 from .queue import enqueue_periodic, enqueue_profile_sync_after_commit
 from .required_actions import get_avito_required_actions
@@ -67,6 +67,7 @@ def api_keys(request):
         "credential": credential, "form": form, "google_sheets": google_sheets,
         "reef_credential": ReefApiCredential.objects.filter(pk=1).first(),
         "google_job": google_job,
+        "google_nomenclature_sheet_name": NOMENCLATURE_SHEET_NAME,
         "google_credentials_configured": bool(settings.GOOGLE_SERVICE_ACCOUNT_FILE),
     })
 

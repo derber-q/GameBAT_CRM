@@ -3,6 +3,7 @@ from collections import Counter, defaultdict
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 from django.core.exceptions import ValidationError
+from django.core.validators import DecimalValidator
 from django.db import transaction
 
 from pricing.models import SupplierCDPrice, SupplierTechPrice
@@ -19,6 +20,8 @@ def decimal_value(value, *, precision=CENT, positive=False, nonnegative=False, l
         result = Decimal(str(value)).quantize(precision, rounding=ROUND_HALF_UP)
     except (InvalidOperation, TypeError, ValueError) as exc:
         raise ValidationError(f"{label}: укажите корректное число.") from exc
+    if not result.is_finite():
+        raise ValidationError(f"{label}: укажите корректное число.")
     if positive and result <= 0:
         raise ValidationError(f"{label} должно быть больше нуля.")
     if nonnegative and result < 0:
@@ -68,24 +71,42 @@ def resolve_best_suppliers(offers=None):
     for key, candidates in minimum_candidates.items():
         winners[key] = sorted(
             candidates,
-            key=lambda row: (-unique_wins[row[0].pk], row[0].name.casefold(), row[0].pk),
+            key=lambda row: (-row[0].priority, row[0].name.casefold(), row[0].pk),
         )[0]
     return winners, unique_wins
 
 
 @transaction.atomic
-def create_procurement_price_list(*, actor, exchange_rate):
-    rate = decimal_value(
-        exchange_rate, precision=RATE_PRECISION, positive=True, label="Курс AED → RUB"
+def create_procurement_price_list(*, actor, exchange_rate_usdt_aed, exchange_rate_usdt_rub):
+    rate_usdt_aed = decimal_value(
+        exchange_rate_usdt_aed, precision=RATE_PRECISION, positive=True,
+        label="Курс AED → USDT (AED за 1 USDT)",
     )
+    rate_usdt_rub = decimal_value(
+        exchange_rate_usdt_rub, precision=RATE_PRECISION, positive=True,
+        label="Курс USDT → RUB (RUB за 1 USDT)",
+    )
+    validate_rate = DecimalValidator(max_digits=20, decimal_places=6)
+    validate_rate(rate_usdt_aed)
+    validate_rate(rate_usdt_rub)
+    rate = decimal_value(
+        rate_usdt_rub / rate_usdt_aed, precision=RATE_PRECISION, positive=True,
+        label="Расчётный курс AED → RUB",
+    )
+    validate_rate(rate)
     offers = _supplier_offers(lock=True)
     if not offers:
         raise ValidationError("Нет ни одной положительной актуальной цены поставщика.")
     winners, _ = resolve_best_suppliers(offers)
-    price_list = ProcurementPriceList.objects.create(exchange_rate_aed_rub=rate, created_by=actor)
+    price_list = ProcurementPriceList.objects.create(
+        exchange_rate_usdt_aed=rate_usdt_aed, exchange_rate_usdt_rub=rate_usdt_rub,
+        exchange_rate_aed_rub=rate, created_by=actor,
+    )
     items = []
     for (kind, _), (supplier, supplier_price, product) in winners.items():
-        base = (supplier_price * rate).quantize(CENT, rounding=ROUND_HALF_UP)
+        # Промежуточную сумму в USDT не округляем; рубли округляются один раз до копеек.
+        base = (supplier_price / rate_usdt_aed * rate_usdt_rub).quantize(CENT, rounding=ROUND_HALF_UP)
+        DecimalValidator(max_digits=20, decimal_places=2)(base)
         values = {
             "price_list": price_list,
             "product_kind": kind,
@@ -104,8 +125,8 @@ def create_procurement_price_list(*, actor, exchange_rate):
         items.append(ProcurementPriceListItem(**values))
     ProcurementPriceListItem.objects.bulk_create(items)
     logger.info(
-        "Закупочный прайс создан: user_id=%s price_list_id=%s rate=%s items=%s",
-        actor.pk, price_list.pk, rate, len(items),
+        "Закупочный прайс создан: user_id=%s price_list_id=%s usdt_aed=%s usdt_rub=%s rate=%s items=%s",
+        actor.pk, price_list.pk, rate_usdt_aed, rate_usdt_rub, rate, len(items),
     )
     return price_list
 

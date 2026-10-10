@@ -8,3 +8,4 @@ class YandexMarketConfig(AppConfig):
 
     def ready(self):
         from . import signals  # noqa: F401
+        from . import pricing_signals  # noqa: F401

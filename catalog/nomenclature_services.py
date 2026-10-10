@@ -21,11 +21,11 @@ logger = logging.getLogger("gamebat.business")
 CREATE_FIELDS = {
     "cd": (
         "platform", "game_series", "name", "description", "sku", "cusa_ppsa_code",
-        "weight_grams", "comment",
+        "weight_grams", "length_cm", "width_cm", "height_cm", "comment", "exclude_from_supplier_template",
     ),
     "tech": (
         "brand", "product_type", "name", "description", "sku",
-        "weight_grams", "comment",
+        "weight_grams", "length_cm", "width_cm", "height_cm", "comment", "exclude_from_supplier_template",
     ),
 }
 

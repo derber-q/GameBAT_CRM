@@ -138,7 +138,7 @@ class StorefrontAccessTests(TestCase):
 
     def test_price_page_lists_contacts_and_their_recoverable_links(self):
         self.client.force_login(self.staff)
-        response = self.client.get(reverse("price:index"))
+        response = self.client.get(reverse("price:site_links"))
         self.assertContains(response, "Пользователи оптового сайта")
         self.assertContains(response, self.contact.name)
         self.assertContains(response, f"/opt/{self.token}/")

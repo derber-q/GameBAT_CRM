@@ -8,7 +8,7 @@
     form.appendChild(status);
     let saving = false;
     let savedValues = null;
-    const inputs = Array.from(form.elements).filter((element) => element.matches('[data-price-field]'));
+    const inputs = Array.from(form.elements).filter((element) => element.matches('[data-price-field]') || element.matches('[data-fbs-profit]'));
     inputs.forEach((input) => input.addEventListener('input', () => {
       if (!saving && savedValues) {
         status.textContent = inputs.some((element, index) => element.value !== savedValues[index])
@@ -36,6 +36,9 @@
         }
         const result = await response.json();
         if (!response.ok || !result.ok) throw new Error(result.message || 'Ошибка сохранения.');
+        if (result.calculation && !inputs.some((element, index) => element.matches('[data-fbs-profit]') && element.value !== values[index])) {
+          form.dispatchEvent(new CustomEvent('fbs:saved', {detail: result.calculation}));
+        }
         savedValues = values;
         status.textContent = inputs.some((element, index) => element.value !== values[index])
           ? 'Есть новые несохранённые изменения' : 'Сохранено';

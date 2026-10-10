@@ -37,12 +37,13 @@
 </section>
 <section class="panel">
   <div class="section-heading section-heading-plain">
-    <div><h2>Google Sheets</h2><p class="muted">Одностороннее зеркало физического складского остатка. Товары в пути и на реализации не учитываются.</p></div>
+    <div><h2>Google Sheets</h2><p class="muted">Два листа: вся активная номенклатура и наличие на физических складах. Товары в пути и на реализации не учитываются.</p></div>
     <span class="badge {% if google_sheets.status == 'ok' %}badge-success{% elif google_sheets.status == 'error' %}badge-danger{% endif %}">{{ google_sheets.get_status_display }}</span>
   </div>
   {% if not google_credentials_configured %}<div class="alert alert-error">На сервере не указан путь GOOGLE_SERVICE_ACCOUNT_FILE. Предоставьте сервисному аккаунту право редактора этой таблицы.</div>{% endif %}
   <dl class="details integration-details">
-    <dt>Управляемый лист</dt><dd>{{ google_sheets.sheet_name }}</dd>
+    <dt>Номенклатура</dt><dd>{{ google_nomenclature_sheet_name }} — все активные позиции, включая нулевые остатки.</dd>
+    <dt>Наличие</dt><dd>{{ google_sheets.sheet_name }} — положительный остаток и товары, закончившиеся менее календарного месяца назад. Позиции, никогда не поступавшие на склад, и новые карточки с нулём за последний месяц исключены.</dd>
     <dt>Последняя попытка</dt><dd>{{ google_sheets.last_attempt_at|date:"d.m.Y H:i"|default:"—" }}</dd>
     <dt>Последний успех</dt><dd>{{ google_sheets.last_success_at|date:"d.m.Y H:i"|default:"—" }}</dd>
     <dt>Фоновая задача</dt><dd>{% if google_job %}{{ google_job.get_status_display }}{% else %}—{% endif %}</dd>
@@ -51,7 +52,7 @@
   <form method="post" action="{% url 'integrations:google_sheets_settings' %}" class="stacked-form">
     {% csrf_token %}
     <div class="field"><label for="google-spreadsheet-url">Ссылка на таблицу</label><input id="google-spreadsheet-url" type="url" name="spreadsheet_url" value="{{ google_sheets.spreadsheet_url }}" required></div>
-    <div class="field"><label for="google-sheet-name">Название листа CRM</label><input id="google-sheet-name" name="sheet_name" value="{{ google_sheets.sheet_name }}" required></div>
+    <div class="field"><label for="google-sheet-name">Название листа наличия</label><input id="google-sheet-name" name="sheet_name" value="{{ google_sheets.sheet_name }}" required><small>Лист «{{ google_nomenclature_sheet_name }}» обновляется вместе с ним.</small></div>
     <label><input type="checkbox" name="enabled" {% if google_sheets.enabled %}checked{% endif %}> Автоматически обновлять каждые 10 минут</label>
     <div class="form-actions"><button class="button button-secondary" type="submit">Сохранить параметры</button></div>
   </form>

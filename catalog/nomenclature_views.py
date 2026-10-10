@@ -4,11 +4,12 @@ from collections import defaultdict
 
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied, ValidationError
-from django.http import FileResponse, Http404
+from django.http import FileResponse, Http404, QueryDict
 from django.core.paginator import Paginator
 from django.db.models import Exists, IntegerField, OuterRef, Sum, Value
 from django.db.models.functions import Coalesce
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.views.decorators.http import require_GET, require_POST
 
 from core.decorators import permission_required_any
@@ -16,9 +17,9 @@ from warehouse.models import Warehouse, WarehouseTransfer
 
 from .models import BarcodeRegistry, CD, ProductImage, Tech
 from integrations.models import AvitoListingConnection
-from .removal import BLOCK_MESSAGES, remove_product
+from .removal import BLOCK_MESSAGES, remove_product, remove_products
 from .nomenclature_forms import (
-    CDCardForm, CDCreateForm, TechCardForm, TechCreateForm, barcode_formset,
+    BulkProductDeleteForm, CDCardForm, CDCreateForm, TechCardForm, TechCreateForm, barcode_formset,
 )
 from .nomenclature_services import create_product, update_product_card
 from .product_media import (
@@ -34,10 +35,26 @@ from .product_ordering import cd_order_key, tech_brand_groups
 
 logger = logging.getLogger("gamebat.business")
 
+NOMENCLATURE_LIST_ROUTES = {
+    "": "nomenclature:list",
+    "cd": "nomenclature:cd_list",
+    "tech": "nomenclature:tech_list",
+}
+
 
 @permission_required_any("catalog.view_nomenclature")
-def nomenclature_list(request):
-    filters, filter_context = product_filter_context(request.GET, include_game_series=True)
+def nomenclature_list(request, product_kind=None):
+    if product_kind not in {None, "cd", "tech"}:
+        raise Http404("Раздел номенклатуры не найден.")
+    params = request.GET.copy()
+    # Тип задаётся маршрутом; чужие фильтры в URL не меняют выбранный раздел.
+    irrelevant_filters = (
+        ("platform", "game_series") if product_kind == "tech"
+        else ("brand", "product_type") if product_kind == "cd" else ()
+    )
+    for key in irrelevant_filters:
+        params.pop(key, None)
+    filters, filter_context = product_filter_context(params, include_game_series=product_kind != "tech")
     avito_highlight = request.GET.get("avito_highlight", "1") != "0"
     zero_stock_highlight = request.GET.get("zero_stock_highlight", "1") != "0"
     stock_total = Coalesce(Sum("warehouse_stocks__quantity"), Value(0), output_field=IntegerField())
@@ -53,6 +70,10 @@ def nomenclature_list(request):
         .annotate(global_stock=stock_total)
         .order_by("product_type__name", "name", "id")
     )
+    if product_kind == "cd":
+        tech_items = tech_items.none()
+    elif product_kind == "tech":
+        cds = cds.none()
     if avito_highlight:
         cds = cds.annotate(avito_connected=Exists(
             AvitoListingConnection.objects.filter(profile__cd_id=OuterRef("pk"))
@@ -78,20 +99,72 @@ def nomenclature_list(request):
     tech_groups = defaultdict(list)
     for product in tech_items:
         tech_groups[product.product_type].append(product)
+    can_delete_cd = product_kind != "tech" and (
+        request.user.is_superuser or request.user.has_perm("catalog.delete_cd")
+    )
+    can_delete_tech = product_kind != "cd" and (
+        request.user.is_superuser or request.user.has_perm("catalog.delete_tech")
+    )
     context = {
+        "nomenclature_kind": product_kind or "",
+        "nomenclature_title": {None: "Номенклатура", "cd": "Диски", "tech": "Техника"}[product_kind],
         "query": filters.search,
         "cd_groups": cd_groups,
         "tech_groups": list(tech_groups.items()),
         "tech_brand_groups": tech_brand_groups([product for products in tech_groups.values() for product in products]),
-        "can_add_cd": request.user.is_superuser or request.user.has_perm("catalog.add_cd"),
-        "can_add_tech": request.user.is_superuser or request.user.has_perm("catalog.add_tech"),
-        "show_game_series_filter": True,
+        "can_add_cd": product_kind != "tech" and (
+            request.user.is_superuser or request.user.has_perm("catalog.add_cd")
+        ),
+        "can_add_tech": product_kind != "cd" and (
+            request.user.is_superuser or request.user.has_perm("catalog.add_tech")
+        ),
+        "can_delete_cd": can_delete_cd,
+        "can_delete_tech": can_delete_tech,
+        "can_bulk_delete": can_delete_cd or can_delete_tech,
+        "bulk_delete_result": request.session.pop("nomenclature_bulk_delete_result", None),
+        "show_game_series_filter": product_kind != "tech",
+        "hide_cd_filters": product_kind == "tech",
+        "hide_tech_filters": product_kind == "cd",
         "show_avito_highlight_toggle": True,
         "avito_highlight": avito_highlight,
         "zero_stock_highlight": zero_stock_highlight,
     }
     context.update(filter_context)
     return render(request, "nomenclature/list.html", context)
+
+
+@require_POST
+@permission_required_any("catalog.view_nomenclature")
+@permission_required_any("catalog.delete_cd", "catalog.delete_tech")
+def product_bulk_delete(request):
+    form = BulkProductDeleteForm(request.POST)
+    query = ""
+    if not form.is_valid():
+        messages.error(request, "Удаление не выполнено. " + " ".join(
+            str(error) for errors in form.errors.values() for error in errors
+        ))
+    else:
+        # Разбираем параметры до удаления: некорректные фильтры не должны давать ошибку после записи.
+        query = QueryDict(form.cleaned_data["query"]).urlencode()
+        results = remove_products(selection=form.cleaned_data["selection"], actor=request.user)
+        request.session["nomenclature_bulk_delete_result"] = {
+            "selected": len(results),
+            "deleted": sum(item.action == "HARD_DELETED" for item in results),
+            "archived": sum(item.action == "ARCHIVED" for item in results),
+            "blocked": [
+                {
+                    "kind": item.product_kind,
+                    "id": item.product_id,
+                    "name": item.product_name,
+                    "reason": " ".join(item.messages),
+                }
+                for item in results if item.action == "BLOCKED"
+            ],
+        }
+    # Возвращаемся к тем же фильтрам; адрес перенаправления всегда локальный.
+    list_kind = form.cleaned_data.get("list_kind", "")
+    url = reverse(NOMENCLATURE_LIST_ROUTES.get(list_kind, "nomenclature:list"))
+    return redirect(f"{url}?{query}" if query else url)
 
 
 @permission_required_any("catalog.add_cd", "catalog.add_tech")
@@ -169,21 +242,27 @@ def _stock_context(product):
 
 def _form_sections(form, product_kind):
     if product_kind == "cd":
-        main_fields = ("platform", "game_series", "name", "weight_grams")
+        main_fields = ("platform", "game_series", "name")
         identifier_fields = ("sku", "cusa_ppsa_code")
     else:
-        main_fields = ("brand", "product_type", "name", "weight_grams")
+        main_fields = ("brand", "product_type", "name")
         identifier_fields = ("sku",)
     return [
         {"title": "Основная информация", "fields": [form[name] for name in main_fields]},
         {"title": "Идентификаторы", "fields": [form[name] for name in identifier_fields]},
+        {"title": "Габариты для маркетплейсов", "fields": [form[name] for name in ("length_cm", "width_cm", "height_cm", "weight_grams")]},
         {"title": "Описание и комментарий", "fields": [form[name] for name in ("description", "comment")]},
         {
             "title": "Коммерческая информация",
             "fields": [form[name] for name in (
                 "avito_price", "avito_markup_from_wholesale",
                 "yandex_market_price", "yandex_markup_from_wholesale", "wholesale_price",
+                "yandex_desired_profit", "yandex_pricing_integration", "yandex_pricing_category",
             )],
+        },
+        {
+            "title": "Прайсы поставщиков",
+            "fields": [form["exclude_from_supplier_template"]],
         },
     ]
 

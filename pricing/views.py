@@ -5,7 +5,8 @@ from django.contrib import messages
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db.models import IntegerField, Sum, Value
 from django.db.models.functions import Coalesce
-from django.http import JsonResponse
+from django.http import Http404, JsonResponse
+from django.db import transaction
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_POST
@@ -111,19 +112,38 @@ def product_prices_update(request):
                 raise PermissionDenied("У вас нет доступа к изменению этой цены.")
             changes[field] = request.POST[field]
     try:
-        update_product_prices(
-            actor=request.user,
-            product_type=request.POST.get("product_type", ""),
-            product_id=request.POST.get("product_id", ""),
-            changes=changes,
-        )
+        calculation = None
+        with transaction.atomic():
+            if "yandex_desired_profit" in request.POST:
+                if not (request.user.is_superuser or request.user.has_perm("pricing.change_yandex_market_price")):
+                    raise PermissionDenied("Нет права изменять желаемую прибыль FBS.")
+                from .fbs_views import product_for
+                from yandex_market.fbs_pricing import save_product_inputs
+                try:
+                    product = product_for(request.POST.get("product_type", ""), request.POST.get("product_id", ""))
+                except (Http404, ValueError, TypeError) as exc:
+                    raise ValidationError("Товар не найден.") from exc
+                _, calculation = save_product_inputs(actor=request.user, product=product,
+                    changes={"yandex_desired_profit": request.POST["yandex_desired_profit"] or None})
+            if changes:
+                update_product_prices(
+                    actor=request.user,
+                    product_type=request.POST.get("product_type", ""),
+                    product_id=request.POST.get("product_id", ""),
+                    changes=changes,
+                )
+            elif calculation is None:
+                raise ValidationError("Не выбраны цены для изменения.")
     except ValidationError as exc:
         if ajax:
             return JsonResponse({"ok": False, "message": " ".join(exc.messages)}, status=400)
         messages.error(request, " ".join(exc.messages))
     else:
         if ajax:
-            return JsonResponse({"ok": True, "message": "Сохранено"})
+            result = {"ok": True, "message": "Сохранено"}
+            if calculation is not None:
+                result["calculation"] = calculation
+            return JsonResponse(result)
         messages.success(request, "Продажные цены сохранены.")
     return _pricing_destination(request)
 

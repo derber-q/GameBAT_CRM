@@ -1,8 +1,10 @@
 """Данные Маркета отделены от номенклатуры, продаж и учётных остатков CRM."""
 import uuid
+from decimal import Decimal
 
 from django.conf import settings
 from django.core.serializers.json import DjangoJSONEncoder
+from django.core.validators import MinValueValidator, MaxValueValidator
 from django.db import models
 from django.db.models import Q
 from django.utils import timezone
@@ -122,8 +124,13 @@ class OfferConnection(models.Model):
 
 class CategorySchema(models.Model):
     category_id = models.PositiveBigIntegerField(unique=True)
+    name = models.CharField("Категория Яндекс Маркета", max_length=512, blank=True)
+    placement_rate = models.DecimalField("Тариф размещения, %", max_digits=5, decimal_places=2, null=True, blank=True, validators=[MinValueValidator(0), MaxValueValidator(Decimal("99.99"))])
     schema = json_field(default=dict)
     fetched_at = models.DateTimeField(default=timezone.now)
+
+    def __str__(self):
+        return f"{self.name or self.schema.get('name') or 'Категория'} · {self.category_id}"
 
 
 class Media(models.Model):

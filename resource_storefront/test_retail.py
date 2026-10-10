@@ -99,7 +99,7 @@ class RetailTests(TestCase):
         staff=get_user_model().objects.create_superuser(username="retail-admin",password="isolated-test-password")
         self.assertNotEqual(self.client.post(reverse("resource_storefront:retail_regenerate")).status_code,200)
         self.client.force_login(staff)
-        response=self.client.get(reverse("price:index"))
+        response=self.client.get(reverse("price:site_links"))
         self.assertContains(response,"Розничный сайт")
         self.assertContains(response,f"/retailer/{self.token}/")
         record=logging.LogRecord("django.server",logging.INFO,"",1,'"GET %s HTTP/1.1"',('/retailer/'+self.token+'/',),None)

@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% load static %}
 {% block title %}Ценообразование · ReSOURCE{% endblock %}
-{% block extra_head %}<script src="{% static 'js/pricing.js' %}?v=price-control-2" defer></script><script src="{% static 'js/pricing-scroll.js' %}?v=2" defer></script>{% endblock %}
+{% block extra_head %}<script src="{% static 'js/pricing.js' %}?v=price-control-2" defer></script><script src="{% static 'js/pricing-scroll.js' %}?v=3-fbs" defer></script><link rel="stylesheet" href="{% static 'css/fbs-pricing.css' %}?v=2-dimensions"><script src="{% static 'js/fbs-pricing.js' %}?v=2-dimensions" defer></script>{% endblock %}
 {% block content %}
 <div class="page-heading">
   <div>
@@ -10,6 +10,7 @@
     <p class="muted">Себестоимость рассчитывается поставками; продажные цены редактируются в таблице.</p>
   </div>
 </div>
+<dialog id="fbs-pricing-dialog" class="fbs-dialog"><div class="heading-actions"><h2>Яндекс Маркет FBS</h2><button class="button button-secondary" type="button" data-fbs-close>Закрыть</button></div><div data-fbs-dialog-content role="status"></div></dialog>
 
 {% include "catalog/_product_filters.html" with show_in_stock_filter=True %}
 

@@ -1,0 +1,24 @@
+{% load l10n %}
+<section data-fbs-editor>
+  <h3>{{ product.name }}</h3>
+  <p class="muted">Себестоимость: {{ product.cost }} ₽. Расчёт сохраняется отдельно; цена для синхронизации применяется кнопкой ниже.</p>
+  <form method="post" action="{% url 'pricing:fbs_save' kind product.pk %}" data-fbs-form data-product-price-form="product-price-{{ kind }}-{{ product.pk }}" data-preview-url="{% url 'pricing:fbs_preview' kind product.pk %}">
+    {% csrf_token %}{{ form.version }}
+    <div class="fbs-grid">
+      <div class="field"><label>{{ form.yandex_desired_profit.label }}</label>{{ form.yandex_desired_profit }}</div>
+      <div class="field"><label>{{ form.yandex_pricing_integration.label }}</label>{{ form.yandex_pricing_integration }}</div>
+      <div class="field"><label>{{ form.yandex_pricing_category.label }}</label>{{ form.yandex_pricing_category }}<small>У связанного товара используется категория его карточки Маркета.</small></div>
+    </div>
+    <h3 id="fbs-dimensions">Габариты для маркетплейсов</h3>
+    <div class="fbs-grid fbs-dimensions">
+      {% for field in form %}{% if field.name == 'length_cm' or field.name == 'width_cm' or field.name == 'height_cm' or field.name == 'weight_grams' %}<div class="field"><label for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}</div>{% endif %}{% endfor %}
+    </div>
+    <p data-fbs-volume>Расчётный и тарифный объём вычисляются из размеров упаковки.</p>
+    <a href="#fbs-dimensions">Изменить габариты</a>
+    <p class="fbs-result" data-fbs-price role="status">{% if result.ok %}Цена для покупателя на Яндекс Маркете: <strong>{{ result.final_price|floatformat:0 }} ₽</strong>{% else %}{{ result.message }}{% endif %}</p>
+    <p data-fbs-profit-result>{% if result.ok %}Расчётная чистая прибыль: {{ result.actual_profit }} ₽{% endif %}</p>
+    <details><summary>Показать расчёт</summary><table class="fbs-breakdown"><tbody data-fbs-breakdown></tbody></table></details>
+    <div class="form-actions">{% if form.can_edit %}<button class="button" type="submit" name="action" value="save">Сохранить расчёт и габариты</button>{% endif %}{% if can_apply %}<button class="button button-secondary" type="submit" name="action" value="apply">Применить цену для синхронизации</button>{% endif %}</div>
+    <p data-fbs-save-status role="status"></p>
+  </form>
+</section>

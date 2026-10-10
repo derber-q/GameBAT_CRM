@@ -1,0 +1,19 @@
+{% extends 'yandex_market/base.html' %}{% load static %}
+{% block heading %}Ценообразование FBS · {{ integration.name }}{% endblock %}
+{% block market_content %}
+<link rel="stylesheet" href="{% static 'css/fbs-pricing.css' %}?v=1"><script src="{% static 'js/fbs-settings.js' %}?v=1" defer></script>
+<section class="panel"><h2>Ценообразование FBS</h2><p>Налог и тариф перевода задаются для вашего магазина. Проценты считаются от полной цены товара. Пересчёт рекомендации не отправляет новую цену на Маркет.</p>
+<form method="post">{% csrf_token %}{{ form.non_field_errors }}
+<div class="fbs-grid">{% for field in form %}<div class="field"><label for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{{ field.errors }}</div>{% endfor %}</div>
+<h2>Средняя миля</h2><p>Объём округляется вверх до литра. После первого диапазона плата складывается из литров каждого следующего диапазона; итог ограничен максимальной стоимостью.</p>
+{{ bands.management_form }}{{ bands.non_form_errors }}
+<div data-formset="bands">{% for row in bands %}<div class="fbs-band-row">{{ row.as_p }}</div>{% endfor %}</div>
+<template data-formset-template="bands"><div class="fbs-band-row">{{ bands.empty_form.as_p }}</div></template><button type="button" class="button button-secondary" data-formset-add="bands">Добавить диапазон</button>
+<h2>Тарифы категорий</h2><p>Тарифы общие для одинакового ID категории. Пустая ставка означает, что цена этой категории не рассчитывается. Названия и ID доступны из уже загруженного каталога Маркета.</p>
+{{ rates.management_form }}{{ rates.non_form_errors }}
+<div class="table-scroll"><table><thead><tr><th>Категория Яндекс Маркета</th><th>ID</th><th>Тариф размещения, %</th></tr></thead><tbody data-formset="rates">{% for row in rates %}<tr><td>{{ row.name }}{{ row.name.errors }}</td><td>{{ row.category_id }}{{ row.category_id.errors }}</td><td>{{ row.placement_rate }}{{ row.placement_rate.errors }}{{ row.non_field_errors }}</td></tr>{% endfor %}</tbody></table></div>
+<template data-formset-template="rates"><tr><td>{{ rates.empty_form.name }}</td><td>{{ rates.empty_form.category_id }}</td><td>{{ rates.empty_form.placement_rate }}</td></tr></template><button type="button" class="button button-secondary" data-formset-add="rates">Добавить категорию</button>
+<div class="form-actions"><button class="button" type="submit">Сохранить тарифы FBS</button><a class="button button-secondary" href="{% url 'yandex_market:settings' integration.pk %}">Настройки подключения</a></div>
+</form></section>
+<section class="panel"><h2>Габариты связанных товаров</h2><p>Заполняются только пустые поля по сохранённым данным Маркета. Указанные вручную размеры и вес сохраняются. Источник добавления записывается в историю товара.</p><form method="post">{% csrf_token %}<input type="hidden" name="action" value="fill_dimensions"><button class="button button-secondary">Заполнить отсутствующие габариты</button></form></section>
+{% endblock %}

@@ -1,6 +1,6 @@
 import re
 import unicodedata
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from uuid import uuid4
 
@@ -10,6 +10,8 @@ from django.core.validators import MinValueValidator
 from django.db import models, transaction
 from django.db.models.functions import Lower
 from django.urls import reverse
+
+from .packaging_defaults import CD_DIMENSIONS, fill_new_product_dimensions
 
 
 class NamedReference(models.Model):
@@ -121,6 +123,7 @@ class ProductBase(models.Model):
     zero_stock_since = models.DateTimeField(
         "Нулевой складской остаток с", null=True, blank=True, editable=False, db_index=True,
     )
+    has_been_in_stock = models.BooleanField("Ранее был на физическом складе", default=False, editable=False)
     cost = models.DecimalField(
         "Средняя себестоимость", max_digits=20, decimal_places=2,
         default=0, validators=[MinValueValidator(0)],
@@ -132,6 +135,10 @@ class ProductBase(models.Model):
         "Оптовая цена", max_digits=20, decimal_places=2, null=True, blank=True, validators=[MinValueValidator(0)]
     )
     wholesale_site_enabled = models.BooleanField("Публиковать на оптовой витрине", default=True, db_index=True)
+    exclude_from_supplier_template = models.BooleanField(
+        "Не отображать в шаблоне для поставщиков", default=False,
+        help_text="Товар не включается в шаблон дисков или техники на странице «Импортные прайсы».",
+    )
     yandex_market_price = models.DecimalField(
         "Цена Яндекс Маркет", max_digits=20, decimal_places=2, null=True, blank=True,
         validators=[MinValueValidator(0)],
@@ -145,6 +152,13 @@ class ProductBase(models.Model):
         default=Decimal("189.00"), null=True, blank=True, validators=[MinValueValidator(0)],
     )
     comment = models.TextField("Комментарий", blank=True)
+    length_cm = models.DecimalField("Длина упаковки, см", max_digits=8, decimal_places=3, null=True, blank=True, validators=[MinValueValidator(Decimal("0.001"))])
+    width_cm = models.DecimalField("Ширина упаковки, см", max_digits=8, decimal_places=3, null=True, blank=True, validators=[MinValueValidator(Decimal("0.001"))])
+    height_cm = models.DecimalField("Высота упаковки, см", max_digits=8, decimal_places=3, null=True, blank=True, validators=[MinValueValidator(Decimal("0.001"))])
+    yandex_desired_profit = models.DecimalField("Желаемая чистая прибыль, ₽", max_digits=20, decimal_places=2, null=True, blank=True, validators=[MinValueValidator(0)])
+    yandex_calculated_price = models.DecimalField("Рассчитанная цена FBS, ₽", max_digits=20, decimal_places=2, null=True, blank=True, editable=False)
+    yandex_pricing_integration = models.ForeignKey("yandex_market.Integration", on_delete=models.SET_NULL, null=True, blank=True, related_name="+", verbose_name="Подключение для расчёта FBS")
+    yandex_pricing_category = models.ForeignKey("yandex_market.CategorySchema", on_delete=models.SET_NULL, null=True, blank=True, related_name="+", verbose_name="Категория для расчёта FBS", help_text="У связанного товара используется категория его карточки Маркета.")
     is_archived = models.BooleanField("Удалён из активной номенклатуры", default=False, db_index=True)
     archived_at = models.DateTimeField("Дата удаления", null=True, blank=True, editable=False)
     archived_by = models.ForeignKey(
@@ -179,6 +193,7 @@ class ProductBase(models.Model):
         self._pending_legacy_barcode = str(value or "").strip()
 
     def save(self, *args, **kwargs):
+        fill_new_product_dimensions(self)
         pending = self._pending_legacy_barcode
         update_fields = kwargs.get("update_fields")
         save_product = True
@@ -200,10 +215,23 @@ class ProductBase(models.Model):
 
     def clean(self):
         super().clean()
+        fill_new_product_dimensions(self)
         self.sku = str(self.sku or "").strip()
+        for field_name, label in (("length_cm", "Длина"), ("width_cm", "Ширина"), ("height_cm", "Высота")):
+            value = getattr(self, field_name)
+            if value is not None:
+                try:
+                    size = Decimal(str(value))
+                except (InvalidOperation, TypeError, ValueError) as exc:
+                    raise ValidationError({field_name: f"{label} товара: укажите число."}) from exc
+                if not size.is_finite() or size <= 0:
+                    raise ValidationError({field_name: f"{label} товара должна быть больше 0."})
 
 
 class CD(ProductBase):
+    length_cm = models.DecimalField("Длина упаковки, см", max_digits=8, decimal_places=3, null=True, blank=True, default=CD_DIMENSIONS["length_cm"], validators=[MinValueValidator(Decimal("0.001"))])
+    width_cm = models.DecimalField("Ширина упаковки, см", max_digits=8, decimal_places=3, null=True, blank=True, default=CD_DIMENSIONS["width_cm"], validators=[MinValueValidator(Decimal("0.001"))])
+    height_cm = models.DecimalField("Высота упаковки, см", max_digits=8, decimal_places=3, null=True, blank=True, default=CD_DIMENSIONS["height_cm"], validators=[MinValueValidator(Decimal("0.001"))])
     platform = models.ForeignKey(Platform, on_delete=models.PROTECT, related_name="cds", verbose_name="Платформа")
     game_series = models.ForeignKey(
         GameSeries, on_delete=models.PROTECT, related_name="cds",

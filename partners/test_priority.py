@@ -28,14 +28,14 @@ class SupplierPriorityTests(TestCase):
         self.assertEqual(suppliers["M"].priority, 3)
         self.assertEqual(suppliers["Z"].priority, 1000)
 
-    def test_priority_does_not_affect_best_supplier_selection(self):
+    def test_higher_priority_wins_when_supplier_prices_are_equal(self):
         platform = Platform.objects.create(name="PS5")
         product = CD.objects.create(platform=platform, name="Игра")
         alphabetical = supplier("Alpha", "X", priority=999)
-        priority_one = supplier("Zulu", "Y", priority=1)
+        preferred = supplier("Zulu", "Y", priority=2000)
         offers = {("cd", product.pk): [
-            (priority_one, Decimal("10"), product),
+            (preferred, Decimal("10"), product),
             (alphabetical, Decimal("10"), product),
         ]}
         winners, _ = resolve_best_suppliers(offers)
-        self.assertEqual(winners[("cd", product.pk)][0], alphabetical)
+        self.assertEqual(winners[("cd", product.pk)][0], preferred)

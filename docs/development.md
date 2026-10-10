@@ -27,6 +27,8 @@
 
 `yandex_market/models.py` — состояния и ограничения; `client.py/contracts.json` — официальный API; `services.py/content.py/forms.py` — товары; `orders.py/packing.py/documents.py` — заказы и документы; `queue.py/tasks.py/signals.py` — обмен; `views.py/webhooks.py` — права и HTTP. Общий физический остаток вынесен в `warehouse/inventory.py`, приём физического возврата — в `warehouse/receipts.py`. Подробности и результаты: [отчёт](yandex_market_report.md).
 
+Цена FBS рассчитывается в `yandex_market/fbs_pricing.py`, параметры редактируются через `pricing_forms.py`/`pricing_views.py`. Пересчёт рекомендации отслеживает `pricing_signals.py`. Общие размеры и импорт пустых полей — `product_dimensions.py`; предпросмотр и явное применение цены — `pricing/fbs_views.py`, интерфейс — `static/js/fbs-pricing.js`. Рекомендация `yandex_calculated_price` не входит в поля API-синхронизации. Пользовательский порядок работы: [расчёт цены FBS](fbs_pricing.md).
+
 ## Как вносить изменения
 
 Сначала проверить текущий diff: в проекте часто есть несколько незакоммиченных задач. Не перезаписывать файлы целиком ради небольшой правки. Для новой бизнес-операции определить источник истины, права, транзакционную границу, аудит и влияние на Avito. Изменения данных модели требуют миграции; правки только комментариев/шаблонов — нет.
