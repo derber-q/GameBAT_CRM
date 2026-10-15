@@ -1,14 +1,16 @@
+import json
 import logging
 
 from django.contrib import messages
 from django.core.exceptions import ValidationError
+from django.db.models import Prefetch
 from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.utils.http import content_disposition_header
 from django.views.decorators.http import require_GET, require_POST
 
-from core.decorators import permission_required_any
+from core.decorators import permission_required_all, permission_required_any
 from partners.models import Supplier
 from pricing.models import SupplierCDPrice, SupplierTechPrice
 from resource_storefront.models import WholesaleContact
@@ -17,6 +19,7 @@ from resource_storefront.retail_security import retail_link
 
 from .excel import (
     generate_procurement_customer_xlsx,
+    generate_procurement_stock_xlsx,
     generate_retail_price_xlsx,
     generate_supplier_template,
     generate_wholesale_price_xlsx,
@@ -25,11 +28,16 @@ from .excel import (
 from .forms import (
     PriceDocumentSettingsForm,
     ProcurementPriceCreateForm,
+    ProcurementWeightsForm,
+    ProcurementSurchargesForm,
     SupplierPriceUploadForm,
     WarehousePriceForm,
 )
-from .models import PriceDocumentSettings, ProcurementPriceList
-from .services import create_procurement_price_list, update_procurement_pricing
+from .models import PriceDocumentSettings, ProcurementPriceList, ProcurementPriceListItem
+from .services import (
+    MissingProcurementWeights, MissingProcurementSurcharges, NegativeProcurementMarkup, create_procurement_price_list,
+    get_missing_procurement_weights, get_missing_procurement_surcharges, update_procurement_pricing,
+)
 
 logger = logging.getLogger("gamebat.business")
 
@@ -85,6 +93,7 @@ def import_prices(request):
         "can_download_supplier": request.user.is_superuser or request.user.has_perm("price.download_supplier_template"),
         "can_upload_supplier": request.user.is_superuser or request.user.has_perm("price.upload_supplier_price"),
         "can_create_procurement": request.user.is_superuser or request.user.has_perm("price.create_procurement_price_list"),
+        "can_export_stock": can_view_supplier and request.user.has_perm("price.export_procurement_price_list"),
     })
 
 
@@ -192,19 +201,50 @@ def supplier_price_upload(request):
 @permission_required_any("price.create_procurement_price_list")
 def procurement_create(request):
     form = ProcurementPriceCreateForm(request.POST)
-    if not form.is_valid():
-        messages.error(request, "Укажите два положительных курса: AED за 1 USDT и RUB за 1 USDT (не более 6 знаков после запятой).")
-        return redirect("price:imports")
+    valid = form.is_valid()
+    preparing = request.POST.get("weights_submitted") == "1" or request.POST.get("surcharges_submitted") == "1"
+    missing_weights = get_missing_procurement_weights() if valid or preparing else []
+    missing_surcharges = get_missing_procurement_surcharges() if valid or preparing else []
+    weights_form = ProcurementWeightsForm(
+        request.POST if request.POST.get("weights_submitted") == "1" else None,
+        products=missing_weights, user=request.user,
+    ) if missing_weights else None
+    surcharges_form = ProcurementSurchargesForm(
+        request.POST if request.POST.get("surcharges_submitted") == "1" else None,
+        products=missing_surcharges, user=request.user,
+    ) if missing_surcharges else None
+    if not valid or any(extra and (not extra.is_bound or not extra.is_valid()) for extra in (weights_form, surcharges_form)):
+        return render(request, "price/procurement_prepare.html", {
+            "procurement_form": form, "weights_form": weights_form, "surcharges_form": surcharges_form,
+        })
     try:
         price_list = create_procurement_price_list(
-            actor=request.user,
-            exchange_rate_usdt_aed=form.cleaned_data["exchange_rate_usdt_aed"],
-            exchange_rate_usdt_rub=form.cleaned_data["exchange_rate_usdt_rub"],
+            actor=request.user, **form.cleaned_data,
+            weights=weights_form.weights if weights_form else None,
+            postpayment_surcharges=surcharges_form.surcharges if surcharges_form else None,
         )
+    except MissingProcurementWeights as exc:
+        form.add_error(None, exc)
+        return render(request, "price/procurement_prepare.html", {
+            "procurement_form": form,
+            "weights_form": ProcurementWeightsForm(request.POST, products=exc.products, user=request.user),
+            "surcharges_form": surcharges_form,
+        })
+    except MissingProcurementSurcharges as exc:
+        form.add_error(None, exc)
+        return render(request, "price/procurement_prepare.html", {
+            "procurement_form": form, "weights_form": weights_form,
+            "surcharges_form": ProcurementSurchargesForm(request.POST, products=exc.products, user=request.user),
+        })
     except ValidationError as exc:
-        messages.error(request, " ".join(exc.messages))
-        return redirect("price:imports")
+        form.add_error(None, exc)
+        return render(request, "price/procurement_prepare.html", {
+            "procurement_form": form, "weights_form": weights_form, "surcharges_form": surcharges_form,
+        })
     messages.success(request, f"Закупочный прайс №{price_list.pk} создан.")
+    negative_count = price_list.items.filter(markup_rub__lt=0).count()
+    if negative_count:
+        messages.warning(request, f"В {negative_count} позициях подставлена сохранённая отрицательная наценка. Проверьте выделенные поля.")
     return redirect("price:procurement_detail", pk=price_list.pk)
 
 
@@ -213,7 +253,10 @@ def procurement_create(request):
 def procurement_detail(request, pk):
     price_list = get_object_or_404(
         ProcurementPriceList.objects.select_related("created_by").prefetch_related(
-            "items__selected_supplier", "items__cd", "items__tech"
+            # JOIN внутри выборки строк не создаёт длинную цепочку OR на SQLite.
+            Prefetch("items", queryset=ProcurementPriceListItem.objects.select_related(
+                "selected_supplier", "cd", "tech",
+            )),
         ), pk=pk,
     )
     can_view_supplier_prices = (
@@ -237,16 +280,40 @@ def procurement_update(request, pk):
     price_list = get_object_or_404(ProcurementPriceList, pk=pk)
     rows = {}
     try:
-        for item_id in price_list.items.values_list("id", flat=True):
-            rows[item_id] = {
-                "markup": request.POST[f"markup_{item_id}"],
-                "delivery": request.POST[f"delivery_{item_id}"],
-            }
+        item_ids = list(price_list.items.values_list("id", flat=True))
+        if "pricing_rows" in request.POST:
+            try:
+                payload = json.loads(request.POST["pricing_rows"])
+            except (ValueError, RecursionError) as exc:
+                raise ValidationError("Не удалось прочитать строки закупочного прайса.") from exc
+            if not isinstance(payload, dict) or set(payload) != {str(pk) for pk in item_ids}:
+                raise ValidationError("Передан неполный или изменённый состав закупочного прайса.")
+            if any(not isinstance(values, dict) for values in payload.values()):
+                raise ValidationError("Некорректные данные строки закупочного прайса.")
+            rows = {int(item_id): values for item_id, values in payload.items()}
+        else:
+            for item_id in item_ids:
+                rows[item_id] = {
+                    "markup": request.POST[f"markup_{item_id}"],
+                    "delivery": request.POST[f"delivery_{item_id}"],
+                    "price_source": request.POST.get(f"price_source_{item_id}", "markup"),
+                    "prepayment": request.POST.get(f"prepayment_{item_id}"),
+                    "postpayment": request.POST.get(f"postpayment_{item_id}"),
+                }
+                if f"surcharge_{item_id}" in request.POST:
+                    rows[item_id]["postpayment_surcharge"] = request.POST[f"surcharge_{item_id}"]
+                    rows[item_id]["surcharge_mode"] = request.POST.get(f"surcharge_mode_{item_id}", "fixed")
         update_procurement_pricing(
             actor=request.user, price_list_id=pk, rows=rows,
             can_change_markup=request.user.is_superuser or request.user.has_perm("price.change_procurement_markup"),
             can_change_delivery=request.user.is_superuser or request.user.has_perm("price.change_procurement_delivery"),
+            negative_markup_confirmed=request.POST.get("negative_markup_confirmed") == "true",
         )
+    except NegativeProcurementMarkup as exc:
+        return render(request, "price/procurement_confirm.html", {
+            "price_list": price_list, "negative_items": exc.items,
+            "pricing_rows": json.dumps(rows, ensure_ascii=False),
+        })
     except (KeyError, ValidationError) as exc:
         messages.error(
             request,
@@ -266,3 +333,11 @@ def procurement_export(request, pk, product_kind=None):
         raise Http404
     content = generate_procurement_customer_xlsx(price_list_id=pk, actor=request.user, product_kind=product_kind)
     return _xlsx_response(content, f"resource-procurement-{pk}-{product_kind}.xlsx")
+
+
+@require_GET
+@permission_required_all("price.export_procurement_price_list", "price.view_supplier_prices")
+def procurement_stock_export(request, pk):
+    get_object_or_404(ProcurementPriceList, pk=pk)
+    return _xlsx_response(generate_procurement_stock_xlsx(price_list_id=pk, actor=request.user),
+                          f"resource-stock-procurement-{pk}.xlsx")

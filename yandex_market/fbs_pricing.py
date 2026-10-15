@@ -146,6 +146,9 @@ def _calculate(cost, profit, length, width, height, weight, placement, config):
         "final_price": price, "desired_profit": profit, "actual_profit": actual,
         "cost_price": cost, "raw_volume_l": raw_volume, "billing_volume_l": billing_volume,
         "weight_g": weight, "delivery_cap_price": threshold, **fixed, **fees,
+        "placement_rate": rates[0] * 100, "tax_rate": rates[1] * 100,
+        "payment_rate": rates[2] * 100, "delivery_rate": delivery_rate * 100,
+        "delivery_max": delivery_max,
     }
 
 

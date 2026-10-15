@@ -1,7 +1,7 @@
 {% extends 'yandex_market/base.html' %}{% load static %}
 {% block heading %}Ценообразование FBS · {{ integration.name }}{% endblock %}
 {% block market_content %}
-<link rel="stylesheet" href="{% static 'css/fbs-pricing.css' %}?v=1"><script src="{% static 'js/fbs-settings.js' %}?v=1" defer></script>
+<link rel="stylesheet" href="{% static 'css/fbs-pricing.css' %}?v=3-compact"><script src="{% static 'js/fbs-settings.js' %}?v=1" defer></script>
 <section class="panel"><h2>Ценообразование FBS</h2><p>Налог и тариф перевода задаются для вашего магазина. Проценты считаются от полной цены товара. Пересчёт рекомендации не отправляет новую цену на Маркет.</p>
 <form method="post">{% csrf_token %}{{ form.non_field_errors }}
 <div class="fbs-grid">{% for field in form %}<div class="field"><label for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{{ field.errors }}</div>{% endfor %}</div>

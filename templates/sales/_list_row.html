@@ -1,7 +1,7 @@
 {% load l10n %}
 {% with sale=row.sale %}
 <tr data-sale-row="{{ sale.pk }}" data-version="{{ row.version }}" data-status-url="{% url 'sales:inline_status' sale.pk %}" data-sale-id="{{ sale.visible_id }}" data-payment-method="{{ sale.payment_method }}" data-total="{{ sale.total_amount|unlocalize }}">
-  <td>{% if perms.sales.view_sale_detail or user.is_superuser %}<a class="mono" href="{% url 'sales:detail' sale.pk %}">{{ sale.visible_id }}</a>{% else %}<span class="mono">{{ sale.visible_id }}</span>{% endif %}<br><small>{{ sale.created_at|date:"d.m.Y H:i" }}</small>{% if sale.is_cancelled %}<br><span class="sale-status sale-status-cancelled">Отменена</span>{% endif %}</td>
+  <td>{% if perms.sales.view_sale_detail or user.is_superuser %}<a class="mono" href="{% url 'sales:detail' sale.pk %}">{{ sale.visible_id }}</a>{% else %}<span class="mono">{{ sale.visible_id }}</span>{% endif %}{% if sale.operation_kind != "normal" %}<br><span class="badge">{{ sale.get_operation_kind_display }}</span>{% endif %}<br><small>{{ sale.created_at|date:"d.m.Y H:i" }}</small>{% if sale.is_cancelled %}<br><span class="sale-status sale-status-cancelled">Отменена</span>{% endif %}</td>
   <td class="sale-note" title="{{ sale.note }}">{{ sale.note|default:"—"|truncatechars:80 }}</td>
   <td>{{ sale.warehouse.name }}{% if sale.consignment_platform %}<br><small class="muted">{{ sale.consignment_platform.name }}</small>{% endif %}</td>
   <td>{{ sale.position_count }} / {{ sale.total_units }}</td>

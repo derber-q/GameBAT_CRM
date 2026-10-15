@@ -4,7 +4,7 @@ from django.conf import settings
 from django.core.validators import MinValueValidator
 from django.db import models
 
-from catalog.models import CD, Tech
+from catalog.models import CD, ProductType, Tech
 from partners.models import Supplier
 
 
@@ -53,6 +53,9 @@ class PriceDocumentSettings(models.Model):
 
 
 class ProcurementPriceList(models.Model):
+    supplier_offers_complete = models.BooleanField(
+        "Сохранены все предложения поставщиков", default=False, db_default=False, editable=False,
+    )
     public_token = models.UUIDField("Публичный токен", default=uuid.uuid4, unique=True, editable=False)
     exchange_rate_usdt_aed = models.DecimalField(
         "Курс AED → USDT (AED за 1 USDT)", max_digits=20, decimal_places=6,
@@ -64,6 +67,22 @@ class ProcurementPriceList(models.Model):
     )
     exchange_rate_aed_rub = models.DecimalField(
         "Курс AED → RUB", max_digits=20, decimal_places=6, validators=[MinValueValidator(0.000001)]
+    )
+    delivery_general_usdt_per_kg = models.DecimalField(
+        "Прочая техника, USDT/кг", max_digits=20, decimal_places=6,
+        null=True, blank=True, validators=[MinValueValidator(0)],
+    )
+    delivery_devices_usdt_per_kg = models.DecimalField(
+        "Консоли, мини-ПК и VR/AR, USDT/кг", max_digits=20, decimal_places=6,
+        null=True, blank=True, validators=[MinValueValidator(0)],
+    )
+    delivery_storage_usdt_per_kg = models.DecimalField(
+        "Память и накопители, USDT/кг", max_digits=20, decimal_places=6,
+        null=True, blank=True, validators=[MinValueValidator(0)],
+    )
+    delivery_cd_rub = models.DecimalField(
+        "Доставка одного диска, RUB", max_digits=20, decimal_places=2,
+        null=True, blank=True, validators=[MinValueValidator(0)],
     )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
@@ -113,16 +132,29 @@ class ProcurementPriceListItem(models.Model):
     )
     base_price_rub = models.DecimalField("База, RUB", max_digits=20, decimal_places=2, editable=False)
     markup_rub = models.DecimalField(
-        "Наценка, RUB", max_digits=20, decimal_places=2, default=0, validators=[MinValueValidator(0)]
+        "Наценка, RUB", max_digits=20, decimal_places=2, default=0,
     )
     delivery_rub = models.DecimalField(
         "Доставка, RUB", max_digits=20, decimal_places=2, default=0, validators=[MinValueValidator(0)]
+    )
+    weight_grams_snapshot = models.PositiveIntegerField("Вес при расчёте, г", null=True, blank=True, editable=False)
+    delivery_group_snapshot = models.CharField(
+        "Группа тарифа при расчёте", max_length=16, choices=ProductType.DeliveryGroup.choices,
+        blank=True, default="", editable=False,
+    )
+    delivery_usdt_per_kg_snapshot = models.DecimalField(
+        "Тариф при расчёте, USDT/кг", max_digits=20, decimal_places=6,
+        null=True, blank=True, editable=False, validators=[MinValueValidator(0)],
     )
     prepayment_price_rub = models.DecimalField(
         "Цена предоплаты, RUB", max_digits=20, decimal_places=2, editable=False
     )
     postpayment_price_rub = models.DecimalField(
         "Цена постоплаты, RUB", max_digits=20, decimal_places=2, editable=False
+    )
+    postpayment_surcharge_rub = models.DecimalField(
+        "Доплата за постоплату, RUB", max_digits=20, decimal_places=2,
+        null=True, blank=True, validators=[MinValueValidator(0)],
     )
 
     class Meta:
@@ -146,7 +178,6 @@ class ProcurementPriceListItem(models.Model):
                 name="unique_procurement_price_tech",
             ),
             models.CheckConstraint(condition=models.Q(base_price_rub__gte=0), name="proc_base_nonnegative"),
-            models.CheckConstraint(condition=models.Q(markup_rub__gte=0), name="proc_markup_nonnegative"),
             models.CheckConstraint(condition=models.Q(delivery_rub__gte=0), name="proc_delivery_nonnegative"),
             models.CheckConstraint(
                 condition=models.Q(prepayment_price_rub__gte=0), name="proc_prepayment_nonnegative"
@@ -154,6 +185,7 @@ class ProcurementPriceListItem(models.Model):
             models.CheckConstraint(
                 condition=models.Q(postpayment_price_rub__gte=0), name="proc_postpayment_nonnegative"
             ),
+            models.CheckConstraint(condition=models.Q(postpayment_surcharge_rub__gte=0), name="proc_surcharge_nonnegative"),
         ]
 
     @property
@@ -166,3 +198,69 @@ class ProcurementPriceListItem(models.Model):
 
     def __str__(self):
         return self.product_name_snapshot
+
+    @property
+    def effective_postpayment_surcharge_rub(self):
+        if self.postpayment_surcharge_rub is not None:
+            return self.postpayment_surcharge_rub
+        return self.postpayment_price_rub - self.prepayment_price_rub
+
+    @property
+    def stock_unit_cost(self):
+        """Себестоимость закупки на наличие из этой версии прайса."""
+        return self.base_price_rub + self.delivery_rub
+
+    @property
+    def postpayment_surcharge_mode(self):
+        return "tiered" if self.product_kind == "cd" and self.postpayment_surcharge_rub is None else "fixed"
+
+
+class ProcurementSupplierOffer(models.Model):
+    """Цена поставщика на момент создания версии прайса, без последующего пересчёта."""
+    price_list_item = models.ForeignKey(ProcurementPriceListItem, on_delete=models.PROTECT, related_name="supplier_offers")
+    supplier = models.ForeignKey(Supplier, on_delete=models.PROTECT, related_name="procurement_offer_snapshots")
+    price_aed = models.DecimalField(max_digits=20, decimal_places=6, validators=[MinValueValidator(0.000001)])
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=("price_list_item", "supplier"), name="unique_procurement_supplier_offer"),
+            models.CheckConstraint(condition=models.Q(price_aed__gt=0), name="procurement_supplier_offer_positive"),
+        ]
+
+
+class ProcurementPricePreference(models.Model):
+    cd = models.OneToOneField(
+        CD, on_delete=models.PROTECT, null=True, blank=True,
+        related_name="procurement_price_preference", verbose_name="Диск",
+    )
+    tech = models.OneToOneField(
+        Tech, on_delete=models.PROTECT, null=True, blank=True,
+        related_name="procurement_price_preference", verbose_name="Техника",
+    )
+    markup_rub = models.DecimalField(
+        "Сохранённая наценка, RUB", max_digits=20, decimal_places=2,
+    )
+    postpayment_surcharge_rub = models.DecimalField(
+        "Сохранённая доплата за постоплату, RUB", max_digits=20, decimal_places=2,
+        null=True, blank=True, validators=[MinValueValidator(0)],
+    )
+    source_item = models.ForeignKey(
+        ProcurementPriceListItem, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="price_preferences", verbose_name="Исходная строка прайса",
+    )
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name="procurement_price_preferences", verbose_name="Сохранил",
+    )
+    updated_at = models.DateTimeField("Сохранена", auto_now=True)
+
+    class Meta:
+        verbose_name = "сохранённая наценка закупочного прайса"
+        verbose_name_plural = "сохранённые наценки закупочного прайса"
+        constraints = [
+            models.CheckConstraint(
+                condition=(models.Q(cd__isnull=False, tech__isnull=True) | models.Q(cd__isnull=True, tech__isnull=False)),
+                name="proc_price_preference_exact_product",
+            ),
+            models.CheckConstraint(condition=models.Q(postpayment_surcharge_rub__gte=0), name="proc_pref_surcharge_nonnegative"),
+        ]

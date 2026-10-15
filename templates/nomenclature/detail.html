@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% load static l10n %}
 {% block title %}{{ product.name }} · Номенклатура · ReSOURCE{% endblock %}
-{% block extra_head %}<script src="{% static 'js/storage-locations.js' %}?v=storage-locations-2" defer></script><script src="{% static 'js/barcode-formset.js' %}?v=multiple-barcodes-1" defer></script><script src="{% static 'js/pricing.js' %}?v=price-control-2" defer></script>{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{% static 'css/yandex-market.css' %}?v=2-product-content"><script src="{% static 'js/storage-locations.js' %}?v=storage-locations-2" defer></script><script src="{% static 'js/barcode-formset.js' %}?v=multiple-barcodes-1" defer></script><script src="{% static 'js/pricing.js' %}?v=price-control-3" defer></script><script src="{% static 'js/product-cost-confirmation.js' %}?v=1" defer></script>{% endblock %}
 {% block content %}
 <div class="page-heading">
   <div>
@@ -14,9 +14,10 @@
 </div>
 
 {% if can_change_barcode and not product.is_archived %}<form id="barcode-generate-form" method="post" action="{% url 'nomenclature:barcode_generate' product_kind product.pk %}">{% csrf_token %}</form>{% endif %}
-<form method="post" class="product-card-form" data-price-row data-cost="{{ product.cost|default_if_none:''|unlocalize }}">
+<form method="post" class="product-card-form" data-price-row data-cost="{{ product.cost|default_if_none:''|unlocalize }}" data-cost-confirmation-form>
   {% csrf_token %}
   {{ form.version }}
+  {{ form.cost_confirmed }}
   {% if form.non_field_errors %}<div class="alert alert-error">{{ form.non_field_errors }}</div>{% endif %}
   {% for section in form_sections %}
     <section class="panel product-form-section">
@@ -33,7 +34,6 @@
       <dl class="details">
         <dt>ID</dt><dd class="mono">{{ product.id }}</dd>
         {% if product_kind == 'cd' %}<dt>Игровая серия</dt><dd>{{ product.game_series.name|default:"Без серии" }}</dd>{% endif %}
-        <dt>Средняя себестоимость</dt><dd>{{ product.cost|floatformat:2 }} ₽</dd>
         <dt>Всего на складах</dt><dd>{{ warehouse_total }}</dd>
         <dt>На реализации</dt><dd>{{ consignment_total }}</dd>
         <dt>В перемещении</dt><dd>{{ transit_total }}</dd>
@@ -70,6 +70,15 @@
     </div>
   {% endif %}
 </form>
+
+{% if not form.cost.field.disabled %}
+<dialog id="product-cost-dialog" class="confirmation-dialog" aria-labelledby="product-cost-title" data-cost-confirmation-dialog>
+  <h2 id="product-cost-title">Изменить себестоимость?</h2>
+  <p>Старая: <strong data-cost-old></strong> ₽. Новая: <strong data-cost-new></strong> ₽.</p>
+  <p class="muted">Новая себестоимость будет использоваться в последующих расчётах. История прошлых продаж не изменится.</p>
+  <div class="dialog-actions"><button class="button button-secondary" type="button" data-cost-cancel>Отмена</button><button class="button" type="button" data-cost-accept>Да, изменить и сохранить</button></div>
+</dialog>
+{% endif %}
 
 {% include "nomenclature/_product_media.html" %}
 
@@ -130,5 +139,5 @@
     </nav>
   {% endif %}
 </section>
-{% if perms.yandex_market.view_integration %}<section class="panel"><h2>Яндекс Маркет</h2>{% for link in yandex_links %}<p><a href="{% url 'yandex_market:connection' link.pk %}">{{ link.remote_offer.offer_id }} · {{ link.get_state_display }}</a></p>{% empty %}<p>Активной связи нет.</p>{% endfor %}<p><a href="{% url 'yandex_market:dashboard' %}?tab=offers">Найти существующий товар Маркета и привязать</a></p>{% if perms.yandex_market.bind_offer and not product.is_archived %}<details><summary>Создать новую карточку Маркета</summary><form method="post" action="{% url 'yandex_market:new_offer' %}">{% csrf_token %}<input type="hidden" name="kind" value="{{ product_kind }}"><input type="hidden" name="product" value="{{ product.pk }}"><label>Магазин <select name="integration" required>{% for integration in yandex_integrations %}<option value="{{ integration.pk }}">{{ integration.name }}</option>{% endfor %}</select></label>{% include 'yandex_market/confirm.html' with confirmation='Проверил каталог: существующей карточки этого товара на Маркете нет' %}<button class="button button-secondary">Подготовить новую карточку</button></form></details>{% endif %}</section>{% endif %}
+{% if perms.yandex_market.view_integration %}{% include "yandex_market/_product_content.html" %}{% endif %}
 {% endblock %}

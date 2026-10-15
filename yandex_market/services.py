@@ -1,7 +1,7 @@
 import hashlib
 from decimal import Decimal
 
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
 from django.db.models import F, Sum, Value
 from django.db.models.functions import Coalesce
@@ -12,6 +12,7 @@ from warehouse.inventory import global_stock
 from .client import MarketError, YandexMarketClient, json_bytes
 from .content import build_content
 from .models import AuditEvent, CategorySchema, Integration, OfferConnection, RemoteOffer, ReturnMetadata, SyncJob
+from .product_dimensions import prepare_connection_dimensions
 from .queue import enqueue, product_after_commit
 
 
@@ -25,6 +26,20 @@ def connections_with_stock(queryset):
 
 def refresh_trade_snapshots(integration, *, client, offer_ids=None):
     """Только чтение цены и доступного остатка; значения CRM не изменяются."""
+    errors = []
+    for refresh in (_refresh_price_snapshots, _refresh_stock_snapshots):
+        try:
+            refresh(integration, client=client, offer_ids=offer_ids)
+        except MarketError as exc:
+            errors.append(exc)
+    if errors:
+        if len(errors) == 1:
+            raise errors[0]
+        raise MarketError("; ".join(str(exc) for exc in errors), "TRADE_READ_INCOMPLETE",
+            retryable=any(exc.retryable for exc in errors), retry_after=max(exc.retry_after for exc in errors))
+
+
+def _refresh_price_snapshots(integration, *, client, offer_ids=None):
     body = {"offerIds": offer_ids} if offer_ids else {}
     operation = "getDefaultPrices" if integration.price_scope == "business" else "getPricesByOfferIds"
     prices = client.call(operation, body=body).get("result", {}).get("offers", []) if offer_ids else client.pages(operation, body=body, key="offers", limit=100)
@@ -32,6 +47,10 @@ def refresh_trade_snapshots(integration, *, client, offer_ids=None):
         value = row.get("price", {}).get("value")
         if value is not None:
             RemoteOffer.objects.filter(integration=integration, offer_id=row["offerId"]).update(remote_price=Decimal(str(value)), price_checked_at=timezone.now())
+
+
+def _refresh_stock_snapshots(integration, *, client, offer_ids=None):
+    body = {"offerIds": offer_ids} if offer_ids else {}
     if integration.stock_api == "partner":
         body["partnerWarehouseId"] = integration.partner_warehouse_id
         rows = client.call("getStocksOnPartnerWarehouses", body=body).get("result", {}).get("offers", []) if offer_ids else client.pages("getStocksOnPartnerWarehouses", body=body, key="offers", limit=100)
@@ -121,7 +140,7 @@ def store_offer(integration, row, card=None):
     return result
 
 
-def refresh_catalog(integration, *, client=None):
+def refresh_catalog(integration, *, client=None, include_trade=True):
     client = client or YandexMarketClient(integration)
     count = 0
     for row in client.pages("getOfferMappings", body={}, key="offerMappings", limit=100):
@@ -131,7 +150,8 @@ def refresh_catalog(integration, *, client=None):
         RemoteOffer.objects.filter(integration=integration, offer_id=card["offerId"]).update(
             card=card, card_status=card.get("cardStatus", ""), content_rating=card.get("contentRating"),
         )
-    refresh_trade_snapshots(integration, client=client)
+    if include_trade:
+        refresh_trade_snapshots(integration, client=client)
     return count
 
 
@@ -163,6 +183,8 @@ def refresh_category(category_id, *, client):
 
 @transaction.atomic
 def bind_offer(*, remote_id, product_kind, product_id, actor):
+    if not actor.has_perm("yandex_market.edit_content") or not actor.has_perm("yandex_market.retry_sync"):
+        raise PermissionDenied
     # Снимок должен быть предварительно получен через API вне транзакции.
     RemoteOffer.objects.filter(pk=remote_id).update(fetched_at=F("fetched_at"))
     remote = RemoteOffer.objects.select_for_update().select_related("integration").get(pk=remote_id)
@@ -170,6 +192,8 @@ def bind_offer(*, remote_id, product_kind, product_id, actor):
         raise ValidationError("Архивный товар нельзя привязать для управления.")
     if remote.card_status in {"NO_CARD_ERRORS", "HAS_CARD_CAN_UPDATE_ERRORS"}:
         raise ValidationError("Сначала устраните ошибки карточки Маркета.")
+    if not remote.integration.checked_at:
+        raise ValidationError("Для включения обмена сначала проверьте подключение магазина.")
     model = {"cd": CD, "tech": Tech}.get(product_kind)
     if model is None:
         raise ValidationError("Выберите CD или Tech.")
@@ -178,9 +202,19 @@ def bind_offer(*, remote_id, product_kind, product_id, actor):
         raise ValidationError("Товар Маркета уже связан. Используйте перепривязку.")
     if OfferConnection.objects.filter(integration=remote.integration, active=True, **{product_kind: product}).exists():
         raise ValidationError("Товар CRM уже имеет активную связь с Маркетом.")
+    resume_display = remote.hidden_in_store and not OfferConnection.objects.filter(remote_offer=remote).exists()
     connection = OfferConnection.objects.create(integration=remote.integration, remote_offer=remote,
-        category_id=remote.category_id, **{product_kind: product})
+        category_id=remote.category_id, managed=True, sell_on_yandex=True, resume_display_pending=resume_display,
+        state=OfferConnection.State.QUEUED,
+        **{product_kind: product})
+    if prepare_connection_dimensions(connection):
+        connection.save(update_fields=["content", "dirty_fields"])
     audit(remote.integration, actor, "bind", connection.pk, product_kind=product_kind, product_id=product_id, offer_id=remote.offer_id)
+    audit(remote.integration, actor, "activate", connection.pk, sell=True, reason="Обмен включён при привязке товара")
+    if resume_display:
+        audit(remote.integration, actor, "resume_display_requested", connection.pk, offer_id=remote.offer_id,
+              reason="Первая привязка скрытого предложения", sell=True, managed=True)
+    product_after_commit(connection.pk, delay=0, actor=actor)
     return connection
 
 
@@ -205,7 +239,8 @@ def unlink_offer(connection_id, actor, *, replacement=None):
     ensure_unlink_allowed(connection)
     connection.active = False
     connection.managed = False
-    connection.save(update_fields=["active", "managed"])
+    connection.resume_display_pending = False
+    connection.save(update_fields=["active", "managed", "resume_display_pending"])
     audit(connection.integration, actor, "rebind" if replacement else "unlink", connection.pk)
     if replacement:
         return bind_offer(remote_id=connection.remote_offer_id, actor=actor, **replacement)
@@ -233,7 +268,8 @@ def create_offer(*, integration, product_kind, product_id, actor):
         content["barcodes"] = codes
     connection.content = {key: value for key, value in content.items() if value}
     connection.is_new = True
-    connection.save(update_fields=["content", "is_new"])
+    prepare_connection_dimensions(connection)
+    connection.save(update_fields=["content", "dirty_fields", "is_new"])
     return connection
 
 
@@ -245,21 +281,74 @@ def activate(connection_id, actor, *, sell):
         raise ValidationError("Сначала проверьте подключение магазина.")
     if sell and (connection.product.yandex_market_price is None or connection.product.yandex_market_price <= 0):
         raise ValidationError("Укажите положительную цену Яндекс Маркет в CRM.")
+    prepare_connection_dimensions(connection)
     if connection.is_new and sell:
         build_content(connection)
     connection.managed = True
     connection.sell_on_yandex = sell
+    if not sell:
+        connection.resume_display_pending = False
     connection.revision += 1
-    connection.save(update_fields=["managed", "sell_on_yandex", "revision"])
+    connection.save(update_fields=["managed", "sell_on_yandex", "resume_display_pending", "revision", "content", "dirty_fields"])
     audit(connection.integration, actor, "activate", connection.pk, sell=sell)
     product_after_commit(connection.pk)
     return connection
+
+
+def set_offer_hidden(connection_id, actor, *, hidden, client=None):
+    """Меняет видимость предложения, сохраняя связь, цену и складской остаток."""
+    if not actor.has_perm("yandex_market.edit_content") or not actor.has_perm("yandex_market.retry_sync"):
+        raise PermissionDenied
+    connection = OfferConnection.objects.select_related("integration", "remote_offer").get(pk=connection_id, active=True)
+    if not connection.integration.checked_at:
+        raise ValidationError("Сначала проверьте подключение магазина.")
+    client = client or YandexMarketClient(connection.integration, actor=actor)
+    operation = "addHiddenOffers" if hidden else "deleteHiddenOffers"
+    response = client.call(operation, body={"hiddenOffers": [{"offerId": connection.remote_offer.offer_id}]},
+                           entity_id=connection.remote_offer.offer_id)
+    if response.get("status") != "OK":
+        raise MarketError("Маркет не подтвердил изменение видимости товара.", "DISPLAY_RESPONSE")
+    audit(connection.integration, actor, "hide_requested" if hidden else "show_requested", connection.pk,
+          offer_id=connection.remote_offer.offer_id)
+    refresh_offer(connection.remote_offer, client=client)
+    return connection
+
+
+def resume_display_after_sync(connection, *, client, price, quantity):
+    """Снимаем скрытие один раз, после передачи цены и остатка из CRM."""
+    if not connection.resume_display_pending or not connection.sell_on_yandex:
+        return
+    current = OfferConnection.objects.select_related("integration", "cd", "tech").filter(
+        pk=connection.pk, revision=connection.revision, active=True, managed=True, sell_on_yandex=True,
+        resume_display_pending=True, integration__enabled=True, integration__checked_at__isnull=False,
+    ).first()
+    if not current or current.product.is_archived:
+        return
+    if current.product.yandex_market_price != price or global_stock(current.product) != quantity:
+        return
+    response = client.call("deleteHiddenOffers", body={"hiddenOffers": [{"offerId": connection.remote_offer.offer_id}]},
+                           entity_id=connection.remote_offer.offer_id)
+    if response.get("status") != "OK":
+        raise MarketError("Маркет не подтвердил возобновление показа. Запрос будет повторён.",
+                          "DISPLAY_RESPONSE", retryable=True)
+    with transaction.atomic():
+        cleared = OfferConnection.objects.filter(pk=connection.pk, revision=connection.revision,
+                                                resume_display_pending=True).update(resume_display_pending=False)
+        request = AuditEvent.objects.filter(integration=connection.integration, entity_id=str(connection.pk),
+                                          action="resume_display_requested").select_related("actor").order_by("-pk").first()
+        audit(connection.integration, request.actor if request else None, "resume_display_sent", connection.pk,
+              offer_id=connection.remote_offer.offer_id, api_status="OK", request_completed=bool(cleared))
 
 
 def sync_product(connection_id, *, client=None, force=False):
     connection = OfferConnection.objects.select_related("integration", "remote_offer", "cd", "tech").prefetch_related("media").get(pk=connection_id)
     if not connection.active or not connection.managed or not connection.integration.enabled:
         return
+    if prepare_connection_dimensions(connection):
+        if not OfferConnection.objects.filter(pk=connection.pk, revision=connection.revision).update(
+            content=connection.content, dirty_fields=connection.dirty_fields,
+        ):
+            return
     client = client or YandexMarketClient(connection.integration)
     revision = connection.revision
     OfferConnection.objects.filter(pk=connection.pk).update(state="syncing", last_sync_at=timezone.now())
@@ -301,6 +390,7 @@ def sync_product(connection_id, *, client=None, force=False):
         raise content_error
     if connection.sell_on_yandex and not connection.is_new and len(content) > 1:
         client.call("updateOfferMappings", body={"offerMappings": [{"offer": content}]}, entity_id=remote.offer_id)
+    resume_display_after_sync(connection, client=client, price=price, quantity=quantity)
     # HTTP-успех означает принятие запроса. Снимки цены/остатка обновляет чтение API.
     OfferConnection.objects.filter(pk=connection.pk, revision=revision).update(
         state="synced", last_success_at=timezone.now(), last_error="", last_sent_hash=desired_hash,
@@ -309,7 +399,7 @@ def sync_product(connection_id, *, client=None, force=False):
     )
 
 
-def sync_price_stock_batch(integration, connection_ids, *, client):
+def sync_price_stock_batch(integration, connection_ids, *, client, sync_prices=True, sync_stocks=True):
     """Сверка отправляет пачки до 100 товаров; перед отправкой заново читает CRM."""
     from django.db.models import Sum, Value
     from django.db.models.functions import Coalesce
@@ -319,17 +409,24 @@ def sync_price_stock_batch(integration, connection_ids, *, client):
                 physical_stock=Coalesce(Sum("cd__warehouse_stocks__quantity"), Sum("tech__warehouse_stocks__quantity"), Value(0))))
         prices, stocks, processed = [], [], []
         for row in rows:
-            if row.is_new or row.dirty_fields or row.delete_fields:
-                enqueue(integration, "product", row.pk, {"connection_id": row.pk, "force": True}, delay=3)
+            complete = sync_prices and sync_stocks
+            if complete and prepare_connection_dimensions(row):
+                if not OfferConnection.objects.filter(pk=row.pk, revision=row.revision).update(
+                    content=row.content, dirty_fields=row.dirty_fields,
+                ):
+                    continue
+            if complete and (row.is_new or row.dirty_fields or row.delete_fields or row.resume_display_pending):
+                enqueue(integration, "product", row.pk, {"connection_id": row.pk, "force": True},
+                        delay=0 if row.resume_display_pending else 3)
                 continue
             price = row.product.yandex_market_price
-            if row.sell_on_yandex and (price is None or price <= 0):
+            if sync_prices and row.sell_on_yandex and (price is None or price <= 0):
                 OfferConnection.objects.filter(pk=row.pk).update(state="error", last_error="Укажите положительную цену Яндекс Маркет в CRM.")
                 continue
             quantity = row.physical_stock if row.sell_on_yandex and not row.product.is_archived else 0
-            if row.sell_on_yandex and row.remote_offer.remote_price != price:
+            if sync_prices and row.sell_on_yandex and row.remote_offer.remote_price != price:
                 prices.append({"offerId": row.remote_offer.offer_id, "price": {"value": price, "currencyId": "RUR"}})
-            if row.remote_offer.remote_stock != quantity:
+            if sync_stocks and row.remote_offer.remote_stock != quantity:
                 stocks.append((row.remote_offer.offer_id, quantity))
             processed.append((row, price, quantity))
         if prices:
@@ -341,8 +438,14 @@ def sync_price_stock_batch(integration, connection_ids, *, client):
             else:
                 client.call("updateStocks", body={"skus": [{"sku": sku, "items": [{"count": count, "updatedAt": now}]} for sku, count in stocks]})
         for row, price, quantity in processed:
-            sent = {**row.last_sent_state, "quantity": quantity}
-            if row.sell_on_yandex:
+            sent = dict(row.last_sent_state)
+            if sync_stocks:
+                sent["quantity"] = quantity
+            if sync_prices and row.sell_on_yandex:
                 sent["price"] = str(price)
+            values = {"last_sent_state": sent, "last_sync_at": timezone.now()}
+            # Частичная сверка не подтверждает успех остальных участков обмена.
+            if sync_prices and sync_stocks:
+                values.update(state="synced", last_error="", last_success_at=timezone.now())
             OfferConnection.objects.filter(pk=row.pk, revision=row.revision).update(
-                state="synced", last_error="", last_sent_state=sent, last_sync_at=timezone.now(), last_success_at=timezone.now())
+                **values)

@@ -233,12 +233,28 @@ def _sheet_format_requests(sheet_id, rows, heading_rows, zero_rows, basic_filter
     requests.append({"autoResizeDimensions": {
         "dimensions": {"sheetId": sheet_id, "dimension": "ROWS", "startIndex": 0, "endIndex": len(rows)},
     }})
+    requests.extend([
+        {"repeatCell": {
+            "range": {"sheetId": sheet_id, "startRowIndex": 0, "endRowIndex": 1,
+                      "startColumnIndex": 4, "endColumnIndex": 5},
+            "cell": {"userEnteredFormat": {
+                "textFormat": {"bold": True}, "horizontalAlignment": "CENTER",
+                "verticalAlignment": "MIDDLE", "numberFormat": {"type": "TEXT"},
+                "backgroundColor": {"red": .86, "green": .92, "blue": .98},
+            }},
+            "fields": "userEnteredFormat",
+        }},
+        {"updateDimensionProperties": {
+            "range": {"sheetId": sheet_id, "dimension": "COLUMNS", "startIndex": 4, "endIndex": 5},
+            "properties": {"pixelSize": 190}, "fields": "pixelSize",
+        }},
+    ])
     return requests
 
 
-def _sheet_range(name):
+def _sheet_range(name, cells="A:D"):
     escaped_name = name.replace("'", "''")
-    return f"'{escaped_name}'!A:D"
+    return f"'{escaped_name}'!{cells}"
 
 
 def sync_price_sheet(integration=None):
@@ -266,16 +282,16 @@ def sync_price_sheet(integration=None):
         for name, (rows, _, _) in exports.items():
             if name not in sheets:
                 prepare_requests.append({"addSheet": {"properties": {
-                    "title": name, "gridProperties": {"rowCount": max(1000, len(rows)), "columnCount": 4},
+                    "title": name, "gridProperties": {"rowCount": max(1000, len(rows)), "columnCount": 5},
                 }}})
             else:
                 properties = sheets[name]["properties"]
                 grid = properties["gridProperties"]
-                if grid["rowCount"] < len(rows) or grid["columnCount"] < 4:
+                if grid["rowCount"] < len(rows) or grid["columnCount"] < 5:
                     prepare_requests.append({"updateSheetProperties": {
                         "properties": {"sheetId": properties["sheetId"], "gridProperties": {
                             "rowCount": max(grid["rowCount"], len(rows)),
-                            "columnCount": max(grid["columnCount"], 4),
+                            "columnCount": max(grid["columnCount"], 5),
                         }}, "fields": "gridProperties(rowCount,columnCount)",
                     }})
         if prepare_requests:
@@ -309,13 +325,23 @@ def sync_price_sheet(integration=None):
         service.spreadsheets().batchUpdate(
             spreadsheetId=integration.spreadsheet_id, body={"requests": requests},
         ).execute()
+        # Метка обновляется только после записи и оформления обоих листов.
+        # E2:E и остальные пользовательские столбцы не затрагиваются.
+        synced_at = timezone.now()
+        timestamp = timezone.localtime(synced_at).strftime("%d.%m.%Y %H:%M:%S")
+        service.spreadsheets().values().batchUpdate(
+            spreadsheetId=integration.spreadsheet_id, body={
+                "valueInputOption": "RAW",
+                "data": [{"range": _sheet_range(name, "E1"), "values": [[timestamp]]} for name in exports],
+            },
+        ).execute()
     except Exception as exc:
         integration.status = GoogleSheetsIntegration.Status.ERROR
         integration.last_error = str(exc)[:2000]
         integration.save(update_fields=("status", "last_error", "updated_at"))
         raise
     integration.status = GoogleSheetsIntegration.Status.OK
-    integration.last_success_at = timezone.now()
+    integration.last_success_at = synced_at
     integration.last_error = ""
     integration.save(update_fields=("status", "last_success_at", "last_error", "updated_at"))
     return len(exports[integration.sheet_name][0])

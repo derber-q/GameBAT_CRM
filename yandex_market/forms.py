@@ -6,12 +6,13 @@ from django.core.exceptions import ValidationError
 
 from .content import CONTENT_FIELDS, LOCKED_CARD, validate_parameters, validate_schema
 from .models import CategorySchema, Integration
+from .product_dimensions import connection_dimensions
 
 LABELS = {
     "name": "Название", "description": "Описание", "vendor": "Производитель / бренд",
     "vendorCode": "Артикул производителя", "barcodes": "Штрихкоды GTIN", "manufacturerCountries": "Страны производства",
     "pictures": "Ссылки на изображения", "videos": "Ссылки на видео", "weightDimensions": "Размеры и вес",
-    "length": "Длина, см", "width": "Ширина, см", "height": "Высота, см", "weight": "Вес, кг (из CRM)",
+    "length": "Длина, см", "width": "Ширина, см", "height": "Высота, см", "weight": "Вес, кг",
     "tags": "Теги", "shelfLife": "Срок годности", "lifeTime": "Срок службы", "guaranteePeriod": "Гарантийный срок",
     "timePeriod": "Количество", "timeUnit": "Единица периода", "comment": "Комментарий",
     "boxCount": "Число упаковок товара", "type": "Тип", "condition": "Состояние", "quality": "Качество", "reason": "Причина уценки",
@@ -60,6 +61,7 @@ class ContentForm(forms.Form):
 
     def __init__(self, *args, connection, **kwargs):
         self.connection = connection
+        self.crm_dimensions = connection_dimensions(connection)
         self.paths = {}
         remote = connection.remote_offer.snapshot.get("offer", {})
         self.baseline = {key: value for key, value in remote.items() if key in CONTENT_FIELDS}
@@ -73,7 +75,7 @@ class ContentForm(forms.Form):
         self.parameter_schema = CategorySchema.objects.filter(category_id=connection.category_id).first()
         if self.parameter_schema and "parameters" not in self.parameter_schema.schema:
             self.parameter_schema = None
-        self.initial_parameters = connection.parameters if "parameterValues" in connection.dirty_fields else (connection.remote_offer.card.get("parameterValues") or [])
+        self.initial_parameters = connection.parameters if "parameterValues" in connection.dirty_fields else (connection.remote_offer.card.get("parameterValues", remote.get("parameterValues")) or [])
         for parameter in (self.parameter_schema.schema.get("parameters", []) if self.parameter_schema else []):
             name = f"param_{parameter['id']}"
             values = [v for v in self.initial_parameters if v["parameterId"] == parameter["id"]]
@@ -126,13 +128,24 @@ class ContentForm(forms.Form):
                                     help_text="Добавьте необходимые строки." if complex_items else "Каждое значение с новой строки. Пустое поле не удаляет данные Маркета.")
         else:
             field = forms.CharField(label=label, required=False, initial=value or "", max_length=schema.get("maxLength"), widget=forms.Textarea(attrs={"rows": 5}) if path[-1] == "description" else forms.TextInput())
-        if path == ("weightDimensions", "weight"):
+        if self.connection.is_new and path == ("weightDimensions", "weight"):
             field.disabled = True
+            field.label += " (из CRM)"
             field.initial = Decimal(self.connection.product.weight_grams) / 1000 if self.connection.product.weight_grams else None
-        if len(path) == 2 and path[0] == "weightDimensions" and path[1] in {"length", "width", "height"}:
+        if self.connection.is_new and len(path) == 2 and path[0] == "weightDimensions" and path[1] in {"length", "width", "height"}:
             current = getattr(self.connection.product, path[1] + "_cm")
             if current is not None:
                 field.initial = current
+        if not self.connection.is_new and len(path) == 2 and path[0] == "weightDimensions":
+            if path[1] in {"length", "width", "height"}:
+                field.disabled = True
+                field.label += " (из CRM)"
+                field.initial = getattr(self.connection.product, path[1] + "_cm")
+                field.help_text = "Размер упаковки изменяется в карточке товара CRM или в расчёте FBS."
+            elif path[1] == "weight" and self.crm_dimensions:
+                field.initial = self.crm_dimensions["weight"]
+            elif path[1] == "weight":
+                field.help_text = "Для передачи размеров заполните три габарита в CRM и вес упаковки на Маркете или в CRM."
         self.fields[name] = field
 
     def clean(self):
@@ -164,6 +177,10 @@ class ContentForm(forms.Form):
         # Один вес без размеров не должен случайно начать отправку неполного блока.
         if set(content.get("weightDimensions", {})) == {"weight"}:
             content.pop("weightDimensions")
+        if not self.connection.is_new:
+            dimensions = content.get("weightDimensions", {})
+            if len(dimensions) < 4:
+                content.pop("weightDimensions", None)
         for key, value in content.items():
             validate_schema(value, CONTENT_FIELDS[key], LABELS.get(key, key))
         for key, value in content.get("weightDimensions", {}).items():

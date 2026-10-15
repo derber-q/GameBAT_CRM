@@ -1,6 +1,7 @@
 """Данные Маркета отделены от номенклатуры, продаж и учётных остатков CRM."""
 import uuid
 from decimal import Decimal
+from urllib.parse import parse_qs, urlsplit
 
 from django.conf import settings
 from django.core.serializers.json import DjangoJSONEncoder
@@ -73,6 +74,35 @@ class RemoteOffer(models.Model):
     def __str__(self):
         return f"{self.name or self.offer_id} ({self.offer_id})"
 
+    @property
+    def market_product_url(self):
+        """Ссылка витрины из API с выбором кабинета продавца."""
+        business_id = str(self.integration.business_id)
+        for item in self.snapshot.get("showcaseUrls") or []:
+            if not isinstance(item, dict) or item.get("showcaseType") != "B2C":
+                continue
+            url = str(item.get("showcaseUrl") or "")
+            try:
+                parts = urlsplit(url)
+                business_ids = parse_qs(parts.query).get("businessId", [])
+            except ValueError:
+                continue
+            if (parts.scheme == "https" and parts.netloc == "market.yandex.ru"
+                    and parts.path.startswith(("/card/", "/product/"))
+                    and business_ids == [business_id]):
+                return url
+        return ""
+
+    @property
+    def hidden_in_store(self):
+        campaigns = (self.snapshot.get("offer") or {}).get("campaigns") or []
+        return any(
+            isinstance(row, dict)
+            and str(row.get("campaignId")) == str(self.integration.campaign_id)
+            and row.get("status") == "DISABLED_BY_PARTNER"
+            for row in campaigns
+        )
+
 
 class OfferConnection(models.Model):
     class State(models.TextChoices):
@@ -88,15 +118,16 @@ class OfferConnection(models.Model):
     cd = models.ForeignKey("catalog.CD", on_delete=models.PROTECT, null=True, blank=True, related_name="yandex_connections")
     tech = models.ForeignKey("catalog.Tech", on_delete=models.PROTECT, null=True, blank=True, related_name="yandex_connections")
     active = models.BooleanField(default=True)
-    managed = models.BooleanField("Управление подтверждено", default=False)
-    sell_on_yandex = models.BooleanField("Продаётся на Яндекс Маркете", default=False)
+    managed = models.BooleanField("Управление подтверждено", default=True)
+    sell_on_yandex = models.BooleanField("Продаётся на Яндекс Маркете", default=True)
+    resume_display_pending = models.BooleanField("Ожидает снятия скрытия после первой привязки", default=False)
     is_new = models.BooleanField(default=False)
     content = json_field(default=dict, blank=True)
     dirty_fields = json_field(default=list, blank=True)
     delete_fields = json_field(default=list, blank=True)
     parameters = json_field(default=list, blank=True)
     category_id = models.PositiveBigIntegerField(null=True, blank=True)
-    state = models.CharField(max_length=20, choices=State.choices, default=State.LINKED)
+    state = models.CharField(max_length=20, choices=State.choices, default=State.QUEUED)
     revision = models.PositiveIntegerField(default=1)
     last_sync_at = models.DateTimeField(null=True, blank=True)
     last_success_at = models.DateTimeField(null=True, blank=True)

@@ -4,6 +4,8 @@
 
 `yandex_market/contracts.json` содержит разрешённые операции, схемы, параметры, scopes и лимиты. `OPENAPI-LICENSE.txt` сохраняет BSD-лицензию источника. Это фиксированный проверенный срез; для обновления сверять изменения спецификации и регрессионные тесты.
 
+10.10.2026 добавлен контракт `deleteHiddenOffers` по [официальному описанию возобновления показа](https://www.yandex.ru/dev/market/partner-api/doc/en/reference/hidden-offers/deleteHiddenOffers). Используется современный POST-метод и список `hiddenOffers` с `offerId`; устаревший параметр `available` не применяется.
+
 Для полного сценария нужен `all-methods` либо совокупность `offers-and-cards-management`, `pricing`, `inventory-and-order-processing` и прав чтения настроек/магазинов. Read-only scopes достаточны для соответствующих чтений, но не для изменения цены, остатка, коробок и статуса. Проверка соединения не доказывает все права записи.
 
 | Операция | Метод / путь | Лимит базового тарифа | Единица |
@@ -20,6 +22,7 @@
 | `getReturn` | `GET /v2/campaigns/{campaignId}/orders/{orderId}/returns/{returnId}` | 7000 / 1 hours | `resp` |
 | `getOfferMappings` | `POST /v2/businesses/{businessId}/offer-mappings` | 100 / 1 minutes | `resp` |
 | `updateOfferMappings` | `POST /v2/businesses/{businessId}/offer-mappings/update` | 5000 / 1 minutes | `req.offerMappings` |
+| `deleteHiddenOffers` | `POST /v2/campaigns/{campaignId}/hidden-offers/delete` | 5000 / 1 minutes | `req.hiddenOffers` |
 | `updateBusinessPrices` | `POST /v2/businesses/{businessId}/offer-prices/updates` | 10000 / 1 minutes | `req.offers` |
 | `updatePrices` | `POST /v2/campaigns/{campaignId}/offer-prices/updates` | 10000 / 1 minutes | `req.offers` |
 | `getPricesByOfferIds` | `POST /v2/campaigns/{campaignId}/offer-prices` | 10000 / 1 minutes | `resp.result.offers` |

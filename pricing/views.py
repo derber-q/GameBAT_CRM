@@ -20,23 +20,48 @@ from catalog.product_filters import (
 )
 from core.decorators import permission_required_any
 from .services import update_product_prices, update_supplier_price
-from .warnings import product_price_warnings
+from .warnings import product_price_warnings, wholesale_margin
 
 
 PRICING_FILTER_QUERY_KEYS = ("in_stock",)
+PRICING_LIST_ROUTES = {
+    "": "pricing:list",
+    "cd": "pricing:cd_list",
+    "tech": "pricing:tech_list",
+}
+
+
+def _pricing_filter_params(params, product_kind):
+    params = params.copy()
+    # Маршрут определяет раздел; фильтры другого типа товаров его не меняют.
+    irrelevant_filters = (
+        ("platform", "game_series") if product_kind == "tech"
+        else ("brand", "product_type") if product_kind == "cd" else ()
+    )
+    for key in irrelevant_filters:
+        params.pop(key, None)
+    return params
 
 
 def _pricing_destination(request):
     if request.user.is_superuser or request.user.has_perm("pricing.view_pricing"):
-        destination = reverse("pricing:list")
-        query_string = product_filter_query_string(request.GET, extra_keys=PRICING_FILTER_QUERY_KEYS)
+        list_kind = request.POST.get("list_kind", "")
+        if list_kind not in PRICING_LIST_ROUTES:
+            list_kind = ""
+        destination = reverse(PRICING_LIST_ROUTES[list_kind])
+        query_string = product_filter_query_string(
+            _pricing_filter_params(request.GET, list_kind), extra_keys=PRICING_FILTER_QUERY_KEYS,
+        )
         return redirect(f"{destination}?{query_string}" if query_string else destination)
     return redirect("core:home")
 
 
 @permission_required_any("pricing.view_pricing")
-def pricing_list(request):
-    filters, filter_context = product_filter_context(request.GET)
+def pricing_list(request, product_kind=None):
+    if product_kind not in {None, "cd", "tech"}:
+        raise Http404("Раздел ценообразования не найден.")
+    params = _pricing_filter_params(request.GET, product_kind)
+    filters, filter_context = product_filter_context(params)
     in_stock_only = request.GET.get("in_stock", "1") != "0"
     stock_total = Coalesce(Sum("warehouse_stocks__quantity"), Value(0), output_field=IntegerField())
     cds = (
@@ -51,6 +76,10 @@ def pricing_list(request):
         .annotate(global_stock=stock_total)
         .order_by("product_type__name", "name", "id")
     )
+    if product_kind == "cd":
+        tech_items = tech_items.none()
+    elif product_kind == "tech":
+        cds = cds.none()
     if in_stock_only:
         cds = cds.filter(global_stock__gt=0)
         tech_items = tech_items.filter(global_stock__gt=0)
@@ -61,6 +90,7 @@ def pricing_list(request):
             "type": "cd",
             "product": product,
             "display_cost": product.cost.to_integral_value(rounding=ROUND_CEILING),
+            "wholesale_margin": wholesale_margin(product.wholesale_price, product.cost),
             "warnings": product_price_warnings(product),
         })
     tech_groups = defaultdict(list)
@@ -69,9 +99,14 @@ def pricing_list(request):
             "type": "tech",
             "product": product,
             "display_cost": product.cost.to_integral_value(rounding=ROUND_CEILING),
+            "wholesale_margin": wholesale_margin(product.wholesale_price, product.cost),
             "warnings": product_price_warnings(product),
         })
     context = {
+        "pricing_kind": product_kind or "",
+        "pricing_title": {None: "Ценообразование", "cd": "Диски", "tech": "Техника"}[product_kind],
+        "hide_cd_filters": product_kind == "tech",
+        "hide_tech_filters": product_kind == "cd",
         "query": filters.search,
         "cd_groups": list(cd_groups.items()),
         "tech_groups": list(tech_groups.items()),
@@ -79,7 +114,7 @@ def pricing_list(request):
             [row for rows in tech_groups.values() for row in rows], product_of=lambda row: row["product"],
         ),
         "filter_query": product_filter_query_string(
-            request.GET, extra_keys=PRICING_FILTER_QUERY_KEYS,
+            params, extra_keys=PRICING_FILTER_QUERY_KEYS,
         ),
         "in_stock_only": in_stock_only,
         "can_change_avito": request.user.is_superuser or request.user.has_perm("pricing.change_retail_price"),
@@ -113,6 +148,12 @@ def product_prices_update(request):
             changes[field] = request.POST[field]
     try:
         calculation = None
+        saved_prices = {}
+        price_source = request.POST.get("yandex_price_source", "manual")
+        if price_source not in {"manual", "fbs"}:
+            raise ValidationError("Неизвестный источник цены Яндекс Маркета.")
+        if price_source == "fbs" and "yandex_market_price" not in changes:
+            raise ValidationError("Не выбрана цена Яндекс Маркета для сохранения.")
         with transaction.atomic():
             if "yandex_desired_profit" in request.POST:
                 if not (request.user.is_superuser or request.user.has_perm("pricing.change_yandex_market_price")):
@@ -125,13 +166,27 @@ def product_prices_update(request):
                     raise ValidationError("Товар не найден.") from exc
                 _, calculation = save_product_inputs(actor=request.user, product=product,
                     changes={"yandex_desired_profit": request.POST["yandex_desired_profit"] or None})
+            if price_source == "fbs":
+                # Пересчитываем на сервере: сохранение может опередить AJAX-предпросмотр.
+                if calculation is None:
+                    from .fbs_views import product_for
+                    from yandex_market.fbs_pricing import product_calculation
+                    try:
+                        product = product_for(request.POST.get("product_type", ""), request.POST.get("product_id", ""))
+                    except (Http404, ValueError, TypeError) as exc:
+                        raise ValidationError("Товар не найден.") from exc
+                    calculation = product_calculation(product)
+                if not calculation["ok"]:
+                    raise ValidationError(calculation["message"])
+                changes["yandex_market_price"] = calculation["final_price"]
             if changes:
-                update_product_prices(
+                product = update_product_prices(
                     actor=request.user,
                     product_type=request.POST.get("product_type", ""),
                     product_id=request.POST.get("product_id", ""),
                     changes=changes,
                 )
+                saved_prices = {field: getattr(product, field) for field in changes}
             elif calculation is None:
                 raise ValidationError("Не выбраны цены для изменения.")
     except ValidationError as exc:
@@ -140,7 +195,7 @@ def product_prices_update(request):
         messages.error(request, " ".join(exc.messages))
     else:
         if ajax:
-            result = {"ok": True, "message": "Сохранено"}
+            result = {"ok": True, "message": "Сохранено", "saved_prices": saved_prices}
             if calculation is not None:
                 result["calculation"] = calculation
             return JsonResponse(result)

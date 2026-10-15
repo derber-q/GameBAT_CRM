@@ -22,14 +22,14 @@ from catalog.product_search import filter_products_by_text
 from warehouse.inventory import global_stock
 from warehouse.models import Warehouse
 from .client import MarketError, YandexMarketClient, api_key
-from .content import CONTENT_FIELDS, LOCKED_CARD, OFFER_SCHEMA, DELETE_FIELDS
+from .content import CONTENT_FIELDS, LOCKED_CARD, OFFER_SCHEMA, DELETE_FIELDS, content_values_equal
 from .documents import save_image
 from .forms import ContentForm, IntegrationForm
 from .models import ApiLog, Integration, LabelDocument, Media, OfferConnection, OrderMetadata, RemoteOffer, ReturnMetadata, SyncJob
 from .orders import accept_return, available_actions, action_payload
 from .packing import validate_boxes
 from .queue import enqueue, product_after_commit
-from .services import activate, audit, bind_offer, check_connection, create_offer, refresh_category, refresh_offer, unlink_offer, store_api_key, connections_with_stock, store_offer
+from .services import activate, audit, bind_offer, check_connection, create_offer, refresh_category, refresh_offer, set_offer_hidden, unlink_offer, store_api_key, connections_with_stock, store_offer
 
 
 def access(permission="view_integration", *, post=False):
@@ -55,7 +55,7 @@ def confirmed(request):
 
 
 def connection_query():
-    return OfferConnection.objects.select_related("integration", "remote_offer", "cd", "tech")
+    return OfferConnection.objects.select_related("integration", "remote_offer__integration", "cd", "tech")
 
 
 def selected_integration(request):
@@ -75,13 +75,20 @@ def dashboard(request):
         totals = {"offers": integration.offers.count(), "connections": integration.connections.filter(active=True).count(),
                   "orders": integration.orders.count(), "errors": integration.jobs.filter(state="error").count()}
         if tab == "offers":
-            rows = integration.offers.prefetch_related(Prefetch("connections", queryset=connection_query())).all()
+            rows = integration.offers.select_related("integration")
             if query:
                 needle = query.casefold()
-                matching = [pk for pk, name, offer_id, sku in rows.values_list("pk", "name", "offer_id", "market_sku").iterator() if any(needle in str(value or "").casefold() for value in (name, offer_id, sku))]
+                matching = [
+                    pk for pk, name, offer_id, sku in rows.values_list(
+                        "pk", "name", "offer_id", "market_sku",
+                    ).iterator(chunk_size=2000)
+                    if any(needle in str(value or "").casefold() for value in (name, offer_id, sku))
+                ]
                 rows = rows.filter(pk__in=matching)
             if request.GET.get("unbound"):
                 rows = rows.exclude(connections__active=True)
+            # Связи нужны только при показе найденных карточек, а не при чтении поисковых полей.
+            rows = rows.prefetch_related(Prefetch("connections", queryset=connection_query()))
         elif tab in {"connections", "mismatches"}:
             rows = connections_with_stock(connection_query().filter(integration=integration, active=True)).order_by("pk")
             if query:
@@ -190,6 +197,7 @@ def synchronize(request, pk):
 def bind(request, pk):
     remote = get_object_or_404(RemoteOffer.objects.select_related("integration"), pk=pk)
     current = connection_query().filter(remote_offer=remote, active=True).first()
+    auto_resume = remote.hidden_in_store and not OfferConnection.objects.filter(remote_offer=remote).exists()
     if current and not request.user.has_perm("yandex_market.rebind_offer"):
         raise PermissionDenied
     query = request.GET.get("q", "").strip()
@@ -203,6 +211,8 @@ def bind(request, pk):
             products.extend((product_kind, item) for item in filter_products_by_text(model.objects.active(), query, product_kind=product_kind)[:30])
     if request.method == "POST":
         confirmed(request)
+        if not request.user.has_perm("yandex_market.edit_content") or not request.user.has_perm("yandex_market.retry_sync"):
+            raise PermissionDenied
         try:
             data = signing.loads(request.POST.get("token", ""), salt="ym-bind", max_age=1800)
         except signing.BadSignature:
@@ -214,15 +224,24 @@ def bind(request, pk):
             refresh_category(remote.category_id, client=YandexMarketClient(remote.integration, actor=request.user))
         replacement = {"product_kind": data["kind"], "product_id": data["product"]}
         connection = unlink_offer(current.pk, request.user, replacement=replacement) if current else bind_offer(remote_id=remote.pk, actor=request.user, **replacement)
-        messages.success(request, "Связь сохранена. Проверьте сравнение и отдельно включите управление.")
+        if connection.resume_display_pending:
+            messages.success(request, "Связь сохранена. Управление и продажа включены; скрытие снимется автоматически после передачи цены и остатка из CRM.")
+        else:
+            messages.success(request, "Связь сохранена. Обмен и продажа включены; цена, остаток и размеры будут передаваться из CRM автоматически.")
+        if not connection.integration.enabled:
+            messages.warning(request, "Для передачи данных включите фоновый обмен в настройках Маркета.")
+        if connection.product.yandex_market_price is None or connection.product.yandex_market_price <= 0:
+            messages.warning(request, "Сохраните положительную цену Яндекс Маркета в ценообразовании. После сохранения начнётся автоматический обмен.")
         return redirect("yandex_market:connection", pk=connection.pk)
     return render(request, "yandex_market/bind.html", {"remote": remote, "current": current, "product": product, "kind": kind, "token": token,
-        "products": products, "q": query, "stock": global_stock(product) if product else None})
+        "products": products, "q": query, "stock": global_stock(product) if product else None, "auto_resume": auto_resume})
 
 
 @access("bind_offer", post=True)
 def new_offer(request):
     confirmed(request)
+    if not request.user.has_perm("yandex_market.edit_content") or not request.user.has_perm("yandex_market.retry_sync"):
+        raise PermissionDenied
     integration = get_object_or_404(Integration, pk=request.POST.get("integration"))
     kind = request.POST.get("kind")
     if kind not in {"cd", "tech"}:
@@ -255,7 +274,7 @@ def connection_detail(request, pk):
                 dirty = set(connection.dirty_fields)
                 content = dict(connection.content)
                 for key, value in form.cleaned_data["content"].items():
-                    if value != form.baseline.get(key):
+                    if not content_values_equal(key, value, form.baseline.get(key)):
                         content[key] = value
                         dirty.add(key)
                 parameters = form.cleaned_data["parameters"]
@@ -264,7 +283,7 @@ def connection_detail(request, pk):
                         raise ValidationError("Удаление характеристик выполняется отдельным действием очистки.")
                     dirty.add("parameterValues")
                 OfferConnection.objects.filter(pk=pk).update(content=content, parameters=parameters if form.parameter_schema else connection.parameters, dirty_fields=sorted(dirty))
-                if form.cleaned_data["content"].get("weightDimensions"):
+                if connection.is_new and form.cleaned_data["content"].get("weightDimensions"):
                     from .product_dimensions import save_dimensions
                     save_dimensions(connection.product, form.cleaned_data["content"]["weightDimensions"], actor=request.user,
                                     only_missing=False, source="Редактор карточки Яндекс Маркета")
@@ -274,7 +293,7 @@ def connection_detail(request, pk):
             return redirect("yandex_market:connection", pk=pk)
     return render(request, "yandex_market/connection.html", {"connection": connection, "form": form, "stock": global_stock(connection.product),
         "media": connection.media.filter(active=True), "locked": connection.remote_offer.card_status == LOCKED_CARD,
-        "delete_options": DELETE_FIELDS, "public_url": settings.YANDEX_MARKET_PUBLIC_URL,
+        "delete_options": {key: value for key, value in DELETE_FIELDS.items() if value != "weightDimensions"}, "public_url": settings.YANDEX_MARKET_PUBLIC_URL,
         "history": connection.integration.auditevent_set.filter(entity_id=str(pk)).select_related("actor").order_by("-pk")[:50]})
 
 
@@ -293,6 +312,11 @@ def content_action(request, pk):
         if not request.user.has_perm("yandex_market.retry_sync"):
             raise PermissionDenied
         activate(pk, request.user, sell=request.POST.get("sell") == "yes")
+        return redirect("yandex_market:connection", pk=pk)
+    if action == "visibility":
+        if not request.user.has_perm("yandex_market.retry_sync"):
+            raise PermissionDenied
+        set_offer_hidden(pk, request.user, hidden=request.POST.get("hidden") == "yes")
         return redirect("yandex_market:connection", pk=pk)
     if connection.remote_offer.card_status == LOCKED_CARD:
         raise ValidationError("Контент этой карточки доступен только для просмотра.")
@@ -315,6 +339,8 @@ def content_action(request, pk):
             allowed = DELETE_FIELDS
             if field not in allowed:
                 raise ValidationError("API не поддерживает очистку этого поля.")
+            if allowed[field] == "weightDimensions":
+                raise ValidationError("Размеры упаковки передаются из CRM. Измените их в карточке товара.")
             connection.delete_fields = sorted(set(connection.delete_fields) | {field})
             connection.content.pop(DELETE_FIELDS[field], None)
             dirty.discard(DELETE_FIELDS[field])

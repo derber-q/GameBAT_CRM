@@ -1,6 +1,7 @@
 import logging
 
 from django.contrib import admin
+from .forms import SupplierForm
 from .models import SalesPlatform, Supplier
 
 logger = logging.getLogger("gamebat.business")
@@ -29,6 +30,7 @@ class SupplierDetailAdminMixin:
 
 @admin.register(Supplier)
 class SupplierAdmin(SupplierDetailAdminMixin, admin.ModelAdmin):
+    form = SupplierForm
     list_display = ("id", "letter", "name", "priority", "legal_entity", "phone_1", "email")
     search_fields = ("letter", "name", "legal_entity", "phone_1", "email")
 

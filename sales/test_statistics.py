@@ -216,6 +216,62 @@ class SalesStatisticsTests(TestCase):
         self.assertEqual(sale.cd_items.get().unit_cost_snapshot, Decimal("1000"))
         self.assertEqual(self.report(channels=["consignment"]).totals.profit, Decimal("500"))
 
+        platform.name = "Новое название площадки"
+        platform.save(update_fields=("name",))
+        report = self.report(channels=["consignment"])
+        self.assertEqual(report.sales[0].channel_label, "Реализация · Площадка отчёта")
+        self.assertEqual(report.sales[0].lines[0].consignment_platform_name, "Площадка отчёта")
+        self.assertEqual(report.channels[0].label, "Реализация")
+        page = self.client.get(reverse("statistics:index"), {"channels": "consignment"})
+        self.assertContains(page, "Реализация · Площадка отчёта")
+        self.assertContains(page, "Площадка реализации: Площадка отчёта")
+        self.assertNotContains(page, "Реализация · Новое название площадки")
+        self.assertNotContains(page, "Площадка реализации: Новое название площадки")
+        excel = self.client.get(reverse("statistics:export"), {"channels": "consignment"})
+        workbook = load_workbook(BytesIO(excel.content), read_only=True, data_only=True)
+        self.assertEqual(workbook["Продажи"]["D2"].value, "Реализация · Площадка отчёта")
+
+        # Старые продажи не содержат снимков партий: площадка известна из самой продажи.
+        sale.consignment_items.all().delete()
+        legacy_row = self.report(channels=["consignment"]).sales[0]
+        self.assertEqual(legacy_row.channel_label, "Реализация · Новое название площадки")
+        self.assertEqual(legacy_row.lines[0].consignment_platform_name, "Новое название площадки")
+        self.assertEqual(legacy_row.profit, Decimal("500"))
+
+    def test_mixed_sale_lists_all_consignment_platforms_without_duplicates(self):
+        consignment_lines = []
+        for index, name in enumerate(("Первая площадка", "Вторая площадка")):
+            platform = SalesPlatform.objects.create(
+                name=name, address="Адрес", legal_entity="Юрлицо", phone_1="1",
+            )
+            rewards = ("1500", "1600") if index == 0 else ("1500",)
+            for reward in rewards:
+                warehouse = self.other_warehouse if reward == "1600" else self.warehouse
+                stock = transfer_to_consignment(
+                    actor=self.user, warehouse_id=warehouse.pk, platform_id=platform.pk,
+                    product_type="cd", product_id=self.product.pk, quantity=1,
+                    receivable_per_unit=reward,
+                )
+                consignment_lines.append({
+                    "product_type": "consignment", "product_kind": "cd",
+                    "stock_id": stock.pk, "quantity": 1,
+                })
+        sale = create_sale(
+            actor=self.user, warehouse_id=self.warehouse.pk,
+            price_type=Sale.PriceType.RETAIL, sale_type=Sale.SaleType.RETAIL,
+            payment_method=Sale.PaymentMethod.CASH,
+            lines=[{"product_type": "cd", "product_id": self.product.pk, "quantity": 1},
+                   *consignment_lines],
+        )
+        with CaptureQueriesContext(connection) as captured:
+            row = self.report(sale_ids={sale.pk}).sales[0]
+        self.assertLessEqual(len(captured), 7)
+        self.assertEqual(row.channel_label, "Розница · Реализация: Первая площадка, Вторая площадка")
+        self.assertEqual(row.lines[0].consignment_platform_name, "")
+        self.assertEqual([line.consignment_platform_name for line in row.lines[1:]],
+                         ["Первая площадка", "Первая площадка", "Вторая площадка"])
+        self.assertEqual((row.units, row.goods_total, row.cost), (4, Decimal("6100"), Decimal("4000")))
+
     def test_completed_at_and_historical_cost_cannot_be_edited_normally(self):
         sale = self.sale()
         original_date = sale.completed_at

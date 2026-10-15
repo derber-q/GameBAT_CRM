@@ -1,0 +1,50 @@
+<section class="panel">
+  <h2>Яндекс Маркет</h2>
+  {% for link in yandex_links %}
+    <div class="ym-box collapsible-section">
+      <button class="section-heading section-toggle" type="button" data-collapse-toggle aria-controls="ym-product-content-{{ link.pk }}" aria-expanded="false">
+        <span class="section-title">{{ link.integration.name }} · {{ link.remote_offer.offer_id }}</span>
+        <span class="section-heading-meta"><span class="badge">{{ link.get_state_display }}</span><span class="collapse-indicator" aria-hidden="true">▼</span></span>
+      </button>
+      <div id="ym-product-content-{{ link.pk }}" class="collapsible-content" hidden>
+        {% if link.is_new %}<p class="muted">Новая карточка подготовлена из данных CRM.</p>{% else %}<p class="muted">Данные карточки Маркета сохранены в CRM. Автоматически передаются цена Яндекс Маркета, физический остаток и размеры упаковки из CRM.</p>{% endif %}
+        <p>Цена из CRM: {{ product.yandex_market_price|default_if_none:'не задана' }} ₽ · Физический остаток CRM: {{ warehouse_total }}</p>
+        <p>Размеры упаковки из CRM: {% if product.length_cm and product.width_cm and product.height_cm %}{{ product.length_cm }} × {{ product.width_cm }} × {{ product.height_cm }} см{% else %}<span class="muted">заполните длину, ширину и высоту в карточке товара</span>{% endif %}</p>
+        <p>Категория: {{ link.remote_offer.category_name|default:link.category_id|default:'не выбрана' }} · Статус карточки: {{ link.remote_offer.card_status|default:'Новая карточка' }}</p>
+        <p class="muted">Данные получены: {{ link.remote_offer.fetched_at|date:'d.m.Y H:i' }}</p>
+        {% if perms.yandex_market.edit_content and perms.yandex_market.retry_sync %}
+          <form method="post" action="{% url 'yandex_market:content_action' link.pk %}" class="ym-actions">
+            {% csrf_token %}<input type="hidden" name="action" value="visibility">
+            <label><input type="checkbox" name="hidden" value="yes" {% if link.remote_offer.hidden_in_store %}checked{% endif %}> Скрыт вами на Яндекс Маркете</label>
+            {% include 'yandex_market/confirm.html' with confirmation='Разрешаю изменить видимость товара на Маркете без изменения цены, остатка и связи' %}
+            <button class="button button-secondary">Сохранить видимость</button>
+          </form>
+        {% elif link.remote_offer.hidden_in_store %}<p class="muted">Скрыт вами на Яндекс Маркете.</p>{% endif %}
+        <div class="ym-media">
+          {% for picture in link.saved_content.pictures %}
+            <figure><a href="{{ picture }}" target="_blank" rel="noopener noreferrer"><img src="{{ picture }}" alt="Фото Яндекс Маркета {{ forloop.counter }}" loading="lazy" referrerpolicy="no-referrer"></a></figure>
+          {% empty %}<p class="muted">Фотографий Маркета пока нет.</p>{% endfor %}
+        </div>
+        <div class="ym-content-fields">
+          {% for field in link.saved_content.fields %}
+            <div class="ym-saved-field"><span class="muted">{{ field.label }}</span><p>{{ field.value|linebreaksbr }}</p></div>
+          {% empty %}<p class="muted">Содержание карточки пока не получено.</p>{% endfor %}
+        </div>
+        <p><a href="{% url 'yandex_market:connection' link.pk %}">Открыть карточку Маркета{% if perms.yandex_market.edit_content %} и редактировать её данные{% endif %}</a></p>
+      </div>
+    </div>
+  {% empty %}<p>Активной связи нет.</p>{% endfor %}
+  <p><a href="{% url 'yandex_market:dashboard' %}?tab=offers">Найти существующий товар Маркета и привязать</a></p>
+  {% if perms.yandex_market.bind_offer and perms.yandex_market.edit_content and perms.yandex_market.retry_sync and not product.is_archived %}
+    <details>
+      <summary>Создать новую карточку Маркета</summary>
+      <form method="post" action="{% url 'yandex_market:new_offer' %}">
+        {% csrf_token %}
+        <input type="hidden" name="kind" value="{{ product_kind }}"><input type="hidden" name="product" value="{{ product.pk }}">
+        <label>Магазин <select name="integration" required>{% for integration in yandex_integrations %}<option value="{{ integration.pk }}">{{ integration.name }}</option>{% endfor %}</select></label>
+        {% include 'yandex_market/confirm.html' with confirmation='Проверил каталог: существующей карточки этого товара нет. Разрешаю автоматический обмен после заполнения обязательных данных новой карточки' %}
+        <button class="button button-secondary">Подготовить новую карточку</button>
+      </form>
+    </details>
+  {% endif %}
+</section>

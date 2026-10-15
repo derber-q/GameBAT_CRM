@@ -40,19 +40,55 @@
     const barcodeButton = form.querySelector("[data-sale-barcode-add]");
     const barcodeFeedback = form.querySelector("[data-sale-barcode-feedback]");
     const showSaleInventory = form.dataset.showSaleInventory === "true";
-    const money = new Intl.NumberFormat("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const wholeMoney = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 });
+    function cents(raw) {
+      const match = String(raw ?? "").trim().replace(",", ".").match(/^(-?)(\d+)(?:\.(\d{1,2}))?$/);
+      if (!match) return null;
+      const value = BigInt(match[2]) * 100n + BigInt((match[3] || "").padEnd(2, "0"));
+      return match[1] ? -value : value;
+    }
+    function decimalMoney(value) {
+      const absolute = value < 0n ? -value : value;
+      return `${value < 0n ? "-" : ""}${absolute / 100n}.${String(absolute % 100n).padStart(2, "0")}`;
+    }
+    function formatMoney(value) {
+      const absolute = value < 0n ? -value : value;
+      return `${value < 0n ? "−" : ""}${wholeMoney.format(absolute / 100n)},${String(absolute % 100n).padStart(2, "0")}`;
+    }
+    function moneyQuantity(input) {
+      const value = String(input?.value || "");
+      return /^\d+$/.test(value) ? BigInt(value) : 0n;
+    }
     let inventoryRequestNumber = 0;
 
+    const mixedMessage = "Цифровые товары и расходы необходимо оформлять отдельной продажей.";
+    function rowMode(row) {
+      if (row.dataset.systemKind) return row.dataset.systemKind;
+      if (row.classList.contains("sale-custom-line") || row.classList.contains("sale-consignment-line") || row.querySelector('input[name="product_id"]')?.value) return "normal";
+      return null;
+    }
+    function allowMode(mode, exceptRow = null) {
+      const incompatible = [...body.querySelectorAll("tr")].some(row => row !== exceptRow && rowMode(row) && rowMode(row) !== mode);
+      if (incompatible) {
+        if (barcodeFeedback) { barcodeFeedback.textContent = mixedMessage; barcodeFeedback.classList.add("error-text"); }
+        return false;
+      }
+      return true;
+    }
+    function operationMode() {
+      return [...body.querySelectorAll("tr")].map(rowMode).find(Boolean) || "normal";
+    }
+
     function isAvitoSale() {
-      return (saleTypeInput ? saleTypeInput.value : form.dataset.fixedSaleType) === "avito";
+      return operationMode() !== "EXPENSE" && (saleTypeInput ? saleTypeInput.value : form.dataset.fixedSaleType) === "avito";
     }
 
     function labelSaleRow(row) {
       if (form.dataset.searchContext !== "sale") return;
       const fields = [
         ["product", "Товар / штрихкод"], ["price", "Базовая цена"],
-        ["discount", "Скидка / ед."], ["quantity", "Количество"],
-        ["cost", "Себестоимость"], ["total", "Сумма после скидки"],
+        ["discount", "Скидка / доплата, ед."], ["quantity", "Количество"],
+        ["cost", "Себестоимость"], ["total", "Сумма строки"],
         ["commission", "Комиссия Avito"],
         ...(showSaleInventory ? [["stock", "Остаток на складе"], ["available", "Доступно ещё"], ["location", "Место хранения"]] : []),
         ["remove", ""],
@@ -102,16 +138,17 @@
     function selectedBasePrice(row) {
       if (row.classList.contains("sale-custom-line")) {
         const value = row.querySelector('input[name="custom_unit_price"]')?.value;
-        return value === "" || value === undefined ? null : Number(value);
+        return cents(value);
       }
-      if (row.dataset.fixedUnitPrice) return Number(row.dataset.fixedUnitPrice);
+      if (row.dataset.fixedUnitPrice) return cents(row.dataset.fixedUnitPrice);
       const prices = row.dataset.prices ? JSON.parse(row.dataset.prices) : {};
       const priceType = priceTypeInput ? priceTypeInput.value : form.dataset.fixedPriceType;
       const value = prices[priceType];
-      return value === null || value === undefined || value === "" ? null : Number(value);
+      return cents(value);
     }
 
     function addConsignmentLine(value = {}) {
+      if (!allowMode("normal")) return;
       const row = document.createElement("tr");
       row.className = "sale-consignment-line";
       const productCell = document.createElement("td");
@@ -172,31 +209,76 @@
 
     function selectedPrice(row) {
       const base = selectedBasePrice(row);
-      if (!Number.isFinite(base)) return null;
+      if (base === null) return null;
       const discountInput = row.classList.contains("sale-custom-line")
         ? row.querySelector('input[name="custom_unit_discount"]')
         : row.querySelector('input[name="unit_discount"]');
-      return base - Math.max(0, Number(discountInput?.value || 0));
+      const discount = cents(discountInput?.value || "0");
+      return discount === null ? null : base - discount;
+    }
+
+    function addDiscountControl(cell, name, initialValue) {
+      const control = document.createElement("div");
+      control.className = "sale-discount-control";
+      const sign = document.createElement("select");
+      sign.dataset.discountSign = "true";
+      sign.setAttribute("aria-label", "Скидка или доплата за единицу");
+      for (const [value, label] of [["-", "−"], ["+", "+"]]) {
+        const option = document.createElement("option");
+        option.value = value; option.textContent = label;
+        sign.append(option);
+      }
+      const amount = document.createElement("input");
+      amount.type = "number"; amount.min = "0"; amount.step = "0.01"; amount.required = true;
+      amount.dataset.discountAmount = "true";
+      amount.setAttribute("aria-label", "Сумма скидки или доплаты за единицу");
+      const signed = document.createElement("input");
+      signed.type = "hidden"; signed.name = name;
+      const initial = cents(initialValue || "0") ?? 0n;
+      sign.value = initial < 0n ? "+" : "-";
+      amount.value = decimalMoney(initial < 0n ? -initial : initial);
+      const sync = () => {
+        const value = cents(amount.value);
+        signed.value = value === null ? "" : decimalMoney(sign.value === "+" ? -value : value);
+        sign.title = sign.value === "+" ? "Доплата за единицу товара" : "Скидка за единицу товара";
+        recalculate();
+      };
+      sign.addEventListener("change", sync);
+      amount.addEventListener("input", sync);
+      control.append(sign, amount, signed); cell.append(control);
+      signed.value = decimalMoney(initial);
+      sign.title = sign.value === "+" ? "Доплата за единицу товара" : "Скидка за единицу товара";
     }
 
     function addCustomLine(value = {}) {
+      const systemKind = value.system_kind || "";
+      if (!allowMode(systemKind || "normal")) return;
       const row = document.createElement("tr");
       row.className = "sale-custom-line";
+      if (systemKind) row.dataset.systemKind = systemKind;
       const nameCell = document.createElement("td");
       const name = document.createElement("input");
       name.type = "text"; name.name = "custom_name"; name.required = true;
       name.placeholder = "Название товара или услуги"; name.value = value.name || "";
       nameCell.append(name);
+      const kindInput = document.createElement("input");
+      kindInput.type = "hidden"; kindInput.name = "custom_system_kind"; kindInput.value = systemKind;
+      nameCell.append(kindInput);
+      if (systemKind) {
+        name.value = systemKind === "EXPENSE" ? "Расход" : "Цифровой товар";
+        name.readOnly = true;
+      }
       const priceCell = document.createElement("td");
       const price = document.createElement("input");
       price.type = "number"; price.name = "custom_unit_price"; price.min = "0"; price.step = "0.01"; price.required = true;
       price.placeholder = "\u0426\u0435\u043d\u0430";
       price.value = value.unit_price || ""; priceCell.append(price);
+      if (systemKind === "EXPENSE") { price.value = "0"; price.readOnly = true; }
       const discountCell = document.createElement("td");
-      const discount = document.createElement("input");
-      discount.type = "number"; discount.name = "custom_unit_discount"; discount.min = "0";
-      discount.step = "0.01"; discount.required = true; discount.value = value.unit_discount || "0";
-      discount.placeholder = "Скидка"; discountCell.append(discount);
+      addDiscountControl(discountCell, "custom_unit_discount", value.unit_discount);
+      if (systemKind) {
+        discountCell.querySelectorAll("input, select").forEach(input => { input.value = input.type === "hidden" ? "0.00" : input.value; input.disabled = input.type !== "hidden"; });
+      }
       const quantityCell = document.createElement("td");
       const quantity = document.createElement("input");
       quantity.type = "number"; quantity.name = "custom_quantity"; quantity.min = "1"; quantity.step = "1"; quantity.required = true;
@@ -214,14 +296,35 @@
       const remove = document.createElement("button"); remove.type = "button"; remove.className = "remove-row"; remove.textContent = "×";
       remove.setAttribute("aria-label", "Удалить произвольную позицию"); remove.addEventListener("click", () => { row.remove(); recalculate(); });
       removeCell.append(remove); row.append(nameCell, priceCell, discountCell, quantityCell, costCell, totalCell, commissionCell, ...inventoryCells, removeCell); body.append(row);
+      if (systemKind) {
+        discountCell.hidden = true;
+        inventoryCells.forEach(cell => { cell.hidden = true; });
+      }
       labelSaleRow(row);
-      [price, discount, quantity, cost, name].forEach((input) => input.addEventListener("input", recalculate));
+      [price, quantity, cost, name].forEach((input) => input.addEventListener("input", recalculate));
       recalculate();
+      return row;
     }
 
     function recalculate() {
-      let total = 0;
-      let totalCommission = 0;
+      const note = form.querySelector('[name="note"]');
+      const digital = operationMode() === "DIGITAL_PRODUCT";
+      const noteHelp = form.querySelector("[data-system-note-help]");
+      if (noteHelp) noteHelp.hidden = !digital;
+      const operationHelp = form.querySelector("[data-sale-operation-help]");
+      if (operationHelp) operationHelp.textContent = operationMode() === "EXPENSE"
+        ? "Расход уменьшит прибыль в статистике после завершения операции. Деньги из кассы не списываются."
+        : "Наличная продажа сразу пополнит кассу; остальные создадут неоплаченный заказ.";
+      const hasAdjustment = [...body.querySelectorAll('input[name="unit_discount"], input[name="custom_unit_discount"]')].some(input => (cents(input.value || "0") ?? 0n) !== 0n);
+      if (note) {
+        note.required = digital || hasAdjustment;
+        note.setAttribute("aria-required", String(note.required));
+        note.setAttribute("placeholder", digital ? "Обязательно: укажите, какой цифровой товар продан." : "Примечание к продаже");
+      }
+      syncCashReceivedVisibility();
+      syncCommissionVisibility();
+      let total = 0n;
+      let totalCommission = 0n;
       const selectedQuantities = new Map();
       if (showSaleInventory) {
         body.querySelectorAll("tr").forEach((row) => {
@@ -239,23 +342,24 @@
           : (row.classList.contains("sale-consignment-line")
             ? row.querySelector('input[name="consignment_quantity"]')
             : row.querySelector('input[name="quantity"]'));
-        const quantity = Number(quantityInput?.value || 0);
+        const quantity = moneyQuantity(quantityInput);
         const basePrice = selectedBasePrice(row);
         const price = selectedPrice(row);
         const priceOutput = row.querySelector("[data-unit-price]");
         const lineOutput = row.querySelector("[data-line-total]");
-        if (priceOutput) priceOutput.textContent = Number.isFinite(basePrice) ? `${money.format(basePrice)} ₽` : "—";
-        const lineTotal = Number.isFinite(price) && quantity > 0 ? price * quantity : 0;
-        if (lineOutput) lineOutput.textContent = Number.isFinite(price) ? `${money.format(lineTotal)} ₽` : "—";
+        if (priceOutput) priceOutput.textContent = basePrice !== null ? `${formatMoney(basePrice)} ₽` : "—";
+        const lineTotal = price !== null && quantity > 0n ? price * quantity : 0n;
+        if (lineOutput) lineOutput.textContent = price !== null ? `${formatMoney(lineTotal)} ₽` : "—";
         const commissionFlag = row.querySelector("[data-avito-commission-flag]");
         const commissionPreview = row.querySelector("[data-avito-commission-preview]");
         const commissionEnabled = isAvitoSale() && Boolean(commissionFlag);
-        const commission = commissionEnabled && Number.isFinite(price) && quantity > 0
-          ? Math.max(lineTotal * 0.005, 1) : 0;
+        const roundedCommission = (lineTotal + 100n) / 200n;
+        const commission = commissionEnabled && price !== null && quantity > 0n
+          ? (roundedCommission > 100n ? roundedCommission : 100n) : 0n;
         totalCommission += commission;
         if (commissionFlag) commissionFlag.value = commissionEnabled ? "1" : "0";
         if (commissionPreview) {
-          commissionPreview.textContent = `${money.format(commission)} ₽`;
+          commissionPreview.textContent = `${formatMoney(commission)} ₽`;
         }
         total += lineTotal;
         if (showSaleInventory) {
@@ -284,9 +388,9 @@
           if (quantityInput) quantityInput.setCustomValidity(overStock ? `На выбранном складе доступно только ${stock} шт.` : "");
         }
       });
-      if (totalOutput) totalOutput.textContent = `${money.format(total)} ₽`;
-      if (commissionOutput) commissionOutput.textContent = `${money.format(totalCommission)} ₽`;
-      if (netTotalOutput) netTotalOutput.textContent = `${money.format(total - totalCommission)} ₽`;
+      if (totalOutput) totalOutput.textContent = `${formatMoney(total)} ₽`;
+      if (commissionOutput) commissionOutput.textContent = `${formatMoney(totalCommission)} ₽`;
+      if (netTotalOutput) netTotalOutput.textContent = `${formatMoney(total - totalCommission)} ₽`;
     }
 
     function applyInventory(row, result) {
@@ -349,7 +453,7 @@
 
     function syncCashReceivedVisibility() {
       if (!receivedContainer || !paymentInput) return;
-      const visible = paymentInput.value === "cash";
+      const visible = paymentInput.value === "cash" && operationMode() !== "EXPENSE";
       receivedContainer.hidden = !visible;
       if (receivedInput) receivedInput.disabled = !visible;
     }
@@ -357,6 +461,7 @@
     function addLine(value = {}) {
       if (value.custom) { addCustomLine(value); return; }
       if (value.consignment) { addConsignmentLine(value); return; }
+      if (!allowMode("normal")) return;
       const row = document.createElement("tr");
       const productCell = document.createElement("td");
       const wrap = document.createElement("div");
@@ -392,15 +497,7 @@
       priceCell.className = "numeric readonly-money";
       priceCell.dataset.unitPrice = "true";
       const discountCell = document.createElement("td");
-      const discount = document.createElement("input");
-      discount.type = "number";
-      discount.name = "unit_discount";
-      discount.min = "0";
-      discount.step = "0.01";
-      discount.required = true;
-      discount.value = value.unit_discount || "0";
-      discount.setAttribute("aria-label", "Скидка на единицу");
-      discountCell.append(discount);
+      addDiscountControl(discountCell, "unit_discount", value.unit_discount);
       const quantityCell = document.createElement("td");
       const quantity = document.createElement("input");
       quantity.type = "number";
@@ -451,7 +548,6 @@
       labelSaleRow(row);
       body.append(row);
       quantity.addEventListener("input", recalculate);
-      discount.addEventListener("input", recalculate);
       window.GameBAT.attachAutocomplete({
         input: search,
         typeInput: type,
@@ -464,6 +560,15 @@
         priceTypeInput,
         fixedPriceType: form.dataset.fixedPriceType,
         onSelect: (result, metadata = {}) => {
+          if (result?.type === "system") {
+            if (!allowMode(result.system_kind || result.id, row)) { type.value = ""; id.value = ""; search.value = ""; return; }
+            row.remove();
+            [...body.querySelectorAll("tr")].filter(candidate => !rowMode(candidate)).forEach(candidate => candidate.remove());
+            const special = addCustomLine({system_kind: result.system_kind || result.id});
+            special?.querySelector('input[name="custom_unit_cost"]')?.focus();
+            return;
+          }
+          if (result && !allowMode("normal", row)) { type.value = ""; id.value = ""; search.value = ""; return; }
           fullName.textContent = result?.label || "";
           delete row.dataset.fixedUnitPrice;
           row.dataset.prices = result?.prices ? JSON.stringify(result.prices) : "{}";
@@ -483,7 +588,7 @@
               barcodeFeedback.classList.remove("error-text");
               barcodeFeedback.textContent = `Добавлено: ${result.label}`;
             }
-            quantity.focus();
+            focusBarcodeQuantity(quantity);
           }
         },
       });
@@ -493,9 +598,23 @@
         recalculate();
       }
       if (!value.label) search.focus();
+      return row;
+    }
+
+    function focusBarcodeQuantity(quantity) {
+      if (!quantity) return;
+      quantity.focus({ preventScroll: true });
+      quantity.scrollIntoView({ block: "nearest", inline: "nearest" });
     }
 
     function putBarcodeResultIntoSale(result) {
+      const mode = result.type === "system" ? (result.system_kind || result.id) : "normal";
+      if (!allowMode(mode)) throw new Error(mixedMessage);
+      if (result.type === "system") {
+        [...body.querySelectorAll("tr")].filter(row => !rowMode(row)).forEach(row => row.remove());
+        const row = addCustomLine({system_kind: mode});
+        return row.querySelector('input[name="custom_quantity"]');
+      }
       const existingRow = [...body.querySelectorAll("tr")].find((row) => (
         row.querySelector('input[name="product_type"]')?.value === String(result.type)
         && row.querySelector('input[name="product_id"]')?.value === String(result.id)
@@ -505,9 +624,8 @@
         if (quantity) {
           quantity.value = String(Math.max(0, Number(quantity.value) || 0) + 1);
           quantity.dispatchEvent(new Event("input", { bubbles: true }));
-          quantity.focus();
         }
-        return;
+        return quantity;
       }
       const blankRow = [...body.querySelectorAll("tr")].find((row) => {
         const productId = row.querySelector('input[name="product_id"]');
@@ -523,10 +641,9 @@
         const quantity = blankRow.querySelector('input[name="quantity"]');
         if (quantity && !quantity.value) quantity.value = "1";
         applyInventory(blankRow, result);
-        if (quantity) quantity.focus();
-        return;
+        return quantity;
       }
-      addLine({
+      const row = addLine({
         label: result.label,
         product_type: result.type,
         product_id: result.id,
@@ -535,6 +652,7 @@
         warehouse_stock: result.warehouse_stock,
         storage_locations: result.storage_locations,
       });
+      return row.querySelector('input[name="quantity"]');
     }
 
     async function addByBarcode(scannedBarcode = "") {
@@ -576,11 +694,11 @@
           throw new Error("Этот штрихкод указан у нескольких товаров. Выберите товар через обычный поиск.");
         }
         const result = exactMatches[0];
-        if (Number(result.available) <= 0) throw new Error("Этого товара нет на выбранном складе.");
-        putBarcodeResultIntoSale(result);
+        if (result.type !== "system" && Number(result.available) <= 0) throw new Error("Этого товара нет на выбранном складе.");
+        const quantity = putBarcodeResultIntoSale(result);
         barcodeInput.value = "";
         barcodeFeedback.textContent = `Добавлено: ${result.label}`;
-        barcodeInput.focus();
+        focusBarcodeQuantity(quantity);
       } catch (error) {
         barcodeFeedback.textContent = error.message;
         barcodeFeedback.classList.add("error-text");
@@ -590,7 +708,7 @@
     addButtons.forEach((button) => button.addEventListener("click", () => addLine()));
     form.querySelectorAll(".add-custom-line").forEach((button) => button.addEventListener("click", () => addCustomLine()));
     addConsignmentButtons.forEach((button) => button.addEventListener("click", () => addConsignmentLine()));
-    if (barcodeButton) barcodeButton.addEventListener("click", addByBarcode);
+    if (barcodeButton) barcodeButton.addEventListener("click", () => addByBarcode());
     if (barcodeInput) {
       barcodeInput.addEventListener("keydown", (event) => {
         if (event.key !== "Enter") return;
@@ -631,24 +749,25 @@
       if (paymentInput?.value === "cash" && receivedInput?.value) {
         const currentTotal = [...body.querySelectorAll("tr")].reduce((sum, row) => {
           const price = selectedPrice(row);
-          const quantity = Number((row.classList.contains("sale-custom-line")
+          const quantity = moneyQuantity(row.classList.contains("sale-custom-line")
             ? row.querySelector('input[name="custom_quantity"]')
             : (row.classList.contains("sale-consignment-line")
               ? row.querySelector('input[name="consignment_quantity"]')
-              : row.querySelector('input[name="quantity"]')))?.value || 0);
-          return sum + (Number.isFinite(price) ? price * quantity : 0);
-        }, 0);
-        if (Number(receivedInput.value) < currentTotal) {
+              : row.querySelector('input[name="quantity"]')));
+          return sum + (price !== null ? price * quantity : 0n);
+        }, 0n);
+        const received = cents(receivedInput.value);
+        if (received !== null && received < currentTotal) {
           event.preventDefault();
           window.alert("Полученная сумма не может быть меньше стоимости продажи.");
         }
       }
       const hasDiscount = [...body.querySelectorAll('input[name="unit_discount"], input[name="custom_unit_discount"]')]
-        .some((input) => Number(input.value || 0) > 0);
+        .some((input) => (cents(input.value || "0") ?? 0n) !== 0n);
       const noteInput = form.querySelector('[name="note"]');
-      if (hasDiscount && noteInput && !noteInput.value.trim()) {
+      if ((hasDiscount || operationMode() === "DIGITAL_PRODUCT") && noteInput && !noteInput.value.trim()) {
         event.preventDefault();
-        window.alert("При использовании скидки обязательно укажите примечание к продаже.");
+        window.alert(operationMode() === "DIGITAL_PRODUCT" ? "Для продажи цифрового товара необходимо заполнить примечание." : "При использовании скидки или доплаты обязательно укажите примечание к продаже.");
         noteInput.focus();
       }
     });

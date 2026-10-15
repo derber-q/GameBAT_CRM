@@ -13,6 +13,7 @@ CD_CARD_FIELDS = (
     "description",
     "comment",
     "exclude_from_supplier_template",
+    "cost",
     *MARKETPLACE_CARD_FIELDS,
     *PRICING_FIELDS,
 )
@@ -26,6 +27,7 @@ TECH_CARD_FIELDS = (
     "description",
     "comment",
     "exclude_from_supplier_template",
+    "cost",
     *MARKETPLACE_CARD_FIELDS,
     *PRICING_FIELDS,
 )
@@ -40,6 +42,7 @@ CD_FIELD_PERMISSIONS = {
     "cusa_ppsa_code": "catalog.change_cd_cusa_ppsa_code",
     "comment": "catalog.change_cd_comment",
     "exclude_from_supplier_template": "catalog.change_cd",
+    "cost": "catalog.change_cd",
     "length_cm": "catalog.change_cd_weight",
     "width_cm": "catalog.change_cd_weight",
     "height_cm": "catalog.change_cd_weight",
@@ -62,6 +65,7 @@ TECH_FIELD_PERMISSIONS = {
     "weight_grams": "catalog.change_tech_weight",
     "comment": "catalog.change_tech_comment",
     "exclude_from_supplier_template": "catalog.change_tech",
+    "cost": "catalog.change_tech",
     "length_cm": "catalog.change_tech_weight",
     "width_cm": "catalog.change_tech_weight",
     "height_cm": "catalog.change_tech_weight",

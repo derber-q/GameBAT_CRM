@@ -52,7 +52,13 @@ class PricingTests(TestCase):
             "avito_price": "150", "wholesale_price": "", "yandex_market_price": "0",
         }, HTTP_X_REQUESTED_WITH="XMLHttpRequest")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), {"ok": True, "message": "Сохранено"})
+        self.assertEqual(response.json(), {
+            "ok": True, "message": "Сохранено",
+            "saved_prices": {
+                "avito_price": "150.00", "wholesale_price": None,
+                "yandex_market_price": "0.00",
+            },
+        })
         self.assertNotIn("Location", response)
         self.cd.refresh_from_db()
         self.assertEqual(self.cd.avito_price, Decimal("150"))
@@ -263,10 +269,15 @@ class PricingTests(TestCase):
 
     def test_pricing_page_uses_avito_name_and_dynamic_warning_script(self):
         self.client.force_login(self.user)
+        self.cd.wholesale_price = Decimal("150.37")
+        self.cd.save(update_fields=("wholesale_price",))
         response = self.client.get(reverse("pricing:list"))
         self.assertContains(response, "Цена Avito")
         self.assertContains(response, 'name="avito_price"')
-        self.assertContains(response, "pricing.js?v=price-control-2")
+        self.assertContains(response, "pricing.js?v=price-control-3")
+        self.assertContains(response, "Опт / наценка, ₽")
+        self.assertContains(response, 'data-wholesale-margin-value title="Оптовая цена минус себестоимость"')
+        self.assertContains(response, 'data-wholesale-margin-value title="Оптовая цена минус себестоимость">50,37</span>')
         self.assertNotContains(response, 'name="retail_price"')
 
     def test_group_collapse_uses_unique_shared_controls_after_filtering(self):

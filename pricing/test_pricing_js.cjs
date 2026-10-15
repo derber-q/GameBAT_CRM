@@ -13,8 +13,10 @@ fields.wholesale_price=element('10000',{priceField:'wholesale_price'});
 fields.yandex_market_price=element('10250',{priceField:'yandex_market_price'});
 const markups={avito_price:element('200',{}),yandex_market_price:element('300',{})};
 const handlers={};
+const costInput=element('9000',{});
 const row={dataset:{cost:'9000'},
   querySelector(selector){
+    if (selector === '[data-cost-input]') return costInput;
     const name=selector.match(/="([^"]+)"/)[1];
     return selector.includes('data-price-field')?fields[name]:(markups[name]||null);
   },
@@ -37,10 +39,12 @@ fields.avito_price.value='10000'; markups.avito_price.value='0'; handlers.input(
 fields.avito_price.value='9999.99'; handlers.input(); assert(warned('avito_price'));
 fields.wholesale_price.value='9900'; handlers.input(); assert(!warned('avito_price')); assert(!warned('yandex_market_price'));
 fields.wholesale_price.value='8000'; handlers.input(); assert(warned('wholesale_price'));
+costInput.value='7000'; handlers.input(); assert(!warned('wholesale_price'));
+costInput.value='9000'; handlers.input(); assert(warned('wholesale_price'));
 // Read-only thresholds and prices retain identical rules.
 markups.avito_price=element('',{value:'0.20'},'SPAN');
 fields.avito_price.tagName='SPAN'; fields.avito_price.dataset.value='100.20';
-fields.wholesale_price.value='100.00'; row.dataset.cost=''; handlers.change(); assert(!warned('avito_price'));
+fields.wholesale_price.value='100.00'; row.dataset.cost=''; costInput.disabled=true; handlers.change(); assert(!warned('avito_price'));
 fields.avito_price.dataset.value='100.19'; handlers.input(); assert(warned('avito_price'));
 fields.avito_price.dataset.value='999999999999999999.99';
 fields.wholesale_price.value='999999999999999999.79'; handlers.input(); assert(!warned('avito_price'));

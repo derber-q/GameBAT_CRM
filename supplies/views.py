@@ -15,7 +15,7 @@ from catalog.product_identifiers import add_product_barcode, set_product_weight
 from catalog.product_search import search_product_querysets
 from core.decorators import permission_required_any
 from partners.models import Supplier
-from pricing.warnings import price_warning, MARKUP_FOR_PRICE
+from pricing.warnings import price_warning, MARKUP_FOR_PRICE, wholesale_margin
 from warehouse.models import (
     CDWarehouseStock, CDWarehouseStorageAssignment,
     TechWarehouseStock, TechWarehouseStorageAssignment, Warehouse,
@@ -342,6 +342,7 @@ def supply_price_review(request, pk):
         }
         rows.append({
             "calculation": calculation, "product": product, "values": values,
+            "wholesale_margin": wholesale_margin(values["wholesale_price"], calculation.resulting_unit_cost),
             "warnings": warnings,
             "editable": {field: request.user.is_superuser or request.user.has_perm(permission)
                          for field, permission in PRICE_PERMISSIONS.items()},
@@ -496,7 +497,7 @@ def supply_cancel(request, pk):
 @permission_required_any(
     "supplies.add_supply", "supplies.edit_accepted_supply",
     "consignment.transfer_stock", "consignment.return_stock",
-    "warehouse.create_transfer", "sales.create_sale",
+    "warehouse.create_transfer", "sales.create_sale", "sales.edit_unpaid_postpay_sale",
 )
 def product_autocomplete(request):
     query = request.GET.get("q", "").strip()
@@ -521,7 +522,7 @@ def product_autocomplete(request):
     raw_items = request.GET.get("items", "").strip()
     requested_ids = {"cd": set(), "tech": set()}
     if raw_items:
-        if context != "sale" or not warehouse_id:
+        if context not in {"sale", "supply"} or not warehouse_id:
             return JsonResponse({"error": "Для обновления строк выберите склад."}, status=400)
         tokens = [token.strip() for token in raw_items.split(",") if token.strip()]
         if len(tokens) > 100:
@@ -658,6 +659,17 @@ def product_autocomplete(request):
             "yandex_market": f"{item.yandex_market_price:.2f}" if item.yandex_market_price is not None else None,
         } if context == "sale" else None,
     } for item in tech)
+    if context == "sale" and not exact_refresh:
+        from catalog.models import SystemProduct
+        for product in SystemProduct.objects.select_related("barcode_entry"):
+            entry = getattr(product, "barcode_entry", None)
+            if entry and (query.casefold() in product.name.casefold() or query in entry.value):
+                results.insert(0, {
+                    "type": "system", "id": product.kind, "system_kind": product.kind,
+                    "label": product.name, "barcode": entry.value, "barcodes": [entry.value],
+                    "available": None, "availability_label": "Без складского учёта",
+                    "warehouse_stock": None, "storage_locations": "", "prices": None,
+                })
     return JsonResponse({"results": results[:100] if exact_refresh else results[:20]})
 
 

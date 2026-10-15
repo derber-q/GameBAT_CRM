@@ -276,7 +276,7 @@ class PriceExcelTests(TestCase):
         original.refresh_from_db()
         self.assertEqual(original.price, Decimal("77"))
 
-    def test_best_supplier_tie_uses_higher_priority_then_alphabetical(self):
+    def test_best_supplier_tie_uses_lower_priority_number_then_alphabetical(self):
         self.alpha.priority = 100
         self.alpha.save(update_fields=("priority",))
         self.beta.priority = 200
@@ -286,7 +286,7 @@ class PriceExcelTests(TestCase):
         SupplierCDPrice.objects.create(supplier=self.alpha, cd=self.no_price_cd, price=90)
         SupplierCDPrice.objects.create(supplier=self.beta, cd=self.no_price_cd, price=95)
         winners, counts = resolve_best_suppliers()
-        self.assertEqual(winners[("cd", self.cd.pk)][0], self.beta)
+        self.assertEqual(winners[("cd", self.cd.pk)][0], self.alpha)
         self.assertEqual(counts[self.alpha.pk], 1)
 
         self.alpha.priority = self.beta.priority
@@ -308,6 +308,7 @@ class PriceExcelTests(TestCase):
         SupplierCDPrice.objects.create(supplier=self.alpha, cd=self.cd, price=100)
         price_list = create_procurement_price_list(
             actor=self.user, exchange_rate_usdt_aed="4", exchange_rate_usdt_rub="80",
+            delivery_general_usdt_per_kg=0, delivery_devices_usdt_per_kg=0, delivery_storage_usdt_per_kg=0, delivery_cd_rub=0,
         )
         item = price_list.items.get()
         SupplierCDPrice.objects.filter(supplier=self.alpha, cd=self.cd).update(price=1)
@@ -341,10 +342,57 @@ class PriceExcelTests(TestCase):
         item.refresh_from_db()
         self.assertEqual(item.prepayment_price_rub, Decimal("2000.00"))
 
+    def test_readable_customer_prices_keep_coordinates_formulas_and_round_trip(self):
+        self.tech.weight_grams = 1000
+        self.tech.name = "Консоль PlayStation 5 Slim Digital Edition комплект с геймпадами и аксессуарами " * 2
+        self.tech.save(update_fields=("weight_grams", "name"))
+        self.cd.name = "The Legend of Zelda Special Collector Edition\nДополнительное описание издания"
+        self.cd.save(update_fields=("name",))
+        SupplierCDPrice.objects.create(supplier=self.alpha, cd=self.cd, price=100)
+        SupplierTechPrice.objects.create(supplier=self.alpha, tech=self.tech, price=200)
+        price_list = create_procurement_price_list(actor=self.user, exchange_rate_usdt_aed=4,
+            exchange_rate_usdt_rub=80, delivery_general_usdt_per_kg=0,
+            delivery_devices_usdt_per_kg=0, delivery_storage_usdt_per_kg=0, delivery_cd_rub=0)
+        for kind in (None, "cd", "tech"):
+            with self.subTest(kind=kind):
+                content = generate_procurement_customer_xlsx(price_list_id=price_list.pk, actor=self.user, product_kind=kind)
+                book = load_workbook(BytesIO(content))
+                sheet, meta = book[MAIN_SHEET], book[META_SHEET]
+                self.assertEqual(sheet.column_dimensions["A"].width, 70)
+                self.assertEqual(sheet.column_dimensions["C"].width, 16)
+                self.assertEqual(sheet.column_dimensions["E"].width, 16)
+                self.assertEqual(sheet["B8"].value, "Цена предоплата")
+                self.assertEqual(sheet["C8"].value, "Количество предоплата")
+                self.assertEqual(sheet["E8"].value, "Количество постоплата")
+                self.assertEqual(meta.sheet_state, "veryHidden")
+                expected = []
+                for values in meta.iter_rows(values_only=True):
+                    if not isinstance(values[0], int):
+                        continue
+                    row, product_kind, product_id, _sku = values
+                    source = price_list.items.get(product_kind=product_kind, **{f"{product_kind}_id": product_id})
+                    self.assertEqual(sheet.cell(row, 1).font.sz, 13)
+                    self.assertEqual(sheet.cell(row, 2).font.sz, 11)
+                    self.assertTrue(sheet.cell(row, 1).alignment.wrap_text)
+                    self.assertGreater(sheet.row_dimensions[row].height, 24)
+                    for column in (3, 5):
+                        self.assertFalse(sheet.cell(row, column).protection.locked)
+                        self.assertEqual(sheet.cell(row, column).fill.fgColor.rgb[-6:], "EAF3F5")
+                    sheet.cell(row, 3, 2)
+                    sheet.cell(row, 5, 3)
+                    expected.append({"price_list_item_id": source.pk, "prepayment_quantity": 2, "postpayment_quantity": 3})
+                formulas = [cell.value for row in sheet for cell in row if cell.data_type == "f"]
+                self.assertEqual(len(formulas), 7)
+                self.assertTrue(any("SUMPRODUCT(B9:" in formula for formula in formulas))
+                imported_price, lines = import_procurement_order_xlsx(uploaded(workbook_bytes(book)), product_kind=kind)
+                self.assertEqual(imported_price.pk, price_list.pk)
+                self.assertEqual(lines, expected)
+
     def test_internal_supplier_prices_and_identity_follow_separate_permissions(self):
         SupplierCDPrice.objects.create(supplier=self.alpha, cd=self.cd, price=100)
         price_list = create_procurement_price_list(
             actor=self.user, exchange_rate_usdt_aed=4, exchange_rate_usdt_rub=80,
+            delivery_general_usdt_per_kg=0, delivery_devices_usdt_per_kg=0, delivery_storage_usdt_per_kg=0, delivery_cd_rub=0,
         )
         worker = User.objects.create_user("viewer", password="StrongWorker!123")
         worker.user_permissions.add(Permission.objects.get(

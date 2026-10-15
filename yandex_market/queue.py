@@ -27,15 +27,15 @@ def enqueue(integration, kind, key, payload=None, *, actor=None, delay=0):
     return job
 
 
-def enqueue_product(connection_id):
+def enqueue_product(connection_id, *, delay=3, actor=None):
     connection = OfferConnection.objects.select_related("integration").filter(
         pk=connection_id, active=True, managed=True, integration__enabled=True,
     ).first()
     if not connection:
         return
-    enqueue(connection.integration, "product", connection.pk, {"connection_id": connection.pk}, delay=3)
+    enqueue(connection.integration, "product", connection.pk, {"connection_id": connection.pk}, delay=delay, actor=actor)
     OfferConnection.objects.filter(pk=connection.pk).update(state=OfferConnection.State.QUEUED)
 
 
-def product_after_commit(connection_id):
-    transaction.on_commit(lambda: enqueue_product(connection_id))
+def product_after_commit(connection_id, *, delay=3, actor=None):
+    transaction.on_commit(lambda: enqueue_product(connection_id, delay=delay, actor=actor))

@@ -8,6 +8,12 @@ from warehouse.models import CDWarehouseStock, TechWarehouseStock
 from .queue import enqueue_profile_sync_after_commit
 
 
+FBS_CALCULATION_FIELDS = {
+    "yandex_desired_profit", "yandex_calculated_price", "yandex_market_price",
+    "yandex_pricing_integration", "yandex_pricing_category",
+}
+
+
 def _enqueue_for_product(product):
     try:
         profile_id = product.avito_profile.pk
@@ -18,7 +24,10 @@ def _enqueue_for_product(product):
 
 @receiver(post_save, sender=CD, dispatch_uid="avito_sync_cd")
 @receiver(post_save, sender=Tech, dispatch_uid="avito_sync_tech")
-def product_changed(sender, instance, **kwargs):
+def product_changed(sender, instance, update_fields=None, **kwargs):
+    # Параметры и рекомендация FBS не меняют цену или остаток Avito.
+    if update_fields and set(update_fields).issubset(FBS_CALCULATION_FIELDS):
+        return
     _enqueue_for_product(instance)
 
 

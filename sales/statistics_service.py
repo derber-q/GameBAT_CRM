@@ -20,6 +20,7 @@ PERCENT = Decimal("0.01")
 CHANNEL_LABELS = {
     "retail": "Розница", "wholesale": "Оптовые", "avito": "Avito",
     "yandex_market": "Яндекс Маркет", "consignment": "Реализация",
+    "expense": "Расходы",
 }
 MONTH_NAMES = (
     "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
@@ -28,6 +29,8 @@ MONTH_NAMES = (
 
 
 def channel_for_sale(sale):
+    if sale.operation_kind == Sale.OperationKind.EXPENSE:
+        return "expense"
     return sale.sale_type
 
 
@@ -55,6 +58,7 @@ class LineRow:
     profit: Decimal | None
     margin: Decimal | None
     markup: Decimal | None
+    consignment_platform_name: str = ""
 
 
 @dataclass
@@ -80,6 +84,7 @@ class SaleRow:
 @dataclass
 class Aggregate:
     sales_count: int = 0
+    expenses_count: int = 0
     units: int = 0
     goods_total: Decimal = ZERO
     overpayment: Decimal = ZERO
@@ -187,6 +192,8 @@ def _base_queryset(filters):
         queryset = queryset.filter(warehouse=filters["warehouse"])
     if filters.get("payment_methods"):
         queryset = queryset.filter(payment_method__in=filters["payment_methods"])
+    if filters.get("operation_kind"):
+        queryset = queryset.filter(operation_kind=filters["operation_kind"])
     if filters.get("channels"):
         sale_types = []
         for channel in filters["channels"]:
@@ -194,7 +201,10 @@ def _base_queryset(filters):
                 sale_types.append(Sale.SaleType.WHOLESALE)
             else:
                 sale_types.append(channel)
-        queryset = queryset.filter(sale_type__in=sale_types)
+        channel_filter = models.Q(sale_type__in=sale_types) & ~models.Q(operation_kind=Sale.OperationKind.EXPENSE)
+        if "expense" in filters["channels"]:
+            channel_filter |= models.Q(operation_kind=Sale.OperationKind.EXPENSE)
+        queryset = queryset.filter(channel_filter)
     matching_ids = _matching_sale_ids(filters)
     if matching_ids is not None:
         queryset = queryset.filter(pk__in=matching_ids)
@@ -207,12 +217,14 @@ def _base_queryset(filters):
 
 
 def _line(item, kind):
-    if kind == "custom":
+    consignment_platform_name = ""
+    if kind in {"custom", "digital_product", "expense"}:
         product = None
-        category = "Произвольная позиция"
+        category = {"custom": "Произвольная позиция", "digital_product": "Цифровой товар", "expense": "Расход"}[kind]
     elif kind == "consignment":
         product = item.cd if item.product_kind == "cd" else item.tech
-        category = f"Реализация · {item.platform_name_snapshot}"
+        consignment_platform_name = item.platform_name_snapshot or item.platform.name
+        category = f"Реализация · {consignment_platform_name}"
     else:
         product = item.cd if kind == "cd" else item.tech
         category = (
@@ -229,12 +241,13 @@ def _line(item, kind):
     cost = (unit_cost * item.quantity).quantize(CENT, rounding=ROUND_HALF_UP) if unit_cost is not None else None
     profit = net_revenue - cost if cost is not None else None
     return LineRow(
-        item=item, kind=kind, product_id=product.pk if product else None,
+        item=item, kind=kind, product_id=product.pk if product else getattr(item, "system_product_id", None),
         name=item.product_name_snapshot, sku=item.article_snapshot, category=category,
         quantity=item.quantity, unit_price=(revenue / item.quantity).quantize(CENT), unit_cost=unit_cost,
         revenue=revenue, commission=commission, net_revenue=net_revenue,
         cost=cost, profit=profit,
         margin=percentage(profit, revenue), markup=percentage(profit, cost),
+        consignment_platform_name=consignment_platform_name,
     )
 
 
@@ -243,8 +256,12 @@ def _sale_row(sale):
     lines = [] if legacy_consignment_mirror else [_line(item, "cd") for item in sale.cd_items.all()]
     if not legacy_consignment_mirror:
         lines.extend(_line(item, "tech") for item in sale.tech_items.all())
-    lines.extend(_line(item, "custom") for item in sale.custom_items.all())
+    lines.extend(_line(item, item.system_product_id.lower() if item.system_product_id else "custom") for item in sale.custom_items.all())
     lines.extend(_line(item, "consignment") for item in sale.consignment_items.all())
+    if sale.sale_type == Sale.SaleType.CONSIGNMENT and not legacy_consignment_mirror and sale.consignment_platform_id:
+        for line in lines:
+            if line.kind in ("cd", "tech"):
+                line.consignment_platform_name = sale.consignment_platform.name
     missing = sum(line.cost is None for line in lines)
     cost = sum((line.cost for line in lines), ZERO) if not missing else None
     items_profit = sum((line.profit for line in lines), ZERO) if not missing else None
@@ -254,21 +271,32 @@ def _sale_row(sale):
     commission = sum((line.commission for line in lines), ZERO)
     profit = items_profit + overpayment if items_profit is not None else None
     channel = channel_for_sale(sale)
+    channel_label = CHANNEL_LABELS.get(channel, sale.get_sale_type_display())
+    if sale.operation_kind == Sale.OperationKind.DIGITAL_PRODUCT:
+        channel_label += " · Цифровой товар"
+    platform_names = list(dict.fromkeys(
+        line.consignment_platform_name for line in lines if line.consignment_platform_name
+    ))
+    if platform_names:
+        prefix = "" if channel == Sale.SaleType.CONSIGNMENT else "Реализация: "
+        channel_label += f" · {prefix}{', '.join(platform_names)}"
     return SaleRow(
         sale=sale, lines=lines, channel=channel,
-        channel_label=CHANNEL_LABELS.get(channel, sale.get_sale_type_display()),
+        channel_label=channel_label,
         goods_total=goods_total, overpayment=overpayment, actual_revenue=actual,
         commission=commission,
         cost=cost, items_profit=items_profit, profit=profit,
         margin=percentage(profit, actual), markup=percentage(profit, cost),
-        units=sum(line.quantity for line in lines), positions=len(lines), missing_lines=missing,
+        units=sum(line.quantity for line in lines if line.kind != "expense"), positions=len(lines), missing_lines=missing,
     )
 
 
 def _aggregate(rows):
     rows = list(rows)
     result = Aggregate(
-        sales_count=len(rows), units=sum(row.units for row in rows),
+        sales_count=sum(row.sale.operation_kind != Sale.OperationKind.EXPENSE for row in rows),
+        expenses_count=sum(row.sale.operation_kind == Sale.OperationKind.EXPENSE for row in rows),
+        units=sum(row.units for row in rows),
         goods_total=sum((row.goods_total for row in rows), ZERO),
         overpayment=sum((row.overpayment for row in rows), ZERO),
         actual_revenue=sum((row.actual_revenue for row in rows), ZERO),

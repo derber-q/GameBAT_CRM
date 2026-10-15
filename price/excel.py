@@ -1,4 +1,5 @@
 import logging
+from copy import copy
 from decimal import Decimal, InvalidOperation
 from io import BytesIO
 from pathlib import Path
@@ -6,7 +7,6 @@ from textwrap import wrap
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import Q
 from django.utils import timezone
 from openpyxl import Workbook, load_workbook
 from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
@@ -19,6 +19,7 @@ from catalog.product_ordering import tech_price_order
 from partners.models import Supplier
 from pricing.models import SupplierCDPrice, SupplierTechPrice
 from warehouse.models import CDWarehouseStock, TechWarehouseStock, Warehouse
+from core.excel_layout import wrapped_text_height
 
 from .models import PriceDocumentSettings, ProcurementPriceList
 from .supplier_ordering import supplier_product_groups
@@ -512,13 +513,21 @@ def generate_procurement_customer_xlsx(*, price_list_id, actor, product_kind=Non
     for row in group_rows:
         sheet.merge_cells(start_row=row, start_column=1, end_row=row, end_column=5)
         sheet.cell(row, 1).alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
-        sheet.row_dimensions[row].height = 32
-    sheet.row_dimensions[HEADER_ROW].height = 42
+        sheet.row_dimensions[row].height = 28
+    sheet.row_dimensions[HEADER_ROW].height = 38
+    sheet.column_dimensions["A"].width = 70
+    sheet.column_dimensions["C"].width = 16
+    sheet.column_dimensions["E"].width = 16
     for row in product_rows:
         name_cell = sheet.cell(row, 1)
         name_cell.alignment = Alignment(vertical="center", wrap_text=True)
-        line_count = len(wrap(str(name_cell.value or ""), width=55)) or 1
-        sheet.row_dimensions[row].height = max(30, line_count * 16 + 8)
+        name_font = copy(name_cell.font)
+        name_font.sz = 13
+        name_cell.font = name_font
+        sheet.row_dimensions[row].height = wrapped_text_height(
+            name_cell.value, 70, font_name=name_font.name or "Calibri", font_size=13,
+            padding_points=4, min_height=24,
+        )
         for column in (2, 3, 4, 5):
             sheet.cell(row, column).alignment = Alignment(horizontal="right", vertical="center")
     sheet.sheet_view.showGridLines = False
@@ -536,6 +545,138 @@ def generate_procurement_customer_xlsx(*, price_list_id, actor, product_kind=Non
         actor.pk, price_list.pk, len(rows),
     )
     return _bytes(workbook)
+
+
+STOCK_HEADERS = (
+    "Товар", "Артикул", "Закупочная база", "Доставка",
+    "Себестоимость с доставкой", "Количество к заказу", "Сумма",
+)
+
+
+def generate_procurement_stock_xlsx(*, price_list_id, actor):
+    try:
+        price_list = ProcurementPriceList.objects.get(pk=price_list_id)
+    except ProcurementPriceList.DoesNotExist as exc:
+        raise ValidationError("Закупочный прайс не найден.") from exc
+    workbook, sheet = _base_workbook(
+        title=f"Заказ на склад · Прайс №{price_list.pk}",
+        subtitle="Заполните количество к заказу. Стоимость включает доставку, без наценки.", columns=7,
+    )
+    items = {(item.product_kind, item.product_id): item for item in price_list.items.select_related(
+        "cd__platform", "tech__brand", "tech__product_type"
+    ) if not item.product.is_archived}
+    groups = supplier_product_groups(
+        [item.tech for item in items.values() if item.product_kind == "tech"],
+        [item.cd for item in items.values() if item.product_kind == "cd"],
+    )
+    metadata, group_rows, product_rows = [], [], []
+    row = HEADER_ROW + 1
+    for kind, title, products in groups:
+        sheet.cell(row, 1, safe_text(title))
+        group_rows.append(row)
+        row += 1
+        for product in products:
+            item = items[(kind, product.pk)]
+            values = (safe_text(item.product_name_snapshot), safe_text(item.article_snapshot),
+                      item.base_price_rub, item.delivery_rub, item.stock_unit_cost, 0, f"=E{row}*F{row}")
+            for column, value in enumerate(values, 1):
+                sheet.cell(row, column, value)
+            sheet.cell(row, 2).number_format = "@"
+            for column in (3, 4, 5, 7):
+                sheet.cell(row, column).number_format = MONEY_FORMAT
+            metadata.append((row, kind, product.pk, safe_text(item.article_snapshot)))
+            product_rows.append(row)
+            row += 1
+    end = max(HEADER_ROW + 1, row - 1)
+    sheet.cell(end + 2, 5, "Всего единиц")
+    sheet.cell(end + 2, 6, f"=SUM(F{HEADER_ROW + 1}:F{end})")
+    sheet.cell(end + 3, 5, "Итого с доставкой")
+    sheet.cell(end + 3, 7, f"=SUM(G{HEADER_ROW + 1}:G{end})").number_format = MONEY_FORMAT
+    _style_table(sheet, STOCK_HEADERS, editable_columns=(6,), editable_end_row=end)
+    _style_group_rows(sheet, group_rows, columns=7)
+    for group_row in group_rows:
+        sheet.merge_cells(start_row=group_row, start_column=1, end_row=group_row, end_column=7)
+        sheet.row_dimensions[group_row].height = 30
+    validation = DataValidation(type="whole", operator="between", formula1="0", formula2="2147483647",
+                                allow_blank=True)
+    validation.showErrorMessage = True
+    validation.error = "Введите целое неотрицательное количество."
+    sheet.add_data_validation(validation)
+    for product_row in product_rows:
+        validation.add(f"F{product_row}")
+        sheet.cell(product_row, 1).alignment = Alignment(vertical="center", wrap_text=True)
+        sheet.row_dimensions[product_row].height = max(
+            30, (len(wrap(str(sheet.cell(product_row, 1).value), width=48)) or 1) * 16 + 8,
+        )
+    for column, width in (("A", 52), ("B", 20), ("C", 21), ("D", 18), ("E", 25), ("F", 22), ("G", 22)):
+        sheet.column_dimensions[column].width = width
+    for column in ("B", "C", "D"):
+        sheet.column_dimensions[column].hidden = True
+    sheet.row_dimensions[HEADER_ROW].height = 42
+    sheet.sheet_view.showGridLines = False
+    sheet.print_options.horizontalCentered = True
+    sheet.sheet_properties.pageSetUpPr.fitToPage = True
+    sheet.page_setup.orientation = "landscape"
+    sheet.page_setup.paperSize = sheet.PAPERSIZE_A4
+    sheet.page_setup.fitToWidth = 1
+    sheet.page_setup.fitToHeight = 0
+    sheet.print_title_rows = f"1:{HEADER_ROW}"
+    sheet.print_area = f"A1:G{end + 3}"
+    _meta_sheet(workbook, document_type="resource_stock_procurement", values={
+        "price_list_token": price_list.public_token, "generated_at": timezone.now().isoformat(),
+        "main_sheet": MAIN_SHEET,
+    }, rows=metadata)
+    logger.info("Прайс для заказа на склад сформирован: user_id=%s price_list_id=%s rows=%s",
+                actor.pk, price_list.pk, len(items))
+    return _bytes(workbook)
+
+
+def import_stock_procurement_order_xlsx(upload):
+    workbook, sheet, values, technical_rows = _load_uploaded_workbook(upload, "resource_stock_procurement")
+    try:
+        _require_headers(sheet, STOCK_HEADERS)
+        try:
+            price_list = ProcurementPriceList.objects.prefetch_related("items").get(
+                public_token=values.get("price_list_token"),
+            )
+        except (ProcurementPriceList.DoesNotExist, ValueError, ValidationError) as exc:
+            raise ValidationError("Версия закупочного прайса не найдена.") from exc
+        items = {(item.product_kind, item.product_id): item for item in price_list.items.all()}
+        lines, seen, seen_rows = [], set(), set()
+        for excel_row, kind, product_id, _article in technical_rows:
+            try:
+                excel_row, product_id = int(excel_row), int(product_id)
+            except (TypeError, ValueError) as exc:
+                raise ValidationError("Технические идентификаторы файла повреждены.") from exc
+            key = (str(kind), product_id)
+            if key in seen or excel_row in seen_rows or not HEADER_ROW < excel_row <= sheet.max_row:
+                raise ValidationError("Технические строки файла повреждены или повторяются.")
+            seen.add(key)
+            seen_rows.add(excel_row)
+            item = items.get(key)
+            if item is None:
+                raise ValidationError(f"Строка {excel_row}: товар отсутствует в сохранённом прайсе.")
+            if (sheet.cell(excel_row, 1).value != safe_text(item.product_name_snapshot)
+                    or str(sheet.cell(excel_row, 2).value or "") != safe_text(item.article_snapshot)
+                    or str(_article or "") != safe_text(item.article_snapshot)):
+                raise ValidationError(f"Строка {excel_row}: название, артикул или порядок товаров изменён. Заполняйте только количество.")
+            quantity = _quantity(sheet.cell(excel_row, 6).value, excel_row=excel_row)
+            if quantity > 2147483647:
+                raise ValidationError(f"Строка {excel_row}: слишком большое количество.")
+            if quantity:
+                lines.append({"price_list_item_id": item.pk, "prepayment_quantity": quantity,
+                              "postpayment_quantity": 0})
+        visible_rows = {row for row in range(HEADER_ROW + 1, sheet.max_row + 1)
+                        if sheet.cell(row, 1).value not in (None, "")
+                        and (sheet.cell(row, 2).value not in (None, "") or sheet.cell(row, 6).value is not None)}
+        if visible_rows != seen_rows:
+            raise ValidationError("Состав видимого и технического листов не совпадает. Сохраните строки исходного шаблона.")
+        if not lines:
+            raise ValidationError("В файле не выбрано ни одной товарной позиции.")
+        # Цены из Excel не принимаются: заказ копирует стоимость из сохранённого прайса.
+        return price_list, lines
+    finally:
+        workbook.close()
 
 
 def _load_uploaded_workbook(upload, expected_type):
@@ -670,8 +811,17 @@ def import_supplier_price(*, supplier_id, upload, actor, product_kind=None):
         )
         supplier = Supplier.objects.select_for_update().get(pk=supplier_id)
         prepared = {"cd": [], "tech": []}
+        products = {
+            (kind, product_id): archived
+            for kind, model in (("cd", CD), ("tech", Tech))
+            if not file_kind or kind == file_kind
+            for product_id, archived in model.objects.values_list("id", "is_archived")
+        }
         seen = set()
-        for excel_row, kind, product_id, _article in technical_rows:
+        seen_rows = set()
+        included = {"cd": [], "tech": []}
+        archived_count = 0
+        for excel_row, kind, product_id, article in technical_rows:
             try:
                 excel_row, product_id = int(excel_row), int(product_id)
             except (TypeError, ValueError) as exc:
@@ -682,8 +832,27 @@ def import_supplier_price(*, supplier_id, upload, actor, product_kind=None):
             seen.add(key)
             if kind not in ("cd", "tech") or (file_kind and kind != file_kind):
                 raise ValidationError("В шаблоне обнаружен товар другого типа.")
+            if excel_row <= int(header_row) or excel_row > sheet.max_row or excel_row in seen_rows:
+                raise ValidationError("Технические номера строк файла повреждены.")
+            seen_rows.add(excel_row)
+            if (
+                sheet.cell(excel_row, 1).value != kind.upper()
+                or sheet.cell(excel_row, 2).value != product_id
+                or str(sheet.cell(excel_row, 3).value or "") != str(article or "")
+            ):
+                raise ValidationError(
+                    f"Строка {excel_row}: товар не соответствует техническому листу. "
+                    "Сохраните строки шаблона и заполните только колонку «Цена AED»."
+                )
+            if key not in products:
+                raise ValidationError(f"Строка {excel_row}: товар не найден.")
             if scope and kind != scope:
                 continue
+            # Архивирование после скачивания шаблона не мешает загрузке остальных строк.
+            if products[key]:
+                archived_count += 1
+                continue
+            included[kind].append(product_id)
             raw_price = sheet.cell(excel_row, int(price_column)).value
             if raw_price in (None, ""):
                 continue
@@ -695,40 +864,29 @@ def import_supplier_price(*, supplier_id, upload, actor, product_kind=None):
                 raise ValidationError(f"Строка {excel_row}: некорректная цена AED.") from exc
             if price <= 0:
                 raise ValidationError(f"Строка {excel_row}: цена AED должна быть больше нуля.")
-            model = CD if kind == "cd" else Tech if kind == "tech" else None
-            if model is None or not model.objects.active().filter(pk=product_id).exists():
-                raise ValidationError(f"Строка {excel_row}: товар не найден.")
             prepared[kind].append((product_id, price))
-        expected = set()
-        allowed = set()
-        for kind, model in (("cd", CD), ("tech", Tech)):
-            if not file_kind or kind == file_kind:
-                for product_id, excluded in model.objects.active().values_list("id", "exclude_from_supplier_template"):
-                    allowed.add((kind, product_id))
-                    if not excluded:
-                        expected.add((kind, product_id))
-        # Старые файлы могут содержать скрытые товары; все нескрытые строки обязательны.
-        if not expected.issubset(seen) or not seen.issubset(allowed):
+        # Полноту проверяем внутри скачанного документа, а не по изменяемому каталогу.
+        visible_rows = {
+            row for row in range(int(header_row) + 1, sheet.max_row + 1)
+            if any(sheet.cell(row, column).value not in (None, "") for column in (1, 2, 3, int(price_column)))
+        }
+        if seen_rows != visible_rows:
             raise ValidationError(
-                "Структура шаблона поставщика неполна или содержит посторонние товары. "
-                "Скачайте новый шаблон и заполните только колонку «Цена AED»."
+                "Структура шаблона поставщика неполна: товарные строки и технический лист не совпадают. "
+                "Сохраните строки шаблона и заполните только колонку «Цена AED»."
             )
         for kind, model, field in (("cd", SupplierCDPrice, "cd_id"), ("tech", SupplierTechPrice, "tech_id")):
             if scope is None or kind == scope:
-                included_ids = [product_id for item_kind, product_id in seen if item_kind == kind]
-                # Отсутствие скрытого товара в новом шаблоне не удаляет его прежнюю цену.
-                model.objects.filter(supplier=supplier).filter(
-                    Q(**{f"{kind}__exclude_from_supplier_template": False})
-                    | Q(**{f"{field}__in": included_ids})
-                ).delete()
+                # Отсутствующие в файле и архивные товары сохраняют прежние предложения.
+                model.objects.filter(supplier=supplier, **{f"{field}__in": included[kind]}).delete()
                 model.objects.bulk_create([
                     model(supplier=supplier, **{field: product_id}, price=price)
                     for product_id, price in prepared[kind]
                 ])
         count = len(prepared["cd"]) + len(prepared["tech"])
         logger.info(
-            "Прайс поставщика заменён: user_id=%s supplier_id=%s kind=%s prices=%s",
-            actor.pk, supplier.pk, scope or "all", count,
+            "Прайс поставщика обновлён: user_id=%s supplier_id=%s kind=%s prices=%s archived_skipped=%s",
+            actor.pk, supplier.pk, scope or "all", count, archived_count,
         )
         return count
     except Supplier.DoesNotExist as exc:
@@ -800,7 +958,14 @@ def import_procurement_order_xlsx(upload, *, product_kind=None, allow_empty=Fals
         workbook.close()
 
 
-def import_procurement_order_files(uploads):
+def import_procurement_order_files(uploads, *, with_purpose=False):
+    if uploads and "stock" in uploads:
+        if len(uploads) != 1:
+            raise ValidationError("Заказ на склад загружается отдельно от клиентских файлов.")
+        if not with_purpose:
+            raise ValidationError("Для складского прайса требуется создание заказа на склад.")
+        price_list, lines = import_stock_procurement_order_xlsx(uploads["stock"])
+        return price_list, lines, "stock"
     if not uploads or not set(uploads).issubset({"cd", "tech", None}):
         raise ValidationError("Загрузите заполненный клиентский прайс.")
     result_list, result_lines = None, []
@@ -817,4 +982,6 @@ def import_procurement_order_files(uploads):
             result_lines.append(line)
     if not result_lines:
         raise ValidationError("В файлах не выбрано ни одной товарной позиции.")
+    if with_purpose:
+        return result_list, result_lines, "customer"
     return result_list, result_lines

@@ -1,0 +1,10 @@
+.trip-line-form { display: flex; align-items: center; gap: 8px; }
+.trip-line-form input { width: 90px; min-width: 70px; }
+.trip-return-form { margin-top: 8px; }
+.trip-zero-row { background: #fff1d6; }
+.trip-dialog { width: min(850px, 94vw); max-width: 94vw; }
+.trip-dialog .table-scroll { max-height: 40vh; }
+.trip-dialog [hidden] { display: none !important; }
+.trip-dialog td, .trip-dialog th { white-space: normal; }
+.trip-dialog input[type="number"] { width: 110px; }
+.trip-dialog .field { margin-bottom: 14px; }

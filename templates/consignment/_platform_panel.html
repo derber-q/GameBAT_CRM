@@ -3,6 +3,9 @@
     <span class="section-title"><span class="category-tag">Площадка</span><span class="section-name">{{ presentation.platform.name }}</span></span>
     <span class="section-heading-meta"><span class="count" data-platform-count>{{ presentation.count }} поз.</span><span class="collapse-indicator" aria-hidden="true">▼</span></span>
   </button>
+  <div class="heading-actions consignment-platform-content">
+    <a class="button button-secondary" href="{% url 'consignment:platform_export' presentation.platform.pk %}">Скачать Excel</a>
+  </div>
   <div id="consignment-platform-{{ presentation.platform.pk }}" class="collapsible-content consignment-platform-content">
     {% if presentation.cd_groups %}
       <div class="consignment-kind-heading"><span class="category-tag">CD</span><h3>Диски</h3></div>

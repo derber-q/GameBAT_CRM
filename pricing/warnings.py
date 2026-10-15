@@ -7,6 +7,13 @@ MARKUP_FOR_PRICE = {
 }
 
 
+def wholesale_margin(wholesale, cost):
+    """Фактическая разница между оптовой ценой и себестоимостью."""
+    if wholesale is None or cost is None:
+        return None
+    return wholesale - cost
+
+
 def price_warning(*, price, wholesale, cost, markup=None):
     reasons = []
     if price is not None:

@@ -1,3 +1,4 @@
+from decimal import Decimal
 from unittest.mock import patch
 
 from django.contrib.auth.models import Group, Permission
@@ -209,7 +210,7 @@ class ProductCardPermissionTests(NomenclatureDataMixin, TestCase):
         self.assertEqual(self.cd.comment, "Комментарий CD")
         self.assertEqual(self.cd.barcode, "460000000001")
 
-    def test_system_controlled_fields_are_rejected(self):
+    def test_unpermitted_cost_and_system_quantity_are_rejected(self):
         response = self.client.post(self.url, {
             "version": product_version(self.cd),
             "name": "Новое имя",
@@ -275,6 +276,57 @@ class ProductCardPermissionTests(NomenclatureDataMixin, TestCase):
         self.assertEqual(response.status_code, 302)
         self.tech.refresh_from_db()
         self.assertEqual(self.tech.name, "Новое имя техники")
+
+
+class ProductCostEditingTests(NomenclatureDataMixin, TestCase):
+    def setUp(self):
+        self.create_products()
+        self.worker = User.objects.create_user("cost-editor", password="StrongWorker!123")
+        self.worker.user_permissions.add(permission("view_nomenclature"))
+        self.client.force_login(self.worker)
+
+    def test_cost_requires_card_permission_and_confirmation_for_both_product_types(self):
+        for kind, product in (("cd", self.cd), ("tech", self.tech)):
+            with self.subTest(kind=kind):
+                url = reverse(f"nomenclature:{kind}_detail", args=(product.pk,))
+                self.assertTrue(self.client.get(url).context["form"].fields["cost"].disabled)
+                denied = self.client.post(url, {
+                    "version": product_version(product), "cost": "125.50", "cost_confirmed": "true",
+                })
+                self.assertContains(denied, "Нет права изменять поля")
+                product.refresh_from_db()
+                self.assertEqual(product.cost, Decimal("0.00"))
+
+                self.worker.user_permissions.add(permission(f"change_{kind}"))
+                self.worker = User.objects.get(pk=self.worker.pk)
+                self.client.force_login(self.worker)
+                self.assertFalse(self.client.get(url).context["form"].fields["cost"].disabled)
+                unconfirmed = self.client.post(url, {
+                    "version": product_version(product), "cost": "125.50",
+                })
+                self.assertContains(unconfirmed, "Подтвердите изменение себестоимости")
+                product.refresh_from_db()
+                self.assertEqual(product.cost, Decimal("0.00"))
+
+                saved = self.client.post(url, {
+                    "version": product_version(product), "cost": "125.50", "cost_confirmed": "true",
+                })
+                self.assertEqual(saved.status_code, 302)
+                product.refresh_from_db()
+                self.assertEqual(product.cost, Decimal("125.50"))
+                change = product.change_events.get().field_changes.get()
+                self.assertEqual((change.field_name, change.old_value, change.new_value),
+                                 ("cost", "0.00", "125.50"))
+
+    def test_unchanged_cost_needs_no_confirmation(self):
+        self.worker.user_permissions.add(permission("change_cd"))
+        self.worker = User.objects.get(pk=self.worker.pk)
+        self.client.force_login(self.worker)
+        response = self.client.post(reverse("nomenclature:cd_detail", args=(self.cd.pk,)), {
+            "version": product_version(self.cd), "cost": "0",
+        })
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(ProductChangeEvent.objects.exists())
 
 
 class WarehouseStockEditingTests(NomenclatureDataMixin, TestCase):

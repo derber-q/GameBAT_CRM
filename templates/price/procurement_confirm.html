@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Подтверждение наценки · ReSOURCE{% endblock %}
+{% block content %}
+<section class="panel">
+  <h1>Сохранить отрицательную наценку?</h1>
+  <p>В следующих позициях предоплата ниже базы с доставкой. Вы уверены, что хотите сохранить эти цены?</p>
+  <div class="table-scroll"><table><thead><tr><th>Товар</th><th>Наценка, RUB</th><th>Предоплата, RUB</th><th>Постоплата, RUB</th></tr></thead>
+  <tbody>{% for item in negative_items %}<tr><td>{{ item.product_name_snapshot }}</td><td class="danger-text">{{ item.markup_rub }}</td><td>{{ item.prepayment_price_rub }}</td><td>{{ item.postpayment_price_rub }}</td></tr>{% endfor %}</tbody></table></div>
+  <form method="post" action="{% url 'price:procurement_update' price_list.pk %}">{% csrf_token %}
+    <input type="hidden" name="pricing_rows" value="{{ pricing_rows }}">
+    <input type="hidden" name="negative_markup_confirmed" value="true">
+    <div class="dialog-actions"><a class="button button-secondary" href="{% url 'price:procurement_detail' price_list.pk %}">Отмена</a><button class="button button-danger" type="submit">Да, сохранить с отрицательной наценкой</button></div>
+  </form>
+</section>
+{% endblock %}

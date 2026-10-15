@@ -8,6 +8,8 @@ from .models import (
     OrderAdjustmentChange,
     SupplierOrderBatch,
     SupplierOrderBatchLine,
+    SupplierTripAllocation,
+    SupplierTripChange,
 )
 
 
@@ -53,13 +55,19 @@ class OrderItemInline(admin.TabularInline):
 @admin.register(CustomerProcurementOrder)
 class CustomerProcurementOrderAdmin(ReadonlyHistoryAdmin):
     list_display = (
-        "id", "recipient", "status", "payment_warehouse", "prepayment_total",
+        "id", "recipient", "purpose", "status", "payment_warehouse", "prepayment_total",
         "postpayment_total", "grand_total", "created_by", "created_at",
     )
-    list_filter = ("status", "payment_warehouse", "created_at")
+    list_filter = ("purpose", "status", "payment_warehouse", "created_at")
     search_fields = ("recipient", "comment", "created_by__username", "created_by__full_name")
     readonly_fields = [field.name for field in CustomerProcurementOrder._meta.fields]
     inlines = (OrderItemInline,)
+
+    def get_queryset(self, request):
+        queryset = super().get_queryset(request)
+        if not request.user.has_perm("price.view_supplier_prices"):
+            queryset = queryset.filter(purpose=CustomerProcurementOrder.Purpose.CUSTOMER)
+        return queryset
 
     def get_inline_instances(self, request, obj=None):
         if not _can_view_supplier_snapshots(request):
@@ -119,7 +127,7 @@ class BatchLineInline(admin.TabularInline):
 @admin.register(SupplierOrderBatch)
 class SupplierOrderBatchAdmin(SupplierSnapshotAdminMixin, ReadonlyHistoryAdmin):
     list_display = ("id", "created_by", "created_at")
-    readonly_fields = ("created_by", "created_at", "source_orders")
+    readonly_fields = [field.name for field in SupplierOrderBatch._meta.fields] + ["source_orders"]
     inlines = (BatchLineInline,)
 
 
@@ -128,3 +136,15 @@ class SupplierOrderBatchLineAdmin(SupplierSnapshotAdminMixin, ReadonlyHistoryAdm
     list_display = ("batch", "supplier", "product_name_snapshot", "quantity")
     list_filter = ("supplier", "product_kind")
     readonly_fields = [field.name for field in SupplierOrderBatchLine._meta.fields]
+
+
+@admin.register(SupplierTripAllocation)
+class SupplierTripAllocationAdmin(SupplierSnapshotAdminMixin, ReadonlyHistoryAdmin):
+    list_display = ("line", "order_item", "prepayment_quantity", "postpayment_quantity")
+    readonly_fields = [field.name for field in SupplierTripAllocation._meta.fields]
+
+
+@admin.register(SupplierTripChange)
+class SupplierTripChangeAdmin(SupplierSnapshotAdminMixin, ReadonlyHistoryAdmin):
+    list_display = ("batch", "actor", "created_at", "description")
+    readonly_fields = [field.name for field in SupplierTripChange._meta.fields]

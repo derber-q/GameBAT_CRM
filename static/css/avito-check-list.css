@@ -1,7 +1,8 @@
 /* Размеры ограничены таблицей Avito Check; название получает всю свободную ширину. */
-.avito-list-table { width: 100%; min-width: 1040px; table-layout: fixed; }
+.avito-list-table { width: 100%; min-width: 1120px; table-layout: fixed; }
 .avito-list-table .avito-col-cost { width: 112px; }
 .avito-list-table .avito-col-price { width: 114px; }
+.avito-list-table .avito-col-wholesale { width: 194px; }
 .avito-list-table .avito-col-save { width: 92px; }
 .avito-list-table .avito-col-found { width: 124px; }
 .avito-list-table .avito-col-date { width: 104px; }

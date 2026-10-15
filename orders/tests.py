@@ -32,7 +32,7 @@ class ProcurementOrderTests(TestCase):
         kind = ProductType.objects.create(name="Консоли")
         self.cd = CD.objects.create(platform=platform, name="Игра", sku="CD-1", barcode="1")
         self.tech = Tech.objects.create(
-            brand=brand, product_type=kind, name="Консоль", sku="T-1", barcode="2"
+            brand=brand, product_type=kind, name="Консоль", sku="T-1", barcode="2", weight_grams=1000,
         )
         self.supplier = Supplier.objects.create(
             name="Alpha", letter="A", highlight_color="#37A7BA", legal_entity="A", phone_1="1"
@@ -41,6 +41,7 @@ class ProcurementOrderTests(TestCase):
         SupplierTechPrice.objects.create(supplier=self.supplier, tech=self.tech, price=150)
         self.price_list = create_procurement_price_list(
             actor=self.user, exchange_rate_usdt_aed=4, exchange_rate_usdt_rub=80,
+            delivery_general_usdt_per_kg=0, delivery_devices_usdt_per_kg=0, delivery_storage_usdt_per_kg=0, delivery_cd_rub=0,
         )
         self.cd_source = self.price_list.items.get(product_kind="cd")
         self.tech_source = self.price_list.items.get(product_kind="tech")
@@ -217,6 +218,7 @@ class ProcurementOrderTests(TestCase):
         SupplierCDPrice.objects.filter(supplier=self.supplier, cd=self.cd).update(price=120)
         newer_price_list = create_procurement_price_list(
             actor=self.user, exchange_rate_usdt_aed=4, exchange_rate_usdt_rub=80,
+            delivery_general_usdt_per_kg=0, delivery_devices_usdt_per_kg=0, delivery_storage_usdt_per_kg=0, delivery_cd_rub=0,
         )
         newer_source = newer_price_list.items.get(product_kind="cd")
         new_order = self.create_order(pre=3, post=0, source=newer_source)

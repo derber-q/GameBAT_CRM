@@ -276,10 +276,19 @@ class FBSIntegrationTests(TestCase):
         self.assertEqual(self.product.weight_grams, 140)
         self.assertTrue(ProductFieldChange.objects.filter(event__cd=self.product, field_name="dimensions_source", new_value__contains="Яндекс Маркет").exists())
 
-    def test_api_payload_uses_shared_dimensions_and_existing_weight(self):
+    def test_existing_api_payload_uses_crm_dimensions_and_keeps_market_weight(self):
         remote = RemoteOffer.objects.create(integration=self.integration, offer_id="shared-dimensions", category_id=50)
         connection = OfferConnection.objects.create(integration=self.integration, remote_offer=remote, cd=self.product,
-            content={"weightDimensions": {"length": 90, "width": 90, "height": 90}}, dirty_fields=["weightDimensions"])
+            content={"weightDimensions": {"length": 90, "width": 90, "height": 90, "weight": "0.5"}}, dirty_fields=["weightDimensions"])
+        payload = build_content(connection)["weightDimensions"]
+        self.assertEqual(payload, {"length": Decimal("17"), "width": Decimal("13"), "height": Decimal("2"), "weight": Decimal("0.5")})
+
+    def test_new_api_payload_uses_shared_dimensions_and_existing_weight(self):
+        remote = RemoteOffer.objects.create(integration=self.integration, offer_id="new-shared-dimensions", category_id=50)
+        connection = OfferConnection.objects.create(integration=self.integration, remote_offer=remote, cd=self.product,
+            category_id=50, is_new=True,
+            content={"name": "Новая игра", "description": "Описание игры", "vendor": "Издатель", "pictures": ["https://example.com/game.jpg"],
+                     "weightDimensions": {"length": 90, "width": 90, "height": 90}}, dirty_fields=["weightDimensions"])
         payload = build_content(connection)["weightDimensions"]
         self.assertEqual(payload, {"length": 17, "width": 13, "height": 2, "weight": Decimal("0.14")})
 

@@ -11,3 +11,6 @@ class SupplierForm(forms.ModelForm):
             "priority",
         )
         widgets = {"highlight_color": forms.TextInput(attrs={"type": "color"})}
+        help_texts = {
+            "priority": "1 — самый высокий приоритет. При равной цене выбирается меньшее число.",
+        }

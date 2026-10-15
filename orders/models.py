@@ -32,6 +32,22 @@ class ProductReferenceMixin(models.Model):
 
 
 class CustomerProcurementOrder(models.Model):
+    class Purpose(models.TextChoices):
+        CUSTOMER = "customer", "Клиентский заказ"
+        STOCK = "stock", "Заказ на склад"
+
+    purpose = models.CharField(
+        "Назначение", max_length=12, choices=Purpose.choices,
+        default=Purpose.CUSTOMER, db_default=Purpose.CUSTOMER, editable=False,
+    )
+    supply = models.OneToOneField(
+        "supplies.Supply", on_delete=models.PROTECT, null=True, blank=True,
+        related_name="procurement_order", verbose_name="Приход по заказу", editable=False,
+    )
+    trip = models.ForeignKey(
+        "SupplierOrderBatch", on_delete=models.PROTECT, null=True, blank=True,
+        related_name="trip_orders", verbose_name="Рейс", editable=False,
+    )
     class Status(models.TextChoices):
         CREATED = "created", "Создан"
         CONFIRMED = "confirmed", "Подтверждён"
@@ -87,6 +103,10 @@ class CustomerProcurementOrder(models.Model):
         ]
 
     @property
+    def is_stock_order(self):
+        return self.purpose == self.Purpose.STOCK
+
+    @property
     def total_units(self):
         return sum(item.prepayment_quantity + item.postpayment_quantity for item in self.items.all())
 
@@ -133,15 +153,15 @@ class CustomerProcurementOrderItem(ProductReferenceMixin):
                 name="customer_order_item_exact_product",
             ),
             models.UniqueConstraint(fields=("order", "price_list_item"), name="unique_order_price_list_item"),
-            models.CheckConstraint(
-                condition=models.Q(prepayment_quantity__gt=0) | models.Q(postpayment_quantity__gt=0),
-                name="customer_order_item_quantity_positive",
-            ),
         ]
 
     @property
     def prepayment_line_total(self):
         return self.prepayment_unit_price * self.prepayment_quantity
+
+    @property
+    def quantity(self):
+        return self.prepayment_quantity + self.postpayment_quantity
 
     @property
     def postpayment_line_total(self):
@@ -205,6 +225,11 @@ class OrderAdjustmentChange(models.Model):
 
 
 class SupplierOrderBatch(models.Model):
+    price_list = models.ForeignKey(ProcurementPriceList, on_delete=models.PROTECT, null=True, blank=True,
+                                  related_name="trips", verbose_name="Общий прайс", editable=False)
+    name = models.CharField("Название рейса", max_length=255, blank=True, default="", db_default="")
+    revision = models.PositiveIntegerField("Версия изменений", default=0, db_default=0, editable=False)
+    creation_key = models.UUIDField(null=True, blank=True, unique=True, editable=False)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
         related_name="supplier_order_batches", verbose_name="Создал",
@@ -221,10 +246,14 @@ class SupplierOrderBatch(models.Model):
         permissions = [("generate_supplier_orders", "Заказы: формирование заказов поставщикам")]
 
     def __str__(self):
-        return f"Подборка поставщикам №{self.pk}"
+        return (f"Рейс №{self.pk}" + (f" · {self.name}" if self.name else "")) if self.price_list_id else f"Подборка поставщикам №{self.pk}"
 
 
 class SupplierOrderBatchLine(ProductReferenceMixin):
+    price_list_item = models.ForeignKey(ProcurementPriceListItem, on_delete=models.PROTECT,
+                                       null=True, blank=True, related_name="trip_lines", editable=False)
+    price_supplier = models.ForeignKey(Supplier, on_delete=models.PROTECT, null=True, blank=True,
+                                      related_name="trip_price_lines", verbose_name="Источник цены", editable=False)
     batch = models.ForeignKey(
         SupplierOrderBatch, on_delete=models.PROTECT, related_name="lines", verbose_name="Подборка"
     )
@@ -250,8 +279,42 @@ class SupplierOrderBatchLine(ProductReferenceMixin):
                 ),
                 name="supplier_batch_line_exact_product",
             ),
-            models.CheckConstraint(condition=models.Q(quantity__gt=0), name="supplier_batch_quantity_positive"),
+            models.CheckConstraint(condition=models.Q(quantity__gte=0), name="supplier_batch_quantity_nonnegative"),
+            models.UniqueConstraint(fields=("batch", "supplier", "price_list_item", "price_supplier"),
+                                    name="unique_trip_supplier_product_price"),
         ]
 
     def __str__(self):
         return f"{self.supplier}: {self.product_name_snapshot} × {self.quantity}"
+
+    @property
+    def total_aed(self):
+        return self.supplier_price_aed_snapshot * self.quantity
+
+
+class SupplierTripAllocation(models.Model):
+    """Распределение строки поставщика между клиентскими позициями рейса."""
+    line = models.ForeignKey(SupplierOrderBatchLine, on_delete=models.PROTECT, related_name="allocations")
+    order_item = models.ForeignKey(CustomerProcurementOrderItem, on_delete=models.PROTECT, related_name="trip_allocations")
+    prepayment_quantity = models.PositiveIntegerField(default=0)
+    postpayment_quantity = models.PositiveIntegerField(default=0)
+    prepayment_cap = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=("line", "order_item"), name="unique_trip_line_customer_item")]
+
+    @property
+    def quantity(self):
+        return self.prepayment_quantity + self.postpayment_quantity
+
+
+class SupplierTripChange(models.Model):
+    batch = models.ForeignKey(SupplierOrderBatch, on_delete=models.PROTECT, related_name="changes")
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    created_at = models.DateTimeField(auto_now_add=True)
+    revision = models.PositiveIntegerField()
+    description = models.CharField(max_length=500)
+    details = models.JSONField(default=dict)
+
+    class Meta:
+        ordering = ("-created_at", "-id")

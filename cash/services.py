@@ -112,6 +112,8 @@ def collect_cash(*, actor, warehouse_id, amount, comment, operation_key=None):
 @transaction.atomic
 def credit_sale_payment(*, sale, actor):
     """Зачисляет оплату продажи ровно один раз в кассу её склада."""
+    if getattr(sale, "operation_kind", "normal") == "EXPENSE":
+        raise ValidationError("Расход учитывается в статистике без кассового поступления.")
     register = _locked_register(sale.warehouse_id)
     if CashTransaction.objects.select_for_update().filter(
         sale=sale, operation_type=CashTransaction.OperationType.SALE_PAYMENT
@@ -141,6 +143,8 @@ def credit_sale_payment(*, sale, actor):
 @transaction.atomic
 def refund_sale_payment(*, sale, actor, comment):
     """Возвращает фактически принятую наличную оплату ровно один раз."""
+    if getattr(sale, "operation_kind", "normal") == "EXPENSE":
+        raise ValidationError("Расход не создаёт кассовую оплату для возврата.")
     comment = _comment(comment)
     existing = CashTransaction.objects.select_for_update().filter(
         sale=sale, operation_type=CashTransaction.OperationType.SALE_REFUND

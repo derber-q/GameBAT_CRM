@@ -21,7 +21,7 @@ from integrations.avito_check import display_result, manual_search_url, queue, r
 from integrations.models import AvitoManualPrice, AvitoPriceCheckResult, ReefApiCredential
 from integrations.reef_api import ReefApiError
 from .services import update_product_prices
-from .warnings import product_price_warnings
+from .warnings import product_price_warnings, wholesale_margin
 
 
 def _item(kind, pk, items=None):
@@ -38,6 +38,7 @@ def _page_context(request, items, index, *, posted=None):
         "manual_search_url": manual_search_url(product, kind),
         "warnings": product_price_warnings(product),
         "form_wholesale": posted.get("wholesale_price", "") if posted is not None else product.wholesale_price,
+        "wholesale_margin": wholesale_margin(product.wholesale_price, product.cost),
         "form_avito": posted.get("avito_price", "") if posted is not None else product.avito_price,
         "reef_configured": ReefApiCredential.objects.filter(pk=1).exclude(encrypted_api_key="").exists(),
         "can_change_avito": request.user.is_superuser or request.user.has_perm("pricing.change_retail_price"),
@@ -63,6 +64,7 @@ def page(request):
     for product in products:
         found = getattr(product.avito_profile, "manual_price", None)
         rows.append({"kind": "cd", "type": "cd", "product": product, "found": found,
+                     "wholesale_margin": wholesale_margin(product.wholesale_price, product.cost),
                      "warnings": product_price_warnings(product),
                      "can_change_avito": can_change_avito and not product.is_archived,
                      "can_change_wholesale": can_change_wholesale and not product.is_archived,

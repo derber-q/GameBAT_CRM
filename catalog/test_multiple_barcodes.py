@@ -44,6 +44,7 @@ class MultipleBarcodeTests(TestCase):
         data = {
             "version": product_version(product), "platform": product.platform_id,
             "name": product.name, "sku": product.sku,
+            "cost": str(product.cost),
             "description": product.description, "comment": product.comment,
             **barcodes,
         }

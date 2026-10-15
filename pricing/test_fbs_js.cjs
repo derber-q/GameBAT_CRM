@@ -15,10 +15,11 @@ const node = () => ({textContent: '', children: [], appendChild(item) { this.chi
 const output = () => {
   const fields = Object.fromEntries(['price', 'profit-result', 'volume', 'breakdown', 'save-status']
     .map((name) => [`[data-fbs-${name}]`, node()]));
-  return {fields, querySelector(selector) { return fields[selector] || null; }};
+  return {fields, hasAttribute() {return false;}, querySelector(selector) { return fields[selector] || null; }};
 };
 const editor = output();
 const inline = output();
+inline.hasAttribute = name => name === 'data-fbs-inline';
 const dimensionsButton = {hidden: false};
 const inlineFields = {hidden: true};
 inline.fields['[data-fbs-dimensions-open]'] = dimensionsButton;

@@ -1,0 +1,10 @@
+{{ procurement_form.non_field_errors }}
+{% for field in procurement_form %}
+<div class="field{% if field.errors %} field-error{% endif %}">
+  <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+  {{ field }}{{ field.errors }}
+  {% if field.help_text %}<span class="muted">{{ field.help_text }}</span>{% endif %}
+</div>
+{% endfor %}
+<p class="muted">База в рублях = цена AED ÷ AED за 1 USDT × RUB за 1 USDT. Доставка техники = вес с упаковкой в кг × тариф USDT за кг × RUB за 1 USDT. Для каждого диска доставка задаётся фиксированной суммой в RUB за штуку. Доставка добавляется к клиентской цене.</p>
+<p class="muted">Для знакомых товаров подставляется сохранённая наценка в рублях. Предоплата рассчитывается по новой базе, доставке и этой наценке; постоплата — по текущему правилу. Для новых товаров начальная наценка равна нулю.</p>

@@ -1,7 +1,19 @@
-.fbs-inline { display: grid; gap: 6px; text-align: left; margin-top: 10px; font-size: 11px; line-height: 1.35; white-space: normal; }
+.fbs-inline { display: grid; gap: 4px; text-align: left; margin-top: 0; font-size: 11px; line-height: 1.35; white-space: normal; }
 .fbs-inline label { font-weight: 600; }
 .fbs-inline input { width: 100%; min-width: 0; }
-.fbs-inputs { display: grid; gap: 6px; }
+.fbs-inputs { display: grid; gap: 3px; }
+.pricing-products-table .pricing-col-yandex { width: 232px; }
+.pricing-products-table .pricing-col-actions { width: 128px; }
+.pricing-products-table .pricing-col-sku { width: 130px; }
+.pricing-yandex-heading { text-align: center; }
+.fbs-column-hint { display: block; font-size: 10px; font-weight: 500; letter-spacing: 0; text-transform: none; }
+.fbs-price-pair { align-items: center; display: grid; gap: 4px; grid-template-columns: minmax(0, .85fr) 10px minmax(0, 1.15fr); }
+.fbs-price-pair .compact-input { box-sizing: border-box; min-width: 0; padding: 8px; width: 100%; }
+.fbs-price-pair input[type="number"] { appearance: textfield; }
+.fbs-price-pair input::-webkit-inner-spin-button, .fbs-price-pair input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.fbs-price-separator { color: var(--gb-text-muted); font-size: 16px; text-align: center; }
+.pricing-products-table .fbs-price-pair .price-readonly { width: 100%; }
+.fbs-calculation-link { font-size: 11px; justify-self: end; }
 .pricing-price-cell > [hidden], .fbs-inline [hidden] { display: none !important; }
 .fbs-dimensions-button { min-height: 44px; white-space: normal; text-align: center; }
 .fbs-inline [data-fbs-price] { overflow-wrap: anywhere; }

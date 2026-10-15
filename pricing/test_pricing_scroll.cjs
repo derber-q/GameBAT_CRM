@@ -8,9 +8,11 @@ const status = {style: {}, setAttribute() {}};
 const input = {value: '189', matches: () => true, addEventListener: (_, fn) => edited = fn};
 const form = {
   action: '/pricing/update/', elements: [input],
+  dispatchEvent() {},
   querySelector: () => button, appendChild() {}, addEventListener: (_, fn) => submit = fn,
 };
 const context = {
+  CustomEvent: class {constructor(type, options = {}) {this.type = type; Object.assign(this, options);}},
   document: {
     querySelectorAll: () => [form], createElement: () => status,
   },

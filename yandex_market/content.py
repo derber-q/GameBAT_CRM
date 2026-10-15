@@ -98,6 +98,17 @@ def api_numbers(value, schema):
     return value
 
 
+def content_values_equal(key, left, right):
+    # После JSONField дробные числа могут стать строками; это не изменение контента.
+    if left is None or right is None:
+        return left is right
+    try:
+        schema = CONTENT_FIELDS[key]
+        return api_numbers(left, schema) == api_numbers(right, schema)
+    except (InvalidOperation, ValueError, TypeError, AttributeError):
+        return left == right
+
+
 def validate_parameters(values, schema, *, require_all=True):
     definitions = {int(p["id"]): p for p in schema.get("parameters", [])}
     grouped = {}
@@ -157,8 +168,15 @@ def build_content(connection):
         base = public_https(settings.YANDEX_MARKET_PUBLIC_URL)
         payload["pictures"] = [f"{base}/integrations/yandex/media/{media.public_id}/" for media in connection.media.filter(active=True)]
     if "weightDimensions" in payload:
-        from .product_dimensions import dimensions_payload
-        payload["weightDimensions"] = dimensions_payload(connection.product, payload["weightDimensions"])
+        from .product_dimensions import connection_dimensions, dimensions_payload
+        if connection.is_new:
+            payload["weightDimensions"] = dimensions_payload(connection.product, payload["weightDimensions"])
+        else:
+            dimensions = connection_dimensions(connection)
+            if dimensions is None:
+                payload.pop("weightDimensions")
+            else:
+                payload["weightDimensions"] = dimensions
     if connection.delete_fields:
         payload["deleteParameters"] = connection.delete_fields
         for name in connection.delete_fields:
@@ -176,7 +194,8 @@ def build_content(connection):
         missing = [key for key in ("name", "description", "vendor", "marketCategoryId", "pictures") if not payload.get(key)]
         if missing:
             raise ValidationError("Для нового товара заполните: " + ", ".join(missing))
-    if payload and connection.remote_offer.card_status == LOCKED_CARD:
+    # Габариты упаковки относятся к offer продавца, а не к общему контенту карточки.
+    if set(payload) - {"weightDimensions"} and connection.remote_offer.card_status == LOCKED_CARD:
         raise ValidationError("Маркет запретил редактирование системной карточки. Обновите статус или используйте кабинет.")
     payload["offerId"] = connection.remote_offer.offer_id
     validate_schema(payload, OFFER_SCHEMA, "Карточка Маркета")

@@ -10,6 +10,47 @@
   const warehouse = document.getElementById("id_warehouse");
   const csrfToken = form.querySelector('input[name="csrfmiddlewaretoken"]').value;
   let pendingBarcodeSaves = 0;
+  const barcodeFeedback = form.querySelector("[data-supply-barcode-feedback]");
+  let inventoryRequest = 0;
+
+  function showSupplyInventory(row, result) {
+    const output = row.querySelector("[data-supply-stock-reference]");
+    if (!output) return;
+    if (!warehouse?.value) { output.textContent = "Выберите склад для просмотра остатка и мест хранения."; return; }
+    output.textContent = result && result.warehouse_stock !== null && result.warehouse_stock !== undefined
+      ? `На складе: ${result.warehouse_stock} шт. (${result.storage_locations || "место не указано"})`
+      : "Остаток и места хранения недоступны. Повторно выберите склад.";
+  }
+
+  async function refreshSupplyInventory() {
+    const request = ++inventoryRequest;
+    const warehouseId = warehouse?.value;
+    const rows = [...lines.querySelectorAll("tr")].filter(row => row.dataset.supplyProductId);
+    if (!warehouseId) { rows.forEach(row => showSupplyInventory(row, null)); return; }
+    const refs = [...new Set(rows.map(row => `${row.dataset.supplyProductType}:${row.dataset.supplyProductId}`))];
+    if (!refs.length) return;
+    rows.forEach(row => { row.querySelector("[data-supply-stock-reference]").textContent = "Обновление остатка…"; });
+    try {
+      const batches = [];
+      for (let index = 0; index < refs.length; index += 100) batches.push(refs.slice(index, index + 100));
+      const payloads = await Promise.all(batches.map(async batch => {
+        const params = new URLSearchParams({context: "supply", warehouse: warehouseId, items: batch.join(",")});
+        const response = await fetch(`${form.dataset.autocompleteUrl}?${params}`, {headers: {Accept: "application/json"}});
+        if (!response.ok) throw new Error("Не удалось получить остатки.");
+        return response.json();
+      }));
+      if (request !== inventoryRequest || warehouse?.value !== warehouseId) return;
+      const byProduct = new Map(payloads.flatMap(payload => payload.results).map(result => [`${result.type}:${result.id}`, result]));
+      rows.forEach(row => showSupplyInventory(row, byProduct.get(`${row.dataset.supplyProductType}:${row.dataset.supplyProductId}`)));
+    } catch (_) {
+      if (request === inventoryRequest) rows.forEach(row => showSupplyInventory(row, null));
+    }
+  }
+
+  function focusBarcodeQuantity(quantity) {
+    quantity.focus({ preventScroll: true });
+    quantity.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }
   form.addEventListener("submit", (event) => {
     if (pendingBarcodeSaves) {
       event.preventDefault();
@@ -57,6 +98,14 @@
     weightPrompt.hidden = true;
     wrap.append(search, type, id, suggestionBox, weightPrompt);
     productCell.append(wrap);
+    const stockReference = document.createElement("small");
+    stockReference.className = "help-text";
+    stockReference.dataset.supplyStockReference = "true";
+    productCell.append(stockReference);
+    if (value.product_id) {
+      row.dataset.supplyProductType = value.product_type;
+      row.dataset.supplyProductId = String(value.product_id);
+    }
 
     if (form.dataset.barcodeUrl) {
       let selectedProduct = null;
@@ -166,7 +215,7 @@
       row.classList.remove("supply-line-needs-weight");
     }
 
-    function requestProductWeight(result) {
+    function requestProductWeight(result, afterSave) {
       hideWeightPrompt();
       if (!result || Number(result.weight_grams) > 0) return;
       id.value = "";
@@ -217,7 +266,8 @@
           id.value = result.id;
           result.weight_grams = data.weight_grams;
           hideWeightPrompt();
-          cost.focus();
+          if (afterSave) afterSave();
+          else cost.focus();
         } catch (error) {
           feedback.textContent = error.message;
           save.disabled = false;
@@ -272,6 +322,29 @@
 
     row.append(productCell, supplierCell, quantityCell, costCell, removeButton(row));
     lines.append(row);
+    const selectProduct = (result, metadata = {}) => {
+      if (result) {
+        row.dataset.supplyProductType = result.type;
+        row.dataset.supplyProductId = String(result.id);
+        showSupplyInventory(row, result);
+      } else {
+        delete row.dataset.supplyProductType;
+        delete row.dataset.supplyProductId;
+        stockReference.textContent = "";
+      }
+      row.selectBarcodeProduct?.(result);
+      const focusQuantity = metadata.exactBarcode ? () => focusBarcodeQuantity(quantity) : null;
+      if (result && metadata.exactBarcode && !quantity.value) quantity.value = "1";
+      requestProductWeight(result, focusQuantity);
+      if (result && Number(result.weight_grams) > 0 && focusQuantity) focusQuantity();
+    };
+    row.selectSupplyProduct = (result) => {
+      search.value = result.label;
+      type.value = result.type;
+      id.value = result.id;
+      if (!quantity.value) quantity.value = "1";
+      selectProduct(result, { exactBarcode: true });
+    };
     window.GameBAT.attachAutocomplete({
       input: search,
       typeInput: type,
@@ -280,10 +353,7 @@
       endpoint: form.dataset.autocompleteUrl,
       warehouseInput: warehouse,
       searchContext: form.dataset.searchContext,
-      onSelect: (result) => {
-        row.selectBarcodeProduct?.(result);
-        requestProductWeight(result);
-      },
+      onSelect: selectProduct,
     });
     if (value.product_id && !value.weight_grams) {
       requestProductWeight({
@@ -294,6 +364,41 @@
       });
     }
     if (!value.label) search.focus();
+    return row;
+  }
+
+  async function addByBarcode(barcode) {
+    if (!barcodeFeedback) return;
+    barcodeFeedback.classList.remove("error-text");
+    barcodeFeedback.textContent = "Поиск…";
+    try {
+      const params = new URLSearchParams({ q: barcode, context: "supply" });
+      if (warehouse?.value) params.set("warehouse", warehouse.value);
+      const response = await fetch(`${form.dataset.autocompleteUrl}?${params.toString()}`, {
+        headers: { "Accept": "application/json", "X-Requested-With": "XMLHttpRequest" },
+      });
+      if (!response.ok) throw new Error("Не удалось выполнить поиск.");
+      const payload = await response.json();
+      const matches = payload.results.filter((result) => (result.barcodes || [result.barcode]).some(
+        (value) => String(value || "").trim() === barcode,
+      ));
+      if (!matches.length) throw new Error("Товар с таким штрихкодом не найден.");
+      if (matches.length > 1) throw new Error("Этот штрихкод указан у нескольких товаров. Выберите товар через обычный поиск.");
+      let row = [...lines.querySelectorAll("tr")].find((candidate) => (
+        !candidate.querySelector('input[name="product_id"]').value
+        && !candidate.querySelector('input[name="product_search"]').value.trim()
+      ));
+      if (!row) row = addProductLine({ label: matches[0].label });
+      row.selectSupplyProduct(matches[0]);
+      barcodeFeedback.textContent = `Добавлено: ${matches[0].label}`;
+    } catch (error) {
+      barcodeFeedback.textContent = error.message;
+      barcodeFeedback.classList.add("error-text");
+    }
+  }
+
+  if (window.GameBAT.registerGlobalBarcodeHandler) {
+    window.GameBAT.registerGlobalBarcodeHandler(addByBarcode);
   }
 
   function addExpenseLine(value = {}) {
@@ -348,4 +453,6 @@
   }
   (initialLines.length ? initialLines : [{}]).forEach(addProductLine);
   (initialExpenses.length ? initialExpenses : [{}]).forEach(addExpenseLine);
+  if (warehouse) warehouse.addEventListener("change", refreshSupplyInventory);
+  refreshSupplyInventory();
 })();

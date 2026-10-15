@@ -19,6 +19,7 @@ from .models import (
     ProductRemovalEvent,
     ProductType,
     Tech,
+    SystemProduct,
 )
 from .product_fields import PRICING_FIELDS, card_fields_for, field_permissions_for
 from .product_identifiers import ensure_product_article
@@ -137,9 +138,15 @@ class ProductAdminMixin:
                 raise
 
 
-@admin.register(Platform, Brand, ProductType)
+@admin.register(Platform, Brand)
 class ReferenceAdmin(admin.ModelAdmin):
     search_fields = ("name",)
+
+
+@admin.register(ProductType)
+class ProductTypeAdmin(ReferenceAdmin):
+    list_display = ("name", "procurement_delivery_group")
+    list_filter = ("procurement_delivery_group",)
 
 
 @admin.register(GameSeries)
@@ -281,7 +288,25 @@ class ProductFieldChangeAdmin(ReadonlyAuditAdminMixin, admin.ModelAdmin):
 
 @admin.register(BarcodeRegistry)
 class BarcodeRegistryAdmin(ReadonlyAuditAdminMixin, admin.ModelAdmin):
+    list_select_related = ("cd", "tech", "system_product")
     list_display = ("value", "product_kind", "product", "created_at")
     list_filter = ("product_kind",)
     search_fields = ("value", "cd__name", "tech__name")
-    readonly_fields = ("product_kind", "value", "cd", "tech", "created_at")
+    readonly_fields = ("product_kind", "value", "cd", "tech", "system_product", "created_at")
+
+
+@admin.register(SystemProduct)
+class SystemProductAdmin(ReadonlyAuditAdminMixin, admin.ModelAdmin):
+    list_display = ("kind", "name", "barcode_value")
+    readonly_fields = ("kind", "name", "barcode_value", "barcode_image")
+    fields = readonly_fields
+    list_select_related = ("barcode_entry",)
+
+    @admin.display(description="Штрихкод")
+    def barcode_value(self, obj):
+        return obj.barcode_entry.value
+
+    @admin.display(description="Code128 для печати")
+    def barcode_image(self, obj):
+        from .product_identifiers import render_barcode_svg_data_url
+        return format_html('<img src="{}" alt="{}" style="max-width:100%">', render_barcode_svg_data_url(obj.barcode_entry.value), obj.name)

@@ -1,21 +1,37 @@
 {% load l10n %}
 <td class="numeric pricing-price-cell">
+  {% if field == 'wholesale_price' and actual_margin_label %}<div class="pricing-wholesale-pair" data-wholesale-margin data-cost="{{ row.product.cost|default_if_none:''|unlocalize }}">{% endif %}
+  {% if field != 'yandex_market_price' %}
   {% if can_change %}
-  <input class="compact-input{% if warning %} price-warning{% endif %}" data-price-field="{{ field }}" form="product-price-{{ row.type }}-{{ row.product.id }}" type="number" min="0" step="0.01" name="{{ field }}" value="{{ value|default_if_none:''|unlocalize }}" aria-label="{{ label }}" title="{{ warning }}"{% if field == 'yandex_market_price' %}{% if not row.product.length_cm or not row.product.width_cm or not row.product.height_cm %} hidden{% endif %}{% endif %}>
+  <input class="compact-input{% if warning %} price-warning{% endif %}" data-price-field="{{ field }}"{% if field == 'wholesale_price' %} data-wholesale-value{% endif %} form="product-price-{{ row.type }}-{{ row.product.id }}" type="number" min="0" step="0.01" name="{{ field }}" value="{{ value|default_if_none:''|unlocalize }}" aria-label="{{ label }}" title="{{ warning }}">
   {% else %}
-  <span class="price-readonly{% if warning %} price-warning{% endif %}" data-price-field="{{ field }}" data-value="{{ value|default_if_none:''|unlocalize }}" title="{{ warning }}"{% if field == 'yandex_market_price' %}{% if not row.product.length_cm or not row.product.width_cm or not row.product.height_cm %} hidden{% endif %}{% endif %}>{{ value|default_if_none:"—" }}</span>
+  <span class="price-readonly{% if warning %} price-warning{% endif %}" data-price-field="{{ field }}"{% if field == 'wholesale_price' %} data-wholesale-value{% endif %} data-value="{{ value|default_if_none:''|unlocalize }}" title="{{ warning }}">{{ value|default_if_none:"—" }}</span>
   {% endif %}
+  {% endif %}
+  {% if field == 'wholesale_price' and actual_margin_label %}
+    <span class="price-pair-separator" aria-hidden="true">/</span>
+    <span class="wholesale-margin-value" data-wholesale-margin-value title="{{ actual_margin_label }}">{% if actual_margin != None %}{{ actual_margin|floatformat:2 }}{% else %}—{% endif %}</span>
+  </div>{% endif %}
   {% if markup_field %}
   <span hidden data-markup-for="{{ field }}" data-value="{{ markup|default_if_none:''|unlocalize }}"></span>
   {% endif %}
   {% if field == 'yandex_market_price' %}
-  <div class="fbs-inline" data-fbs-inline data-preview-url="{% url 'pricing:fbs_preview' row.type row.product.pk %}">
+  <div class="fbs-inline" data-fbs-inline data-fbs-persisted-price="{{ row.product.yandex_market_price|default_if_none:''|unlocalize }}" data-preview-url="{% url 'pricing:fbs_preview' row.type row.product.pk %}">
+    {% if can_change %}<input type="hidden" name="yandex_price_source" data-fbs-price-source form="product-price-{{ row.type }}-{{ row.product.pk }}" value="{% if row.product.yandex_market_price == None and row.product.yandex_calculated_price != None %}fbs{% else %}manual{% endif %}">{% endif %}
     <a class="button button-secondary fbs-dimensions-button" href="{% url 'pricing:fbs_detail' row.type row.product.pk %}" data-fbs-open data-fbs-dimensions-open{% if row.product.length_cm and row.product.width_cm and row.product.height_cm %} hidden{% endif %}>Указать размеры</a>
     <div class="fbs-inputs" data-fbs-inputs{% if not row.product.length_cm or not row.product.width_cm or not row.product.height_cm %} hidden{% endif %}>
-    <label for="fbs-profit-{{ row.type }}-{{ row.product.pk }}">Желаемая чистая прибыль, ₽</label>
-    <input id="fbs-profit-{{ row.type }}-{{ row.product.pk }}" class="compact-input" type="number" min="0" step="0.01" name="yandex_desired_profit" data-fbs-profit form="product-price-{{ row.type }}-{{ row.product.pk }}" value="{{ row.product.yandex_desired_profit|default_if_none:''|unlocalize }}" {% if not can_change %}disabled{% endif %}>
-    <div data-fbs-price role="status">{% if row.product.yandex_calculated_price %}Цена для покупателя: <strong>{{ row.product.yandex_calculated_price|floatformat:0 }} ₽</strong>{% elif not row.product.length_cm or not row.product.width_cm or not row.product.height_cm %}Цена не рассчитана: укажите габариты товара для расчёта FBS.{% else %}Цена не рассчитана. Откройте параметры FBS.{% endif %}</div>
-    <a href="{% url 'pricing:fbs_detail' row.type row.product.pk %}" data-fbs-open>Яндекс Маркет FBS · расчёт и габариты</a>
+      <div class="fbs-price-pair">
+        <input id="fbs-profit-{{ row.type }}-{{ row.product.pk }}" class="compact-input" type="number" min="0" step="0.01" name="yandex_desired_profit" data-fbs-profit form="product-price-{{ row.type }}-{{ row.product.pk }}" value="{{ row.product.yandex_desired_profit|default_if_none:''|unlocalize }}" aria-label="Желаемая чистая прибыль, ₽" title="Желаемая чистая прибыль, ₽" {% if not can_change %}disabled{% endif %}>
+        <span class="fbs-price-separator" aria-hidden="true">/</span>
+        {% if can_change %}
+        <input class="compact-input{% if warning %} price-warning{% endif %}" data-price-field="{{ field }}" form="product-price-{{ row.type }}-{{ row.product.id }}" type="number" min="0" step="0.01" name="{{ field }}" value="{{ value|default_if_none:''|unlocalize }}" aria-label="{{ label }}" title="{{ warning }}"{% if not row.product.length_cm or not row.product.width_cm or not row.product.height_cm %} hidden{% endif %}>
+        {% else %}
+        <span class="price-readonly{% if warning %} price-warning{% endif %}" data-price-field="{{ field }}" data-value="{{ value|default_if_none:''|unlocalize }}" title="{{ warning }}"{% if not row.product.length_cm or not row.product.width_cm or not row.product.height_cm %} hidden{% endif %}>{{ value|default_if_none:"—" }}</span>
+        {% endif %}
+      </div>
+      <a class="fbs-calculation-link" href="{% url 'pricing:fbs_detail' row.type row.product.pk %}" data-fbs-open>Расчёт итоговой цены</a>
+      <span data-fbs-persist-status role="status"{% if row.product.yandex_market_price != None or row.product.yandex_calculated_price == None %} hidden{% endif %}>Расчёт ещё не сохранён{% if can_change %} — нажмите «Сохранить»{% endif %}.</span>
+      <div data-fbs-price role="status"{% if row.product.yandex_calculated_price %} hidden{% endif %}>{% if not row.product.yandex_calculated_price %}{% if not row.product.length_cm or not row.product.width_cm or not row.product.height_cm %}Цена не рассчитана: укажите габариты товара для расчёта FBS.{% else %}Цена не рассчитана. Откройте параметры FBS.{% endif %}{% endif %}</div>
     </div>
   </div>
   {% endif %}

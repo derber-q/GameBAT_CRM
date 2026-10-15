@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 from django.test import TestCase
+from django.urls import reverse
 
 from accounts.models import User
 from catalog.models import CD, Platform
@@ -50,6 +51,28 @@ class SupplyPriceReviewTests(TestCase):
         self.assertEqual(calculation.old_owned_quantity, 2)
         self.assertEqual(calculation.resulting_quantity, 4)
         self.assertEqual(calculation.resulting_unit_cost, Decimal("150.00"))
+
+    def test_review_shows_avito_markup_beside_wholesale_price(self):
+        supply = self._pending_supply()
+        self.client.force_login(self.user)
+        response = self.client.get(reverse("supplies:price_review", args=(supply.pk,)))
+        self.assertContains(response, "Опт / наценка, ₽")
+        self.assertContains(response, 'class="supply-wholesale-pair" data-wholesale-margin')
+        self.assertContains(response, f'name="cd_{self.product.pk}_avito_markup_from_wholesale"')
+        self.assertContains(response, '<th>Наценка Avito</th>')
+        self.assertContains(response, 'data-wholesale-margin-value title="Оптовая цена минус новая себестоимость">0,00</span>')
+
+    def test_review_saves_wholesale_and_adjacent_avito_markup(self):
+        supply = self._pending_supply()
+        self.client.force_login(self.user)
+        response = self.client.post(reverse("supplies:price_review", args=(supply.pk,)), {
+            f"cd_{self.product.pk}_wholesale_price": "225.50",
+            f"cd_{self.product.pk}_avito_markup_from_wholesale": "250.00",
+        })
+        self.assertEqual(response.status_code, 302)
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.wholesale_price, Decimal("225.50"))
+        self.assertEqual(self.product.avito_markup_from_wholesale, Decimal("250.00"))
 
     def test_confirm_is_atomic_and_idempotent(self):
         supply = self._pending_supply()

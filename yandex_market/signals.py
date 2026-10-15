@@ -5,6 +5,7 @@ from django.dispatch import receiver
 from catalog.models import CD, Tech
 from warehouse.models import CDWarehouseStock, TechWarehouseStock
 from .models import OfferConnection
+from .product_dimensions import prepare_connection_dimensions
 from .queue import product_after_commit
 
 
@@ -46,18 +47,19 @@ def product_changed(sender, instance, raw=False, update_fields=None, **kwargs):
     if not changed:
         return
     for connection in OfferConnection.objects.filter(active=True, managed=True, **{kind: instance}).select_related("remote_offer"):
+        # Существующей карточке передаём цену, наличие и размеры упаковки из CRM.
+        if not connection.is_new and not changed.intersection({"yandex_market_price", "is_archived", "length_cm", "width_cm", "height_cm", "weight_grams"}):
+            continue
         content, dirty = dict(connection.content), set(connection.dirty_fields)
-        if connection.remote_offer.card_status != "HAS_CARD_CAN_NOT_UPDATE":
+        if connection.is_new and connection.remote_offer.card_status != "HAS_CARD_CAN_NOT_UPDATE":
             for source, target in (("name", "name"), ("description", "description"), ("sku", "vendorCode")):
                 if source in changed and getattr(instance, source):
                     content[target] = getattr(instance, source)
                     dirty.add(target)
-            if changed.intersection({"weight_grams", "length_cm", "width_cm", "height_cm"}):
-                dimensions = content.get("weightDimensions") or connection.remote_offer.snapshot.get("offer", {}).get("weightDimensions") or {}
-                if any(getattr(instance, field) is not None for field in ("length_cm", "width_cm", "height_cm")):
-                    dimensions = {"length": instance.length_cm, "width": instance.width_cm, "height": instance.height_cm}
-                if dimensions:
-                    content["weightDimensions"] = dimensions
-                    dirty.add("weightDimensions")
-        OfferConnection.objects.filter(pk=connection.pk).update(content=content, dirty_fields=sorted(dirty), revision=F("revision") + 1)
+        connection.content, connection.dirty_fields = content, sorted(dirty)
+        setattr(connection, kind, instance)
+        dimensions_changed = prepare_connection_dimensions(connection)
+        if not connection.is_new and not dimensions_changed and not changed.intersection({"yandex_market_price", "is_archived", "length_cm", "width_cm", "height_cm"}):
+            continue
+        OfferConnection.objects.filter(pk=connection.pk).update(content=connection.content, dirty_fields=connection.dirty_fields, revision=F("revision") + 1)
         product_after_commit(connection.pk)

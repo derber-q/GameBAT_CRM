@@ -18,6 +18,7 @@
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
       if (saving) return;
+      form.dispatchEvent(new CustomEvent('fbs:saving'));
       // FormData включает и поля вне тега form, связанные атрибутом form.
       // Снимок values нужен, чтобы новые правки во время запроса не были
       // ошибочно помечены как уже сохранённые ответом на предыдущие значения.
@@ -36,8 +37,22 @@
         }
         const result = await response.json();
         if (!response.ok || !result.ok) throw new Error(result.message || 'Ошибка сохранения.');
-        if (result.calculation && !inputs.some((element, index) => element.matches('[data-fbs-profit]') && element.value !== values[index])) {
-          form.dispatchEvent(new CustomEvent('fbs:saved', {detail: result.calculation}));
+        const profitChanged = inputs.some((element, index) => element.matches('[data-fbs-profit]') && element.value !== values[index]);
+        inputs.forEach((element, index) => {
+          if (!Object.prototype.hasOwnProperty.call(result.saved_prices || {}, element.name)) return;
+          const saved = String(result.saved_prices[element.name] ?? '');
+          const unchanged = element.value === values[index];
+          if (unchanged && !(element.name === 'yandex_market_price' && profitChanged)) {
+            element.value = saved;
+            element.dispatchEvent(new CustomEvent('input', {bubbles: true, detail: {fbs: true}}));
+          }
+          values[index] = saved;
+        });
+        if (result.calculation && !profitChanged) {
+          form.dispatchEvent(new CustomEvent('fbs:saved', {detail: {...result.calculation, update_price: false}}));
+        }
+        if (Object.prototype.hasOwnProperty.call(result.saved_prices || {}, 'yandex_market_price')) {
+          form.dispatchEvent(new CustomEvent('fbs:price-saved', {detail: {price: result.saved_prices.yandex_market_price}}));
         }
         savedValues = values;
         status.textContent = inputs.some((element, index) => element.value !== values[index])

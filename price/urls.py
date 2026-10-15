@@ -15,6 +15,7 @@ urlpatterns = [
     path("supplier/upload/", views.supplier_price_upload, name="supplier_upload"),
     path("procurement/create/", views.procurement_create, name="procurement_create"),
     path("procurement/<int:pk>/", views.procurement_detail, name="procurement_detail"),
+    path("procurement/<int:pk>/stock.xlsx", views.procurement_stock_export, name="procurement_stock_export"),
     path("procurement/<int:pk>/update/", views.procurement_update, name="procurement_update"),
     path("procurement/<int:pk>/customer.xlsx", views.procurement_export, name="procurement_export"),
     path("procurement/<int:pk>/customer/<str:product_kind>.xlsx", views.procurement_export, name="procurement_export_kind"),

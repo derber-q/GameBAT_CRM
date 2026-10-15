@@ -14,12 +14,12 @@ from .documents import process_label
 from .models import Integration, LabelDocument, OfferConnection, OrderMetadata, RemoteOffer, ReturnMetadata, SyncJob, WebhookEvent
 from .orders import action_payload, import_order, save_return
 from .queue import enqueue
-from .services import refresh_catalog, sync_product, sync_price_stock_batch, connections_with_stock
+from .services import refresh_catalog, refresh_trade_snapshots, sync_product, sync_price_stock_batch, connections_with_stock
 
 RETRY_DELAYS = (60, 180, 300, 900, 1800)
 
 
-def reconcile(integration, client):
+def reconcile_orders(integration, client):
     # Контрольный опрос не заменяет webhook. Повторная обработка идемпотентна.
     for payload in client.pages("getBusinessOrders", body={"campaignIds": [integration.campaign_id], "programTypes": ["FBS"]}, key="orders", limit=50):
         try:
@@ -27,23 +27,69 @@ def reconcile(integration, client):
         except ValidationError:
             continue
     # Открытые старые заказы могут выйти за стандартное окно API в 30 дней.
-    for order in integration.orders.exclude(status__in=["CANCELLED", "DELIVERED"]).iterator():
+    for order in integration.orders.exclude(status__in=["CANCELLED", "DELIVERED", "RETURNED", "PARTIALLY_RETURNED"]).exclude(
+        status="", sale__isnull=True,
+    ).iterator():
         try:
             import_order(integration, client.order(order.order_id))
         except ValidationError:
             continue
+        except MarketError as exc:
+            if exc.code != "ORDER_NOT_FOUND":
+                raise
+            # Отсутствие одного заказа не останавливает остатки и другие заказы.
+            order.last_error = str(exc)
+            order.last_sync_at = timezone.now()
+            order.save(update_fields=["last_error", "last_sync_at"])
+
+
+def reconcile_returns(integration, client):
     for payload in client.pages("getReturns", key="returns", limit=50):
         order, _ = OrderMetadata.objects.get_or_create(integration=integration, order_id=payload["orderId"])
         save_return(order, payload)
-    refresh_catalog(integration, client=client)
-    mismatches = []
+
+
+def reconcile(integration, client):
+    started = timezone.now()
+    errors = []
+    stages = (
+        ("Заказы", lambda: reconcile_orders(integration, client)),
+        ("Возвраты", lambda: reconcile_returns(integration, client)),
+        ("Каталог", lambda: refresh_catalog(integration, client=client, include_trade=False)),
+        ("Цены и остатки", lambda: refresh_trade_snapshots(integration, client=client)),
+    )
+    for label, stage in stages:
+        try:
+            stage()
+        except (MarketError, ValidationError) as exc:
+            errors.append((label, exc))
+    mismatches = {}
+    unread = []
     for connection in connections_with_stock(OfferConnection.objects.filter(integration=integration, active=True, managed=True).select_related("remote_offer", "cd", "tech")):
         desired = connection.physical_stock if connection.sell_on_yandex and not connection.product.is_archived else 0
         remote = connection.remote_offer
-        if remote.remote_stock != desired or (connection.sell_on_yandex and remote.remote_price != connection.product.yandex_market_price):
-            mismatches.append(connection.pk)
-    if mismatches:
-        enqueue(integration, "products", "reconciliation", {"connection_ids": mismatches}, delay=3)
+        prices_checked = bool(remote.price_checked_at and remote.price_checked_at >= started)
+        stocks_checked = bool(remote.stock_checked_at and remote.stock_checked_at >= started)
+        if not stocks_checked or (connection.sell_on_yandex and not prices_checked):
+            unread.append(remote.offer_id)
+        needs_display = connection.resume_display_pending and connection.sell_on_yandex and not connection.product.is_archived
+        if ((needs_display and prices_checked and stocks_checked)
+                or (stocks_checked and remote.remote_stock != desired)
+                or (prices_checked and connection.sell_on_yandex and remote.remote_price != connection.product.yandex_market_price)):
+            mismatches.setdefault((prices_checked, stocks_checked), []).append(connection.pk)
+    for (prices_checked, stocks_checked), ids in mismatches.items():
+        scope = "reconciliation" if prices_checked and stocks_checked else ("reconciliation-prices" if prices_checked else "reconciliation-stocks")
+        enqueue(integration, "products", scope, {"connection_ids": ids,
+            "sync_prices": prices_checked, "sync_stocks": stocks_checked}, delay=3)
+    if unread and not errors:
+        errors.append(("Цены и остатки", MarketError(
+            f"API не вернул свежие цену или остаток для {len(unread)} связанных товаров.",
+            "INCOMPLETE_TRADE_SNAPSHOT", retryable=True)))
+    if errors:
+        message = "; ".join(f"{label}: {exc}" for label, exc in errors)
+        retryable = any(isinstance(exc, MarketError) and exc.retryable for _, exc in errors)
+        delay = max((exc.retry_after for _, exc in errors if isinstance(exc, MarketError)), default=0)
+        raise MarketError(message, "RECONCILIATION_INCOMPLETE", retryable=retryable, retry_after=delay)
     integration.last_sync_at = timezone.now()
     integration.last_error = ""
     integration.save(update_fields=["last_sync_at", "last_error"])
@@ -60,7 +106,8 @@ def process(job):
     elif job.kind == "product":
         sync_product(payload["connection_id"], client=client, force=payload.get("force", False))
     elif job.kind == "products":
-        sync_price_stock_batch(integration, payload["connection_ids"], client=client)
+        sync_price_stock_batch(integration, payload["connection_ids"], client=client,
+            sync_prices=payload.get("sync_prices", True), sync_stocks=payload.get("sync_stocks", True))
     elif job.kind in {"order", "event", "order_action", "boxes"}:
         event = WebhookEvent.objects.get(pk=payload["event_id"]) if job.kind == "event" else None
         order_id = event.order_id if event else payload["order_id"]
@@ -105,6 +152,10 @@ def ensure_periodic_jobs():
     SyncJob.objects.filter(state="running", updated_at__lt=now - timedelta(minutes=20)).update(state="pending", lease=None, run_after=now)
     for integration in Integration.objects.filter(enabled=True):
         SyncJob.objects.get_or_create(key=f"ym:{integration.pk}:periodic", defaults={"integration": integration, "kind": "reconcile"})
+        # Восстановление периодической задачи, остановленной предыдущей версией worker.
+        SyncJob.objects.filter(key=f"ym:{integration.pk}:periodic", state="error", run_after__lte=now).update(
+            state="pending", lease=None, updated_at=now,
+        )
         # Восстановление inbox, если процесс завершился между commit и callback очереди.
         for event_id in WebhookEvent.objects.filter(integration=integration, state="pending").values_list("pk", flat=True)[:100]:
             if not SyncJob.objects.filter(key=f"ym:{integration.pk}:event:{event_id}").exists():
@@ -153,8 +204,10 @@ def process_one_job():
     periodic = job.key.endswith(":periodic")
     if changed:
         selector.update(state="pending", lease=None, attempts=0, last_error="", updated_at=timezone.now())
-    elif retry or (periodic and not error):
-        selector.update(state="pending", lease=None, attempts=F("attempts") + (1 if error else 0), last_error=error,
+    elif retry or periodic:
+        if periodic and error and not retry:
+            delay = 900
+        selector.update(state="pending", lease=None, attempts=F("attempts") + 1 if error else 0, last_error=error,
                         run_after=timezone.now() + timedelta(seconds=delay if error else 900), updated_at=timezone.now())
     else:
         selector.update(state="error" if error else "done", lease=None, last_error=error, updated_at=timezone.now())

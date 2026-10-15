@@ -1,4 +1,5 @@
 from collections import defaultdict
+from uuid import uuid4
 
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied, ValidationError
@@ -11,15 +12,20 @@ from price.models import ProcurementPriceListItem
 
 from .forms import ProcurementOrderHeaderForm, ProcurementOrderUploadForm, ReceivingAdjustmentForm
 from .models import CustomerProcurementOrder, SupplierOrderBatch
+from .trips import can_manage_trips
 from .services import (
     advance_order_status,
     create_customer_procurement_order,
-    create_supplier_order_batch,
     edit_created_order,
     reduce_receiving_order,
 )
 
 DRAFT_SESSION_KEY = "procurement_order_import_draft"
+
+
+def _require_stock_prices(user, purpose):
+    if purpose == CustomerProcurementOrder.Purpose.STOCK and not user.has_perm("price.view_supplier_prices"):
+        raise PermissionDenied("Для заказа на склад требуется право просмотра закупочных цен.")
 
 
 def _parse_item_lines(post, *, id_field):
@@ -40,9 +46,10 @@ def _parse_item_lines(post, *, id_field):
 
 def _order_queryset():
     return CustomerProcurementOrder.objects.select_related(
-        "price_list", "payment_warehouse", "created_by"
+        "price_list", "payment_warehouse", "created_by", "trip", "supply__warehouse"
     ).prefetch_related(
         "items__selected_supplier", "items__cd", "items__tech",
+        "items__trip_allocations__line__supplier",
         "status_events__actor", "adjustments__actor", "adjustments__changes", "cash_transactions",
     )
 
@@ -58,13 +65,16 @@ def order_list(request):
         )
     )
     return render(request, "orders/list.html", {
-        "orders": _order_queryset(),
+        "orders": (_order_queryset() if request.user.has_perm("price.view_supplier_prices")
+                   else _order_queryset().filter(purpose=CustomerProcurementOrder.Purpose.CUSTOMER)),
         "batches": (
             SupplierOrderBatch.objects.select_related("created_by").prefetch_related("source_orders")[:20]
             if can_generate_batches else []
         ),
         "can_create": request.user.is_superuser or request.user.has_perm("orders.create_order"),
         "can_generate_batches": can_generate_batches,
+        "can_create_trip": can_manage_trips(request.user),
+        "trip_creation_key": str(uuid4()),
     })
 
 
@@ -73,7 +83,8 @@ def order_upload(request):
     form = ProcurementOrderUploadForm(request.POST or None, request.FILES or None)
     if request.method == "POST" and form.is_valid():
         try:
-            price_list, lines = import_procurement_order_files(form.cleaned_data["uploads"])
+            price_list, lines, purpose = import_procurement_order_files(form.cleaned_data["uploads"], with_purpose=True)
+            _require_stock_prices(request.user, purpose)
         except ValidationError as exc:
             form.add_error(None, exc)
         else:
@@ -82,6 +93,7 @@ def order_upload(request):
                 "recipient": form.cleaned_data["recipient"],
                 "comment": form.cleaned_data["comment"],
                 "lines": lines,
+                "purpose": purpose,
             }
             return redirect("orders:preview")
     return render(request, "orders/upload.html", {"form": form})
@@ -93,6 +105,7 @@ def order_preview(request):
     if not draft:
         messages.error(request, "Сначала загрузите заполненный закупочный прайс.")
         return redirect("orders:upload")
+    _require_stock_prices(request.user, draft.get("purpose"))
     item_ids = [row["price_list_item_id"] for row in draft["lines"]]
     items = {
         item.pk: item
@@ -117,13 +130,15 @@ def order_preview(request):
             request.session.pop(DRAFT_SESSION_KEY, None)
             messages.success(request, f"Заказ №{order.pk} создан без проведения оплаты.")
             return redirect("orders:detail", pk=order.pk)
-    return render(request, "orders/preview.html", {"draft": draft, "rows": preview_rows})
+    return render(request, "orders/preview.html", {"draft": draft, "rows": preview_rows,
+                  "is_stock_order": draft.get("purpose") == CustomerProcurementOrder.Purpose.STOCK})
 
 
 @require_GET
 @permission_required_any("orders.view_order_detail")
 def order_detail(request, pk):
     order = get_object_or_404(_order_queryset(), pk=pk)
+    _require_stock_prices(request.user, order.purpose)
     can_view_supplier = request.user.is_superuser or request.user.has_perm("price.view_supplier_prices")
     return render(request, "orders/detail.html", {
         "order": order,
@@ -132,14 +147,17 @@ def order_detail(request, pk):
             request.user.is_superuser or request.user.has_perm("partners.view_supplier_details")
         ),
         "can_view_cash": request.user.is_superuser or request.user.has_perm("cash.view_cash_history"),
-        "can_edit_created": order.status == order.Status.CREATED and (
+        "can_assign_trip": can_manage_trips(request.user) and order.status == order.Status.CREATED and (
+            not order.trip_id or not order.trip.trip_orders.exclude(status=order.Status.CREATED).exists()
+        ),
+        "can_edit_created": not order.trip_id and order.status == order.Status.CREATED and (
             request.user.is_superuser or request.user.has_perm("orders.edit_created_order")
         ),
         "can_confirm": order.status == order.Status.CREATED and (
             request.user.is_superuser
             or (
                 request.user.has_perm("orders.confirm_order")
-                and (order.prepayment_total == 0 or request.user.has_perm("cash.deposit_cash"))
+                and (order.is_stock_order or order.prepayment_total == 0 or request.user.has_perm("cash.deposit_cash"))
             )
         ),
         "can_start_receiving": order.status == order.Status.CONFIRMED and (
@@ -152,16 +170,20 @@ def order_detail(request, pk):
             request.user.is_superuser
             or (
                 request.user.has_perm("orders.complete_order")
-                and (order.postpayment_total == 0 or request.user.has_perm("cash.deposit_cash"))
+                and ((order.is_stock_order and request.user.has_perm("supplies.add_supply"))
+                     or (not order.is_stock_order and (order.postpayment_total == 0 or request.user.has_perm("cash.deposit_cash"))))
             )
         ),
         "can_view_adjustments": request.user.is_superuser or request.user.has_perm("orders.view_order_adjustments"),
+        "can_review_supply": request.user.has_perm("supplies.add_supply"),
+        "can_view_supply": request.user.has_perm("supplies.view_supply"),
     })
 
 
 @permission_required_any("orders.edit_created_order")
 def order_edit(request, pk):
     order = get_object_or_404(_order_queryset(), pk=pk)
+    _require_stock_prices(request.user, order.purpose)
     if order.status != order.Status.CREATED:
         messages.error(request, "Изменять можно только заказ в статусе «Создан».")
         return redirect("orders:detail", pk=pk)
@@ -194,7 +216,8 @@ def order_edit(request, pk):
 @permission_required_any("orders.confirm_order")
 def order_confirm(request, pk):
     order = get_object_or_404(CustomerProcurementOrder, pk=pk)
-    if order.prepayment_total > 0 and not (
+    _require_stock_prices(request.user, order.purpose)
+    if not order.is_stock_order and order.prepayment_total > 0 and not (
         request.user.is_superuser or request.user.has_perm("cash.deposit_cash")
     ):
         raise PermissionDenied("Для предоплаты требуется право внесения наличных в кассу.")
@@ -206,13 +229,16 @@ def order_confirm(request, pk):
     except ValidationError as exc:
         messages.error(request, " ".join(exc.messages))
     else:
-        messages.success(request, "Заказ подтверждён; предоплата проведена один раз.")
+        messages.success(request, "Заказ на склад подтверждён." if order.is_stock_order
+                         else "Заказ подтверждён; предоплата проведена один раз.")
     return redirect("orders:detail", pk=pk)
 
 
 @require_POST
 @permission_required_any("orders.start_receiving")
 def order_start_receiving(request, pk):
+    order = get_object_or_404(CustomerProcurementOrder, pk=pk)
+    _require_stock_prices(request.user, order.purpose)
     try:
         advance_order_status(
             actor=request.user, order_id=pk, next_status=CustomerProcurementOrder.Status.RECEIVING
@@ -227,6 +253,7 @@ def order_start_receiving(request, pk):
 @permission_required_any("orders.edit_receiving_order")
 def order_adjust(request, pk):
     order = get_object_or_404(_order_queryset(), pk=pk)
+    _require_stock_prices(request.user, order.purpose)
     if order.status != order.Status.RECEIVING:
         messages.error(request, "Корректировка доступна только в статусе «Принимается».")
         return redirect("orders:detail", pk=pk)
@@ -241,7 +268,8 @@ def order_adjust(request, pk):
         except ValidationError as exc:
             form.add_error(None, exc)
         else:
-            messages.success(request, "Корректировка сохранена; необходимый возврат проведён атомарно.")
+            messages.success(request, "Количество закупки на склад скорректировано." if order.is_stock_order
+                             else "Корректировка сохранена; необходимый возврат проведён атомарно.")
             return redirect("orders:detail", pk=pk)
     return render(request, "orders/adjust.html", {"order": order, "form": form})
 
@@ -250,32 +278,33 @@ def order_adjust(request, pk):
 @permission_required_any("orders.complete_order")
 def order_complete(request, pk):
     order = get_object_or_404(CustomerProcurementOrder, pk=pk)
-    if order.postpayment_total > 0 and not (
+    _require_stock_prices(request.user, order.purpose)
+    if order.is_stock_order and not request.user.has_perm("supplies.add_supply"):
+        raise PermissionDenied("Для заказа на склад требуется право оформления прихода.")
+    if not order.is_stock_order and order.postpayment_total > 0 and not (
         request.user.is_superuser or request.user.has_perm("cash.deposit_cash")
     ):
         raise PermissionDenied("Для постоплаты требуется право внесения наличных в кассу.")
     try:
-        advance_order_status(
+        completed_order = advance_order_status(
             actor=request.user, order_id=pk, next_status=CustomerProcurementOrder.Status.COMPLETED,
             warehouse_id=request.POST.get("warehouse"),
         )
     except ValidationError as exc:
         messages.error(request, " ".join(exc.messages))
     else:
+        if order.is_stock_order:
+            messages.success(request, f"Приход №{completed_order.supply_id} создан. Проверьте цены и поставьте товары на баланс.")
+            return redirect("supplies:price_review", pk=completed_order.supply_id)
         messages.success(request, "Заказ выполнен; актуальная постоплата проведена один раз.")
     return redirect("orders:detail", pk=pk)
 
 
 @require_POST
-@permission_required_all("orders.generate_supplier_orders", "partners.view_supplier_details")
+@permission_required_all("orders.generate_supplier_orders", "partners.view_supplier_details", "orders.edit_created_order", "price.view_supplier_prices")
 def supplier_batch_create(request):
-    try:
-        batch = create_supplier_order_batch(actor=request.user, order_ids=request.POST.getlist("order_id"))
-    except ValidationError as exc:
-        messages.error(request, " ".join(exc.messages))
-        return redirect("orders:list")
-    messages.success(request, f"Подборка поставщикам №{batch.pk} сформирована.")
-    return redirect("orders:supplier_batch_detail", pk=batch.pk)
+    from .trip_views import trip_create
+    return trip_create(request)
 
 
 @require_GET

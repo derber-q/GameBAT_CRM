@@ -168,6 +168,9 @@ def update_product_card(*, actor, product_kind, product_id, data, barcode_data=N
         return ProductUpdateResult(product=product, form=form, stale=True, barcode_formset=barcode_formset_instance)
 
     changed_fields = [field for field in form.changed_data if field in form.allowed_fields]
+    if "cost" in changed_fields and not form.cleaned_data["cost_confirmed"]:
+        form.add_error("cost", "Подтвердите изменение себестоимости.")
+        return ProductUpdateResult(product=product, form=form, barcode_formset=barcode_formset_instance)
     stock_fields = [field for field in changed_fields if field.startswith("stock_")]
     storage_location_fields = [
         field for field in changed_fields if field.startswith("storage_location_")

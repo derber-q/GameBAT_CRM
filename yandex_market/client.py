@@ -153,7 +153,10 @@ class YandexMarketClient:
             if status >= 400 or data.get("status") == "ERROR" or errors:
                 codes = ", ".join(str(e.get("code", "API_ERROR")) for e in errors if isinstance(e, dict))
                 messages = "; ".join(str(e.get("message", e.get("comment", ""))) for e in errors if isinstance(e, dict))
-                retryable = status in (420, 429, 500, 502, 503, 504)
+                retryable = status in (420, 429) or status >= 500 or any(
+                    e.get("code") in {"INTERNAL_ERROR", "INTERNAL_SERVER_ERROR", "SERVICE_UNAVAILABLE"}
+                    for e in errors if isinstance(e, dict)
+                )
                 raise MarketError(safe_message(messages or f"Ошибка API Маркета (HTTP {status}).", self.key),
                                   safe_message(codes or "API_ERROR", self.key)[:100], status, retryable,
                                   min(3600, int(retry_after)) if retry_after.isdigit() else 0)
@@ -196,9 +199,19 @@ class YandexMarketClient:
             seen.add(token)
 
     def order(self, order_id):
-        data = self.call("getBusinessOrders", body={"campaignIds": [self.integration.campaign_id], "orderIds": [int(order_id)]})
-        orders = data.get("orders", [])
+        from .models import OrderMetadata
+        body = {"campaignIds": [self.integration.campaign_id], "orderIds": [int(order_id)], "programTypes": ["FBS"]}
+        known = OrderMetadata.objects.filter(integration=self.integration, order_id=order_id).first()
+        if known:
+            body["fake"] = known.fake
+            if known.created_remote_at:
+                # Без явной даты API ограничивает даже поиск по ID последними 30 днями.
+                day = known.created_remote_at.date()
+                body["dates"] = {"creationDateFrom": (day - timedelta(days=1)).isoformat(),
+                                 "creationDateTo": (day + timedelta(days=2)).isoformat()}
+        orders = self.pages("getBusinessOrders", body=body, key="orders", limit=50)
         for order in orders:
-            if order.get("orderId") == int(order_id) and order.get("campaignId") == self.integration.campaign_id:
+            if (order.get("orderId") == int(order_id) and order.get("campaignId") == self.integration.campaign_id
+                    and order.get("programType", "FBS") == "FBS"):
                 return order
         raise MarketError("Заказ не найден в выбранном FBS-магазине.", "ORDER_NOT_FOUND")

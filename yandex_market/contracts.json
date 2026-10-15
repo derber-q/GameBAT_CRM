@@ -3735,6 +3735,116 @@
       }
     }
   },
+  "addHiddenOffers": {
+    "path": "/v2/campaigns/{campaignId}/hidden-offers",
+    "method": "POST",
+    "scopes": [
+      "offers-and-cards-management",
+      "all-methods"
+    ],
+    "limits": {
+      "path": "req.hiddenOffers",
+      "none": {
+        "amount": 5000,
+        "period": "minutes",
+        "period-duration": 1
+      },
+      "medium": {
+        "amount": 10000,
+        "period": "minutes",
+        "period-duration": 1
+      }
+    },
+    "parameters": [
+      {
+        "name": "campaignId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 1
+        }
+      }
+    ],
+    "request": {
+      "type": "object",
+      "required": ["hiddenOffers"],
+      "properties": {
+        "hiddenOffers": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 500,
+          "items": {
+            "type": "object",
+            "required": ["offerId"],
+            "properties": {
+              "offerId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "deleteHiddenOffers": {
+    "path": "/v2/campaigns/{campaignId}/hidden-offers/delete",
+    "method": "POST",
+    "scopes": [
+      "offers-and-cards-management",
+      "all-methods"
+    ],
+    "limits": {
+      "path": "req.hiddenOffers",
+      "none": {
+        "amount": 5000,
+        "period": "minutes",
+        "period-duration": 1
+      },
+      "medium": {
+        "amount": 10000,
+        "period": "minutes",
+        "period-duration": 1
+      }
+    },
+    "parameters": [
+      {
+        "name": "campaignId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 1
+        }
+      }
+    ],
+    "request": {
+      "type": "object",
+      "required": ["hiddenOffers"],
+      "properties": {
+        "hiddenOffers": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 500,
+          "items": {
+            "type": "object",
+            "required": ["offerId"],
+            "properties": {
+              "offerId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255
+              }
+            }
+          }
+        }
+      }
+    }
+  },
   "getCategoriesTree": {
     "path": "/v2/categories/tree",
     "method": "POST",

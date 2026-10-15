@@ -46,6 +46,8 @@ def render_statistics_workbook(report):
         ("Максимальная прибыль продажи", filters.get("max_profit") if filters.get("max_profit") is not None else "Не задана"),
         ("Группировка", dict((("day", "По дням"), ("week", "По неделям"), ("month", "По месяцам"))).get(filters.get("grouping"), "По дням")),
         ("Завершённых продаж", totals.sales_count),
+        ("Операций расхода", totals.expenses_count),
+        ("Вид операции", dict(Sale.OperationKind.choices).get(filters.get("operation_kind"), "Все операции")),
         ("Продано единиц", totals.units), ("Стоимость товаров", totals.goods_total),
         ("Переплаты", totals.overpayment), ("Фактическая выручка", totals.actual_revenue),
         ("Комиссия Avito", totals.commission),
@@ -61,24 +63,24 @@ def render_statistics_workbook(report):
     sales = workbook.create_sheet("Продажи")
     _header(sales, ("ID", "Дата завершения", "Склад", "Канал", "Оплата", "Стоимость товаров",
                     "Переплата", "Фактическая выручка", "Комиссия Avito", "Себестоимость", "Чистая прибыль",
-                    "Маржа, %", "Наценка, %", "Единиц", "Позиций", "Нет себестоимости"))
+                    "Маржа, %", "Наценка, %", "Единиц", "Позиций", "Нет себестоимости", "Вид операции", "Примечание"))
     items = workbook.create_sheet("Позиции продаж")
     _header(items, ("Продажа ID", "Дата завершения", "Тип", "Товар ID", "Артикул", "Товар",
                     "Количество", "Цена единицы", "Себестоимость единицы", "Выручка",
                     "Комиссия Avito", "Выручка после комиссии",
-                    "Себестоимость", "Прибыль", "Маржа, %", "Наценка, %"))
+                    "Себестоимость", "Прибыль", "Маржа, %", "Наценка, %", "Примечание"))
     for row in report.sales:
         sale = row.sale
         date = timezone.localtime(sale.completed_at).replace(tzinfo=None)
         _append(sales, (sale.pk, date, sale.warehouse.name, row.channel_label,
                         sale.get_payment_method_display(), row.goods_total, row.overpayment,
                         row.actual_revenue, row.commission, row.cost, row.profit, row.margin, row.markup,
-                        row.units, row.positions, row.missing_lines))
+                        row.units, row.positions, row.missing_lines, sale.get_operation_kind_display(), sale.note))
         for line in row.lines:
             _append(items, (sale.pk, date, line.kind.upper(), line.product_id, line.sku, line.name,
                             line.quantity, line.unit_price, line.unit_cost, line.revenue,
                             line.commission, line.net_revenue,
-                            line.cost, line.profit, line.margin, line.markup))
+                            line.cost, line.profit, line.margin, line.markup, sale.note))
 
     products = workbook.create_sheet("Товары")
     _header(products, ("Тип", "ID", "Артикул", "Товар", "Категория", "Продано единиц",
@@ -92,17 +94,17 @@ def render_statistics_workbook(report):
     channels = workbook.create_sheet("Каналы")
     _header(channels, ("Канал", "Продаж", "Единиц", "Стоимость товаров", "Переплаты",
                        "Фактическая выручка", "Комиссия Avito", "Себестоимость", "Прибыль", "Маржа, %",
-                       "Наценка, %", "Средний чек"))
+                       "Наценка, %", "Средний чек", "Операций расхода"))
     for row in report.channels:
         t = row.totals
         _append(channels, (row.label, t.sales_count, t.units, t.goods_total, t.overpayment,
-                           t.actual_revenue, t.commission, t.cost, t.profit, t.margin, t.markup, t.average_check))
+                           t.actual_revenue, t.commission, t.cost, t.profit, t.margin, t.markup, t.average_check, t.expenses_count))
 
     series = workbook.create_sheet("Динамика")
-    _header(series, ("Период", "Продаж", "Единиц", "Фактическая выручка", "Комиссия Avito", "Себестоимость", "Прибыль"))
+    _header(series, ("Период", "Продаж", "Единиц", "Фактическая выручка", "Комиссия Avito", "Себестоимость", "Прибыль", "Операций расхода"))
     for row in report.time_series:
         t = row.totals
-        _append(series, (row.label, t.sales_count, t.units, t.actual_revenue, t.commission, t.cost, t.profit))
+        _append(series, (row.label, t.sales_count, t.units, t.actual_revenue, t.commission, t.cost, t.profit, t.expenses_count))
 
     for sheet in workbook:
         for column in sheet.columns:

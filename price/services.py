@@ -5,10 +5,14 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from django.core.exceptions import ValidationError
 from django.core.validators import DecimalValidator
 from django.db import transaction
+from django.db.models import Q
 
+from catalog.models import ProductType, Tech
+from catalog.product_identifiers import set_product_weight
 from pricing.models import SupplierCDPrice, SupplierTechPrice
 
-from .models import ProcurementPriceList, ProcurementPriceListItem
+from .models import ProcurementPriceList, ProcurementPriceListItem, ProcurementPricePreference, ProcurementSupplierOffer
+from .postpayment_rules import tech_postpayment_surcharge
 
 logger = logging.getLogger("gamebat.business")
 CENT = Decimal("0.01")
@@ -29,15 +33,41 @@ def decimal_value(value, *, precision=CENT, positive=False, nonnegative=False, l
     return result
 
 
-def calculate_postpayment(prepayment):
+def validated_postpayment_surcharge(value):
+    result = decimal_value(value, nonnegative=True, label="Доплата за постоплату")
+    DecimalValidator(max_digits=20, decimal_places=2)(Decimal(str(value)))
+    return result
+
+
+def calculate_postpayment(prepayment, *, surcharge=None):
     price = decimal_value(prepayment, nonnegative=True, label="Цена предоплаты")
-    if price < Decimal("2000"):
+    if surcharge is not None:
+        surcharge = validated_postpayment_surcharge(surcharge)
+    elif price < Decimal("2000"):
         surcharge = Decimal("60")
     elif price < Decimal("3000"):
         surcharge = Decimal("80")
     else:
         surcharge = Decimal("100")
     return (price + surcharge).quantize(CENT, rounding=ROUND_HALF_UP)
+
+
+def calculate_prepayment(postpayment, *, surcharge=None):
+    price = decimal_value(postpayment, nonnegative=True, label="Цена постоплаты")
+    if surcharge is not None:
+        surcharge = validated_postpayment_surcharge(surcharge)
+        if price < surcharge:
+            raise ValidationError("Цена постоплаты не может быть меньше доплаты за постоплату.")
+        return price - surcharge
+    # На границах тарифов есть разрывы: не каждая постоплата имеет обратную цену.
+    for surcharge in (Decimal("60"), Decimal("80"), Decimal("100")):
+        prepayment = price - surcharge
+        if prepayment >= 0 and calculate_postpayment(prepayment) == price:
+            return prepayment
+    raise ValidationError(
+        "Цена постоплаты не соответствует правилу расчёта. Допустимо: от 60 до 2059,99 RUB, "
+        "от 2080 до 3079,99 RUB или от 3100 RUB."
+    )
 
 
 def _supplier_offers(*, lock=False):
@@ -47,7 +77,8 @@ def _supplier_offers(*, lock=False):
         (ProcurementPriceListItem.ProductKind.CD, SupplierCDPrice, "cd"),
         (ProcurementPriceListItem.ProductKind.TECH, SupplierTechPrice, "tech"),
     ):
-        queryset = getattr(model.objects, queryset_method)().select_related("supplier", field).filter(price__gt=0)
+        relations = ("supplier", field, "tech__product_type", "tech__brand") if field == "tech" else ("supplier", field)
+        queryset = getattr(model.objects, queryset_method)().select_related(*relations).filter(price__gt=0)
         for offer in queryset.order_by("supplier_id", f"{field}_id"):
             product = getattr(offer, field)
             if product.is_archived:
@@ -71,13 +102,91 @@ def resolve_best_suppliers(offers=None):
     for key, candidates in minimum_candidates.items():
         winners[key] = sorted(
             candidates,
-            key=lambda row: (-row[0].priority, row[0].name.casefold(), row[0].pk),
+            key=lambda row: (row[0].priority, row[0].name.casefold(), row[0].pk),
         )[0]
     return winners, unique_wins
 
 
+class MissingProcurementWeights(ValidationError):
+    def __init__(self, products):
+        self.products = sorted(products, key=lambda product: (product.product_type.name, product.name, product.pk))
+        super().__init__("Перед созданием закупочного прайса укажите вес всей участвующей техники.")
+
+
+def get_missing_procurement_weights():
+    winners, _ = resolve_best_suppliers()
+    return sorted(
+        (product for (kind, _), (_, _, product) in winners.items() if kind == "tech" and not product.weight_grams),
+        key=lambda product: (product.product_type.name, product.name, product.pk),
+    )
+
+
+def _price_preferences(product_keys, *, lock=False):
+    keys = list(product_keys)
+    queryset = ProcurementPricePreference.objects.all()
+    if lock:
+        queryset = queryset.select_for_update()
+    queryset = queryset.filter(
+        Q(cd_id__in=[pk for kind, pk in keys if kind == "cd"])
+        | Q(tech_id__in=[pk for kind, pk in keys if kind == "tech"])
+    )
+    return {("cd", row.cd_id) if row.cd_id else ("tech", row.tech_id): row for row in queryset}
+
+
+class MissingProcurementSurcharges(ValidationError):
+    def __init__(self, products):
+        self.products = sorted(products, key=lambda product: (product.product_type.name, product.name, product.pk))
+        super().__init__("Укажите доплату за постоплату для техники без согласованной ставки.")
+
+
+def get_missing_procurement_surcharges():
+    winners, _ = resolve_best_suppliers()
+    preferences = _price_preferences(winners)
+    return sorted([
+        product for (kind, pk), (_, _, product) in winners.items()
+        if kind == "tech" and (preferences.get((kind, pk)) is None or preferences[(kind, pk)].postpayment_surcharge_rub is None)
+        and tech_postpayment_surcharge(product) is None
+    ], key=lambda product: (product.product_type.name, product.name, product.pk))
+
+
+def _prepare_procurement_weights(*, winners, weights, actor):
+    tech_ids = [product_id for kind, product_id in winners if kind == "tech"]
+    products = {
+        product.pk: product for product in Tech.objects.active().select_for_update().select_related("product_type").filter(pk__in=tech_ids)
+    }
+    if len(products) != len(tech_ids):
+        raise ValidationError("Состав техники изменился. Повторите создание прайса.")
+    weights = weights or {}
+    if not set(weights).issubset(products):
+        raise ValidationError("Передан вес товара, который не участвует в закупочном прайсе.")
+    missing = [product for product in products.values() if not product.weight_grams]
+    if any(product.pk not in weights for product in missing):
+        raise MissingProcurementWeights(missing)
+    for product in products.values():
+        if product.weight_grams:
+            continue
+        if not (actor.is_superuser or actor.has_perm("catalog.change_tech_weight")):
+            raise ValidationError("Для ввода веса необходимо право изменения веса техники.")
+        try:
+            weight = Decimal(str(weights[product.pk]))
+        except (InvalidOperation, ValueError, TypeError) as exc:
+            raise ValidationError(f"{product.name}: укажите вес целым числом граммов.") from exc
+        if not weight.is_finite() or weight <= 0 or weight != weight.to_integral_value() or weight > 2147483647:
+            raise ValidationError(f"{product.name}: вес должен быть целым числом от 1 до 2147483647 г.")
+        updated = set_product_weight(
+            actor=actor, product_kind="tech", product_id=product.pk, weight_grams=int(weight),
+        )
+        product.weight_grams = updated.weight_grams
+        logger.info("Вес для закупочного прайса сохранён: user_id=%s tech_id=%s weight_grams=%s", actor.pk, product.pk, product.weight_grams)
+    return products
+
+
 @transaction.atomic
-def create_procurement_price_list(*, actor, exchange_rate_usdt_aed, exchange_rate_usdt_rub):
+def create_procurement_price_list(
+    *, actor, exchange_rate_usdt_aed, exchange_rate_usdt_rub,
+    delivery_general_usdt_per_kg, delivery_devices_usdt_per_kg, delivery_storage_usdt_per_kg,
+    delivery_cd_rub, weights=None, postpayment_surcharges=None,
+):
     rate_usdt_aed = decimal_value(
         exchange_rate_usdt_aed, precision=RATE_PRECISION, positive=True,
         label="Курс AED → USDT (AED за 1 USDT)",
@@ -94,19 +203,85 @@ def create_procurement_price_list(*, actor, exchange_rate_usdt_aed, exchange_rat
         label="Расчётный курс AED → RUB",
     )
     validate_rate(rate)
+    delivery_rates = {}
+    for group, value in (
+        (ProductType.DeliveryGroup.GENERAL, delivery_general_usdt_per_kg),
+        (ProductType.DeliveryGroup.DEVICES, delivery_devices_usdt_per_kg),
+        (ProductType.DeliveryGroup.STORAGE, delivery_storage_usdt_per_kg),
+    ):
+        delivery_rates[group] = decimal_value(
+            value, precision=RATE_PRECISION, nonnegative=True, label="Тариф доставки, USDT за кг",
+        )
+        validate_rate(delivery_rates[group])
+    cd_delivery = decimal_value(delivery_cd_rub, nonnegative=True, label="Доставка одного диска, RUB")
+    DecimalValidator(max_digits=20, decimal_places=2)(cd_delivery)
     offers = _supplier_offers(lock=True)
     if not offers:
         raise ValidationError("Нет ни одной положительной актуальной цены поставщика.")
     winners, _ = resolve_best_suppliers(offers)
+    tech_products = _prepare_procurement_weights(winners=winners, weights=weights, actor=actor)
+    preferences = _price_preferences(winners)
+    postpayment_surcharges = postpayment_surcharges or {}
+    if not set(postpayment_surcharges).issubset({pk for kind, pk in winners if kind == "tech"}):
+        raise ValidationError("Передана доплата товара, который не участвует в закупочном прайсе.")
+    surcharges = {}
+    custom_surcharge_ids = set()
+    missing_surcharges = []
+    for (kind, pk), (_, _, product) in winners.items():
+        preference = preferences.get((kind, pk))
+        surcharge = preference.postpayment_surcharge_rub if preference else None
+        if kind == "tech" and surcharge is None:
+            if pk in postpayment_surcharges:
+                if not (actor.is_superuser or actor.has_perm("price.change_procurement_markup")):
+                    raise ValidationError("Для ввода доплаты за постоплату необходимо право изменения наценки.")
+                surcharge = validated_postpayment_surcharge(postpayment_surcharges[pk])
+                custom_surcharge_ids.add(pk)
+            else:
+                surcharge = tech_postpayment_surcharge(product)
+            if surcharge is None:
+                missing_surcharges.append(product)
+        surcharges[(kind, pk)] = surcharge
+    if missing_surcharges:
+        raise MissingProcurementSurcharges(missing_surcharges)
     price_list = ProcurementPriceList.objects.create(
+        supplier_offers_complete=True,
         exchange_rate_usdt_aed=rate_usdt_aed, exchange_rate_usdt_rub=rate_usdt_rub,
         exchange_rate_aed_rub=rate, created_by=actor,
+        delivery_general_usdt_per_kg=delivery_rates[ProductType.DeliveryGroup.GENERAL],
+        delivery_devices_usdt_per_kg=delivery_rates[ProductType.DeliveryGroup.DEVICES],
+        delivery_storage_usdt_per_kg=delivery_rates[ProductType.DeliveryGroup.STORAGE],
+        delivery_cd_rub=cd_delivery,
     )
     items = []
     for (kind, _), (supplier, supplier_price, product) in winners.items():
+        delivery = cd_delivery
+        delivery_group = ""
+        delivery_rate = None
+        if kind == "tech":
+            product = tech_products[product.pk]
+            delivery_group = product.product_type.procurement_delivery_group
+            if delivery_group not in delivery_rates:
+                raise ValidationError(f"{product.product_type}: не задана группа тарифа доставки.")
+            delivery_rate = delivery_rates[delivery_group]
+            delivery = decimal_value(
+                Decimal(product.weight_grams) / Decimal("1000") * delivery_rate * rate_usdt_rub,
+                nonnegative=True, label=f"{product.name}: доставка",
+            )
         # Промежуточную сумму в USDT не округляем; рубли округляются один раз до копеек.
-        base = (supplier_price / rate_usdt_aed * rate_usdt_rub).quantize(CENT, rounding=ROUND_HALF_UP)
+        base = decimal_value(supplier_price / rate_usdt_aed * rate_usdt_rub, nonnegative=True, label="База, RUB")
         DecimalValidator(max_digits=20, decimal_places=2)(base)
+        preference = preferences.get((kind, product.pk))
+        markup = preference.markup_rub if preference else Decimal("0.00")
+        prepayment = base + delivery + markup
+        if prepayment < 0:
+            raise ValidationError(
+                f"{product.name}: сохранённая наценка даёт отрицательную итоговую цену. "
+                "Измените наценку в предыдущем прайсе и повторите создание."
+            )
+        surcharge = surcharges[(kind, product.pk)]
+        postpayment = calculate_postpayment(prepayment, surcharge=surcharge)
+        for amount in (markup, delivery, prepayment, postpayment):
+            DecimalValidator(max_digits=20, decimal_places=2)(amount)
         values = {
             "price_list": price_list,
             "product_kind": kind,
@@ -116,14 +291,30 @@ def create_procurement_price_list(*, actor, exchange_rate_usdt_aed, exchange_rat
             "supplier_price_aed": supplier_price,
             "exchange_rate_aed_rub": rate,
             "base_price_rub": base,
-            "markup_rub": Decimal("0"),
-            "delivery_rub": Decimal("0"),
-            "prepayment_price_rub": base,
-            "postpayment_price_rub": calculate_postpayment(base),
+            "markup_rub": markup,
+            "delivery_rub": delivery,
+            "weight_grams_snapshot": product.weight_grams,
+            "delivery_group_snapshot": delivery_group,
+            "delivery_usdt_per_kg_snapshot": delivery_rate,
+            "prepayment_price_rub": prepayment,
+            "postpayment_price_rub": postpayment,
+            "postpayment_surcharge_rub": surcharge,
             kind: product,
         }
         items.append(ProcurementPriceListItem(**values))
     ProcurementPriceListItem.objects.bulk_create(items)
+    ProcurementSupplierOffer.objects.bulk_create([
+        ProcurementSupplierOffer(price_list_item=item, supplier=supplier, price_aed=price)
+        for item in items for supplier, price, _ in offers[(item.product_kind, item.product_id)]
+    ])
+    for item in items:
+        if item.product_kind == "tech" and item.tech_id in custom_surcharge_ids:
+            preference = preferences.get(("tech", item.tech_id)) or ProcurementPricePreference(tech_id=item.tech_id)
+            preference.markup_rub = item.markup_rub
+            preference.postpayment_surcharge_rub = item.postpayment_surcharge_rub
+            preference.source_item = item
+            preference.updated_by = actor
+            preference.save()
     logger.info(
         "Закупочный прайс создан: user_id=%s price_list_id=%s usdt_aed=%s usdt_rub=%s rate=%s items=%s",
         actor.pk, price_list.pk, rate_usdt_aed, rate_usdt_rub, rate, len(items),
@@ -131,8 +322,58 @@ def create_procurement_price_list(*, actor, exchange_rate_usdt_aed, exchange_rat
     return price_list
 
 
+class NegativeProcurementMarkup(ValidationError):
+    def __init__(self, items):
+        self.items = items
+        super().__init__("В прайсе есть отрицательная наценка. Подтвердите сохранение этих цен.")
+
+
 @transaction.atomic
-def update_procurement_pricing(*, actor, price_list_id, rows, can_change_markup, can_change_delivery):
+def backfill_procurement_tech_surcharges(*, actor, price_list_id, apply=False):
+    """Перенос старых строк Tech на согласованные ставки без изменения остальных ценовых составляющих."""
+    if not (actor.is_superuser or actor.has_perm("price.change_procurement_markup")):
+        raise ValidationError("У вас нет права изменять доплату за постоплату.")
+    try:
+        price_list = ProcurementPriceList.objects.select_for_update().get(pk=price_list_id)
+    except ProcurementPriceList.DoesNotExist as exc:
+        raise ValidationError("Закупочный прайс не найден.") from exc
+    if price_list.customer_orders.exists():
+        raise ValidationError("Прайс уже использован в заказе; его ценовой снимок изменять нельзя.")
+    items = list(price_list.items.select_for_update().filter(
+        product_kind="tech", postpayment_surcharge_rub__isnull=True,
+    ).select_related("tech__brand", "tech__product_type"))
+    changes = []
+    missing = []
+    for item in items:
+        surcharge = tech_postpayment_surcharge(item.tech)
+        if surcharge is None:
+            missing.append(item.tech)
+            continue
+        postpayment = calculate_postpayment(item.prepayment_price_rub, surcharge=surcharge)
+        changes.append({
+            "item_id": item.pk, "tech_id": item.tech_id,
+            "old_surcharge": item.effective_postpayment_surcharge_rub, "new_surcharge": surcharge,
+            "old_postpayment": item.postpayment_price_rub, "new_postpayment": postpayment,
+        })
+        item.postpayment_surcharge_rub = surcharge
+        item.postpayment_price_rub = postpayment
+        item.full_clean()
+    if missing:
+        raise MissingProcurementSurcharges(missing)
+    if apply:
+        for item, change in zip(items, changes):
+            item.save(update_fields=("postpayment_surcharge_rub", "postpayment_price_rub"))
+            logger.info(
+                "Исправлена доплата старого прайса Tech: user_id=%s price_list_id=%s item_id=%s old=%s new=%s",
+                actor.pk, price_list.pk, item.pk, change["old_surcharge"], change["new_surcharge"],
+            )
+    return changes
+
+
+@transaction.atomic
+def update_procurement_pricing(
+    *, actor, price_list_id, rows, can_change_markup, can_change_delivery, negative_markup_confirmed=False,
+):
     try:
         price_list = ProcurementPriceList.objects.select_for_update().get(pk=price_list_id)
     except ProcurementPriceList.DoesNotExist as exc:
@@ -145,10 +386,36 @@ def update_procurement_pricing(*, actor, price_list_id, rows, can_change_markup,
     }
     if set(rows) != set(items):
         raise ValidationError("Состав закупочного прайса изменён или передан не полностью.")
+    surcharge_changes = {}
     for item_id, values in rows.items():
         item = items[item_id]
-        markup = decimal_value(values.get("markup"), nonnegative=True, label="Наценка")
         delivery = decimal_value(values.get("delivery"), nonnegative=True, label="Доставка")
+        original_surcharge = None if item.postpayment_surcharge_mode == "tiered" else item.effective_postpayment_surcharge_rub
+        surcharge = original_surcharge
+        if "postpayment_surcharge" in values:
+            entered_surcharge = validated_postpayment_surcharge(values["postpayment_surcharge"])
+            mode = values.get("surcharge_mode", "fixed")
+            if mode == "tiered" and item.product_kind == "cd":
+                surcharge = None
+            elif mode == "fixed":
+                surcharge = entered_surcharge
+            else:
+                raise ValidationError("Некорректный режим доплаты за постоплату.")
+        if surcharge != original_surcharge and not can_change_markup:
+            raise ValidationError("У вас нет права изменять доплату за постоплату.")
+        if surcharge != original_surcharge:
+            surcharge_changes[item_id] = surcharge
+        source = values.get("price_source", "markup")
+        if source == "prepayment":
+            prepayment = decimal_value(values.get("prepayment"), nonnegative=True, label="Цена предоплаты")
+        elif source == "postpayment":
+            prepayment = calculate_prepayment(values.get("postpayment"), surcharge=surcharge)
+        elif source == "markup":
+            markup = decimal_value(values.get("markup"), label="Наценка")
+            prepayment = item.base_price_rub + markup + delivery
+        else:
+            raise ValidationError("Неизвестный способ изменения цены закупочного прайса.")
+        markup = prepayment - item.base_price_rub - delivery
         if not can_change_markup and markup != item.markup_rub:
             raise ValidationError("У вас нет права изменять наценку.")
         if not can_change_delivery and delivery != item.delivery_rub:
@@ -157,11 +424,27 @@ def update_procurement_pricing(*, actor, price_list_id, rows, can_change_markup,
         item.markup_rub = markup
         item.delivery_rub = delivery
         item.prepayment_price_rub = prepayment
-        item.postpayment_price_rub = calculate_postpayment(prepayment)
+        item.postpayment_surcharge_rub = surcharge
+        item.postpayment_price_rub = calculate_postpayment(prepayment, surcharge=surcharge)
         item.full_clean()
+    negative_items = [item for item in items.values() if item.markup_rub < 0]
+    if negative_items and negative_markup_confirmed is not True:
+        raise NegativeProcurementMarkup(negative_items)
+    preferences = _price_preferences(((item.product_kind, item.product_id) for item in items.values()), lock=True)
+    for item in items.values():
         item.save(update_fields=(
-            "markup_rub", "delivery_rub", "prepayment_price_rub", "postpayment_price_rub"
+            "markup_rub", "delivery_rub", "prepayment_price_rub", "postpayment_price_rub", "postpayment_surcharge_rub"
         ))
+        preference = preferences.get((item.product_kind, item.product_id))
+        if preference is None:
+            preference = ProcurementPricePreference(**{f"{item.product_kind}_id": item.product_id})
+        preference.markup_rub = item.markup_rub
+        # Старая ставка снимка не становится ручным правилом без её изменения сотрудником.
+        if item.pk in surcharge_changes:
+            preference.postpayment_surcharge_rub = surcharge_changes[item.pk]
+        preference.source_item = item
+        preference.updated_by = actor
+        preference.save()
     logger.info(
         "Закупочный прайс пересчитан: user_id=%s price_list_id=%s items=%s",
         actor.pk, price_list.pk, len(items),

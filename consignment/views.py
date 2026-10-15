@@ -1,16 +1,20 @@
 from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, OperationalError
-from django.http import Http404, JsonResponse
+from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.views.decorators.http import require_POST, require_GET
+from django.views.decorators.cache import never_cache
+from django.utils import timezone
+from django.utils.http import content_disposition_header
 
 from catalog.models import CD, Tech
 from catalog.product_filters import product_filter_context, filter_product_querysets
 from core.decorators import permission_required_any
 from partners.models import SalesPlatform
 from .forms import TransferForm
+from .excel import generate_consignment_xlsx
 from warehouse.models import Warehouse
 from sales.models import Sale
 from .row_actions import action_token, perform_row_action, stock_queryset
@@ -177,6 +181,20 @@ def consignment_platform(request, pk):
             request, SalesPlatform.objects.filter(pk=platform.pk), selected_platform=platform,
         ),
     )
+
+
+@never_cache
+@require_GET
+@permission_required_any("consignment.view_cdconsignmentstock", "consignment.view_techconsignmentstock")
+def platform_export(request, pk):
+    platform = get_object_or_404(SalesPlatform, pk=pk)
+    response = HttpResponse(
+        generate_consignment_xlsx(platform=platform, user=request.user),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    filename = f"realization_{platform.pk}_{timezone.localdate():%Y-%m-%d}.xlsx"
+    response["Content-Disposition"] = content_disposition_header(True, filename)
+    return response
 
 
 @require_POST

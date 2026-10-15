@@ -2,6 +2,7 @@
 {% load static l10n %}
 {% block body_class %}avito-check-page{% endblock %}
 {% block title %}Avito Check · ReSOURCE{% endblock %}
+{% block extra_head %}<script src="{% static 'js/wholesale-margin.js' %}?v=1" defer></script>{% endblock %}
 {% block content %}
 <div class="page-heading"><div><p class="eyebrow">Ценообразование</p><h1>Avito Check · Автоматическая проверка</h1><p class="muted">Товар {{ index|add:1 }} из {{ total }}</p></div><a class="button button-secondary" href="{% url 'pricing:avito_check' %}">Все товары</a></div>
 <section class="panel avito-check-product">
@@ -14,7 +15,7 @@
     <form id="avito-check-next" method="post" action="{% url 'pricing:avito_check_next' %}" class="stacked-form">
       {% csrf_token %}<input type="hidden" name="kind" value="{{ kind }}"><input type="hidden" name="product_id" value="{{ product.pk }}">
       <div class="product-form-grid">
-        <div class="field"><label for="check-wholesale">Оптовая цена</label><input id="check-wholesale" type="number" name="wholesale_price" min="0" step="0.01" value="{{ form_wholesale|unlocalize|default_if_none:'' }}" {% if not can_change_wholesale %}readonly{% endif %}></div>
+        <div class="field"><label for="check-wholesale">Оптовая цена / наценка, ₽</label><div class="pricing-wholesale-pair" data-wholesale-margin data-cost="{{ product.cost|unlocalize }}"><input id="check-wholesale" type="number" name="wholesale_price" data-wholesale-value min="0" step="0.01" value="{{ form_wholesale|unlocalize|default_if_none:'' }}" {% if not can_change_wholesale %}readonly{% endif %}><span class="price-pair-separator" aria-hidden="true">/</span><span class="wholesale-margin-value" data-wholesale-margin-value title="Оптовая цена минус себестоимость">{% if wholesale_margin != None %}{{ wholesale_margin|floatformat:2 }}{% else %}—{% endif %}</span></div></div>
         <div class="field"><label for="check-avito">Цена Avito</label><input id="check-avito" type="number" name="avito_price" min="0" step="0.01" value="{{ form_avito|unlocalize|default_if_none:'' }}" {% if not can_change_avito %}readonly{% endif %}></div>
       </div>
       {% if warnings.avito_price %}<p class="muted">{{ warnings.avito_price }}</p>{% endif %}

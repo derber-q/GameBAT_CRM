@@ -1,33 +1,28 @@
+﻿param(
+    [switch]$SiteOnly,
+    [switch]$NoBrowser
+)
+
 $ErrorActionPreference = "Stop"
 
 $projectDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+. (Join-Path $projectDir "scripts\local_network.ps1")
 $pythonExe = Join-Path $projectDir ".venv\Scripts\python.exe"
 $siteUrl = "http://127.0.0.1:8000/"
-$lanConfiguration = Get-NetIPConfiguration -ErrorAction SilentlyContinue | Where-Object {
-    $_.NetAdapter.Status -eq "Up" `
-        -and $_.IPv4DefaultGateway `
-        -and $_.InterfaceAlias -notmatch "(?i)vpn|tun|tap|loopback"
-} | Select-Object -First 1
-$lanIp = if ($lanConfiguration) { $lanConfiguration.IPv4Address.IPAddress } else { $null }
+$lanAddresses = @(Get-GameBATLanAddresses)
+$lanIp = $lanAddresses | Select-Object -First 1
 $networkUrl = if ($lanIp) { "http://${lanIp}:8000/" } else { $siteUrl }
+$serverUrls = @($siteUrl) + @($lanAddresses | ForEach-Object { "http://${_}:8000/" })
 
-function Test-GameBATServer {
-    try {
-        Invoke-WebRequest -Uri $networkUrl -UseBasicParsing -TimeoutSec 1 | Out-Null
-        return $true
+function Test-AllGameBATAddresses {
+    foreach ($url in $serverUrls) {
+        if (-not (Test-GameBATServer -Url $url)) { return $false }
     }
-    catch {
-        return $false
-    }
+    return $true
 }
 
 function Stop-StaleGameBATServer {
-    $escapedProjectDir = [Regex]::Escape($projectDir)
-    Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
-        $_.Name -match "^python" `
-            -and $_.CommandLine -match $escapedProjectDir `
-            -and $_.CommandLine -match "manage\.py runserver"
-    } | ForEach-Object {
+    Get-GameBATServerProcesses -ProjectDir $projectDir | ForEach-Object {
         Stop-Process -Id $_.ProcessId -ErrorAction SilentlyContinue
     }
     Start-Sleep -Milliseconds 300
@@ -49,21 +44,26 @@ if (-not (Test-Path -LiteralPath $pythonExe)) {
     exit 1
 }
 
-if (-not (Test-GameBATServer)) {
+if (-not (Test-AllGameBATAddresses)) {
     Stop-StaleGameBATServer
-    $allowedHosts = @("localhost", "127.0.0.1")
-    if ($lanIp) { $allowedHosts += $lanIp }
-    $env:DJANGO_ALLOWED_HOSTS = $allowedHosts -join ","
+    $allowedHosts = @("localhost", "127.0.0.1") + $lanAddresses
+    $allowedHosts += @($env:DJANGO_ALLOWED_HOSTS -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+    $env:DJANGO_ALLOWED_HOSTS = ($allowedHosts | Select-Object -Unique) -join ","
+    $runtimeDir = Join-Path $projectDir "outputs\localhost"
+    New-Item -ItemType Directory -Path $runtimeDir -Force | Out-Null
+    $logPrefix = Join-Path $runtimeDir (Get-Date -Format "yyyyMMdd_HHmmss_fff")
     Start-Process `
         -FilePath $pythonExe `
-        -ArgumentList @("manage.py", "runserver", "0.0.0.0:8000", "--noreload") `
+        -ArgumentList @("-u", "manage.py", "runserver", "0.0.0.0:8000", "--noreload") `
         -WorkingDirectory $projectDir `
-        -WindowStyle Hidden
+        -WindowStyle Hidden `
+        -RedirectStandardOutput "$logPrefix.stdout.log" `
+        -RedirectStandardError "$logPrefix.stderr.log"
 
     $started = $false
     for ($attempt = 0; $attempt -lt 30; $attempt++) {
         Start-Sleep -Milliseconds 300
-        if (Test-GameBATServer) {
+        if (Test-AllGameBATAddresses) {
             $started = $true
             break
         }
@@ -72,14 +72,14 @@ if (-not (Test-GameBATServer)) {
     if (-not $started) {
         Add-Type -AssemblyName PresentationFramework
         [System.Windows.MessageBox]::Show(
-            "Не удалось запустить локальный сервер на порту 8000.",
+            "Не удалось запустить локальный сервер на порту 8000. Журналы: $runtimeDir",
             "GameBAT CRM"
         ) | Out-Null
         exit 1
     }
 }
 
-if (-not (Test-IntegrationWorker)) {
+if (-not $SiteOnly -and -not (Test-IntegrationWorker)) {
     Start-Process `
         -FilePath $pythonExe `
         -ArgumentList @("manage.py", "run_integration_worker") `
@@ -87,4 +87,5 @@ if (-not (Test-IntegrationWorker)) {
         -WindowStyle Hidden
 }
 
-Start-Process $networkUrl
+Write-Output "CRM: $networkUrl"
+if (-not $NoBrowser) { Start-Process $networkUrl }

@@ -12,6 +12,7 @@ from django.db.models.functions import Lower
 from django.urls import reverse
 
 from .packaging_defaults import CD_DIMENSIONS, fill_new_product_dimensions
+from .profit_defaults import CD_DESIRED_PROFIT, fill_new_product_desired_profit
 
 
 class NamedReference(models.Model):
@@ -41,6 +42,17 @@ class Brand(NamedReference):
 
 
 class ProductType(NamedReference):
+    class DeliveryGroup(models.TextChoices):
+        GENERAL = "general", "Прочая техника"
+        DEVICES = "devices", "Консоли, мини-ПК и VR/AR"
+        STORAGE = "storage", "Память и накопители"
+
+    procurement_delivery_group = models.CharField(
+        "Тариф доставки закупочного прайса", max_length=16,
+        choices=DeliveryGroup.choices, default=DeliveryGroup.GENERAL,
+        help_text="Выбирает один из трёх тарифов USDT за кг при создании закупочного прайса.",
+    )
+
     class Meta(NamedReference.Meta):
         verbose_name = "тип товара"
         verbose_name_plural = "типы товара"
@@ -194,6 +206,7 @@ class ProductBase(models.Model):
 
     def save(self, *args, **kwargs):
         fill_new_product_dimensions(self)
+        fill_new_product_desired_profit(self)
         pending = self._pending_legacy_barcode
         update_fields = kwargs.get("update_fields")
         save_product = True
@@ -216,6 +229,7 @@ class ProductBase(models.Model):
     def clean(self):
         super().clean()
         fill_new_product_dimensions(self)
+        fill_new_product_desired_profit(self)
         self.sku = str(self.sku or "").strip()
         for field_name, label in (("length_cm", "Длина"), ("width_cm", "Ширина"), ("height_cm", "Высота")):
             value = getattr(self, field_name)
@@ -229,6 +243,7 @@ class ProductBase(models.Model):
 
 
 class CD(ProductBase):
+    yandex_desired_profit = models.DecimalField("Желаемая чистая прибыль, ₽", max_digits=20, decimal_places=2, null=True, blank=True, default=CD_DESIRED_PROFIT, validators=[MinValueValidator(0)])
     length_cm = models.DecimalField("Длина упаковки, см", max_digits=8, decimal_places=3, null=True, blank=True, default=CD_DIMENSIONS["length_cm"], validators=[MinValueValidator(Decimal("0.001"))])
     width_cm = models.DecimalField("Ширина упаковки, см", max_digits=8, decimal_places=3, null=True, blank=True, default=CD_DIMENSIONS["width_cm"], validators=[MinValueValidator(Decimal("0.001"))])
     height_cm = models.DecimalField("Высота упаковки, см", max_digits=8, decimal_places=3, null=True, blank=True, default=CD_DIMENSIONS["height_cm"], validators=[MinValueValidator(Decimal("0.001"))])
@@ -276,6 +291,7 @@ class CD(ProductBase):
 
 
 class Tech(ProductBase):
+    yandex_desired_profit = models.DecimalField("Желаемая чистая прибыль, ₽", max_digits=20, decimal_places=2, null=True, blank=True, validators=[MinValueValidator(0)])
     brand = models.ForeignKey(Brand, on_delete=models.PROTECT, related_name="tech_items", verbose_name="Бренд")
     product_type = models.ForeignKey(ProductType, on_delete=models.PROTECT, related_name="tech_items", verbose_name="Тип товара")
     weight_grams = models.PositiveIntegerField(
@@ -397,10 +413,38 @@ class ProductRemovalEvent(models.Model):
         verbose_name_plural = "удаления товаров"
 
 
+class SystemProduct(models.Model):
+    """Две внутренние позиции, не являющиеся физической номенклатурой."""
+
+    class Kind(models.TextChoices):
+        DIGITAL_PRODUCT = "DIGITAL_PRODUCT", "Цифровой товар"
+        EXPENSE = "EXPENSE", "Расход"
+
+    kind = models.CharField("Системный тип", max_length=24, primary_key=True, choices=Kind.choices, editable=False)
+
+    class Meta:
+        constraints = [models.CheckConstraint(
+            condition=models.Q(kind__in=("DIGITAL_PRODUCT", "EXPENSE")), name="system_product_known_kind",
+        )]
+        verbose_name = "системная позиция"
+        verbose_name_plural = "системные позиции"
+
+    @property
+    def name(self):
+        return self.get_kind_display()
+
+    def __str__(self):
+        return self.name
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Системные позиции удалять нельзя.")
+
+
 class BarcodeRegistry(models.Model):
     class ProductKind(models.TextChoices):
         CD = "cd", "CD"
         TECH = "tech", "Tech"
+        SYSTEM = "system", "Системная позиция"
 
     value = models.CharField("Штрихкод", max_length=100, unique=True)
     product_kind = models.CharField("Тип товара", max_length=8, choices=ProductKind.choices)
@@ -414,6 +458,11 @@ class BarcodeRegistry(models.Model):
     )
     created_at = models.DateTimeField("Создан", auto_now_add=True)
 
+    system_product = models.OneToOneField(
+        SystemProduct, on_delete=models.PROTECT, related_name="barcode_entry",
+        null=True, blank=True, verbose_name="Системная позиция",
+    )
+
     class Meta:
         ordering = ("value",)
         verbose_name = "регистрация штрихкода"
@@ -421,8 +470,9 @@ class BarcodeRegistry(models.Model):
         constraints = [
             models.CheckConstraint(
                 condition=(
-                    models.Q(product_kind="cd", cd__isnull=False, tech__isnull=True)
-                    | models.Q(product_kind="tech", cd__isnull=True, tech__isnull=False)
+                    models.Q(product_kind="cd", cd__isnull=False, tech__isnull=True, system_product__isnull=True)
+                    | models.Q(product_kind="tech", cd__isnull=True, tech__isnull=False, system_product__isnull=True)
+                    | models.Q(product_kind="system", cd__isnull=True, tech__isnull=True, system_product__isnull=False)
                 ),
                 name="barcode_registry_exact_product",
             ),
@@ -430,6 +480,8 @@ class BarcodeRegistry(models.Model):
 
     @property
     def product(self):
+        if self.system_product_id:
+            return self.system_product
         return self.cd if self.product_kind == self.ProductKind.CD else self.tech
 
     def clean(self):
@@ -442,16 +494,30 @@ class BarcodeRegistry(models.Model):
         elif self.tech_id and not self.cd_id:
             self.product_kind = self.ProductKind.TECH
         valid = (
-            self.product_kind == self.ProductKind.CD and self.cd_id and not self.tech_id
+            self.product_kind == self.ProductKind.CD and self.cd_id and not self.tech_id and not self.system_product_id
         ) or (
-            self.product_kind == self.ProductKind.TECH and self.tech_id and not self.cd_id
+            self.product_kind == self.ProductKind.TECH and self.tech_id and not self.cd_id and not self.system_product_id
+        ) or (
+            self.product_kind == self.ProductKind.SYSTEM and self.system_product_id and not self.cd_id and not self.tech_id
         )
         if not valid:
             raise ValidationError("Регистрация штрихкода должна ссылаться ровно на один товар.")
 
     def save(self, *args, **kwargs):
+        if self.pk:
+            stored = type(self).objects.filter(pk=self.pk).values("system_product_id", "value", "product_kind").first()
+            if stored and stored["system_product_id"] and (
+                stored["system_product_id"] != self.system_product_id or stored["value"] != self.value
+                or self.product_kind != "system" or self.cd_id or self.tech_id
+            ):
+                raise ValidationError("Штрихкод системной позиции изменять нельзя.")
         self.clean()
         return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        if self.system_product_id:
+            raise ValidationError("Штрихкод системной позиции удалять нельзя.")
+        return super().delete(*args, **kwargs)
 
     def __str__(self):
         return self.value

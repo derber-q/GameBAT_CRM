@@ -1,13 +1,13 @@
 {% extends "base.html" %}
 {% load static %}
-{% block title %}Ценообразование · ReSOURCE{% endblock %}
-{% block extra_head %}<script src="{% static 'js/pricing.js' %}?v=price-control-2" defer></script><script src="{% static 'js/pricing-scroll.js' %}?v=3-fbs" defer></script><link rel="stylesheet" href="{% static 'css/fbs-pricing.css' %}?v=2-dimensions"><script src="{% static 'js/fbs-pricing.js' %}?v=2-dimensions" defer></script>{% endblock %}
+{% block title %}{{ pricing_title }}{% if pricing_kind %} · Ценообразование{% endif %} · ReSOURCE{% endblock %}
+{% block extra_head %}<script src="{% static 'js/pricing.js' %}?v=price-control-3" defer></script><script src="{% static 'js/wholesale-margin.js' %}?v=1" defer></script><script src="{% static 'js/pricing-scroll.js' %}?v=5-persisted-price" defer></script><link rel="stylesheet" href="{% static 'css/fbs-pricing.css' %}?v=3-compact"><script src="{% static 'js/fbs-pricing.js' %}?v=6-persisted-price" defer></script>{% endblock %}
 {% block content %}
 <div class="page-heading">
   <div>
-    <p class="eyebrow">Текущие цены</p>
-    <h1>Ценообразование</h1>
-    <p class="muted">Себестоимость рассчитывается поставками; продажные цены редактируются в таблице.</p>
+    <p class="eyebrow">{% if pricing_kind %}Ценообразование · Текущие цены{% else %}Текущие цены{% endif %}</p>
+    <h1>{{ pricing_title }}</h1>
+    <p class="muted">Себестоимость рассчитывается поставками и может быть исправлена в карточке товара; продажные цены редактируются в таблице.</p>
   </div>
 </div>
 <dialog id="fbs-pricing-dialog" class="fbs-dialog"><div class="heading-actions"><h2>Яндекс Маркет FBS</h2><button class="button button-secondary" type="button" data-fbs-close>Закрыть</button></div><div data-fbs-dialog-content role="status"></div></dialog>

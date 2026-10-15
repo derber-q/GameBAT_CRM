@@ -27,7 +27,7 @@ from .models import ApiLog, CategorySchema, Integration, LabelDocument, OfferCon
 from .orders import accept_return, import_order, item_amount, save_return
 from .packing import validate_boxes
 from .queue import enqueue, enqueue_product
-from .services import activate, bind_offer, create_offer, sync_product, unlink_offer, refresh_trade_snapshots, sync_price_stock_batch, connections_with_stock, refresh_catalog, store_api_key
+from .services import activate, bind_offer, create_offer, sync_product, unlink_offer, refresh_trade_snapshots, sync_price_stock_batch, connections_with_stock, refresh_catalog, set_offer_hidden, store_api_key
 from .tasks import process_one_job
 
 
@@ -42,6 +42,9 @@ class MarketTests(TestCase):
         cls.integration = Integration.objects.create(business_id=100, campaign_id=200, partner_warehouse_id=300,
             fulfillment_warehouse=cls.warehouse, operator=cls.user, checked_at=timezone.now(), import_orders_from=timezone.now() - timedelta(days=1))
         cls.product = CD.objects.create(platform=Platform.objects.create(name="Тестовая платформа"), name="Тестовый диск", sku="CD-YM", cost=Decimal("20.00"), yandex_market_price=Decimal("99.99"))
+        # Ниже проверяется существующий товар без размеров, а не новые значения CD по умолчанию.
+        cls.product.length_cm = cls.product.width_cm = cls.product.height_cm = None
+        cls.product.save(update_fields=["length_cm", "width_cm", "height_cm"])
         cls.stock = CDWarehouseStock.objects.create(warehouse=cls.warehouse, cd=cls.product, quantity=10)
         CDWarehouseStock.objects.create(warehouse=cls.other, cd=cls.product, quantity=7)
         cls.remote = RemoteOffer.objects.create(integration=cls.integration, offer_id="0007-old", name="Название Маркета", category_id=50,
@@ -68,12 +71,43 @@ class MarketTests(TestCase):
         self.stock.refresh_from_db()
         return self.stock.quantity
 
-    def test_binding_preserves_offer_and_does_not_activate(self):
+    def test_binding_preserves_offer_and_enables_exchange(self):
         self.assertEqual(self.connection.remote_offer.offer_id, "0007-old")
-        self.assertFalse(self.connection.managed)
+        self.assertTrue(self.connection.managed)
+        self.assertTrue(self.connection.sell_on_yandex)
         self.assertEqual(self.connection.content, {})
         self.assertFalse(SyncJob.objects.exists())
         self.assertEqual(build_content(self.connection), {"offerId": "0007-old"})
+
+    def test_hide_offer_preserves_connection_price_and_stock(self):
+        before_stock = self.stock_quantity()
+        client = Mock()
+        client.call.return_value = {"status": "OK"}
+        with patch("yandex_market.services.refresh_offer"):
+            set_offer_hidden(self.connection.pk, self.user, hidden=True, client=client)
+        self.assertEqual(client.call.call_args.args[0], "addHiddenOffers")
+        self.assertEqual(client.call.call_args.kwargs["body"], {"hiddenOffers": [{"offerId": "0007-old"}]})
+        self.connection.refresh_from_db()
+        self.product.refresh_from_db()
+        self.assertTrue(self.connection.active)
+        self.assertTrue(self.connection.sell_on_yandex)
+        self.assertEqual(self.product.yandex_market_price, Decimal("99.99"))
+        self.assertEqual(self.stock_quantity(), before_stock)
+        with patch("yandex_market.services.refresh_offer"):
+            set_offer_hidden(self.connection.pk, self.user, hidden=False, client=client)
+        self.assertEqual(client.call.call_args.args[0], "deleteHiddenOffers")
+
+    def test_product_card_shows_checked_visibility_and_dispatches_change(self):
+        self.remote.snapshot["offer"]["campaigns"] = [{"campaignId": self.integration.campaign_id, "status": "DISABLED_BY_PARTNER"}]
+        self.remote.save(update_fields=["snapshot"])
+        self.client.force_login(self.user)
+        response = self.client.get(reverse("nomenclature:cd_detail", args=[self.product.pk]))
+        self.assertContains(response, 'name="hidden" value="yes" checked')
+        with patch("yandex_market.views.set_offer_hidden") as change:
+            response = self.client.post(reverse("yandex_market:content_action", args=[self.connection.pk]),
+                                        {"action": "visibility", "confirm": "yes"})
+        self.assertEqual(response.status_code, 302)
+        change.assert_called_once_with(self.connection.pk, self.user, hidden=False)
 
     def test_duplicate_links_rejected(self):
         with self.assertRaises(ValidationError):
@@ -90,7 +124,7 @@ class MarketTests(TestCase):
         self.assertFalse(self.connection.active)
         self.assertTrue(RemoteOffer.objects.filter(pk=self.remote.pk).exists())
 
-    def test_no_sync_before_activation(self):
+    def test_no_sync_when_integration_disabled(self):
         client = Mock()
         sync_product(self.connection.pk, client=client)
         client.call.assert_not_called()
@@ -431,8 +465,52 @@ class MarketTests(TestCase):
         self.assertEqual({row["sku"]: row["count"] for row in stock_call.kwargs["body"]["skuItems"]}, {"0007-old": 9, "T-old": 0})
         self.assertEqual(client.call.call_count, 2)
 
-    def test_product_change_queues_supported_fields_only_after_commit(self):
+    def test_existing_product_changes_queue_only_crm_dimensions(self):
         self.enable()
+        before = copy.deepcopy(self.remote.snapshot)
+        with self.captureOnCommitCallbacks(execute=True):
+            self.product.name = "Новое название CRM"
+            self.product.description = "Новое описание CRM"
+            self.product.sku = "CD-CHANGED"
+            self.product.length_cm, self.product.width_cm, self.product.height_cm = 23, 15, 4
+            self.product.weight_grams = 150
+            self.product.title_image = "crm-only.jpg"
+            self.product.save()
+        self.connection.refresh_from_db()
+        self.remote.refresh_from_db()
+        self.assertEqual(self.remote.snapshot, before)
+        self.assertEqual(set(self.connection.content), {"weightDimensions"})
+        self.assertEqual(self.connection.dirty_fields, ["weightDimensions"])
+        self.assertEqual(SyncJob.objects.get(kind="product").state, "pending")
+        client = Mock()
+        sync_product(self.connection.pk, client=client)
+        calls = {call.args[0]: call.kwargs["body"] for call in client.call.call_args_list}
+        self.assertEqual(set(calls), {"updateBusinessPrices", "updateStocksOnPartnerWarehouses", "updateOfferMappings"})
+        self.assertEqual(calls["updateOfferMappings"]["offerMappings"][0]["offer"], {
+            "offerId": self.remote.offer_id,
+            "weightDimensions": {"length": Decimal("23"), "width": Decimal("15"), "height": Decimal("4"), "weight": Decimal("0.15")},
+        })
+
+    def test_existing_product_price_change_queues_trade_only_after_commit(self):
+        self.enable()
+        with self.captureOnCommitCallbacks(execute=True):
+            self.product.name = "Другое название CRM"
+            self.product.yandex_market_price = Decimal("199.99")
+            self.product.save(update_fields=["name", "yandex_market_price"])
+        self.connection.refresh_from_db()
+        self.assertEqual(self.connection.content, {})
+        self.assertEqual(self.connection.dirty_fields, [])
+        self.assertEqual(SyncJob.objects.get(kind="product").state, "pending")
+        client = Mock()
+        sync_product(self.connection.pk, client=client)
+        calls = {call.args[0]: call.kwargs["body"] for call in client.call.call_args_list}
+        self.assertNotIn("updateOfferMappings", calls)
+        self.assertEqual(calls["updateBusinessPrices"]["offers"][0]["price"]["value"], Decimal("199.99"))
+
+    def test_new_product_change_queues_supported_fields_only_after_commit(self):
+        self.enable()
+        self.connection.is_new = True
+        self.connection.save(update_fields=["is_new"])
         with self.captureOnCommitCallbacks(execute=True):
             self.product.name = "Новое название"
             self.product.save(update_fields=["name"])
@@ -554,15 +632,125 @@ class MarketTests(TestCase):
         self.assertEqual(payload["deleteParameters"], ["DESCRIPTION"])
 
     def test_dimensions_are_numbers_after_database_roundtrip(self):
+        self.product.length_cm, self.product.width_cm, self.product.height_cm = Decimal("10.50"), 15, 2
         self.product.weight_grams = 150
-        self.product.save(update_fields=["weight_grams"])
-        self.connection.content = {"weightDimensions": {"length": Decimal("10.50"), "width": Decimal("15.0"), "height": Decimal("2.0")}}
+        self.product.save(update_fields=["length_cm", "width_cm", "height_cm", "weight_grams"])
+        self.connection.content = {"weightDimensions": {"length": Decimal("10.50"), "width": Decimal("15.0"), "height": Decimal("2.0"), "weight": Decimal("0.25")}}
         self.connection.dirty_fields = ["weightDimensions"]
         self.connection.save()
         self.connection.refresh_from_db()
         payload = build_content(self.connection)
-        self.assertEqual(payload["weightDimensions"]["weight"], Decimal("0.15"))
+        self.assertEqual(payload["weightDimensions"]["weight"], Decimal("0.25"))
         self.assertIsInstance(payload["weightDimensions"]["length"], Decimal)
+
+    def test_existing_content_form_uses_crm_dimensions_and_market_weight(self):
+        from .forms import ContentForm
+        dimensions = {"length": 10, "width": 12, "height": 2, "weight": "0.25"}
+        self.remote.snapshot["offer"]["weightDimensions"] = dimensions
+        self.remote.save()
+        self.product.length_cm, self.product.width_cm, self.product.height_cm = 23, 15, 4
+        self.product.weight_grams = 150
+        self.product.save()
+        self.connection.refresh_from_db()
+        form = ContentForm(connection=self.connection)
+        for key, value in {**dimensions, "length": 23, "width": 15, "height": 4}.items():
+            self.assertEqual(form[f"content_weightDimensions__{key}"].value(), value)
+        for key in ("length", "width", "height"):
+            self.assertTrue(form.fields[f"content_weightDimensions__{key}"].disabled)
+        self.assertFalse(form.fields["content_weightDimensions__weight"].disabled)
+
+    def test_unchanged_market_fields_only_prepare_crm_dimensions(self):
+        self.client.force_login(self.user)
+        self.enable()
+        self.remote.snapshot["offer"]["weightDimensions"] = {"length": "10.50", "width": "12", "height": "2", "weight": "0.25"}
+        self.remote.save()
+        self.product.length_cm, self.product.width_cm, self.product.height_cm = 23, 15, 4
+        self.product.weight_grams = 150
+        self.product.save()
+        self.connection.refresh_from_db()
+        data = {"revision": self.connection.revision, "content_name": self.remote.name, "content_pictures": "https://example.com/old.jpg"}
+        data.update({f"content_weightDimensions__{key}": value for key, value in self.remote.snapshot["offer"]["weightDimensions"].items()})
+        with patch("yandex_market.client.YandexMarketClient.call") as call:
+            response = self.client.post(reverse("yandex_market:connection", args=[self.connection.pk]), data)
+        self.assertEqual(response.status_code, 302)
+        call.assert_not_called()
+        self.connection.refresh_from_db()
+        self.product.refresh_from_db()
+        self.assertEqual(self.connection.dirty_fields, ["weightDimensions"])
+        self.assertEqual(set(self.connection.content), {"weightDimensions"})
+        self.assertEqual(build_content(self.connection)["weightDimensions"], {
+            "length": Decimal("23"), "width": Decimal("15"), "height": Decimal("4"), "weight": Decimal("0.25"),
+        })
+        self.assertEqual((self.product.length_cm, self.product.width_cm, self.product.height_cm, self.product.weight_grams), (23, 15, 4, 150))
+
+    def test_explicit_market_edits_are_sent_without_general_crm_content(self):
+        self.client.force_login(self.user)
+        self.enable()
+        response = self.client.post(reverse("yandex_market:connection", args=[self.connection.pk]), {
+            "revision": self.connection.revision, "content_name": "Название вручную для Маркета",
+            "content_pictures": "https://example.com/old.jpg",
+        })
+        self.assertEqual(response.status_code, 302)
+        client = Mock()
+        sync_product(self.connection.pk, client=client)
+        content_call = next(call for call in client.call.call_args_list if call.args[0] == "updateOfferMappings")
+        self.assertEqual(content_call.kwargs["body"]["offerMappings"][0]["offer"], {"offerId": self.remote.offer_id, "name": "Название вручную для Маркета"})
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.name, "Тестовый диск")
+
+    def test_binding_reads_and_retains_market_content_in_product_block(self):
+        self.client.force_login(self.user)
+        self.connection.active = False
+        self.connection.save(update_fields=["active"])
+        self.product.length_cm, self.product.width_cm, self.product.height_cm = 23, 15, 4
+        self.product.save(update_fields=["length_cm", "width_cm", "height_cm"])
+        offer = {
+            "offerId": self.remote.offer_id, "name": "Название с Маркета", "description": "Описание только Маркета",
+            "vendor": "Бренд Маркета", "vendorCode": "MARKET-ARTICLE", "marketCategoryId": 50,
+            "pictures": ["https://example.com/first.jpg", "https://example.com/second.jpg"],
+            "barcodes": ["4006381333931"], "weightDimensions": {"length": 10, "width": 12, "height": 2, "weight": "0.25"},
+            "parameterValues": [{"parameterId": 44, "value": "Субтитры на русском"}],
+        }
+        card = {"offerId": self.remote.offer_id, "cardStatus": "HAS_CARD_CAN_UPDATE", "parameterValues": offer["parameterValues"]}
+        responses = {
+            "getOfferMappings": {"result": {"offerMappings": [{"offer": offer, "mapping": {"marketCategoryName": "Игры"}}]}},
+            "getOfferCardsContentStatus": {"result": {"offerCards": [card]}},
+            "getDefaultPrices": {"result": {"offers": []}}, "getStocksOnPartnerWarehouses": {"result": {"offers": []}},
+            "getCategoryContentParameters": {"result": {"categoryId": 50, "parameters": [{"id": 44, "name": "Локализация", "type": "STRING"}]}},
+        }
+        url = reverse("yandex_market:bind", args=[self.remote.pk])
+        selection = self.client.get(url, {"kind": "cd", "product": self.product.pk})
+        with patch("yandex_market.client.YandexMarketClient.call", side_effect=lambda operation, **kwargs: responses[operation]) as call:
+            response = self.client.post(url, {"confirm": "yes", "token": selection.context["token"]})
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual({item.args[0] for item in call.call_args_list}, set(responses))
+        link = OfferConnection.objects.get(active=True)
+        self.remote.refresh_from_db()
+        self.assertEqual(self.remote.snapshot["offer"], offer)
+        self.assertEqual(self.remote.card, card)
+        self.assertEqual(set(link.content), {"weightDimensions"})
+        self.assertEqual(build_content(link)["weightDimensions"], {
+            "length": Decimal("23"), "width": Decimal("15"), "height": Decimal("4"), "weight": Decimal("0.25"),
+        })
+        self.assertTrue(link.managed)
+        self.assertFalse(SyncJob.objects.exists())
+        with patch("yandex_market.client.YandexMarketClient.call") as call:
+            page = self.client.get(reverse("nomenclature:cd_detail", args=[self.product.pk]))
+        call.assert_not_called()
+        for value in (offer["name"], offer["description"], offer["vendor"], offer["vendorCode"], offer["barcodes"][0], "Локализация", "Субтитры на русском", *offer["pictures"]):
+            self.assertContains(page, value)
+        self.assertContains(page, f'aria-controls="ym-product-content-{link.pk}"')
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.name, "Тестовый диск")
+        self.assertFalse(self.product.title_image)
+
+    def test_market_product_block_requires_integration_view_permission(self):
+        self.worker.user_permissions.add(Permission.objects.get(content_type__app_label="catalog", codename="view_nomenclature"))
+        self.client.force_login(self.worker)
+        response = self.client.get(reverse("nomenclature:cd_detail", args=[self.product.pk]))
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, f'aria-controls="ym-product-content-{self.connection.pk}"')
+        self.assertNotContains(response, "https://example.com/old.jpg")
 
     def test_parameter_update_always_includes_category(self):
         self.connection.dirty_fields = ["parameterValues"]
@@ -591,4 +779,4 @@ class MarketTests(TestCase):
         replacement = unlink_offer(self.connection.pk, self.user, replacement={"product_kind": "cd", "product_id": other.pk})
         self.assertNotEqual(replacement.pk, self.connection.pk)
         self.assertEqual(order.lines.get().connection_id, self.connection.pk)
-        self.assertFalse(replacement.managed)
+        self.assertTrue(replacement.managed)

@@ -72,6 +72,8 @@ staticfiles/
 backups/
 reports/
 outputs/
+/output/
+/tmp/
 node_modules/
 
 # Flask stuff:

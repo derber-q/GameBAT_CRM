@@ -9,6 +9,7 @@ from django.urls import reverse
 from accounts.models import User
 from cash.models import CashTransaction
 from cash.services import collect_cash
+from catalog.models import ProductChangeEvent, ProductFieldChange
 from catalog.models import Brand, CD, Platform, ProductType, Tech
 from consignment.models import CDConsignmentStock
 from consignment.services import record_consignment_sale, transfer_to_consignment
@@ -75,6 +76,71 @@ class SaleCancellationTests(TestCase):
         self.stock.refresh_from_db()
         tech_stock.refresh_from_db()
         self.assertEqual((self.stock.quantity, tech_stock.quantity), (10, 5))
+
+    def test_cancellation_uses_sale_cost_snapshot_and_all_warehouse_stock(self):
+        self.stock.quantity = 2
+        self.stock.save(update_fields=("quantity",))
+        self.product.cost = Decimal("61272.00")
+        self.product.save(update_fields=("cost",))
+        sale = create_sale(
+            actor=self.actor, warehouse_id=self.warehouse.pk,
+            price_type=Sale.PriceType.RETAIL, sale_type=Sale.SaleType.RETAIL,
+            payment_method=Sale.PaymentMethod.CASH_POSTPAY,
+            lines=[{"product_type": "cd", "product_id": self.product.pk, "quantity": 1}],
+        )
+        other_warehouse = Warehouse.objects.create(name="Другой склад")
+        CDWarehouseStock.objects.create(warehouse=other_warehouse, cd=self.product, quantity=2)
+        self.product.cost = Decimal("61094.00")
+        self.product.save(update_fields=("cost",))
+
+        cancel_sale(actor=self.actor, sale_id=sale.pk, comment="Возврат")
+
+        self.product.refresh_from_db()
+        self.stock.refresh_from_db()
+        self.assertEqual(self.product.cost, Decimal("61138.50"))
+        self.assertEqual(self.stock.quantity, 2)
+        self.assertEqual(sale.cd_items.get().unit_cost_snapshot, Decimal("61272.00"))
+        event = ProductChangeEvent.objects.get(
+            action_kind=ProductChangeEvent.ActionKind.SALE,
+            action_object_id=sale.pk,
+            action_label=f"Отмена продажи {sale.visible_id}",
+        )
+        self.assertTrue(ProductFieldChange.objects.filter(
+            event=event, field_name="cost", old_value="61094.00", new_value="61138.50",
+        ).exists())
+
+    def test_tech_cancellation_restores_snapshot_cost_to_empty_stock(self):
+        brand = Brand.objects.create(name="Sony")
+        product_type = ProductType.objects.create(name="Консоли")
+        tech = Tech.objects.create(
+            brand=brand, product_type=product_type, name="Консоль", sku="TECH-1",
+            avito_price=100, cost=Decimal("61272.00"),
+        )
+        stock = TechWarehouseStock.objects.create(warehouse=self.warehouse, tech=tech, quantity=1)
+        sale = create_sale(
+            actor=self.actor, warehouse_id=self.warehouse.pk,
+            price_type=Sale.PriceType.RETAIL, sale_type=Sale.SaleType.RETAIL,
+            payment_method=Sale.PaymentMethod.CASH_POSTPAY,
+            lines=[{"product_type": "tech", "product_id": tech.pk, "quantity": 1}],
+        )
+        tech.cost = Decimal("61094.00")
+        tech.save(update_fields=("cost",))
+
+        cancel_sale(actor=self.actor, sale_id=sale.pk, comment="Возврат")
+
+        tech.refresh_from_db()
+        stock.refresh_from_db()
+        self.assertEqual((stock.quantity, tech.cost), (1, Decimal("61272.00")))
+
+    def test_missing_historical_cost_rolls_back_cancellation(self):
+        sale = self.create(Sale.PaymentMethod.CASH_POSTPAY)
+        sale.cd_items.update(unit_cost_snapshot=None)
+        with self.assertRaisesMessage(ValidationError, "нет снимка себестоимости"):
+            cancel_sale(actor=self.actor, sale_id=sale.pk, comment="Возврат")
+        self.stock.refresh_from_db()
+        sale.refresh_from_db()
+        self.assertEqual(self.stock.quantity, 8)
+        self.assertFalse(sale.is_cancelled)
 
     def test_consignment_sale_cancellation_restores_original_consignment_lot(self):
         shop = SalesPlatform.objects.create(

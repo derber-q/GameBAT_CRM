@@ -12,6 +12,7 @@ CHANNEL_CHOICES = (
     ("avito", "Avito"),
     ("yandex_market", "Яндекс Маркет"),
     ("consignment", "Реализация"),
+    ("expense", "Расходы"),
 )
 GROUP_CHOICES = (("day", "По дням"), ("week", "По неделям"), ("month", "По месяцам"))
 SALE_SORT_CHOICES = (
@@ -30,6 +31,7 @@ PRODUCT_SORT_CHOICES = (
 
 
 class SaleStatisticsFilterForm(forms.Form):
+    operation_kind = forms.ChoiceField(label="Вид операции", required=False, choices=(("", "Все операции"), *Sale.OperationKind.choices))
     date_from = forms.DateField(label="Дата с", required=False, widget=forms.DateInput(attrs={"type": "date"}))
     date_to = forms.DateField(label="Дата по", required=False, widget=forms.DateInput(attrs={"type": "date"}))
     channels = forms.MultipleChoiceField(label="Каналы продаж", choices=CHANNEL_CHOICES, required=False,

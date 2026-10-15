@@ -15,6 +15,14 @@ def temporary_sale_id():
 
 
 class Sale(models.Model):
+    class OperationKind(models.TextChoices):
+        NORMAL = "normal", "Обычная продажа"
+        DIGITAL_PRODUCT = "DIGITAL_PRODUCT", "Цифровой товар"
+        EXPENSE = "EXPENSE", "Расход"
+
+    operation_kind = models.CharField("Вид операции", max_length=24, choices=OperationKind.choices, default=OperationKind.NORMAL, db_default=OperationKind.NORMAL, editable=False)
+    creation_key = models.UUIDField("Ключ создания", unique=True, null=True, blank=True, editable=False)
+    creation_fingerprint = models.CharField(max_length=64, blank=True, db_default="", editable=False)
     class PriceType(models.TextChoices):
         RETAIL = "retail", "Цена Avito"
         WHOLESALE = "wholesale", "Оптовая"
@@ -121,6 +129,7 @@ class Sale(models.Model):
             ("export_sales_statistics", "Может экспортировать статистику продаж"),
         ]
         constraints = [
+            models.CheckConstraint(condition=(~models.Q(operation_kind="EXPENSE") | (models.Q(total_amount=0, extra_cash_amount=0) & (models.Q(cash_received_amount__isnull=True) | models.Q(cash_received_amount=0)))), name="expense_sale_no_revenue"),
             models.CheckConstraint(condition=~models.Q(payment_method="undefined") | models.Q(payment_status="unpaid"), name="sale_undefined_payment_unpaid"),
             models.CheckConstraint(condition=models.Q(total_amount__gte=0), name="sale_total_nonnegative"),
             models.CheckConstraint(condition=models.Q(refunded_amount__gte=0), name="sale_refund_nonnegative"),
@@ -222,6 +231,8 @@ class Sale(models.Model):
 
     def save(self, *args, **kwargs):
         """Разрешает только одно служебное преобразование TMP-id в постоянный номер продажи."""
+        if self.operation_kind == self.OperationKind.DIGITAL_PRODUCT and not str(self.note or "").strip():
+            raise ValidationError("Для продажи цифрового товара необходимо заполнить примечание.")
         if self.pk:
             stored = type(self).objects.filter(pk=self.pk).values("visible_id", "completed_at").first()
             stored_id = stored["visible_id"] if stored else None
@@ -237,7 +248,6 @@ class SaleItemBase(models.Model):
     unit_price = models.DecimalField("Цена единицы", max_digits=20, decimal_places=2)
     unit_discount = models.DecimalField(
         "Скидка на единицу", max_digits=20, decimal_places=2, default=0,
-        validators=[MinValueValidator(0)],
     )
     line_total = models.DecimalField("Сумма строки", max_digits=20, decimal_places=2)
     avito_commission_enabled = models.BooleanField(
@@ -260,6 +270,11 @@ class SaleItemBase(models.Model):
     @property
     def effective_unit_price(self):
         return self.unit_price - self.unit_discount
+
+    @property
+    def price_adjustment_display(self):
+        sign = "+" if self.unit_discount < 0 else "−"
+        return f"{sign}{abs(self.unit_discount):.2f}"
 
     @property
     def revenue_after_avito_commission(self):
@@ -294,7 +309,7 @@ class SaleCDItem(SaleItemBase):
             models.CheckConstraint(condition=models.Q(quantity__gt=0), name="sale_cd_quantity_positive"),
             models.CheckConstraint(condition=models.Q(unit_price__gte=0), name="sale_cd_price_nonnegative"),
             models.CheckConstraint(
-                condition=models.Q(unit_discount__gte=0, unit_discount__lte=models.F("unit_price")),
+                condition=models.Q(unit_discount__lte=models.F("unit_price")),
                 name="sale_cd_discount_valid",
             ),
             models.CheckConstraint(condition=models.Q(line_total__gte=0), name="sale_cd_total_nonnegative"),
@@ -320,7 +335,7 @@ class SaleTechItem(SaleItemBase):
             models.CheckConstraint(condition=models.Q(quantity__gt=0), name="sale_tech_quantity_positive"),
             models.CheckConstraint(condition=models.Q(unit_price__gte=0), name="sale_tech_price_nonnegative"),
             models.CheckConstraint(
-                condition=models.Q(unit_discount__gte=0, unit_discount__lte=models.F("unit_price")),
+                condition=models.Q(unit_discount__lte=models.F("unit_price")),
                 name="sale_tech_discount_valid",
             ),
             models.CheckConstraint(condition=models.Q(line_total__gte=0), name="sale_tech_total_nonnegative"),
@@ -339,15 +354,37 @@ class SaleCustomItem(SaleItemBase):
 
     sale = models.ForeignKey(Sale, on_delete=models.PROTECT, related_name="custom_items", verbose_name="Продажа")
     article_snapshot = models.CharField("Артикул", max_length=100, default="", blank=True)
+    system_product = models.ForeignKey("catalog.SystemProduct", null=True, blank=True, on_delete=models.PROTECT, related_name="sale_items", editable=False)
+
+    def clean(self):
+        super().clean()
+        if self.system_product_id:
+            if self.sale.operation_kind != self.system_product_id:
+                raise ValidationError("Цифровые товары и расходы необходимо оформлять отдельной продажей.")
+            if self.unit_discount:
+                raise ValidationError("Скидка системной позиции не используется; укажите итоговую цену.")
+            if self.system_product_id == "EXPENSE" and (self.unit_price or self.line_total or self.avito_commission_amount or self.avito_commission_enabled):
+                raise ValidationError("Цена и комиссия расхода должны быть равны нулю.")
+        elif self.sale.operation_kind != Sale.OperationKind.NORMAL:
+            raise ValidationError("Цифровые товары и расходы необходимо оформлять отдельной продажей.")
+
+    def save(self, *args, **kwargs):
+        self.clean()
+        if self.pk and self.system_product_id:
+            stored = type(self).objects.filter(pk=self.pk, sale__completed_at__isnull=False).values("unit_price", "quantity", "line_total", "system_product_id").first()
+            if stored and any(stored[key] != getattr(self, key) for key in stored):
+                raise ValidationError("Историческую строку системной операции изменять нельзя.")
+        return super().save(*args, **kwargs)
 
     class Meta:
         verbose_name = "произвольная позиция продажи"
         verbose_name_plural = "произвольные позиции продаж"
         constraints = [
+            models.CheckConstraint(condition=(~models.Q(system_product_id="EXPENSE") | models.Q(unit_price=0, unit_discount=0, line_total=0, avito_commission_enabled=False, avito_commission_amount=0)), name="expense_item_no_revenue"),
             models.CheckConstraint(condition=models.Q(quantity__gt=0), name="sale_custom_quantity_positive"),
             models.CheckConstraint(condition=models.Q(unit_price__gte=0), name="sale_custom_price_nonnegative"),
             models.CheckConstraint(
-                condition=models.Q(unit_discount__gte=0, unit_discount__lte=models.F("unit_price")),
+                condition=models.Q(unit_discount__lte=models.F("unit_price")),
                 name="sale_custom_discount_valid",
             ),
             models.CheckConstraint(condition=models.Q(line_total__gte=0), name="sale_custom_total_nonnegative"),

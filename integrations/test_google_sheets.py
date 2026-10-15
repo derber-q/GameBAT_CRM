@@ -1,5 +1,6 @@
 from datetime import timedelta
 from decimal import Decimal
+from unittest.mock import MagicMock, patch
 from django.test import TestCase, override_settings
 from django.utils import timezone
 
@@ -7,7 +8,7 @@ from accounts.models import User
 from catalog.models import Brand, CD, Platform, ProductType, Tech
 from warehouse.models import CDWarehouseStock, TechWarehouseStock, Warehouse
 
-from .google_sheets import build_price_rows, extract_spreadsheet_id
+from .google_sheets import build_price_rows, extract_spreadsheet_id, get_google_sheets_integration, sync_price_sheet
 from .google_tasks import enqueue_google_sheets_sync, ensure_periodic_google_sheets_job
 from .models import GoogleSheetsSyncJob
 
@@ -74,3 +75,67 @@ class GoogleSheetsPriceTests(TestCase):
         periodic.refresh_from_db()
         self.assertEqual(periodic.status, GoogleSheetsSyncJob.Status.PENDING)
         self.assertEqual(periodic.attempts, 0)
+
+    def google_service(self, *, existing=True):
+        service = MagicMock()
+        sheets = [{"properties": {"sheetId": index, "title": name,
+                                  "gridProperties": {"rowCount": 1000, "columnCount": 4}}}
+                  for index, name in enumerate(("Номенклатура", "Прайс CRM"), 1)]
+        service.spreadsheets().get().execute.return_value = {"sheets": sheets if existing else []}
+        service.spreadsheets().batchUpdate().execute.return_value = {
+            "replies": [{"addSheet": sheet} for sheet in sheets],
+        }
+        service.reset_mock()
+        return service
+
+    @patch("integrations.google_sheets._google_service")
+    def test_timestamp_matches_success_time_on_both_sheets_and_only_e1_is_written(self, google_service):
+        service = self.google_service()
+        google_service.return_value = service
+        sync_price_sheet()
+        integration = get_google_sheets_integration()
+        calls = service.spreadsheets().values().batchUpdate.call_args_list
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[0].kwargs["body"]["valueInputOption"], "USER_ENTERED")
+        self.assertEqual([row["range"] for row in calls[0].kwargs["body"]["data"]],
+                         ["'Номенклатура'!A:D", "'Прайс CRM'!A:D"])
+        timestamp = timezone.localtime(integration.last_success_at).strftime("%d.%m.%Y %H:%M:%S")
+        self.assertEqual(calls[1].kwargs["body"], {
+            "valueInputOption": "RAW", "data": [
+                {"range": "'Номенклатура'!E1", "values": [[timestamp]]},
+                {"range": "'Прайс CRM'!E1", "values": [[timestamp]]},
+            ],
+        })
+        clear = service.spreadsheets().values().batchClear.call_args.kwargs["body"]
+        self.assertEqual(clear["ranges"], ["'Номенклатура'!A:D", "'Прайс CRM'!A:D"])
+        resize = service.spreadsheets().batchUpdate.call_args_list[0].kwargs["body"]["requests"]
+        self.assertTrue(all(row["updateSheetProperties"]["properties"]["gridProperties"]["columnCount"] == 5
+                            for row in resize))
+        self.assertEqual(integration.status, "ok")
+
+    @patch("integrations.google_sheets._google_service")
+    def test_new_sheets_have_space_for_timestamp(self, google_service):
+        service = self.google_service(existing=False)
+        google_service.return_value = service
+        sync_price_sheet()
+        requests = service.spreadsheets().batchUpdate.call_args_list[0].kwargs["body"]["requests"]
+        self.assertEqual(len(requests), 2)
+        self.assertTrue(all(row["addSheet"]["properties"]["gridProperties"]["columnCount"] == 5 for row in requests))
+
+    @patch("integrations.google_sheets._google_service")
+    def test_failed_data_write_does_not_publish_new_sync_time(self, google_service):
+        service = self.google_service()
+        google_service.return_value = service
+        integration = get_google_sheets_integration()
+        previous = timezone.now() - timedelta(hours=1)
+        integration.last_success_at = previous
+        integration.save()
+        service.spreadsheets().values().batchUpdate().execute.side_effect = RuntimeError("Сбой записи")
+        service.reset_mock()
+        with self.assertRaisesMessage(RuntimeError, "Сбой записи"):
+            sync_price_sheet(integration)
+        integration.refresh_from_db()
+        self.assertEqual(integration.status, "error")
+        self.assertEqual(integration.last_success_at, previous)
+        service.spreadsheets().values().batchUpdate.assert_called_once()
+        self.assertNotIn("E1", str(service.spreadsheets().values().batchUpdate.call_args))

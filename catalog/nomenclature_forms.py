@@ -79,6 +79,7 @@ def product_version(instance):
 
 class ProductCardFormMixin(forms.ModelForm):
     version = forms.CharField(widget=forms.HiddenInput)
+    cost_confirmed = forms.BooleanField(required=False, widget=forms.HiddenInput)
     field_permissions = {}
 
     def __init__(self, *args, user, **kwargs):
@@ -159,6 +160,7 @@ class ProductCardFormMixin(forms.ModelForm):
             self.storage_location_fields.append(location_field_name)
             self.warehouse_field_pairs.append((stock_field_name, location_field_name))
         self.fields["version"].initial = product_version(self.instance)
+        self.fields["cost"].widget.attrs.update({"min": "0", "step": "0.01", "data-cost-input": "true"})
         for field_name in ("sku",):
             if not getattr(self.instance, field_name):
                 # Старые импортированные карточки могут содержать пустой артикул.
@@ -201,7 +203,7 @@ class ProductCardFormMixin(forms.ModelForm):
         cleaned_data = super().clean()
         if not self.is_bound:
             return cleaned_data
-        accepted_keys = self.allowed_fields | {"version", "csrfmiddlewaretoken"}
+        accepted_keys = self.allowed_fields | {"version", "cost_confirmed", "csrfmiddlewaretoken"}
         self.forbidden_fields = sorted(set(self.data.keys()) - accepted_keys)
         if self.forbidden_fields:
             labels = []

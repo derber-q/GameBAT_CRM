@@ -6,6 +6,8 @@ from . import avito_check_views
 app_name = "pricing"
 urlpatterns = [
     path("", views.pricing_list, name="list"),
+    path("cd/", views.pricing_list, {"product_kind": "cd"}, name="cd_list"),
+    path("tech/", views.pricing_list, {"product_kind": "tech"}, name="tech_list"),
     path("fbs/<str:kind>/<int:pk>/", fbs_views.detail, name="fbs_detail"),
     path("fbs/<str:kind>/<int:pk>/preview/", fbs_views.preview, name="fbs_preview"),
     path("fbs/<str:kind>/<int:pk>/save/", fbs_views.save, name="fbs_save"),

@@ -19,7 +19,8 @@
   }
   function updateRow(row) {
     const wholesale = read(row.querySelector('[data-price-field="wholesale_price"]'));
-    const cost = decimalToCents(row.dataset.cost);
+    const costInput = row.querySelector('[data-cost-input]');
+    const cost = decimalToCents(costInput && !costInput.disabled ? costInput.value : row.dataset.cost);
     row.querySelectorAll('[data-price-field]').forEach((element) => {
       const field = element.dataset.priceField;
       const price = read(element);

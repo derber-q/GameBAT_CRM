@@ -13,18 +13,60 @@ logger = logging.getLogger("gamebat.business")
 SIZE_KEYS = {"length_cm": "length", "width_cm": "width", "height_cm": "height"}
 
 
-def dimensions_payload(product, fallback=None):
+def dimensions_payload(product, fallback=None, *, preserve_weight=False):
     values = {key: getattr(product, field) for field, key in SIZE_KEYS.items()}
     if all(value is None for value in values.values()) and fallback:
         values = {key: fallback.get(key) for key in SIZE_KEYS.values()}
     if any(value is None for value in values.values()):
         raise ValidationError("Укажите длину, ширину и высоту упаковки в карточке товара CRM.")
-    if not product.weight_grams:
+    weight = (fallback or {}).get("weight") if preserve_weight else None
+    if weight is not None:
+        try:
+            number = Decimal(str(weight))
+            if not number.is_finite() or number <= 0:
+                weight = None
+        except (InvalidOperation, ValueError, TypeError):
+            weight = None
+    if weight is None and product.weight_grams:
+        weight = Decimal(product.weight_grams) / 1000
+    if weight is None:
         raise ValidationError("Укажите вес с упаковкой в карточке товара CRM.")
-    values["weight"] = Decimal(product.weight_grams) / 1000
-    if any(Decimal(str(value)) <= 0 for value in values.values()):
+    values["weight"] = weight
+    if any(not Decimal(str(value)).is_finite() or Decimal(str(value)) <= 0 for value in values.values()):
         raise ValidationError("Вес и размеры должны быть больше нуля.")
     return values
+
+
+def connection_dimensions(connection):
+    """Размеры из CRM; у существующего offer сохраняем его вес с упаковкой."""
+    product = connection.product
+    # Неполные размеры не отправляем: обмен ценой и остатками должен продолжаться.
+    if any(getattr(product, field) is None for field in SIZE_KEYS):
+        return None
+    remote = connection.remote_offer.snapshot.get("offer", {}).get("weightDimensions") or {}
+    local = connection.content.get("weightDimensions") or {}
+    fallback = {**local, **remote}
+    if "weightDimensions" in connection.dirty_fields:
+        fallback.update(local)
+    try:
+        return dimensions_payload(product, fallback, preserve_weight=not connection.is_new)
+    except (ValidationError, InvalidOperation, TypeError, ValueError):
+        return None
+
+
+def prepare_connection_dimensions(connection):
+    """Подготовить локальную правку размеров без отправки в Маркет и записи в БД."""
+    from .content import content_values_equal
+
+    dimensions = connection_dimensions(connection)
+    if dimensions is None:
+        return False
+    baseline = connection.content.get("weightDimensions") or connection.remote_offer.snapshot.get("offer", {}).get("weightDimensions")
+    if content_values_equal("weightDimensions", dimensions, baseline):
+        return False
+    connection.content = {**connection.content, "weightDimensions": dimensions}
+    connection.dirty_fields = sorted(set(connection.dirty_fields) | {"weightDimensions"})
+    return True
 
 
 @transaction.atomic

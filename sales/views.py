@@ -1,18 +1,23 @@
+import uuid
+
 from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.db import transaction, OperationalError
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_GET, require_POST
+from django.utils.http import content_disposition_header
 
 from consignment.models import CDConsignmentStock, TechConsignmentStock
 from core.decorators import permission_required_all, permission_required_any
 from price.excel import import_wholesale_price_to_sale
 from .forms import SaleCreateForm, WholesalePriceImportForm
 from .models import Sale
+from catalog.models import CD, Tech
 from .listing import list_groups, sales_queryset, status_context
 from .storage_locations import sale_storage_locations
+from .invoice_excel import render_sale_invoice_xlsx
 from .services import (
     advance_order_status, cancel_sale, create_sale, edit_postpay_sale_items,
     set_sale_payment_method, mark_sale_paid, update_sale_note, next_order_status,
@@ -76,18 +81,20 @@ def _parse_lines(post):
     custom_costs = post.getlist("custom_unit_cost")
     custom_discounts = post.getlist("custom_unit_discount")
     custom_commissions = post.getlist("custom_avito_commission_enabled")
+    custom_system_kinds = post.getlist("custom_system_kind") or [""] * len(custom_names)
     if not custom_discounts:
         custom_discounts = ["0"] * len(custom_names)
     if not custom_commissions:
         custom_commissions = ["0"] * len(custom_names)
     lengths = {
         len(custom_names), len(custom_prices), len(custom_quantities),
-        len(custom_costs), len(custom_discounts), len(custom_commissions),
+        len(custom_costs), len(custom_discounts), len(custom_commissions), len(custom_system_kinds),
     }
     if lengths != {0} and len(lengths) != 1:
         raise ValidationError("Заполните все поля произвольных позиций.")
     lines.extend({
-        "product_type": "custom", "name": custom_names[index],
+        "product_type": "system" if custom_system_kinds[index] else "custom", "name": custom_names[index],
+        "system_kind": custom_system_kinds[index],
         "unit_price": custom_prices[index], "quantity": custom_quantities[index],
         "unit_cost": custom_costs[index], "unit_discount": custom_discounts[index],
         "avito_commission_enabled": custom_commissions[index],
@@ -115,6 +122,33 @@ def _consignment_options():
                 "label": f"{stock.platform.name} — {product.name} — {stock.warehouse.name} ({stock.quantity} шт.)",
             })
     return sorted(options, key=lambda row: row["label"].casefold())
+
+
+def _posted_initial_items(post):
+    """Сохраняет введённые строки при ошибке backend, без запросов на каждую строку."""
+    try:
+        lines = _parse_lines(post)
+    except ValidationError:
+        return []
+    products = {}
+    for kind, model in (("cd", CD), ("tech", Tech)):
+        ids = [line["product_id"] for line in lines if line["product_type"] == kind and str(line["product_id"]).isdecimal()]
+        products.update({(kind, str(product.pk)): product for product in model.objects.filter(pk__in=ids)})
+    result = []
+    for line in lines:
+        kind = line["product_type"]
+        if kind in {"custom", "system"}:
+            result.append({**line, "custom": True, "system_kind": line.get("system_kind", "") if kind == "system" else ""})
+        elif kind == "consignment":
+            result.append({**line, "consignment": True})
+        else:
+            product = products.get((kind, str(line["product_id"])))
+            if product:
+                result.append({**line, "label": product.name, "prices": {
+                    key: str(getattr(product, field)) if getattr(product, field) is not None else None
+                    for key, field in (("retail", "avito_price"), ("wholesale", "wholesale_price"), ("yandex_market", "yandex_market_price"))
+                }})
+    return result
 
 
 @permission_required_any("sales.view_sales")
@@ -210,6 +244,7 @@ def sale_create(request):
                 lines=_parse_lines(request.POST),
                 cash_received_amount=form.cleaned_data["cash_received_amount"],
                 note=form.cleaned_data["note"],
+                creation_key=request.POST.get("creation_key") or None,
             )
         except ValidationError as exc:
             form.add_error(None, exc)
@@ -218,10 +253,11 @@ def sale_create(request):
             messages.success(request, f"Продажа {sale.visible_id} создана.")
             return _sale_destination(request, sale)
     return render(request, "sales/create.html", {
+        "creation_key": request.POST.get("creation_key") or str(uuid.uuid4()),
         "form": form,
         "can_view_sales": request.user.is_superuser or request.user.has_perm("sales.view_sales"),
         "can_import_wholesale": request.user.is_superuser or request.user.has_perm("sales.import_wholesale_price"),
-        "initial_items": draft["lines"] if draft else [],
+        "initial_items": _posted_initial_items(request.POST) if request.method == "POST" else draft["lines"] if draft else [],
         "imported_wholesale": bool(draft),
         "consignment_options": _consignment_options(),
     })
@@ -265,6 +301,7 @@ def sale_detail(request, pk):
          "show_storage_location": show_storage_locations,
          **storage_locations.get(("cd", item.cd_id), {}),
          "quantity": item.quantity, "unit_price": item.unit_price, "unit_discount": item.unit_discount,
+         "price_adjustment_display": item.price_adjustment_display,
          "effective_unit_price": item.effective_unit_price, "line_total": item.line_total,
          **_detail_financials(item)}
         for item in sale.cd_items.all() if not legacy_consignment_mirror
@@ -273,25 +310,27 @@ def sale_detail(request, pk):
          "show_storage_location": show_storage_locations,
          **storage_locations.get(("tech", item.tech_id), {}),
          "quantity": item.quantity, "unit_price": item.unit_price, "unit_discount": item.unit_discount,
+         "price_adjustment_display": item.price_adjustment_display,
          "effective_unit_price": item.effective_unit_price, "line_total": item.line_total,
          **_detail_financials(item)}
         for item in sale.tech_items.all() if not legacy_consignment_mirror
     ] + [
-        {"type": "Произвольная позиция", "name": item.product_name_snapshot,
+        {"type": item.product_name_snapshot if item.system_product_id else "Произвольная позиция", "name": item.product_name_snapshot,
          "sku": "—", "quantity": item.quantity, "unit_price": item.unit_price,
-         "unit_discount": item.unit_discount, "effective_unit_price": item.effective_unit_price,
+         "unit_discount": item.unit_discount, "price_adjustment_display": item.price_adjustment_display,
+         "effective_unit_price": item.effective_unit_price,
          "line_total": item.line_total, "unit_cost": item.unit_cost_snapshot,
          **_detail_financials(item)}
         for item in sale.custom_items.all()
     ] + [
         {"type": f"Реализация · {item.platform_name_snapshot}", "name": item.product_name_snapshot,
          "sku": item.article_snapshot or "—", "quantity": item.quantity,
-         "unit_price": item.unit_price, "unit_discount": 0,
+         "unit_price": item.unit_price, "unit_discount": 0, "price_adjustment_display": "—",
          "effective_unit_price": item.unit_price, "line_total": item.line_total,
          **_detail_financials(item, commission_applicable=False)}
         for item in sale.consignment_items.all()
     ]
-    custom_items = list(sale.custom_items.all())
+    custom_items = [item for item in sale.custom_items.all() if not item.system_product_id]
     next_order = next_order_status(sale)
     labels = {
         Sale.OrderStatus.ASSEMBLED: "Отметить как собранный",
@@ -318,9 +357,10 @@ def sale_detail(request, pk):
     })
 
 
+@require_GET
 @permission_required_any("sales.view_sale_detail")
 def sale_invoice(request, pk):
-    """Скачать простой чек по снимкам строк продажи в любом статусе."""
+    """Скачать накладную Excel по снимкам строк продажи в любом статусе."""
     sale = get_object_or_404(
         Sale.objects.select_related("warehouse", "created_by").prefetch_related(
             "cd_items", "tech_items", "custom_items", "consignment_items"
@@ -337,7 +377,7 @@ def sale_invoice(request, pk):
          "quantity": item.quantity, "unit_price": item.effective_unit_price, "line_total": item.line_total}
         for item in sale.tech_items.all() if not legacy_consignment_mirror
     ] + [
-        {"kind": "Произвольная позиция", "name": item.product_name_snapshot, "article": "—",
+        {"kind": item.product_name_snapshot if item.system_product_id else "Произвольная позиция", "name": item.product_name_snapshot, "article": "—",
          "quantity": item.quantity, "unit_price": item.effective_unit_price, "line_total": item.line_total}
         for item in sale.custom_items.all()
     ] + [
@@ -346,10 +386,11 @@ def sale_invoice(request, pk):
          "unit_price": item.unit_price, "line_total": item.line_total}
         for item in sale.consignment_items.all()
     ]
-    html = render_to_string("sales/invoice.html", {"sale": sale, "rows": rows})
+    content = render_sale_invoice_xlsx(sale=sale, rows=rows)
     filename = "".join(char if char.isalnum() or char in "-_." else "_" for char in sale.visible_id)
-    response = HttpResponse(html, content_type="text/html; charset=utf-8")
-    response["Content-Disposition"] = f'attachment; filename="nakladnaya-{filename}.html"'
+    response = HttpResponse(content, content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    response["Content-Disposition"] = content_disposition_header(True, f"nakladnaya_{filename}.xlsx")
+    response["X-Content-Type-Options"] = "nosniff"
     return response
 
 
@@ -374,7 +415,7 @@ def sale_edit(request, pk):
          "avito_commission_enabled": item.avito_commission_enabled}
         for item in sale.tech_items.all()
     ] + [
-        {"custom": True, "name": item.product_name_snapshot,
+        {"custom": True, "system_kind": item.system_product_id, "name": item.product_name_snapshot,
          "quantity": item.quantity, "unit_price": f"{item.unit_price:.2f}",
          "unit_cost": f"{item.unit_cost_snapshot:.2f}", "unit_discount": f"{item.unit_discount:.2f}",
          "avito_commission_enabled": item.avito_commission_enabled}
@@ -448,6 +489,9 @@ def sale_mark_paid(request, pk):
 def sale_note_update(request, pk):
     try:
         sale = update_sale_note(actor=request.user, sale_id=pk, note=request.POST.get("note"))
+    except ValidationError as exc:
+        messages.error(request, " ".join(exc.messages))
+        return _sale_destination(request, Sale.objects.get(pk=pk))
     except Sale.DoesNotExist:
         messages.error(request, "Продажа не найдена.")
         return redirect("sales:list")

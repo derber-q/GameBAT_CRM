@@ -5,6 +5,7 @@ app_name = "consignment"
 urlpatterns = [
     path("", views.consignment_list, name="list"),
     path("platform/<int:pk>/", views.consignment_platform, name="platform"),
+    path("platform/<int:pk>/export/", views.platform_export, name="platform_export"),
     path("transfer/", views.transfer, name="transfer"),
     path("return/", views.return_stock, name="return"),
     path("stocks/<str:product_kind>/<int:pk>/reward/", views.reward_update, name="reward_update"),

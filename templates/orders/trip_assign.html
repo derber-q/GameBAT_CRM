@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Рейс заказа №{{ order.pk }} · ReSOURCE{% endblock %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">Заказ №{{ order.pk }} · {{ order.recipient }}</p><h1>{% if order.trip_id %}Перенести заказ в другой рейс{% else %}Добавить заказ в рейс{% endif %}</h1><p class="muted">Прайс №{{ order.price_list_id }}{% if order.trip_id %} · сейчас рейс №{{ order.trip_id }}{% endif %}</p></div><a class="button button-secondary" href="{% url 'orders:detail' order.pk %}">К заказу</a></div>
+<section class="panel form-panel stacked-form">
+{% if not editable %}<p class="alert alert-error">Перенос доступен, пока заказ и все заказы его рейса находятся в статусе «Создан».</p>
+{% elif not has_trips %}<p class="muted">Нет других открытых рейсов по этой версии прайса. Создайте рейс на странице заказов.</p><a class="button button-secondary" href="{% url 'orders:list' %}">К заказам и рейсам</a>
+{% else %}
+<p>В выбранный рейс попадёт весь заказ: {{ order.total_units }} шт. Все количества и сохранённые цены останутся прежними.{% if order.trip_id %} Из текущего рейса заказ будет убран целиком.{% endif %}</p>
+<form method="post">{% csrf_token %}{{ form.source_trip }}{{ form.source_revision }}
+{% if form.non_field_errors %}<div class="alert alert-error">{{ form.non_field_errors }}</div>{% endif %}
+<div class="field"><label for="{{ form.target_trip.id_for_label }}">{{ form.target_trip.label }}</label>{{ form.target_trip }}{% for error in form.target_trip.errors %}<span class="error-text">{{ error }}</span>{% endfor %}</div>
+{% for error in form.source_trip.errors %}<p class="error-text">{{ error }}</p>{% endfor %}{% for error in form.source_revision.errors %}<p class="error-text">{{ error }}</p>{% endfor %}
+<div class="heading-actions"><button class="button" type="submit">{% if order.trip_id %}Перенести весь заказ{% else %}Добавить в рейс{% endif %}</button><a class="button button-secondary" href="{% url 'orders:detail' order.pk %}">Отмена</a></div>
+</form>{% endif %}
+</section>
+{% endblock %}

@@ -44,6 +44,8 @@ class AvitoCheckListTests(TestCase):
         self.assertEqual(response.context["total"], 1)
         for title in (self.cd.name, "Автоматическая проверка", "Обновлена", "Ручной поиск"):
             self.assertContains(response, title)
+        self.assertContains(response, "Опт / наценка, ₽")
+        self.assertContains(response, 'data-wholesale-margin-value title="Оптовая цена минус себестоимость">1000,00</span>')
         self.assertNotContains(response, tech.name)
         self.assertNotContains(response, archived.name)
         self.assertNotContains(response, "Unlinked game")
@@ -93,4 +95,7 @@ class AvitoCheckListTests(TestCase):
     def test_search_filters_table_and_old_workflow_has_separate_route(self):
         response = self.client.get(reverse("pricing:avito_check"), {"q": "absent"})
         self.assertEqual(response.context["total"], 0)
-        self.assertEqual(self.client.get(reverse("pricing:avito_check_automatic")).status_code, 200)
+        automatic = self.client.get(reverse("pricing:avito_check_automatic"))
+        self.assertEqual(automatic.status_code, 200)
+        self.assertContains(automatic, "Оптовая цена / наценка, ₽")
+        self.assertContains(automatic, 'data-wholesale-margin-value title="Оптовая цена минус себестоимость">1000,00</span>')

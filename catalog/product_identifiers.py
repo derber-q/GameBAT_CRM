@@ -220,31 +220,26 @@ def generate_unique_barcode(*, actor, product_kind, product_id):
         product = model.objects.active().select_for_update().get(pk=product_id)
     except (model.DoesNotExist, TypeError, ValueError) as exc:
         raise ValidationError("Товар не найден.") from exc
+    entry = allocate_unique_barcode(BarcodeRegistry, product_kind=product_kind, **_registry_lookup(product))
+    record_product_changes(
+        actor=actor, instance=product,
+        changes=[field_change(field_name="barcode_added", field_label="Штрихкод добавлен", old_value="", new_value=entry.value)],
+        source=ProductChangeEvent.Source.NOMENCLATURE,
+    )
+    return product
+
+
+def allocate_unique_barcode(registry_model, **owner):
+    """Общий генератор реестра, также работающий с исторической моделью миграции."""
     for _ in range(BARCODE_ATTEMPTS):
         candidate = "".join(secrets.choice(string.digits) for _ in range(BARCODE_LENGTH))
         if candidate == "0" * BARCODE_LENGTH:
             continue
         try:
             with transaction.atomic():
-                BarcodeRegistry.objects.create(
-                    value=candidate,
-                    product_kind=product_kind,
-                    **_registry_lookup(product),
-                )
+                return registry_model.objects.create(value=candidate, **owner)
         except (IntegrityError, ValidationError):
             continue
-        record_product_changes(
-            actor=actor,
-            instance=product,
-            changes=[field_change(
-                field_name="barcode_added",
-                field_label="Штрихкод добавлен",
-                old_value="",
-                new_value=candidate,
-            )],
-            source=ProductChangeEvent.Source.NOMENCLATURE,
-        )
-        return product
     raise ValidationError("Не удалось сгенерировать уникальный штрихкод. Повторите попытку.")
 
 

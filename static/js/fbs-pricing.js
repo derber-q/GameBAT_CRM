@@ -6,13 +6,45 @@
     middle_mile_fee: 'Средняя миля', packaging_fee: 'Упаковка', fixed_payment_fee: 'Фиксированная комиссия',
     other_fbs_fee: 'Другие FBS-расходы', final_price: 'Итоговая цена', actual_profit: 'Фактическая прибыль',
   };
+  const feeRateFields = {
+    placement_fee: 'placement_rate', tax_fee: 'tax_rate',
+    payment_transfer_fee: 'payment_rate', delivery_fee: 'delivery_rate',
+  };
+  const percent = (value) => String(value).replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '').replace('.', ',');
   const money = (value) => {
     const [whole, fraction] = String(value ?? '').split('.');
     return `${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ' ')}${fraction ? ',' + fraction.padEnd(2, '0') : ''} ₽`;
   };
-  const display = (container, result) => {
+  const marketInput = (container) => container?.closest('td')?.querySelector('input[name="yandex_market_price"]');
+  const priceCents = (value) => {
+    const match = String(value ?? '').match(/^(\d+)(?:\.(\d{1,2}))?$/);
+    return match ? BigInt(match[1]) * 100n + BigInt((match[2] || '').padEnd(2, '0')) : null;
+  };
+  const displayPersistedPrice = (container) => {
+    const status = container?.querySelector('[data-fbs-persist-status]');
+    const input = marketInput(container);
+    if (!status || !input) return;
+    const saved = priceCents(container.dataset.fbsPersistedPrice);
+    const current = priceCents(input.value);
+    status.hidden = input.value === '' || (saved !== null && saved === current);
+    status.textContent = 'Цена не сохранена — нажмите «Сохранить».';
+  };
+  const setMarketPrice = (input, value) => {
+    if (!input || input.value === String(value)) return;
+    input.value = String(value);
+    input.dispatchEvent(new CustomEvent('input', {bubbles: true, detail: {fbs: true}}));
+  };
+  const display = (container, result, updatePrice = true) => {
+    const source = container.querySelector('[data-fbs-price-source]');
+    const inline = container.hasAttribute('data-fbs-inline');
+    if (inline && result.ok && updatePrice && source?.value === 'fbs') {
+      setMarketPrice(marketInput(container), result.final_price);
+    }
     const price = container.querySelector('[data-fbs-price]');
-    if (price) price.textContent = result.ok ? `Цена для покупателя на Яндекс Маркете: ${money(result.final_price)}` : result.message;
+    if (price) {
+      price.textContent = result.ok ? (inline ? '' : `Цена для покупателя на Яндекс Маркете: ${money(result.final_price)}`) : result.message;
+      if (inline) price.hidden = result.ok;
+    }
     const profit = container.querySelector('[data-fbs-profit-result]');
     if (profit) profit.textContent = result.ok ? `Расчётная чистая прибыль: ${money(result.actual_profit)}` : '';
     const volume = container.querySelector('[data-fbs-volume]');
@@ -22,7 +54,10 @@
       table.replaceChildren();
       if (result.ok) Object.entries(feeLabels).forEach(([field, label]) => {
         const row = document.createElement('tr');
-        [label, money(result[field])].forEach((value) => { const cell = document.createElement('td'); cell.textContent = value; row.appendChild(cell); });
+        const rate = result[feeRateFields[field]];
+        const limit = field === 'delivery_fee' && result.delivery_max != null ? `, максимум ${money(result.delivery_max)}` : '';
+        const description = rate != null ? `${label} (${percent(rate)}%${limit})` : label;
+        [description, money(result[field])].forEach((value) => { const cell = document.createElement('td'); cell.textContent = value; row.appendChild(cell); });
         table.appendChild(row);
       });
     }
@@ -79,13 +114,23 @@
           displayDimensions(sourceRow?.querySelector('[data-fbs-inline]'), result.dimensions_complete);
           const sourceProfit = sourceRow?.querySelector('[data-fbs-profit]');
           if (sourceProfit && sourceProfit.value === form.dataset.inlineProfitSnapshot) {
+            sourceProfit.form?.dispatchEvent(new CustomEvent('fbs:saving'));
             sourceProfit.value = data.get('yandex_desired_profit') || '';
             form.dataset.inlineProfitSnapshot = sourceProfit.value;
-            display(sourceProfit.closest('[data-fbs-inline]'), result.calculation);
+            const container = sourceProfit.closest('[data-fbs-inline]');
+            const priceInput = marketInput(container);
+            const source = container.querySelector('[data-fbs-price-source]');
+            const priceUnchanged = priceInput?.value === form.dataset.inlinePriceSnapshot;
+            if (source && priceUnchanged && result.calculation.ok) source.value = 'fbs';
+            display(container, result.calculation, priceUnchanged);
+            if (priceUnchanged && priceInput) form.dataset.inlinePriceSnapshot = priceInput.value;
           }
           if (result.applied_price !== null) {
             const input = sourceRow?.querySelector('[name="yandex_market_price"]');
-            if (input) { input.value = result.applied_price; input.dispatchEvent(new Event('input', {bubbles: true})); }
+            setMarketPrice(input, result.applied_price);
+            if (input?.form && result.applied_price !== undefined) {
+              input.form.dispatchEvent(new CustomEvent('fbs:price-saved', {detail: {price: result.applied_price}}));
+            }
           }
         } catch (error) { status.textContent = error.message; }
         finally { saving = false; preview(); }
@@ -101,18 +146,41 @@
     const input = container.querySelector('[data-fbs-profit]');
     const form = input?.form;
     if (!input || !form) return;
-    let timer, controller;
+    const source = container.querySelector('[data-fbs-price-source]');
+    const priceInput = marketInput(container);
+    priceInput?.addEventListener('input', () => displayPersistedPrice(container));
+    form.addEventListener('fbs:price-saved', (event) => {
+      container.dataset.fbsPersistedPrice = String(event.detail.price ?? '');
+      displayPersistedPrice(container);
+    });
+    let timer, controller, revision = 0;
+    const cancelPreview = () => { clearTimeout(timer); controller?.abort(); revision += 1; };
+    priceInput?.addEventListener('input', (event) => {
+      if (event.detail?.fbs) return;
+      cancelPreview();
+      if (source) source.value = 'manual';
+      const status = container.querySelector('[data-fbs-price]');
+      if (status) { status.textContent = ''; status.hidden = true; }
+    });
     input.addEventListener('input', () => {
-      clearTimeout(timer); controller?.abort();
+      cancelPreview();
+      if (source) source.value = 'fbs';
+      const sentRevision = revision;
+      const sentProfit = input.value;
       timer = setTimeout(async () => {
-        const data = new FormData(); data.set('inline', '1'); data.set('yandex_desired_profit', input.value);
+        const data = new FormData(); data.set('inline', '1'); data.set('yandex_desired_profit', sentProfit);
         data.set('csrfmiddlewaretoken', form.elements.namedItem('csrfmiddlewaretoken').value);
         controller = new AbortController();
-        try { display(container, await request(container.dataset.previewUrl, data, controller.signal)); }
-        catch (error) { if (error.name !== 'AbortError') display(container, {ok: false, message: error.message}); }
+        try {
+          const result = await request(container.dataset.previewUrl, data, controller.signal);
+          if (revision === sentRevision && input.value === sentProfit) display(container, result);
+        } catch (error) {
+          if (error.name !== 'AbortError' && revision === sentRevision) display(container, {ok: false, message: error.message});
+        }
       }, 250);
     });
-    form.addEventListener('fbs:saved', (event) => display(container, event.detail));
+    form.addEventListener('fbs:saving', cancelPreview);
+    form.addEventListener('fbs:saved', (event) => display(container, event.detail, event.detail.update_price !== false));
   });
   const dialog = document.getElementById('fbs-pricing-dialog');
   if (dialog) {
@@ -131,6 +199,7 @@
         const sourceProfit = link.closest('[data-fbs-inline]')?.querySelector('[data-fbs-profit]');
         if (editorForm && sourceProfit) {
           editorForm.dataset.inlineProfitSnapshot = sourceProfit.value;
+          editorForm.dataset.inlinePriceSnapshot = marketInput(sourceProfit.closest('[data-fbs-inline]'))?.value ?? '';
           editorForm.elements.namedItem('yandex_desired_profit').value = sourceProfit.value;
         }
         bindEditor(content);

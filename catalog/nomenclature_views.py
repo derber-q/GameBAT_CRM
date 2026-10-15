@@ -255,6 +255,7 @@ def _form_sections(form, product_kind):
         {
             "title": "Коммерческая информация",
             "fields": [form[name] for name in (
+                "cost",
                 "avito_price", "avito_markup_from_wholesale",
                 "yandex_market_price", "yandex_markup_from_wholesale", "wholesale_price",
                 "yandex_desired_profit", "yandex_pricing_integration", "yandex_pricing_category",
@@ -281,9 +282,15 @@ def _render_detail(request, *, product, product_kind, form, barcodes=None):
         or request.user.has_perm(f"catalog.change_{product_kind}_media")
     )
     gallery_images = list(product.catalog_images.all())
+    yandex_links = []
+    if request.user.has_perm("yandex_market.view_integration"):
+        from yandex_market.product_content import saved_product_content
+        yandex_links = list(product.yandex_connections.filter(active=True).select_related("remote_offer", "integration").prefetch_related("media"))
+        for link in yandex_links:
+            link.saved_content = saved_product_content(link)
     context = {
         "product": product,
-        "yandex_links": product.yandex_connections.filter(active=True).select_related("remote_offer") if request.user.has_perm("yandex_market.view_integration") else [],
+        "yandex_links": yandex_links,
         "yandex_integrations": Integration.objects.all() if request.user.has_perm("yandex_market.bind_offer") else [],
         "product_kind": product_kind,
         "product_kind_label": "CD" if product_kind == "cd" else "Tech",

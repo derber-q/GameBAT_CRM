@@ -1,5 +1,8 @@
 """Атомарные продажи, статусы, оплаты и изменение неоплаченной постоплаты."""
 import logging
+import hashlib
+import json
+import uuid
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
@@ -8,11 +11,12 @@ from django.db import transaction
 from django.utils import timezone
 
 from cash.services import credit_sale_payment, refund_sale_payment
-from catalog.audit import record_product_changes, stock_change
-from catalog.models import CD, ProductChangeEvent, Tech
+from catalog.audit import field_change, record_product_changes, stock_change
+from catalog.models import CD, ProductChangeEvent, Tech, SystemProduct
 from warehouse.models import CDWarehouseStock, TechWarehouseStock, Warehouse
 from warehouse.services import normalise_product_lines
 from warehouse.storage_services import clear_storage_locations_if_zero
+from warehouse.valuation import warehouse_owned_quantity, weighted_warehouse_cost
 from .commissions import calculate_avito_commission
 from .models import Sale, SaleCDItem, SaleTechItem, SaleCustomItem
 
@@ -134,15 +138,18 @@ def _prepare_custom_line(line, *, sale_type):
             value = Decimal(str(raw_value)).quantize(CENT, rounding=ROUND_HALF_UP)
         except (InvalidOperation, TypeError, ValueError) as exc:
             raise ValidationError(f"Укажите корректную {label} произвольной позиции.") from exc
-        if not value.is_finite() or value < 0:
+        if not value.is_finite() or (field != "unit_discount" and value < 0):
             raise ValidationError(f"{label.capitalize()} произвольной позиции не может быть отрицательной.")
         values[field] = value
     if values["unit_discount"] > values["unit_price"]:
         raise ValidationError("Скидка произвольной позиции не может превышать её цену.")
     values.update(name=name, quantity=quantity)
-    values["line_total"] = (
-        (values["unit_price"] - values["unit_discount"]) * quantity
-    ).quantize(CENT, rounding=ROUND_HALF_UP)
+    try:
+        values["line_total"] = (
+            (values["unit_price"] - values["unit_discount"]) * quantity
+        ).quantize(CENT, rounding=ROUND_HALF_UP)
+    except InvalidOperation as exc:
+        raise ValidationError("Сумма строки превышает допустимый размер.") from exc
     values["avito_commission_enabled"] = _commission_enabled(sale_type=sale_type)
     values["avito_commission_amount"] = calculate_avito_commission(
         values["line_total"], enabled=values["avito_commission_enabled"],
@@ -158,12 +165,68 @@ def _line_discounts(lines):
             discount = Decimal(str(line.get("unit_discount") or 0)).quantize(CENT, rounding=ROUND_HALF_UP)
         except (InvalidOperation, TypeError, ValueError) as exc:
             raise ValidationError("Укажите корректный товар и скидку.") from exc
-        if not discount.is_finite() or discount < 0:
-            raise ValidationError("Скидка не может быть отрицательной.")
+        if not discount.is_finite():
+            raise ValidationError("Укажите корректную скидку или доплату.")
         if key in discounts and discounts[key] != discount:
             raise ValidationError("Для повторяющихся строк одного товара укажите одинаковую скидку.")
         discounts[key] = discount
     return discounts
+
+
+MIXED_OPERATION_ERROR = "Цифровые товары и расходы необходимо оформлять отдельной продажей."
+
+
+def _prepare_manual_lines(lines, *, sale_type, note):
+    """Определяет режим по фактическому составу, проверяя каждый входной тип."""
+    allowed = {"cd", "tech", "custom", "consignment", "system"}
+    if any(line.get("product_type") not in allowed for line in lines):
+        raise ValidationError("Неизвестный тип позиции продажи.")
+    system_lines = [line for line in lines if line.get("product_type") == "system"]
+    kinds = {line.get("system_kind") for line in system_lines}
+    if kinds and (len(kinds) != 1 or len(system_lines) != len(lines)):
+        raise ValidationError(MIXED_OPERATION_ERROR)
+    operation = next(iter(kinds)) if kinds else Sale.OperationKind.NORMAL
+    if kinds and operation not in SystemProduct.Kind.values:
+        raise ValidationError("Неизвестная системная позиция.")
+    if operation == Sale.OperationKind.DIGITAL_PRODUCT and not str(note or "").strip():
+        raise ValidationError("Для продажи цифрового товара необходимо заполнить примечание.")
+    products = SystemProduct.objects.in_bulk(kinds) if kinds else {}
+    if kinds and len(products) != len(kinds):
+        raise ValidationError("Системная позиция не инициализирована.")
+    prepared = []
+    for source in lines:
+        if source.get("product_type") not in {"custom", "system"}:
+            continue
+        line = dict(source)
+        kind = line.get("system_kind") if line["product_type"] == "system" else None
+        if kind:
+            line["name"] = products[kind].name
+            if kind == SystemProduct.Kind.EXPENSE:
+                line.setdefault("unit_price", "0")
+        values = _prepare_custom_line(line, sale_type=(Sale.SaleType.RETAIL if kind == "EXPENSE" else sale_type))
+        values["system_kind"] = kind
+        if kind and (
+            values["quantity"] > 2_147_483_647
+            or any(abs(values[field]) >= Decimal("1e18") for field in ("unit_price", "unit_cost", "line_total"))
+            or values["unit_cost"] * values["quantity"] >= Decimal("1e18")
+        ):
+            raise ValidationError("Количество или сумма системной позиции превышает допустимый размер.")
+        if kind and values["unit_discount"]:
+            raise ValidationError("Скидка системной позиции не используется; укажите итоговую цену.")
+        if kind == "EXPENSE" and values["unit_price"] != 0:
+            raise ValidationError("Цена расхода всегда равна 0 ₽.")
+        prepared.append(values)
+    return operation, prepared
+
+
+def _validate_expense_received(operation, amount):
+    if operation == Sale.OperationKind.EXPENSE and amount not in (None, ""):
+        try:
+            value = Decimal(str(amount))
+        except (InvalidOperation, ValueError, TypeError) as exc:
+            raise ValidationError("Для расхода полученная от покупателя сумма равна нулю.") from exc
+        if not value.is_finite() or value != 0:
+            raise ValidationError("Для расхода полученная от покупателя сумма равна нулю.")
 
 
 def _line_commission_flags(lines, *, sale_type):
@@ -198,18 +261,34 @@ def _commission_audit_snapshot(sale):
 @transaction.atomic
 def create_sale(
     *, actor, warehouse_id, price_type, sale_type, payment_method, lines,
-    cash_received_amount=None, note="", external_prices=None,
+    cash_received_amount=None, note="", external_prices=None, creation_key=None,
 ):
     """Списывает локальный stock и для наличной продажи в той же транзакции проводит кассу."""
+    fingerprint = ""
+    if creation_key:
+        try:
+            creation_key = uuid.UUID(str(creation_key))
+        except (ValueError, TypeError) as exc:
+            raise ValidationError("Некорректный ключ формы продажи.") from exc
+        fingerprint = hashlib.sha256(json.dumps({
+            "actor": actor.pk, "warehouse": str(warehouse_id), "price": price_type,
+            "type": sale_type, "payment": payment_method, "lines": lines,
+            "received": cash_received_amount, "note": note,
+        }, sort_keys=True, default=str).encode()).hexdigest()
+        existing = Sale.objects.filter(creation_key=creation_key).first()
+        if existing:
+            if existing.created_by_id != actor.pk or existing.creation_fingerprint != fingerprint:
+                raise ValidationError("Эта форма уже использована для другой продажи. Откройте новую форму.")
+            return existing
     consignment_lines = [line for line in lines if line.get("product_type") == "consignment"]
     product_lines = [line for line in lines if line.get("product_type") in ("cd", "tech")]
     _validate_choice(price_type, Sale.PriceType, "Выберите тип цены.")
     _validate_choice(sale_type, Sale.SaleType, "Выберите тип продажи.")
     _validate_choice(payment_method, Sale.PaymentMethod, "Выберите способ оплаты.")
-    custom_prepared = [
-        _prepare_custom_line(line, sale_type=sale_type)
-        for line in lines if line.get("product_type") == "custom"
-    ]
+    operation, custom_prepared = _prepare_manual_lines(lines, sale_type=sale_type, note=note)
+    _validate_expense_received(operation, cash_received_amount)
+    if operation != Sale.OperationKind.NORMAL and (external_prices is not None or sale_type == Sale.SaleType.CONSIGNMENT or price_type == Sale.PriceType.CONSIGNMENT):
+        raise ValidationError("Системные позиции нельзя оформлять как реализацию или внешний заказ.")
     discounts = _line_discounts(product_lines)
     commission_flags = _line_commission_flags(product_lines, sale_type=sale_type)
     if not product_lines and not custom_prepared and not consignment_lines:
@@ -265,13 +344,16 @@ def create_sale(
         total += quote_consignment_sale_lines(consignment_lines)
 
     note = str(note or "").strip()
+    if operation != Sale.OperationKind.NORMAL and total >= Decimal("1e18"):
+        raise ValidationError("Сумма системной операции превышает допустимый размер.")
     if any(discounts.values()) or any(line["unit_discount"] for line in custom_prepared):
         if not note:
-            raise ValidationError("При использовании скидки обязательно укажите примечание к продаже.")
+            raise ValidationError("При использовании скидки или доплаты обязательно укажите примечание к продаже.")
     immediate_cash = payment_method == Sale.PaymentMethod.CASH
     actual_received = _cash_received(cash_received_amount, total) if immediate_cash else None
     extra_cash = (actual_received - total).quantize(CENT) if actual_received is not None else Decimal("0.00")
     sale = Sale.objects.create(
+        operation_kind=operation, creation_key=creation_key, creation_fingerprint=fingerprint,
         warehouse=warehouse,
         price_type=price_type,
         sale_type=sale_type,
@@ -333,7 +415,7 @@ def create_sale(
     SaleTechItem.objects.bulk_create(tech_items)
     SaleCustomItem.objects.bulk_create([
         SaleCustomItem(
-            sale=sale, quantity=line["quantity"], unit_price=line["unit_price"],
+            sale=sale, system_product_id=line["system_kind"], quantity=line["quantity"], unit_price=line["unit_price"],
             unit_discount=line["unit_discount"], line_total=line["line_total"],
             avito_commission_enabled=line["avito_commission_enabled"],
             avito_commission_amount=line["avito_commission_amount"],
@@ -344,7 +426,7 @@ def create_sale(
     if consignment_lines:
         from consignment.services import consume_consignment_sale_lines
         consume_consignment_sale_lines(actor=actor, sale=sale, lines=consignment_lines)
-    if immediate_cash:
+    if immediate_cash and operation != Sale.OperationKind.EXPENSE:
         credit_sale_payment(sale=sale, actor=actor)
     total_discount = sum(
         (discount * line["quantity"] for line, _, _, _, discount, _, _, _ in priced_lines),
@@ -355,9 +437,9 @@ def create_sale(
     )
     logger.info(
         "Продажа создана: user_id=%s sale_id=%s warehouse_id=%s total=%s payment=%s "
-        "cash_received=%s extra_cash=%s discount=%s avito_commissions=%s note=%s",
+        "cash_received=%s extra_cash=%s discount=%s avito_commissions=%s note=%s operation=%s",
         getattr(actor, "pk", None), sale.pk, warehouse.pk, total, payment_method,
-        actual_received, extra_cash, total_discount, _commission_audit_snapshot(sale), bool(sale.note),
+        actual_received, extra_cash, total_discount, _commission_audit_snapshot(sale), bool(sale.note), operation,
     )
     return sale
 
@@ -405,9 +487,11 @@ def mark_sale_paid(*, actor, sale_id, cash_received_amount=None):
     if sale.payment_status == Sale.PaymentStatus.PAID:
         raise ValidationError("Заказ уже оплачен.")
     if sale.payment_method == Sale.PaymentMethod.CASH_POSTPAY:
+        _validate_expense_received(sale.operation_kind, cash_received_amount)
         sale.cash_received_amount = _cash_received(cash_received_amount, sale.total_amount)
         sale.extra_cash_amount = (sale.cash_received_amount - sale.total_amount).quantize(CENT)
-        credit_sale_payment(sale=sale, actor=actor)
+        if sale.operation_kind != Sale.OperationKind.EXPENSE:
+            credit_sale_payment(sale=sale, actor=actor)
     elif sale.payment_method != Sale.PaymentMethod.BANK_ACCOUNT:
         raise ValidationError("Этот способ оплаты не поддерживает отложенное подтверждение.")
     sale.payment_status = Sale.PaymentStatus.PAID
@@ -440,7 +524,7 @@ def update_sale_note(*, actor, sale_id, note):
 @transaction.atomic
 def edit_postpay_sale_items(*, actor, sale_id, lines, note=None):
     """Применяет разницы stock одним блоком; существующие строки сохраняют unit_price."""
-    custom_lines = [line for line in lines if line.get("product_type") == "custom"]
+    custom_lines = [line for line in lines if line.get("product_type") in ("custom", "system")]
     consignment_lines = [line for line in lines if line.get("product_type") == "consignment"]
     product_lines = [line for line in lines if line.get("product_type") in ("cd", "tech")]
     discounts = _line_discounts(product_lines)
@@ -458,9 +542,9 @@ def edit_postpay_sale_items(*, actor, sale_id, lines, note=None):
         raise ValidationError("Состав оплаченного заказа изменять нельзя.")
     if sale.order_status == Sale.OrderStatus.DELIVERED:
         raise ValidationError("Состав доставленного заказа изменять нельзя.")
-    custom_prepared = [
-        _prepare_custom_line(line, sale_type=sale.sale_type) for line in custom_lines
-    ]
+    resulting_note = sale.note if note is None else str(note or "").strip()
+    operation, custom_prepared = _prepare_manual_lines(lines, sale_type=sale.sale_type, note=resulting_note)
+    sale.operation_kind = operation
     commission_flags = _line_commission_flags(product_lines, sale_type=sale.sale_type)
     old_commission_snapshot = _commission_audit_snapshot(sale)
     resulting_note = sale.note if note is None else str(note or "").strip()
@@ -568,7 +652,7 @@ def edit_postpay_sale_items(*, actor, sale_id, lines, note=None):
     SaleCustomItem.objects.filter(sale=sale).delete()
     SaleCustomItem.objects.bulk_create([
         SaleCustomItem(
-            sale=sale, quantity=line["quantity"], unit_price=line["unit_price"],
+            sale=sale, system_product_id=line["system_kind"], quantity=line["quantity"], unit_price=line["unit_price"],
             unit_discount=line["unit_discount"], line_total=line["line_total"],
             avito_commission_enabled=line["avito_commission_enabled"],
             avito_commission_amount=line["avito_commission_amount"],
@@ -585,10 +669,12 @@ def edit_postpay_sale_items(*, actor, sale_id, lines, note=None):
     total += sum((item.line_total for item in sale.consignment_items.all()), Decimal("0"))
     if any(discounts.values()) or any(line["unit_discount"] for line in custom_prepared):
         if not resulting_note:
-            raise ValidationError("При использовании скидки обязательно укажите примечание к продаже.")
+            raise ValidationError("При использовании скидки или доплаты обязательно укажите примечание к продаже.")
     sale.total_amount = total.quantize(CENT, rounding=ROUND_HALF_UP)
+    if operation != Sale.OperationKind.NORMAL and sale.total_amount >= Decimal("1e18"):
+        raise ValidationError("Сумма системной операции превышает допустимый размер.")
     sale.note = resulting_note
-    sale.save(update_fields=("total_amount", "note", "updated_at"))
+    sale.save(update_fields=("total_amount", "note", "operation_kind", "updated_at"))
     total_discount = sum(
         (item.unit_discount * item.quantity for item in sale.cd_items.all()), Decimal("0.00")
     ) + sum(
@@ -645,7 +731,7 @@ def cancel_sale(*, actor, sale_id, comment, _market=False, restore_stock=True):
 
     refund_transaction = None
     refund_amount = Decimal("0.00")
-    if sale.payment_status == Sale.PaymentStatus.PAID:
+    if sale.payment_status == Sale.PaymentStatus.PAID and sale.operation_kind != Sale.OperationKind.EXPENSE:
         if sale.payment_method in (Sale.PaymentMethod.CASH, Sale.PaymentMethod.CASH_POSTPAY):
             refund_transaction = refund_sale_payment(
                 sale=sale, actor=actor, comment=f"Отмена {sale.visible_id}: {comment}",
@@ -657,14 +743,42 @@ def cancel_sale(*, actor, sale_id, comment, _market=False, restore_stock=True):
     for product_type, product_field, item in (locked_items if restore_stock else []):
         key = (product_type, getattr(item, f"{product_field}_id"))
         product = products[key]
+        if item.unit_cost_snapshot is None:
+            raise ValidationError(
+                f"Невозможно вернуть «{product.name}»: в старой продаже нет снимка себестоимости."
+            )
         stock = stocks.get(key)
         if stock is None:
             _, stock_model, _, _ = _configuration(product_type)
             stock = stock_model(warehouse_id=sale.warehouse_id, **{product_field: product})
         old_quantity = stock.quantity
+        old_total_quantity = warehouse_owned_quantity(product_type, product.pk)
+        old_cost = product.cost
+        product.cost = weighted_warehouse_cost(
+            old_quantity=old_total_quantity,
+            old_unit_cost=old_cost,
+            incoming_quantity=item.quantity,
+            incoming_unit_cost=item.unit_cost_snapshot,
+        )
         stock.quantity += item.quantity
         stock.full_clean()
         stock.save()
+        product.full_clean(exclude=[
+            field.name for field in product._meta.fields if field.name != "cost"
+        ])
+        product.save(update_fields=("cost",))
+        changes = [stock_change(
+            warehouse=sale.warehouse,
+            old_quantity=old_quantity,
+            new_quantity=stock.quantity,
+        )]
+        if old_cost != product.cost:
+            changes.append(field_change(
+                field_name="cost",
+                field_label="Средняя себестоимость на физических складах",
+                old_value=f"{old_cost:.2f}",
+                new_value=f"{product.cost:.2f}",
+            ))
         record_product_changes(
             actor=actor,
             instance=product,
@@ -672,11 +786,7 @@ def cancel_sale(*, actor, sale_id, comment, _market=False, restore_stock=True):
             action_kind=ProductChangeEvent.ActionKind.SALE,
             action_object_id=sale.pk,
             action_label=f"Отмена продажи {sale.visible_id}",
-            changes=[stock_change(
-                warehouse=sale.warehouse,
-                old_quantity=old_quantity,
-                new_quantity=stock.quantity,
-            )],
+            changes=changes,
         )
 
     if restore_stock and sale.consignment_items.exists():

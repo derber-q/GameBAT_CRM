@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Создание закупочного прайса · ReSOURCE{% endblock %}
+{% block content %}
+<div class="page-heading">
+  <div><p class="eyebrow">Импортные прайсы</p><h1>Создание закупочного прайса</h1></div>
+  <a class="button button-secondary" href="{% url 'price:imports' %}">К импортным прайсам</a>
+</div>
+<form method="post" action="{% url 'price:procurement_create' %}" class="stacked-form">
+  {% csrf_token %}
+  {% if weights_form %}
+  <section class="panel stacked-form">
+    <h2>Укажите недостающий вес</h2>
+    <p class="muted">Эта техника участвует в закупочном прайсе, но в карточках не указан вес. Введите вес одной единицы с упаковкой в граммах. Вес сохранится в карточках при успешном создании прайса.</p>
+    {% if not weights_form.can_change_weight %}<p class="error-text">У вас нет права изменения веса техники. Попросите сотрудника с этим правом заполнить вес в карточках, затем повторите проверку.</p>{% endif %}
+    <input type="hidden" name="weights_submitted" value="1">
+    {{ weights_form.non_field_errors }}
+    <div class="table-scroll"><table>
+      <thead><tr><th>Товар</th><th>Тип и тариф доставки</th><th>Вес с упаковкой, г</th></tr></thead>
+      <tbody>{% for field in weights_form %}<tr>
+        <td><label for="{{ field.id_for_label }}">{{ field.label }}</label></td>
+        <td>{{ field.help_text }}</td>
+        <td class="{% if field.errors %}field-error{% endif %}">{{ field }}{{ field.errors }}</td>
+      </tr>{% endfor %}</tbody>
+    </table></div>
+  </section>
+  {% endif %}
+  {% if surcharges_form %}
+  <section class="panel stacked-form">
+    <h2>Укажите доплаты за постоплату</h2>
+    <p class="muted">Для этих товаров нет согласованной ставки. Введите фиксированную доплату в RUB за единицу товара; она сохранится для следующих прайсов.</p>
+    {% if not surcharges_form.can_change_surcharge %}<p class="error-text">Для ввода доплаты необходимо право изменения наценки закупочного прайса.</p>{% endif %}
+    <input type="hidden" name="surcharges_submitted" value="1">
+    {{ surcharges_form.non_field_errors }}
+    <div class="table-scroll"><table><thead><tr><th>Товар</th><th>Тип и бренд</th><th>Доплата, RUB</th></tr></thead>
+    <tbody>{% for field in surcharges_form %}<tr><td><label for="{{ field.id_for_label }}">{{ field.label }}</label></td><td>{{ field.help_text }}</td><td class="{% if field.errors %}field-error{% endif %}">{{ field }}{{ field.errors }}</td></tr>{% endfor %}</tbody></table></div>
+  </section>
+  {% endif %}
+  <section class="panel stacked-form">
+    <h2>Курсы и доставка</h2>
+    {% include "price/_procurement_fields.html" %}
+    <button class="button" type="submit">{% if weights_form %}{% if weights_form.can_change_weight %}Сохранить вес и создать прайс{% else %}Проверить вес повторно{% endif %}{% elif surcharges_form %}Сохранить доплаты и создать прайс{% else %}Создать закупочный прайс{% endif %}</button>
+  </section>
+</form>
+{% endblock %}
