@@ -10,6 +10,7 @@ from accounts.models import User
 from catalog.models import Brand, CD, Platform, ProductType, Tech
 from partners.models import Supplier
 from warehouse.models import CDWarehouseStock, TechWarehouseStock, Warehouse
+from warehouse.storage_services import update_storage_locations
 from .models import SupplierCDPrice
 from .services import update_product_prices, update_supplier_price
 
@@ -160,12 +161,31 @@ class PricingTests(TestCase):
         self.cd_stock.quantity = 2
         self.cd_stock.save(update_fields=("quantity",))
         CDWarehouseStock.objects.create(warehouse=reserve, cd=self.cd, quantity=3)
+        for warehouse, locations in (
+            (self.warehouse, "A1-2, B3-4"), (reserve, "A1-2"),
+        ):
+            update_storage_locations(
+                actor=self.user, warehouse_id=warehouse.pk, product_type="cd",
+                product_id=self.cd.pk, raw_value=locations,
+            )
         brand = Brand.objects.create(name="Sony")
         product_type = ProductType.objects.create(name="Консоли")
         tech = Tech.objects.create(
             brand=brand, product_type=product_type, name="PlayStation 5", sku="T-STOCK", barcode="5"
         )
         TechWarehouseStock.objects.create(warehouse=self.warehouse, tech=tech, quantity=4)
+        update_storage_locations(
+            actor=self.user, warehouse_id=self.warehouse.pk, product_type="tech",
+            product_id=tech.pk, raw_value="C2-5-1\\2",
+        )
+        empty_warehouse = Warehouse.objects.create(name="Пустой склад")
+        empty_stock = CDWarehouseStock.objects.create(warehouse=empty_warehouse, cd=self.cd, quantity=1)
+        update_storage_locations(
+            actor=self.user, warehouse_id=empty_warehouse.pk, product_type="cd",
+            product_id=self.cd.pk, raw_value="Z9-9",
+        )
+        empty_stock.quantity = 0
+        empty_stock.save(update_fields=("quantity",))
 
         self.client.force_login(self.user)
         response = self.client.get(reverse("pricing:list"))
@@ -174,6 +194,12 @@ class PricingTests(TestCase):
         tech_row = response.context["tech_groups"][0][1][0]
         self.assertEqual(cd_row["product"].global_stock, 5)
         self.assertEqual(tech_row["product"].global_stock, 4)
+        self.assertEqual(cd_row["storage_locations"], "A1-2, B3-4")
+        self.assertEqual(cd_row["storage_locations_title"], "Резерв: A1-2; Тестовый склад: A1-2, B3-4")
+        self.assertEqual(tech_row["storage_locations"], "C2-5-1\\2")
+        self.assertNotContains(response, "Z9-9")
+        self.assertContains(response, 'class="pricing-stock-locations"')
+        self.assertContains(response, "Места хранения: Резерв: A1-2; Тестовый склад: A1-2, B3-4")
         content = response.content.decode()
         name_heading = "<th>Название</th>"
         stock_heading = '<th class="numeric-center pricing-global-stock-column">Глобальный остаток</th>'

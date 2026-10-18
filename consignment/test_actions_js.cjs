@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const callbacks = {}, elements = {};
 const ids = ['action-dialog', 'action-form', 'action-quantity', 'action-warehouse', 'action-payment', 'action-message', 'action-cancel', 'action-title', 'action-product', 'action-available', 'quantity-field', 'return-field', 'payment-field', 'action-summary'];
-ids.forEach((id) => elements['consignment-' + id] = {value: '', textContent: '', options: [{textContent: 'Choose'}, {textContent: 'Warehouse B'}], selectedIndex: 1,
+ids.forEach((id) => elements['consignment-' + id] = {value: '', dataset: {}, textContent: '', options: [{textContent: 'Choose'}, {textContent: 'Warehouse B'}], selectedIndex: 1,
   addEventListener: (event, fn) => callbacks[id + ':' + event] = fn});
 let opened = false, removed = false, calls = 0, resolve, posted;
 elements['consignment-action-dialog'].showModal = () => opened = true;
@@ -27,9 +27,17 @@ const reply = (data) => resolve({headers: {get: () => 'application/json'}, json:
   click(); assert(opened); assert.equal(calls, 0);
   assert.equal(elements['consignment-quantity-field'].hidden, true);
   assert.equal(elements['consignment-action-quantity'].value, '1');
-  assert.equal(elements['consignment-action-warehouse'].value, ''); // no automatic warehouse
+  assert.equal(elements['consignment-action-warehouse'].value, '');
   assert.equal(elements['consignment-action-payment'].disabled, true);
   callbacks['action-cancel:click'](); await submit(); assert.equal(calls, 0);
+  elements['consignment-action-warehouse'].dataset.defaultWarehouse = '2';
+  click(); assert.equal(elements['consignment-action-warehouse'].value, '2');
+  assert(elements['consignment-action-summary'].textContent.includes('Warehouse B'));
+  callbacks['action-cancel:click']();
+  elements['consignment-action-warehouse'].value = '';
+  click(); assert.equal(elements['consignment-action-warehouse'].value, '2');
+  callbacks['action-cancel:click']();
+  elements['consignment-action-warehouse'].dataset.defaultWarehouse = '';
   row.dataset.quantity = '5'; click();
   assert.equal(elements['consignment-quantity-field'].hidden, false);
   assert.equal(elements['consignment-action-quantity'].value, '');
@@ -47,5 +55,5 @@ const reply = (data) => resolve({headers: {get: () => 'application/json'}, json:
   assert(elements['consignment-action-message'].textContent.includes('Not enough'));
   click(); const sold = submit(); reply({success: true, quantity: 0, row_html: '', message: 'Sold'}); await sold;
   assert(removed); assert.equal(group.hidden, true); assert.equal(empty.hidden, false);
-  console.log('Consignment JS: single/multiple quantity, manual warehouse, confirm/cancel/Escape, duplicate submit, errors and empty state OK');
+  console.log('Consignment JS: single/multiple quantity, warehouse defaults, confirm/cancel/Escape, duplicate submit, errors and empty state OK');
 })().catch((error) => {console.error(error); process.exitCode = 1;});

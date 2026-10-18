@@ -1,8 +1,11 @@
 from io import BytesIO
 from decimal import Decimal
 
+from django.contrib.auth.models import Permission
 from django.core.exceptions import ValidationError
+from django.db import connection
 from django.test import TestCase
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from openpyxl import load_workbook
 
@@ -97,6 +100,164 @@ class SupplierTemplateImportTests(TestCase):
         self.assertEqual(self.import_file(workbook, "cd"), 0)
         self.assertFalse(SupplierCDPrice.objects.filter(supplier=self.supplier).exists())
         self.assertEqual(SupplierTechPrice.objects.get(supplier=self.supplier).price, Decimal("88"))
+
+    def price_cells(self, workbook):
+        sheet = workbook[MAIN_SHEET]
+        return {
+            (sheet.cell(row, 1).value.lower(), sheet.cell(row, 2).value): sheet.cell(row, 6)
+            for row in range(2, sheet.max_row + 1)
+            if sheet.cell(row, 1).value in ("CD", "TECH")
+        }
+
+    def test_prefilled_templates_use_only_selected_supplier_and_include_new_products(self):
+        other = Supplier.objects.create(
+            name="F", letter="F", highlight_color="#37A7BA", legal_entity="F", phone_1="2",
+        )
+        for kind, product, model, field in (
+            ("cd", self.cd, SupplierCDPrice, "cd"),
+            ("tech", self.tech, SupplierTechPrice, "tech"),
+        ):
+            model.objects.create(supplier=self.supplier, **{field: product}, price=Decimal("77.123456"))
+            model.objects.create(supplier=other, **{field: product}, price=Decimal("99.654321"))
+            new = type(product).objects.create(**{
+                **({"platform": product.platform} if kind == "cd" else {
+                    "brand": product.brand, "product_type": product.product_type,
+                }), "name": "Новый товар", "sku": f"{kind}-new",
+            })
+            for supplier, expected in ((self.supplier, "77.123456"), (other, "99.654321")):
+                with self.subTest(kind=kind, supplier=supplier.letter):
+                    content = generate_supplier_template(
+                        actor=self.user, product_kind=kind, supplier_id=supplier.pk,
+                    )
+                    workbook = load_workbook(BytesIO(content))
+                    cells = self.price_cells(workbook)
+                    self.assertEqual(set(cells), {(kind, product.pk), (kind, new.pk)})
+                    self.assertEqual(Decimal(str(cells[kind, product.pk].value)), Decimal(expected))
+                    self.assertFalse(cells[kind, product.pk].protection.locked)
+                    self.assertIsNone(cells[kind, new.pk].value)
+                    workbook.close()
+            blank = self.template(kind)
+            self.assertTrue(all(cell.value is None for cell in self.price_cells(blank).values()))
+            blank.close()
+
+    def test_cleared_prefilled_prices_stay_blank_in_next_download_for_both_types(self):
+        books = {}
+        for kind, product, model, field in (
+            ("cd", self.cd, SupplierCDPrice, "cd"),
+            ("tech", self.tech, SupplierTechPrice, "tech"),
+        ):
+            model.objects.create(supplier=self.supplier, **{field: product}, price=Decimal("88.25"))
+            books[kind] = load_workbook(BytesIO(generate_supplier_template(
+                actor=self.user, product_kind=kind, supplier_id=self.supplier.pk,
+            )))
+            cell = self.price_cells(books[kind])[kind, product.pk]
+            self.assertEqual(cell.value, 88.25)
+            cell.value = None
+        self.client.force_login(self.user)
+        response = self.client.post(reverse("price:supplier_upload"), {
+            "supplier": self.supplier.pk,
+            **{f"{kind}_file": uploaded(workbook_bytes(book)) for kind, book in books.items()},
+        })
+        self.assertRedirects(response, reverse("price:imports"))
+        self.assertFalse(SupplierCDPrice.objects.filter(supplier=self.supplier).exists())
+        self.assertFalse(SupplierTechPrice.objects.filter(supplier=self.supplier).exists())
+        for kind in ("cd", "tech"):
+            workbook = load_workbook(BytesIO(generate_supplier_template(
+                actor=self.user, product_kind=kind, supplier_id=self.supplier.pk,
+            )))
+            self.assertTrue(all(cell.value is None for cell in self.price_cells(workbook).values()))
+            self.assertTrue(self.price_cells(workbook))
+            workbook.close()
+
+    def test_prefilled_download_requires_both_permissions_and_masks_supplier_details(self):
+        user = User.objects.create_user("template-reader", password="StrongReader!123")
+        self.supplier.name = "Закрытое название поставщика"
+        self.supplier.save(update_fields=("name",))
+        url = reverse("price:supplier_template_prefilled", args=(self.supplier.pk, "cd"))
+        permissions = {
+            code: Permission.objects.get(content_type__app_label="price", codename=code)
+            for code in ("view_price_page", "download_supplier_template", "view_supplier_prices")
+        }
+        for granted in ((), ("download_supplier_template",), ("view_supplier_prices",),
+                        ("download_supplier_template", "view_supplier_prices")):
+            with self.subTest(granted=granted):
+                user.user_permissions.set([permissions["view_price_page"], *[permissions[p] for p in granted]])
+                self.client.force_login(user)
+                allowed = len(granted) == 2
+                response = self.client.get(url)
+                self.assertEqual(response.status_code, 200 if allowed else 403)
+                page = self.client.get(reverse("price:imports"))
+                self.assertEqual(page.status_code, 200)
+                self.assertNotContains(page, self.supplier.name)
+                if allowed:
+                    self.assertContains(page, url)
+                    self.assertContains(page, self.supplier.safe_label)
+                else:
+                    self.assertNotContains(page, url)
+
+    def test_prefilled_download_is_read_only_and_uses_supplier_in_filename(self):
+        SupplierCDPrice.objects.create(supplier=self.supplier, cd=self.cd, price=Decimal("123.456789"))
+        self.client.force_login(self.user)
+        url = reverse("price:supplier_template_prefilled", args=(self.supplier.pk, "cd"))
+        with CaptureQueriesContext(connection) as queries:
+            response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("resource-supplier-M-cd-template.xlsx", response["Content-Disposition"])
+        self.assertIn("no-store", response["Cache-Control"])
+        self.assertFalse(any(
+            query["sql"].lstrip().upper().startswith(("INSERT", "UPDATE", "DELETE"))
+            for query in queries.captured_queries
+        ))
+        workbook = load_workbook(BytesIO(response.content))
+        self.assertEqual(self.price_cells(workbook)["cd", self.cd.pk].value, 123.456789)
+        workbook.close()
+        self.assertEqual(self.client.post(url).status_code, 405)
+        self.assertEqual(self.client.get(reverse(
+            "price:supplier_template_prefilled", args=(999999, "cd"),
+        )).status_code, 404)
+        self.assertEqual(self.client.get(reverse(
+            "price:supplier_template_prefilled", args=(self.supplier.pk, "other"),
+        )).status_code, 404)
+
+    def test_prefilled_templates_skip_excluded_archived_and_zero_prices(self):
+        for kind, product, model, field in (
+            ("cd", self.cd, SupplierCDPrice, "cd"),
+            ("tech", self.tech, SupplierTechPrice, "tech"),
+        ):
+            model.objects.create(supplier=self.supplier, **{field: product}, price=0)
+            base = {"platform": product.platform} if kind == "cd" else {
+                "brand": product.brand, "product_type": product.product_type,
+            }
+            for flag in ("is_archived", "exclude_from_supplier_template"):
+                excluded = type(product).objects.create(**base, name=flag, **{flag: True})
+                model.objects.create(supplier=self.supplier, **{field: excluded}, price=77)
+            workbook = load_workbook(BytesIO(generate_supplier_template(
+                actor=self.user, product_kind=kind, supplier_id=self.supplier.pk,
+            )))
+            cells = self.price_cells(workbook)
+            self.assertEqual(set(cells), {(kind, product.pk)})
+            self.assertIsNone(cells[kind, product.pk].value)
+            workbook.close()
+
+    def test_prefilled_import_changes_only_selected_type_and_supplier_and_exports_latest_price(self):
+        other = Supplier.objects.create(
+            name="F", letter="F", highlight_color="#37A7BA", legal_entity="F", phone_1="2",
+        )
+        SupplierTechPrice.objects.create(supplier=self.supplier, tech=self.tech, price=88)
+        SupplierCDPrice.objects.create(supplier=self.supplier, cd=self.cd, price=77)
+        SupplierCDPrice.objects.create(supplier=other, cd=self.cd, price=66)
+        workbook = load_workbook(BytesIO(generate_supplier_template(
+            actor=self.user, product_kind="cd", supplier_id=self.supplier.pk,
+        )))
+        self.price_cells(workbook)["cd", self.cd.pk].value = 99.5
+        self.assertEqual(self.import_file(workbook, "cd"), 1)
+        self.assertEqual(SupplierTechPrice.objects.get(supplier=self.supplier).price, Decimal("88"))
+        self.assertEqual(SupplierCDPrice.objects.get(supplier=other).price, Decimal("66"))
+        next_book = load_workbook(BytesIO(generate_supplier_template(
+            actor=self.user, product_kind="cd", supplier_id=self.supplier.pk,
+        )))
+        self.assertEqual(self.price_cells(next_book)["cd", self.cd.pk].value, 99.5)
+        next_book.close()
 
     def test_hidden_product_absent_from_file_keeps_price(self):
         self.cd.exclude_from_supplier_template = True

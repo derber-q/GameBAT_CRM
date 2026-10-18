@@ -1,5 +1,6 @@
 from django import forms
 
+from warehouse.form_defaults import SingleWarehouseInitialMixin
 from warehouse.models import Warehouse
 from .models import Creditor, CreditorTransaction
 
@@ -17,7 +18,7 @@ class CreditorEditForm(forms.ModelForm):
         widgets = {"description": forms.Textarea(attrs={"rows": 4})}
 
 
-class DebtAdjustmentForm(forms.Form):
+class DebtAdjustmentForm(SingleWarehouseInitialMixin, forms.Form):
     warehouse = forms.ModelChoiceField(label="Склад", queryset=Warehouse.objects.all())
     money_source_type = forms.ChoiceField(
         label="Денежное хранилище", choices=CreditorTransaction.MoneySourceType.choices,

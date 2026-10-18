@@ -19,6 +19,7 @@ from catalog.product_filters import (
     product_filter_query_string,
 )
 from core.decorators import permission_required_any
+from warehouse.models import CDWarehouseStorageAssignment, TechWarehouseStorageAssignment
 from .services import update_product_prices, update_supplier_price
 from .warnings import product_price_warnings, wholesale_margin
 
@@ -29,6 +30,32 @@ PRICING_LIST_ROUTES = {
     "cd": "pricing:cd_list",
     "tech": "pricing:tech_list",
 }
+
+
+def _pricing_storage_locations(products, assignment_model, product_field):
+    """Собирает места видимых товаров одним запросом, отдельно от суммы остатков."""
+    product_key = f"stock__{product_field}_id"
+    locations = defaultdict(lambda: defaultdict(list))
+    assignments = assignment_model.objects.filter(
+        stock__quantity__gt=0, **{f"{product_key}__in": [product.pk for product in products]},
+    ).order_by("stock__warehouse__name", "position", "id").values(
+        product_key, "stock__warehouse__name", "location__canonical_value",
+    )
+    for assignment in assignments:
+        locations[assignment[product_key]][assignment["stock__warehouse__name"]].append(
+            assignment["location__canonical_value"]
+        )
+    return {
+        product_id: {
+            "storage_locations": ", ".join(dict.fromkeys(
+                location for values in warehouses.values() for location in values
+            )),
+            "storage_locations_title": "; ".join(
+                f"{warehouse}: {', '.join(values)}" for warehouse, values in warehouses.items()
+            ),
+        }
+        for product_id, warehouses in locations.items()
+    }
 
 
 def _pricing_filter_params(params, product_kind):
@@ -84,6 +111,9 @@ def pricing_list(request, product_kind=None):
         cds = cds.filter(global_stock__gt=0)
         tech_items = tech_items.filter(global_stock__gt=0)
     cds, tech_items = filter_product_querysets(cds, tech_items, filters)
+    cds, tech_items = list(cds), list(tech_items)
+    cd_locations = _pricing_storage_locations(cds, CDWarehouseStorageAssignment, "cd")
+    tech_locations = _pricing_storage_locations(tech_items, TechWarehouseStorageAssignment, "tech")
     cd_groups = defaultdict(list)
     for product in sorted(cds, key=cd_order_key):
         cd_groups[product.platform].append({
@@ -92,6 +122,7 @@ def pricing_list(request, product_kind=None):
             "display_cost": product.cost.to_integral_value(rounding=ROUND_CEILING),
             "wholesale_margin": wholesale_margin(product.wholesale_price, product.cost),
             "warnings": product_price_warnings(product),
+            **cd_locations.get(product.pk, {}),
         })
     tech_groups = defaultdict(list)
     for product in tech_items:
@@ -101,6 +132,7 @@ def pricing_list(request, product_kind=None):
             "display_cost": product.cost.to_integral_value(rounding=ROUND_CEILING),
             "wholesale_margin": wholesale_margin(product.wholesale_price, product.cost),
             "warnings": product_price_warnings(product),
+            **tech_locations.get(product.pk, {}),
         })
     context = {
         "pricing_kind": product_kind or "",

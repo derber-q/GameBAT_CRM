@@ -48,11 +48,18 @@ class SaleListingTests(TestCase):
             self.assertEqual(sorted(row['sale'].pk for g in groups for row in g['rows']), sorted(pks))
             for group in groups:
                 self.assertTrue(all(row['sale'].sale_type in group['sale_types'] for row in group['rows']))
+                for row in group['rows']:
+                    if group['kind'] == Sale.SaleType.WHOLESALE:
+                        self.assertEqual(row['items_preview'], [])
+                    else:
+                        self.assertEqual(row['items_preview'], [{'name': 'Disc', 'quantity': 1}])
+                    self.assertFalse(row['has_more_items'])
                 self.assertContains(response, f'aria-controls="sales-group-{group["kind"]}" data-collapse-toggle')
                 self.assertContains(response, f'id="sales-group-{group["kind"]}" class="collapsible-content"')
             self.assertContains(response, 'Keep this note')
             self.assertContains(response, 'Статус заказа')
             self.assertContains(response, 'Статус оплаты')
+            self.assertContains(response, 'css/sales-list.css?v=2')
             if name != 'incomplete':
                 self.assertNotContains(response, 'data-status-field=')
 
@@ -83,6 +90,7 @@ class SaleListingTests(TestCase):
         for value in ('assembled', 'shipped', 'delivered'):
             response = self.post(sale, value=value)
             self.assertEqual(response.status_code, 200)
+            self.assertIn('class="sale-items-preview-name" title="Disc">Disc</span>', response.json()['row_html'])
             self.assertEqual(response.json()['order_status'], value)
             sale.refresh_from_db()
         response = self.post(sale, field='payment', value='paid')

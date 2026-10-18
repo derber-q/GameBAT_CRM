@@ -8,6 +8,7 @@ urlpatterns = [
     path("new/", views.order_upload, name="upload"),
     path("new/preview/", views.order_preview, name="preview"),
     path("<int:pk>/", views.order_detail, name="detail"),
+    path("<int:pk>/export/", views.order_export, name="export"),
     path("<int:pk>/edit/", views.order_edit, name="edit"),
     path("<int:pk>/trip/", trip_views.order_trip_assign, name="assign_trip"),
     path("<int:pk>/confirm/", views.order_confirm, name="confirm"),

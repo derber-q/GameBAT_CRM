@@ -39,6 +39,7 @@ def crm_header(request):
     )
     return {
         "nav_warehouses": warehouses,
+        "single_warehouse_id": warehouses[0]["id"] if len(warehouses) == 1 else None,
         "nav_sales_platforms": sales_platforms,
         "nav": {
             "warehouse": warehouse_global_access or warehouse_details_access,

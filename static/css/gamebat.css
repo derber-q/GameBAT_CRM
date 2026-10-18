@@ -300,6 +300,8 @@ body.sale-entry-page, body.responsive-crm-page { min-width: 0; }
 .inline-price-form { align-items: center; display: flex; gap: 5px; min-width: 150px; }
 .inline-price-form input { min-width: 90px; }
 .pricing-table .pricing-global-stock-column { box-sizing: border-box; min-width: 86px; width: 86px; max-width: 86px; padding-left: 6px; padding-right: 6px; white-space: normal; }
+.pricing-stock-summary { display: block; position: relative; }
+.pricing-stock-locations { position: absolute; top: 100%; left: 0; right: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--gb-text); font-size: 10px; font-weight: 400; line-height: 12px; }
 .pricing-table .supplier-price-heading { text-align: center; }
 .pricing-table .supplier-price-cell .inline-price-form { justify-content: center; }
 .pricing-products-table { table-layout: fixed; min-width: 1360px; }

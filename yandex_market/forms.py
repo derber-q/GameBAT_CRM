@@ -4,6 +4,8 @@ from decimal import Decimal
 from django import forms
 from django.core.exceptions import ValidationError
 
+from warehouse.form_defaults import SingleWarehouseInitialMixin
+
 from .content import CONTENT_FIELDS, LOCKED_CARD, validate_parameters, validate_schema
 from .models import CategorySchema, Integration
 from .product_dimensions import connection_dimensions
@@ -35,7 +37,7 @@ class ObjectListWidget(forms.Widget):
         return context
 
 
-class IntegrationForm(forms.ModelForm):
+class IntegrationForm(SingleWarehouseInitialMixin, forms.ModelForm):
     new_api_key = forms.CharField(label="Новый API-Key", required=False, max_length=4096, widget=forms.PasswordInput(render_value=False), help_text="Оставьте пустым, чтобы сохранить ключ. Смена ключа выключает обмен до повторной проверки подключения.")
     class Meta:
         model = Integration

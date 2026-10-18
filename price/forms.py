@@ -3,6 +3,7 @@ from decimal import Decimal
 from django import forms
 
 from partners.models import Supplier
+from warehouse.form_defaults import SingleWarehouseInitialMixin
 from warehouse.models import Warehouse
 
 from .models import PriceDocumentSettings
@@ -23,7 +24,7 @@ class PriceDocumentSettingsForm(forms.ModelForm):
         widgets = {"additional_text": forms.Textarea(attrs={"rows": 3})}
 
 
-class WarehousePriceForm(forms.Form):
+class WarehousePriceForm(SingleWarehouseInitialMixin, forms.Form):
     warehouse = forms.ModelChoiceField(label="Склад", queryset=Warehouse.objects.all())
 
 

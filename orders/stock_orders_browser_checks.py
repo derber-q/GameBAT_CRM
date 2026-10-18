@@ -55,7 +55,7 @@ class StockOrdersBrowserChecks(StaticLiveServerTestCase):
                 book = load_workbook(BytesIO(Path(download.value.path()).read_bytes()))
                 for row in book[META_SHEET].iter_rows(values_only=True):
                     if isinstance(row[0], int):
-                        book[MAIN_SHEET].cell(row[0], 6, 3)
+                        book[MAIN_SHEET].cell(row[0], 8, 3)
                 filled = BytesIO()
                 book.save(filled)
                 book.close()

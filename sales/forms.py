@@ -1,10 +1,11 @@
 from django import forms
 
+from warehouse.form_defaults import SingleWarehouseInitialMixin
 from warehouse.models import Warehouse
 from .models import Sale
 
 
-class SaleCreateForm(forms.Form):
+class SaleCreateForm(SingleWarehouseInitialMixin, forms.Form):
     warehouse = forms.ModelChoiceField(label="Склад", queryset=Warehouse.objects.all())
     price_type = forms.ChoiceField(label="Тип цены", choices=Sale.PriceType.choices)
     sale_type = forms.ChoiceField(label="Тип продажи", choices=Sale.SaleType.choices)

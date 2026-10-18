@@ -1,9 +1,14 @@
 from decimal import Decimal
+from io import BytesIO
+from uuid import uuid4
 
 from django.contrib.auth.models import Permission
 from django.core.exceptions import ValidationError
 from django.test import TestCase
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
+from openpyxl import load_workbook
 
 from accounts.models import User
 from cash.models import CashRegister, CashTransaction, Safe
@@ -21,6 +26,7 @@ from .services import (
     edit_created_order,
     reduce_receiving_order,
 )
+from .trips import create_trip
 
 
 class ProcurementOrderTests(TestCase):
@@ -66,6 +72,95 @@ class ProcurementOrderTests(TestCase):
         self.assertEqual(order.prepayment_total, Decimal("4000.00"))
         self.assertEqual(order.postpayment_total, Decimal("2080.00"))
         self.assertEqual(order.grand_total, Decimal("6080.00"))
+
+    def test_current_order_excel_has_separate_payment_rows_and_is_read_only(self):
+        order = self.create_order(pre=2, post=1)
+        self.client.force_login(self.user)
+        with CaptureQueriesContext(connection) as queries:
+            response = self.client.get(reverse("orders:export", args=(order.pk,)))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Disposition"], f'attachment; filename="zakaz_{order.pk}.xlsx"')
+        self.assertIn("no-store", response["Cache-Control"])
+        self.assertFalse(any(q["sql"].lstrip().upper().startswith(("INSERT", "UPDATE", "DELETE")) for q in queries))
+        self.assertEqual(sum('FROM "orders_customerprocurementorderitem"' in q["sql"] for q in queries), 1)
+        book = load_workbook(BytesIO(response.content))
+        sheet = book.active
+        self.assertEqual(tuple(cell.value for cell in sheet[4]),
+                         ("Наименование", "Оплата", "Количество", "Цена, ₽", "Сумма, ₽"))
+        self.assertEqual(tuple(cell.value for cell in sheet[5]), ("Игра", "Предоплата", 2, 2000, 4000))
+        self.assertEqual(tuple(cell.value for cell in sheet[6]), ("Игра", "Постоплата", 1, 2080, 2080))
+        self.assertEqual(sheet.cell(sheet.max_row, 3).value, 3)
+        self.assertEqual(sheet.cell(sheet.max_row, 5).value, 6080)
+        self.assertEqual(book.sheetnames, ["Заказ"])
+        self.assertNotIn(self.supplier.name, str(list(sheet.values)))
+        book.close()
+        order.refresh_from_db()
+        self.assertEqual(order.status, order.Status.CREATED)
+
+    def test_order_excel_refreshes_quantities_but_keeps_customer_prices(self):
+        order = self.create_order(pre=2, post=3)
+        self.client.force_login(self.user)
+        url = reverse("orders:export", args=(order.pk,))
+        self.assertEqual(self.client.get(url).status_code, 200)
+        edit_created_order(actor=self.user, order_id=order.pk, recipient="Покупатель", comment="После инвойса",
+                           lines=[{"price_list_item_id": self.cd_source.pk,
+                                   "prepayment_quantity": 1, "postpayment_quantity": 2}])
+        self.cd_source.prepayment_price_rub = Decimal("99999")
+        self.cd_source.postpayment_price_rub = Decimal("99999")
+        self.cd_source.save()
+        book = load_workbook(BytesIO(self.client.get(url).content))
+        sheet = book.active
+        self.assertEqual(tuple(cell.value for cell in sheet[5]), ("Игра", "Предоплата", 1, 2000, 2000))
+        self.assertEqual(tuple(cell.value for cell in sheet[6]), ("Игра", "Постоплата", 2, 2080, 4160))
+        self.assertEqual(sheet.cell(sheet.max_row, 5).value, 6160)
+        book.close()
+
+    def test_order_excel_preserves_zero_positions_after_receiving_adjustment(self):
+        order = self.create_order(pre=1, post=1)
+        create_trip(actor=self.user, order_ids=[order.pk], creation_key=uuid4())
+        advance_order_status(actor=self.user, order_id=order.pk, next_status=order.Status.CONFIRMED,
+                             warehouse_id=self.warehouse.pk)
+        advance_order_status(actor=self.user, order_id=order.pk, next_status=order.Status.RECEIVING)
+        item = order.items.get()
+        reduce_receiving_order(actor=self.user, order_id=order.pk, comment="Не отгружено", rows=[{
+            "item_id": item.pk, "prepayment_quantity": 0, "postpayment_quantity": 0,
+        }])
+        self.client.force_login(self.user)
+        book = load_workbook(BytesIO(self.client.get(reverse("orders:export", args=(order.pk,))).content))
+        sheet = book.active
+        self.assertEqual([sheet.cell(row, 3).value for row in (5, 6)], [0, 0])
+        self.assertEqual(sheet.cell(sheet.max_row, 5).value, 0)
+        book.close()
+
+    def test_customer_excel_requires_detail_permission_and_does_not_need_supplier_access(self):
+        order = self.create_order(pre=1, post=0)
+        worker = User.objects.create_user("order-reader", password="StrongWorker!123")
+        worker.user_permissions.add(*Permission.objects.filter(
+            content_type__app_label="orders", codename__in=("view_order_detail", "view_orders"),
+        ))
+        self.client.force_login(worker)
+        url = reverse("orders:export", args=(order.pk,))
+        self.assertEqual(self.client.get(url).status_code, 200)
+        self.assertEqual(self.client.post(url).status_code, 405)
+        self.assertContains(self.client.get(reverse("orders:detail", args=(order.pk,))), url)
+        self.assertContains(self.client.get(reverse("orders:list")), url)
+
+    def test_order_excel_keeps_kopecks_and_treats_names_as_text(self):
+        self.cd_source.prepayment_price_rub = Decimal("1234.56")
+        self.cd_source.save()
+        order = self.create_order(pre=2, post=0)
+        item = order.items.get()
+        item.product_name_snapshot = '=HYPERLINK("https://example.invalid", "Товар")'
+        item.save(update_fields=("product_name_snapshot",))
+        self.client.force_login(self.user)
+        book = load_workbook(BytesIO(self.client.get(reverse("orders:export", args=(order.pk,))).content))
+        sheet = book.active
+        self.assertEqual(sheet["A5"].data_type, "s")
+        self.assertEqual(sheet["A5"].value, "'" + item.product_name_snapshot)
+        self.assertEqual(Decimal(str(sheet["D5"].value)), Decimal("1234.56"))
+        self.assertEqual(Decimal(str(sheet["E5"].value)), Decimal("2469.12"))
+        self.assertEqual(Decimal(str(sheet.cell(sheet.max_row, 5).value)), Decimal("2469.12"))
+        book.close()
 
     def test_created_order_can_add_remove_increase_and_decrease(self):
         order = self.create_order(pre=1, post=1)
@@ -262,6 +357,7 @@ class ProcurementOrderTests(TestCase):
             ("get", reverse("orders:upload")),
             ("get", reverse("orders:preview")),
             ("get", reverse("orders:detail", args=(order.pk,))),
+            ("get", reverse("orders:export", args=(order.pk,))),
             ("get", reverse("orders:edit", args=(order.pk,))),
             ("post", reverse("orders:confirm", args=(order.pk,))),
             ("post", reverse("orders:start_receiving", args=(order.pk,))),

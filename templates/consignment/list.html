@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% load l10n static %}
 {% block title %}{% if selected_platform %}{{ selected_platform.name }} · {% endif %}Реализация · ReSOURCE{% endblock %}
-{% block extra_head %}<link rel="stylesheet" href="{% static 'css/consignment-actions.css' %}?v=1"><script src="{% static 'js/consignment-actions.js' %}?v=1" defer></script>{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{% static 'css/consignment-actions.css' %}?v=1"><script src="{% static 'js/consignment-actions.js' %}?v=2" defer></script>{% endblock %}
 {% block content %}
 <div class="page-heading">
   <div>
@@ -35,9 +35,9 @@
       <input id="consignment-action-quantity" name="quantity" type="number" min="1" step="1" required>
     </div>
     <div class="field" id="consignment-return-field"><label for="consignment-action-warehouse">Склад возврата</label>
-      <select id="consignment-action-warehouse" name="warehouse" required>
+      <select id="consignment-action-warehouse" name="warehouse" data-default-warehouse="{{ single_warehouse_id|default_if_none:'' }}" required>
         <option value="">Выберите склад</option>
-        {% for warehouse in return_warehouses %}<option value="{{ warehouse.pk }}">{{ warehouse.name }}</option>{% endfor %}
+        {% for warehouse in return_warehouses %}<option value="{{ warehouse.pk }}" {% if warehouse.pk == single_warehouse_id %}selected{% endif %}>{{ warehouse.name }}</option>{% endfor %}
       </select>
     </div>
     <div class="field" id="consignment-payment-field"><label for="consignment-action-payment">Форма оплаты</label>

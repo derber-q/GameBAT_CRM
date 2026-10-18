@@ -12,6 +12,7 @@ urlpatterns = [
     path("wholesale.xlsx", views.wholesale_export, name="wholesale_export"),
     path("supplier-template.xlsx", views.supplier_template_export, name="supplier_template"),
     path("supplier-template/<str:product_kind>.xlsx", views.supplier_template_export, name="supplier_template_kind"),
+    path("supplier/<int:supplier_id>/template/<str:product_kind>.xlsx", views.supplier_template_prefilled_export, name="supplier_template_prefilled"),
     path("supplier/upload/", views.supplier_price_upload, name="supplier_upload"),
     path("procurement/create/", views.procurement_create, name="procurement_create"),
     path("procurement/<int:pk>/", views.procurement_detail, name="procurement_detail"),

@@ -16,6 +16,7 @@ from catalog.product_search import search_product_querysets
 from core.decorators import permission_required_any
 from partners.models import Supplier
 from pricing.warnings import price_warning, MARKUP_FOR_PRICE, wholesale_margin
+from warehouse.form_defaults import single_warehouse_id
 from warehouse.models import (
     CDWarehouseStock, CDWarehouseStorageAssignment,
     TechWarehouseStock, TechWarehouseStorageAssignment, Warehouse,
@@ -197,7 +198,10 @@ def supply_create(request):
             return redirect("supplies:price_review", pk=supply.pk)
     return render(request, "supplies/create.html", {
         "suppliers": suppliers, "warehouses": Warehouse.objects.all(),
-        "selected_warehouse": request.POST.get("warehouse_id", ""),
+        "selected_warehouse": (
+            request.POST.get("warehouse_id", "") if request.method == "POST"
+            else str(single_warehouse_id() or "")
+        ),
         "initial_supply_lines": _submitted_supply_lines(request.POST, request.user) if request.method == "POST" else [],
         "initial_expenses": _submitted_expenses(request.POST) if request.method == "POST" else [],
         "weight_transport_cost": request.POST.get("weight_transport_cost", "") if request.method == "POST" else "",

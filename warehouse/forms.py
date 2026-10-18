@@ -1,9 +1,10 @@
 from django import forms
 
+from .form_defaults import SingleWarehouseInitialMixin
 from .models import Warehouse
 
 
-class WarehouseTransferSourceForm(forms.Form):
+class WarehouseTransferSourceForm(SingleWarehouseInitialMixin, forms.Form):
     source_warehouse = forms.ModelChoiceField(
         label="Склад-отправитель",
         queryset=Warehouse.objects.all(),

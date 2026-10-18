@@ -13,8 +13,9 @@ from openpyxl import load_workbook
 from accounts.models import User
 from cash.models import CashRegister, CashTransaction
 from catalog.models import Brand, CD, Platform, ProductType, Tech
-from partners.models import Supplier
-from price.excel import (HEADER_ROW, MAIN_SHEET, META_SHEET, STOCK_HEADERS,
+from consignment.models import CDConsignmentStock
+from partners.models import Supplier, SalesPlatform
+from price.excel import (HEADER_ROW, MAIN_SHEET, META_SHEET, STOCK_HEADERS, LEGACY_STOCK_HEADERS,
     generate_procurement_customer_xlsx, generate_procurement_stock_xlsx, import_procurement_order_files)
 from price.services import create_procurement_price_list
 from pricing.models import SupplierCDPrice, SupplierTechPrice
@@ -73,7 +74,7 @@ class StockOrderTests(TestCase):
         book = load_workbook(BytesIO(content))
         for row in book[META_SHEET].iter_rows(values_only=True):
             if isinstance(row[0], int):
-                book[MAIN_SHEET].cell(row[0], 6, qty if row[1] == "cd" else tech)
+                book[MAIN_SHEET].cell(row[0], 8, qty if row[1] == "cd" else tech)
         if mutate:
             mutate(book)
         output = BytesIO()
@@ -89,38 +90,76 @@ class StockOrderTests(TestCase):
         return employee
 
     def test_export_has_only_saved_cost_delivery_and_quantity(self):
+        CDWarehouseStock.objects.create(cd=self.cd, warehouse=self.warehouse, quantity=2)
+        CDWarehouseStock.objects.create(cd=self.cd, warehouse=self.other_warehouse, quantity=3)
+        TechWarehouseStock.objects.create(tech=self.tech, warehouse=self.warehouse, quantity=4)
+        CDConsignmentStock.objects.create(cd=self.cd, warehouse=self.warehouse,
+            platform=SalesPlatform.objects.create(name="На реализации"), quantity=99)
+        self.cd.cost, self.tech.cost = Decimal("111.25"), Decimal("222.75")
+        self.cd.save(update_fields=("cost",))
+        self.tech.save(update_fields=("cost",))
         book = load_workbook(BytesIO(generate_procurement_stock_xlsx(price_list_id=self.price.pk, actor=self.user)))
         sheet = book[MAIN_SHEET]
         self.assertEqual(tuple(cell.value for cell in sheet[HEADER_ROW]), STOCK_HEADERS)
         self.assertEqual(
             [cell.value for cell in sheet[HEADER_ROW]
              if not sheet.column_dimensions[cell.column_letter].hidden],
-            [STOCK_HEADERS[index] for index in (0, 4, 5, 6)],
+            [STOCK_HEADERS[index] for index in (0, 1, 2, 6, 7, 8)],
         )
         self.assertEqual(book[META_SHEET].sheet_state, "veryHidden")
         rows = [row for row in book[META_SHEET].iter_rows(values_only=True) if isinstance(row[0], int)]
         self.assertEqual(len(rows), 2)
         for row, kind, _pk, article in rows:
             source = self.cd_source if kind == "cd" else self.tech_source
-            self.assertEqual(sheet.cell(row, 2).value, article)
+            self.assertEqual(sheet.cell(row, 2).value, 5 if kind == "cd" else 4)
+            self.assertEqual(Decimal(str(sheet.cell(row, 3).value)),
+                             Decimal("111.25") if kind == "cd" else Decimal("222.75"))
+            self.assertTrue(sheet.cell(row, 2).protection.locked)
+            self.assertTrue(sheet.cell(row, 3).protection.locked)
+            self.assertEqual(sheet.cell(row, 4).value, article)
             self.assertTrue(article.startswith("000"))
-            self.assertEqual(sheet.cell(row, 3).value, source.base_price_rub)
-            self.assertEqual(sheet.cell(row, 4).value, source.delivery_rub)
-            self.assertEqual(sheet.cell(row, 5).value, source.stock_unit_cost)
-            self.assertEqual(sheet.cell(row, 6).value, 0)
-            self.assertFalse(sheet.cell(row, 6).protection.locked)
-            self.assertTrue(sheet.cell(row, 5).protection.locked)
-            self.assertEqual(sheet.cell(row, 7).value, f"=E{row}*F{row}")
+            self.assertEqual(sheet.cell(row, 5).value, source.base_price_rub)
+            self.assertEqual(sheet.cell(row, 6).value, source.delivery_rub)
+            self.assertEqual(sheet.cell(row, 7).value, source.stock_unit_cost)
+            self.assertEqual(sheet.cell(row, 8).value, 0)
+            self.assertFalse(sheet.cell(row, 8).protection.locked)
+            self.assertTrue(sheet.cell(row, 7).protection.locked)
+            self.assertEqual(sheet.cell(row, 9).value, f"=G{row}*H{row}")
         text = " ".join(str(cell.value) for ws in book for row in ws for cell in row)
         self.assertNotIn("Цена предоплата", text)
         self.assertNotIn("Цена постоплата", text)
         book.close()
 
+    def test_current_stock_order_export_uses_order_costs_and_checks_access(self):
+        order = self.order(qty=3, tech=2)
+        edit_created_order(actor=self.user, order_id=order.pk, recipient="На склад", comment="После инвойса", lines=[
+            {"price_list_item_id": self.cd_source.pk, "prepayment_quantity": 1, "postpayment_quantity": 0},
+            {"price_list_item_id": self.tech_source.pk, "prepayment_quantity": 1, "postpayment_quantity": 0},
+        ])
+        url = reverse("orders:export", args=(order.pk,))
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        book = load_workbook(BytesIO(response.content))
+        sheet = book.active
+        self.assertEqual(tuple(cell.value for cell in sheet[4]),
+                         ("Наименование", "Количество", "Цена, ₽", "Сумма, ₽"))
+        self.assertEqual(tuple(cell.value for cell in sheet[5]), (self.cd.name, 1, 2050, 2050))
+        self.assertEqual(tuple(cell.value for cell in sheet[6]), (self.tech.name, 1, 3160, 3160))
+        self.assertEqual(sheet.cell(sheet.max_row, 4).value, 5210)
+        book.close()
+        self.assertContains(self.client.get(reverse("orders:detail", args=(order.pk,))), url)
+        employee = self.employee("orders.view_order_detail", "orders.view_orders")
+        self.client.force_login(employee)
+        self.assertEqual(self.client.get(url).status_code, 403)
+        self.assertNotContains(self.client.get(reverse("orders:list")), url)
+        employee.user_permissions.add(Permission.objects.get(content_type__app_label="price", codename="view_supplier_prices"))
+        self.assertEqual(self.client.get(url).status_code, 200)
+
     def test_import_and_creation_ignore_prices_edited_in_file(self):
         def change_prices(book):
             for row in book[META_SHEET].iter_rows(values_only=True):
                 if isinstance(row[0], int):
-                    for col in (3, 4, 5, 7):
+                    for col in (2, 3, 5, 6, 7, 9):
                         book[MAIN_SHEET].cell(row[0], col, 1)
         price, lines, purpose = import_procurement_order_files(
             {"stock": self.filled_stock_file(3, 2, change_prices)}, with_purpose=True)
@@ -141,7 +180,36 @@ class StockOrderTests(TestCase):
         with self.assertRaises(ValidationError):
             import_procurement_order_files({"stock": self.filled_stock_file(0)}, with_purpose=True)
         with self.assertRaisesMessage(ValidationError, "заголовки"):
-            import_procurement_order_files({"stock": self.filled_stock_file(mutate=lambda b: setattr(b[MAIN_SHEET]["F8"], "value", "Изменено"))}, with_purpose=True)
+            import_procurement_order_files({"stock": self.filled_stock_file(mutate=lambda b: setattr(b[MAIN_SHEET]["H8"], "value", "Изменено"))}, with_purpose=True)
+
+    def test_stock_info_is_current_when_downloaded_and_does_not_change_saved_purchase_cost(self):
+        before = load_workbook(BytesIO(generate_procurement_stock_xlsx(price_list_id=self.price.pk, actor=self.user)))
+        cd_row = next(row[0] for row in before[META_SHEET].iter_rows(values_only=True)
+                      if isinstance(row[0], int) and row[1] == "cd")
+        self.assertEqual(before[MAIN_SHEET].cell(cd_row, 2).value, 0)
+        self.assertEqual(before[MAIN_SHEET].cell(cd_row, 3).value, 0)
+        before.close()
+        CDWarehouseStock.objects.create(cd=self.cd, warehouse=self.warehouse, quantity=7)
+        self.cd.cost = Decimal("123.45")
+        self.cd.save(update_fields=("cost",))
+        after = load_workbook(BytesIO(generate_procurement_stock_xlsx(price_list_id=self.price.pk, actor=self.user)))
+        self.assertEqual(after[MAIN_SHEET].cell(cd_row, 2).value, 7)
+        self.assertEqual(Decimal(str(after[MAIN_SHEET].cell(cd_row, 3).value)), Decimal("123.45"))
+        self.assertEqual(after[MAIN_SHEET].cell(cd_row, 7).value, Decimal("2050"))
+        after.close()
+
+    def test_legacy_stock_file_without_inventory_columns_still_imports(self):
+        def old_layout(book):
+            sheet = book[MAIN_SHEET]
+            sheet.delete_cols(2, 2)
+            for column, header in enumerate(LEGACY_STOCK_HEADERS, 1):
+                sheet.cell(HEADER_ROW, column, header)
+        price, lines, purpose = import_procurement_order_files(
+            {"stock": self.filled_stock_file(3, 2, old_layout)}, with_purpose=True)
+        self.assertEqual(price.pk, self.price.pk)
+        self.assertEqual(purpose, "stock")
+        self.assertEqual({line["price_list_item_id"]: line["prepayment_quantity"] for line in lines},
+                         {self.cd_source.pk: 3, self.tech_source.pk: 2})
 
     def test_documents_cannot_be_confused_or_mixed(self):
         customer = generate_procurement_customer_xlsx(price_list_id=self.price.pk, actor=self.user)
@@ -160,7 +228,7 @@ class StockOrderTests(TestCase):
             if missing_meta:
                 book[META_SHEET].delete_rows(rows[-1][0].row)
             else:
-                book[MAIN_SHEET].cell(rows[0][0].value, 2, "Другой артикул")
+                book[MAIN_SHEET].cell(rows[0][0].value, 4, "Другой артикул")
         for missing_meta in (True, False):
             with self.subTest(missing_meta=missing_meta), self.assertRaises(ValidationError):
                 import_procurement_order_files({"stock": self.filled_stock_file(mutate=lambda b: damage(b, missing_meta))},

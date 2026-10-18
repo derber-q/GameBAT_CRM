@@ -8,6 +8,7 @@ from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.utils.http import content_disposition_header
+from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_GET, require_POST
 
 from core.decorators import permission_required_all, permission_required_any
@@ -76,6 +77,7 @@ def import_prices(request):
     """Прайсы поставщиков и закупочные версии."""
     can_view_supplier = request.user.is_superuser or request.user.has_perm("price.view_supplier_prices")
     can_view_details = request.user.is_superuser or request.user.has_perm("partners.view_supplier_details")
+    can_download_supplier = request.user.is_superuser or request.user.has_perm("price.download_supplier_template")
     suppliers = []
     if can_view_supplier or request.user.is_superuser or request.user.has_perm("price.upload_supplier_price"):
         for supplier in Supplier.objects.order_by("letter", "id"):
@@ -90,7 +92,8 @@ def import_prices(request):
         "procurement_form": ProcurementPriceCreateForm(),
         "suppliers": suppliers,
         "price_lists": ProcurementPriceList.objects.select_related("created_by").prefetch_related("items")[:30],
-        "can_download_supplier": request.user.is_superuser or request.user.has_perm("price.download_supplier_template"),
+        "can_download_supplier": can_download_supplier,
+        "can_download_supplier_prices": can_download_supplier and can_view_supplier,
         "can_upload_supplier": request.user.is_superuser or request.user.has_perm("price.upload_supplier_price"),
         "can_create_procurement": request.user.is_superuser or request.user.has_perm("price.create_procurement_price_list"),
         "can_export_stock": can_view_supplier and request.user.has_perm("price.export_procurement_price_list"),
@@ -169,6 +172,21 @@ def supplier_template_export(request, product_kind=None):
     return _xlsx_response(
         generate_supplier_template(actor=request.user, product_kind=product_kind),
         f"resource-supplier-{product_kind}-template.xlsx",
+    )
+
+
+@never_cache
+@require_GET
+@permission_required_all("price.download_supplier_template", "price.view_supplier_prices")
+def supplier_template_prefilled_export(request, supplier_id, product_kind):
+    if product_kind not in ("cd", "tech"):
+        raise Http404
+    supplier = get_object_or_404(Supplier, pk=supplier_id)
+    return _xlsx_response(
+        generate_supplier_template(
+            actor=request.user, product_kind=product_kind, supplier_id=supplier.pk,
+        ),
+        f"resource-supplier-{supplier.letter}-{product_kind}-template.xlsx",
     )
 
 

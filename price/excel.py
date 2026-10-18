@@ -7,6 +7,7 @@ from textwrap import wrap
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
+from django.db.models import Sum
 from django.utils import timezone
 from openpyxl import Workbook, load_workbook
 from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
@@ -392,9 +393,18 @@ def _style_supplier_template(sheet, *, group_rows, product_kind=None):
     sheet.page_setup.fitToHeight = 0
 
 
-def generate_supplier_template(*, actor, product_kind=None):
+def generate_supplier_template(*, actor, product_kind=None, supplier_id=None):
     if product_kind not in (None, "cd", "tech"):
         raise ValidationError("Выберите диски или технику.")
+    prices = {"cd": {}, "tech": {}}
+    if supplier_id is not None:
+        for kind, model, field in (
+            ("cd", SupplierCDPrice, "cd_id"), ("tech", SupplierTechPrice, "tech_id"),
+        ):
+            if product_kind is None or product_kind == kind:
+                prices[kind] = dict(model.objects.filter(
+                    supplier_id=supplier_id, price__gt=0,
+                ).values_list(field, "price"))
     workbook = Workbook()
     sheet = workbook.active
     sheet.title = MAIN_SHEET
@@ -414,7 +424,8 @@ def generate_supplier_template(*, actor, product_kind=None):
         for product in products:
             values = (
                 kind.upper(), product.pk, safe_text(product.sku), safe_text(product.name),
-                safe_text(product.cusa_ppsa_code) if kind == "cd" else None, None,
+                safe_text(product.cusa_ppsa_code) if kind == "cd" else None,
+                prices[kind].get(product.pk),
             )
             for column, value in enumerate(values, 1):
                 sheet.cell(excel_row, column, value)
@@ -432,7 +443,10 @@ def generate_supplier_template(*, actor, product_kind=None):
         "price_column": 6,
         "product_kind": product_kind or "",
     }, rows=metadata)
-    logger.info("Шаблон поставщика сформирован: user_id=%s rows=%s", actor.pk, len(metadata))
+    logger.info(
+        "Шаблон поставщика сформирован: user_id=%s supplier_id=%s rows=%s",
+        actor.pk, supplier_id, len(metadata),
+    )
     return _bytes(workbook)
 
 
@@ -547,8 +561,12 @@ def generate_procurement_customer_xlsx(*, price_list_id, actor, product_kind=Non
     return _bytes(workbook)
 
 
-STOCK_HEADERS = (
+LEGACY_STOCK_HEADERS = (
     "Товар", "Артикул", "Закупочная база", "Доставка",
+    "Себестоимость с доставкой", "Количество к заказу", "Сумма",
+)
+STOCK_HEADERS = (
+    "Товар", "Остаток всех складов", "Текущая себестоимость", "Артикул", "Закупочная база", "Доставка",
     "Себестоимость с доставкой", "Количество к заказу", "Сумма",
 )
 
@@ -560,11 +578,17 @@ def generate_procurement_stock_xlsx(*, price_list_id, actor):
         raise ValidationError("Закупочный прайс не найден.") from exc
     workbook, sheet = _base_workbook(
         title=f"Заказ на склад · Прайс №{price_list.pk}",
-        subtitle="Заполните количество к заказу. Стоимость включает доставку, без наценки.", columns=7,
+        subtitle="Заполните количество к заказу. Остаток и текущая себестоимость — на дату формирования.", columns=9,
     )
     items = {(item.product_kind, item.product_id): item for item in price_list.items.select_related(
         "cd__platform", "tech__brand", "tech__product_type"
     ) if not item.product.is_archived}
+    stock_quantities = {}
+    for kind, model, field in (("cd", CDWarehouseStock, "cd_id"), ("tech", TechWarehouseStock, "tech_id")):
+        product_ids = [product_id for product_kind, product_id in items if product_kind == kind]
+        stock_quantities[kind] = dict(model.objects.filter(**{f"{field}__in": product_ids}).values(field).annotate(
+            total=Sum("quantity"),
+        ).values_list(field, "total"))
     groups = supplier_product_groups(
         [item.tech for item in items.values() if item.product_kind == "tech"],
         [item.cd for item in items.values() if item.product_kind == "cd"],
@@ -577,25 +601,27 @@ def generate_procurement_stock_xlsx(*, price_list_id, actor):
         row += 1
         for product in products:
             item = items[(kind, product.pk)]
-            values = (safe_text(item.product_name_snapshot), safe_text(item.article_snapshot),
-                      item.base_price_rub, item.delivery_rub, item.stock_unit_cost, 0, f"=E{row}*F{row}")
+            values = (safe_text(item.product_name_snapshot), stock_quantities[kind].get(product.pk, 0), product.cost,
+                      safe_text(item.article_snapshot), item.base_price_rub, item.delivery_rub,
+                      item.stock_unit_cost, 0, f"=G{row}*H{row}")
             for column, value in enumerate(values, 1):
                 sheet.cell(row, column, value)
-            sheet.cell(row, 2).number_format = "@"
-            for column in (3, 4, 5, 7):
+            sheet.cell(row, 2).number_format = "0"
+            sheet.cell(row, 4).number_format = "@"
+            for column in (3, 5, 6, 7, 9):
                 sheet.cell(row, column).number_format = MONEY_FORMAT
             metadata.append((row, kind, product.pk, safe_text(item.article_snapshot)))
             product_rows.append(row)
             row += 1
     end = max(HEADER_ROW + 1, row - 1)
-    sheet.cell(end + 2, 5, "Всего единиц")
-    sheet.cell(end + 2, 6, f"=SUM(F{HEADER_ROW + 1}:F{end})")
-    sheet.cell(end + 3, 5, "Итого с доставкой")
-    sheet.cell(end + 3, 7, f"=SUM(G{HEADER_ROW + 1}:G{end})").number_format = MONEY_FORMAT
-    _style_table(sheet, STOCK_HEADERS, editable_columns=(6,), editable_end_row=end)
-    _style_group_rows(sheet, group_rows, columns=7)
+    sheet.cell(end + 2, 7, "Всего единиц")
+    sheet.cell(end + 2, 8, f"=SUM(H{HEADER_ROW + 1}:H{end})")
+    sheet.cell(end + 3, 7, "Итого с доставкой")
+    sheet.cell(end + 3, 9, f"=SUM(I{HEADER_ROW + 1}:I{end})").number_format = MONEY_FORMAT
+    _style_table(sheet, STOCK_HEADERS, editable_columns=(8,), editable_end_row=end)
+    _style_group_rows(sheet, group_rows, columns=9)
     for group_row in group_rows:
-        sheet.merge_cells(start_row=group_row, start_column=1, end_row=group_row, end_column=7)
+        sheet.merge_cells(start_row=group_row, start_column=1, end_row=group_row, end_column=9)
         sheet.row_dimensions[group_row].height = 30
     validation = DataValidation(type="whole", operator="between", formula1="0", formula2="2147483647",
                                 allow_blank=True)
@@ -603,14 +629,15 @@ def generate_procurement_stock_xlsx(*, price_list_id, actor):
     validation.error = "Введите целое неотрицательное количество."
     sheet.add_data_validation(validation)
     for product_row in product_rows:
-        validation.add(f"F{product_row}")
+        validation.add(f"H{product_row}")
         sheet.cell(product_row, 1).alignment = Alignment(vertical="center", wrap_text=True)
         sheet.row_dimensions[product_row].height = max(
             30, (len(wrap(str(sheet.cell(product_row, 1).value), width=48)) or 1) * 16 + 8,
         )
-    for column, width in (("A", 52), ("B", 20), ("C", 21), ("D", 18), ("E", 25), ("F", 22), ("G", 22)):
+    for column, width in (("A", 52), ("B", 14), ("C", 20), ("D", 20), ("E", 21), ("F", 18),
+                          ("G", 25), ("H", 22), ("I", 22)):
         sheet.column_dimensions[column].width = width
-    for column in ("B", "C", "D"):
+    for column in ("D", "E", "F"):
         sheet.column_dimensions[column].hidden = True
     sheet.row_dimensions[HEADER_ROW].height = 42
     sheet.sheet_view.showGridLines = False
@@ -621,7 +648,7 @@ def generate_procurement_stock_xlsx(*, price_list_id, actor):
     sheet.page_setup.fitToWidth = 1
     sheet.page_setup.fitToHeight = 0
     sheet.print_title_rows = f"1:{HEADER_ROW}"
-    sheet.print_area = f"A1:G{end + 3}"
+    sheet.print_area = f"A1:I{end + 3}"
     _meta_sheet(workbook, document_type="resource_stock_procurement", values={
         "price_list_token": price_list.public_token, "generated_at": timezone.now().isoformat(),
         "main_sheet": MAIN_SHEET,
@@ -634,7 +661,9 @@ def generate_procurement_stock_xlsx(*, price_list_id, actor):
 def import_stock_procurement_order_xlsx(upload):
     workbook, sheet, values, technical_rows = _load_uploaded_workbook(upload, "resource_stock_procurement")
     try:
-        _require_headers(sheet, STOCK_HEADERS)
+        is_legacy = tuple(sheet.cell(HEADER_ROW, column).value for column in range(1, 8)) == LEGACY_STOCK_HEADERS
+        _require_headers(sheet, LEGACY_STOCK_HEADERS if is_legacy else STOCK_HEADERS)
+        article_column, quantity_column = (2, 6) if is_legacy else (4, 8)
         try:
             price_list = ProcurementPriceList.objects.prefetch_related("items").get(
                 public_token=values.get("price_list_token"),
@@ -657,10 +686,10 @@ def import_stock_procurement_order_xlsx(upload):
             if item is None:
                 raise ValidationError(f"Строка {excel_row}: товар отсутствует в сохранённом прайсе.")
             if (sheet.cell(excel_row, 1).value != safe_text(item.product_name_snapshot)
-                    or str(sheet.cell(excel_row, 2).value or "") != safe_text(item.article_snapshot)
+                    or str(sheet.cell(excel_row, article_column).value or "") != safe_text(item.article_snapshot)
                     or str(_article or "") != safe_text(item.article_snapshot)):
                 raise ValidationError(f"Строка {excel_row}: название, артикул или порядок товаров изменён. Заполняйте только количество.")
-            quantity = _quantity(sheet.cell(excel_row, 6).value, excel_row=excel_row)
+            quantity = _quantity(sheet.cell(excel_row, quantity_column).value, excel_row=excel_row)
             if quantity > 2147483647:
                 raise ValidationError(f"Строка {excel_row}: слишком большое количество.")
             if quantity:
@@ -668,7 +697,8 @@ def import_stock_procurement_order_xlsx(upload):
                               "postpayment_quantity": 0})
         visible_rows = {row for row in range(HEADER_ROW + 1, sheet.max_row + 1)
                         if sheet.cell(row, 1).value not in (None, "")
-                        and (sheet.cell(row, 2).value not in (None, "") or sheet.cell(row, 6).value is not None)}
+                        and (sheet.cell(row, article_column).value not in (None, "")
+                             or sheet.cell(row, quantity_column).value is not None)}
         if visible_rows != seen_rows:
             raise ValidationError("Состав видимого и технического листов не совпадает. Сохраните строки исходного шаблона.")
         if not lines:

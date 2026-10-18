@@ -31,7 +31,7 @@
     quantity.value = single ? '1' : '';
     quantity.max = row.dataset.quantity;
     quantity.readOnly = single;
-    warehouse.value = ''; payment.value = '';
+    warehouse.value = warehouse.dataset.defaultWarehouse || ''; payment.value = '';
     get('return-field').hidden = action !== 'return'; warehouse.disabled = action !== 'return';
     get('payment-field').hidden = action !== 'sold'; payment.disabled = action !== 'sold';
     summary(); dialog.showModal();

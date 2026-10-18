@@ -1,5 +1,6 @@
 from django import forms
 
+from warehouse.form_defaults import SingleWarehouseInitialMixin
 from warehouse.models import Warehouse
 
 
@@ -38,7 +39,7 @@ class ProcurementOrderHeaderForm(forms.Form):
     comment = forms.CharField(label="Комментарий", required=False, widget=forms.Textarea(attrs={"rows": 3}))
 
 
-class PaymentWarehouseForm(forms.Form):
+class PaymentWarehouseForm(SingleWarehouseInitialMixin, forms.Form):
     warehouse = forms.ModelChoiceField(label="Склад оплаты", queryset=Warehouse.objects.all(), required=False)
 
 

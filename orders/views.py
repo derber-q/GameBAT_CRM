@@ -3,7 +3,11 @@ from uuid import uuid4
 
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied, ValidationError
+from django.db import transaction
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.utils.http import content_disposition_header
+from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_GET, require_POST
 
 from core.decorators import permission_required_all, permission_required_any
@@ -12,6 +16,7 @@ from price.models import ProcurementPriceListItem
 
 from .forms import ProcurementOrderHeaderForm, ProcurementOrderUploadForm, ReceivingAdjustmentForm
 from .models import CustomerProcurementOrder, SupplierOrderBatch
+from .order_excel import order_xlsx
 from .trips import can_manage_trips
 from .services import (
     advance_order_status,
@@ -72,6 +77,7 @@ def order_list(request):
             if can_generate_batches else []
         ),
         "can_create": request.user.is_superuser or request.user.has_perm("orders.create_order"),
+        "can_export": request.user.has_perm("orders.view_order_detail"),
         "can_generate_batches": can_generate_batches,
         "can_create_trip": can_manage_trips(request.user),
         "trip_creation_key": str(uuid4()),
@@ -97,6 +103,23 @@ def order_upload(request):
             }
             return redirect("orders:preview")
     return render(request, "orders/upload.html", {"form": form})
+
+
+@never_cache
+@require_GET
+@permission_required_any("orders.view_order_detail")
+def order_export(request, pk):
+    with transaction.atomic():
+        order = get_object_or_404(CustomerProcurementOrder, pk=pk)
+        _require_stock_prices(request.user, order.purpose)
+        items = list(order.items.only(
+            "order_id", "product_name_snapshot", "prepayment_quantity", "postpayment_quantity",
+            "prepayment_unit_price", "postpayment_unit_price",
+        ).order_by("product_name_snapshot", "pk"))
+    response = HttpResponse(order_xlsx(order=order, items=items),
+                            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    response["Content-Disposition"] = content_disposition_header(True, f"zakaz_{pk}.xlsx")
+    return response
 
 
 @permission_required_any("orders.create_order")

@@ -6,14 +6,14 @@
   <div id="sales-group-{{ group.kind }}" class="collapsible-content">
   <div class="table-scroll"><table class="sales-list-table">
     <thead><tr>
-      <th>ID / Дата</th><th>Примечание</th><th>Склад / площадка</th><th>Позиций / единиц</th>
+      <th>ID / Дата</th><th>Примечание</th>{% if group.kind == 'wholesale' %}<th>Склад / площадка</th><th>Позиций / единиц</th>{% else %}<th>Товары</th>{% endif %}
       <th class="numeric">Сумма</th><th>Оплата</th><th>Статус заказа</th><th>Статус оплаты</th><th>Сотрудник</th>
       {% if state == 'completed' %}<th>Завершена</th>{% endif %}
       {% if state == 'cancelled' %}<th>Возвращено</th><th>Отменена / отменил</th>{% endif %}
     </tr></thead>
     <tbody>
       {% for row in group.rows %}{% include "sales/_list_row.html" %}{% endfor %}
-      <tr data-sale-empty {% if group.rows %}hidden{% endif %}><td colspan="11" class="empty-cell">Нет продаж.</td></tr>
+      <tr data-sale-empty {% if group.rows %}hidden{% endif %}><td colspan="{{ group.column_count }}" class="empty-cell">Нет продаж.</td></tr>
     </tbody>
   </table></div>
   {% if group.page.has_other_pages %}<nav class="heading-actions" aria-label="Страницы: {{ group.label }}">
