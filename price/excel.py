@@ -16,14 +16,15 @@ from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.datavalidation import DataValidation
 
 from catalog.models import CD, Tech
-from catalog.product_ordering import tech_price_order
+from catalog.nomenclature_grouping import nomenclature_product_groups
+from catalog.product_ordering import platform_order_key, tech_price_order
+from catalog.newness import customer_product_name
 from partners.models import Supplier
 from pricing.models import SupplierCDPrice, SupplierTechPrice
 from warehouse.models import CDWarehouseStock, TechWarehouseStock, Warehouse
 from core.excel_layout import wrapped_text_height
 
 from .models import PriceDocumentSettings, ProcurementPriceList
-from .supplier_ordering import supplier_product_groups
 
 logger = logging.getLogger("gamebat.business")
 TEMPLATE_VERSION = "1"
@@ -184,7 +185,7 @@ def _cd_rows(warehouse, *, price_field):
         if price is None:
             skipped += 1
             continue
-        entries.append((_norm(product.platform.name if product.platform_id else ""), product, stock.quantity, price))
+        entries.append((platform_order_key(product.platform if product.platform_id else ''), product, stock.quantity, price))
     entries.sort(key=lambda row: (row[0], _norm(row[1].name), row[1].pk))
     groups = []
     for platform, product, quantity, price in entries:
@@ -283,17 +284,21 @@ def generate_wholesale_price_xlsx(*, warehouse_id, actor):
     excel_row = HEADER_ROW + 1
     group_rows = []
     product_rows = []
+    new_product_rows = []
+    generated_at = timezone.now()
     for group_title, products in groups:
         group_rows.append(excel_row)
         sheet.cell(excel_row, 1, safe_text(group_title))
         excel_row += 1
         for kind, product, quantity, price in products:
             product_rows.append(excel_row)
-            sheet.cell(excel_row, 1, safe_text(product.name))
+            sheet.cell(excel_row, 1, safe_text(customer_product_name(product.name, product, at=generated_at)))
             sheet.cell(excel_row, 2, price).number_format = MONEY_FORMAT
             sheet.cell(excel_row, 3, quantity)
             sheet.cell(excel_row, 4, 0)
             metadata.append((excel_row, kind, product.pk, safe_text(product.sku)))
+            if product.created_at and product.created_at <= generated_at and product.newness_until and generated_at < product.newness_until:
+                new_product_rows.append(excel_row)
             excel_row += 1
     end = max(HEADER_ROW + 1, excel_row - 1)
     totals = end + 2
@@ -315,6 +320,9 @@ def generate_wholesale_price_xlsx(*, warehouse_id, actor):
         editable_end_row=end,
     )
     _style_group_rows(sheet, group_rows, columns=4)
+    for row in new_product_rows:
+        for column in range(1, 5):
+            sheet.cell(row, column).fill = PatternFill('solid', fgColor='E2F0D9')
     _meta_sheet(workbook, document_type="resource_wholesale", values={
         "warehouse_id": warehouse.pk, "generated_at": timezone.now().isoformat(), "main_sheet": MAIN_SHEET,
     }, rows=metadata)
@@ -408,10 +416,10 @@ def generate_supplier_template(*, actor, product_kind=None, supplier_id=None):
     workbook = Workbook()
     sheet = workbook.active
     sheet.title = MAIN_SHEET
-    groups = supplier_product_groups(
+    groups = nomenclature_product_groups(
         Tech.objects.active().filter(exclude_from_supplier_template=False).select_related("brand", "product_type")
         if product_kind != "cd" else [],
-        CD.objects.active().filter(exclude_from_supplier_template=False).select_related("platform")
+        CD.objects.active().filter(exclude_from_supplier_template=False).select_related("platform", "game_series")
         if product_kind != "tech" else [],
     )
     metadata = []
@@ -463,30 +471,25 @@ def generate_procurement_customer_xlsx(*, price_list_id, actor, product_kind=Non
     )
     metadata = []
     rows = [
-        item for item in price_list.items.select_related("cd__platform", "tech__brand", "tech__product_type")
+        item for item in price_list.items.select_related("cd__platform", "cd__game_series", "tech__brand", "tech__product_type")
         if not item.product.is_archived and (product_kind is None or item.product_kind == product_kind)
     ]
-    if product_kind is None:
-        groups = [("", rows)]
-    else:
-        items = {(item.product_kind, item.product_id): item for item in rows}
-        groups = [
-            (title, [items[(kind, product.pk)] for product in products])
-            for kind, title, products in supplier_product_groups(
-                [item.tech for item in rows if item.product_kind == "tech"],
-                [item.cd for item in rows if item.product_kind == "cd"],
-            )
-        ]
+    groups = nomenclature_product_groups(
+        [item for item in rows if item.product_kind == "tech"],
+        [item for item in rows if item.product_kind == "cd"],
+        product_of=lambda item: item.product,
+    )
     excel_row = HEADER_ROW + 1
-    group_rows, product_rows = [], []
-    for title, group_items in groups:
+    group_rows, product_rows, new_product_rows = [], [], []
+    generated_at = timezone.now()
+    for _kind, title, group_items in groups:
         if title:
             sheet.cell(excel_row, 1, safe_text(title))
             group_rows.append(excel_row)
             excel_row += 1
         for item in group_items:
             values = (
-                safe_text(item.product_name_snapshot), item.prepayment_price_rub, 0,
+                safe_text(customer_product_name(item.product_name_snapshot, item.product, at=generated_at)), item.prepayment_price_rub, 0,
                 item.postpayment_price_rub, 0,
             )
             for column, value in enumerate(values, 1):
@@ -495,6 +498,8 @@ def generate_procurement_customer_xlsx(*, price_list_id, actor, product_kind=Non
             sheet.cell(excel_row, 4).number_format = MONEY_FORMAT
             metadata.append((excel_row, item.product_kind, item.product_id, safe_text(item.article_snapshot)))
             product_rows.append(excel_row)
+            if item.product.created_at and item.product.created_at <= generated_at and item.product.newness_until and generated_at < item.product.newness_until:
+                new_product_rows.append(excel_row)
             excel_row += 1
     end = max(HEADER_ROW + 1, excel_row - 1)
     totals = end + 2
@@ -524,10 +529,15 @@ def generate_procurement_customer_xlsx(*, price_list_id, actor, product_kind=Non
         editable_end_row=end,
     )
     _style_group_rows(sheet, group_rows, columns=5)
+    for row in new_product_rows:
+        for column in range(1, 6):
+            sheet.cell(row, column).fill = PatternFill('solid', fgColor='E2F0D9')
     for row in group_rows:
         sheet.merge_cells(start_row=row, start_column=1, end_row=row, end_column=5)
         sheet.cell(row, 1).alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
-        sheet.row_dimensions[row].height = 28
+        sheet.row_dimensions[row].height = wrapped_text_height(
+            sheet.cell(row, 1).value, 130, font_size=11, min_height=28,
+        )
     sheet.row_dimensions[HEADER_ROW].height = 38
     sheet.column_dimensions["A"].width = 70
     sheet.column_dimensions["C"].width = 16
@@ -581,7 +591,7 @@ def generate_procurement_stock_xlsx(*, price_list_id, actor):
         subtitle="Заполните количество к заказу. Остаток и текущая себестоимость — на дату формирования.", columns=9,
     )
     items = {(item.product_kind, item.product_id): item for item in price_list.items.select_related(
-        "cd__platform", "tech__brand", "tech__product_type"
+        "cd__platform", "cd__game_series", "tech__brand", "tech__product_type"
     ) if not item.product.is_archived}
     stock_quantities = {}
     for kind, model, field in (("cd", CDWarehouseStock, "cd_id"), ("tech", TechWarehouseStock, "tech_id")):
@@ -589,7 +599,7 @@ def generate_procurement_stock_xlsx(*, price_list_id, actor):
         stock_quantities[kind] = dict(model.objects.filter(**{f"{field}__in": product_ids}).values(field).annotate(
             total=Sum("quantity"),
         ).values_list(field, "total"))
-    groups = supplier_product_groups(
+    groups = nomenclature_product_groups(
         [item.tech for item in items.values() if item.product_kind == "tech"],
         [item.cd for item in items.values() if item.product_kind == "cd"],
     )
@@ -622,7 +632,9 @@ def generate_procurement_stock_xlsx(*, price_list_id, actor):
     _style_group_rows(sheet, group_rows, columns=9)
     for group_row in group_rows:
         sheet.merge_cells(start_row=group_row, start_column=1, end_row=group_row, end_column=9)
-        sheet.row_dimensions[group_row].height = 30
+        sheet.row_dimensions[group_row].height = wrapped_text_height(
+            sheet.cell(group_row, 1).value, 130, font_size=11, min_height=30,
+        )
     validation = DataValidation(type="whole", operator="between", formula1="0", formula2="2147483647",
                                 allow_blank=True)
     validation.showErrorMessage = True
@@ -957,6 +969,7 @@ def import_procurement_order_xlsx(upload, *, product_kind=None, allow_empty=Fals
         items = {(item.product_kind, item.product_id): item for item in price_list.items.all()}
         lines = []
         seen = set()
+        seen_rows = set()
         for excel_row, kind, product_id, _article in technical_rows:
             try:
                 excel_row, product_id = int(excel_row), int(product_id)
@@ -966,11 +979,17 @@ def import_procurement_order_xlsx(upload, *, product_kind=None, allow_empty=Fals
             if key in seen:
                 raise ValidationError("В техническом листе обнаружен повтор товара.")
             seen.add(key)
+            if excel_row <= HEADER_ROW or excel_row > sheet.max_row or excel_row in seen_rows:
+                raise ValidationError("Технические номера строк файла повреждены.")
+            seen_rows.add(excel_row)
             if kind not in ("cd", "tech") or (file_kind and kind != file_kind):
                 raise ValidationError("В клиентском прайсе обнаружен товар другого типа.")
             item = items.get(key)
             if item is None:
                 raise ValidationError(f"Строка {excel_row}: товар отсутствует в сохранённом прайсе.")
+            if (sheet.cell(excel_row, 1).value not in (safe_text(item.product_name_snapshot), safe_text('🌟 ' + item.product_name_snapshot))
+                    or str(_article or "") != safe_text(item.article_snapshot)):
+                raise ValidationError(f"Строка {excel_row}: товар не соответствует сохранённому прайсу. Заполняйте только количество.")
             if scope and kind != scope:
                 continue
             prepayment_quantity = _quantity(sheet.cell(excel_row, 3).value, excel_row=excel_row)

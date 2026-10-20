@@ -1,5 +1,7 @@
 # Карта кода для сопровождения
 
+Новые точки расширения каталога и закупок от 20.10.2026: [catalog_procurement_controls.md](catalog_procurement_controls.md). Проверки: `catalog.test_supplier_newness`, `price.test_supplier_newness_rounding` и `catalog/test_product_options_js.cjs`. Реальный Chromium запускается отдельно: `.venv\Scripts\python.exe manage.py test catalog.features_browser_checks --settings=catalog.newness_browser_settings`; используется отдельная тестовая БД, без запуска интеграционного worker.
+
 ## Где менять поведение
 
 | Задача | Файлы для первичного изучения |
@@ -46,6 +48,12 @@
 В формах операций единственный склад выбирается автоматически. Django-формы используют `SingleWarehouseInitialMixin` из `warehouse/form_defaults.py`, обычные списки в шаблонах — `single_warehouse_id` из общего контекста. Правило проверяет все склады в базе, сохраняет отправленные и заранее заданные значения и отключается при появлении второго склада. К фильтрам отчётов правило не применяется.
 
 Сворачивание привязывает кнопку к элементу по `aria-controls`, меняет `aria-expanded` и `hidden`. Ошибка в ранней инициализации общего `app.js` может отключить все последующие обработчики. Регрессия отсутствующего фильтра серии покрыта `core/test_collapse_js.cjs`.
+
+После AJAX-замены строки продажи вызывается `window.GameBAT.attachCollapseControls()`: она подключает сворачивание новых элементов и не добавляет повторные обработчики прежним кнопкам. Состояния Маркета для продаж готовит `sales/market_controls.py` с общей загрузкой метаданных, документов и последних запросов; POST из продажи обслуживает `sales/market_views.py` через существующие сервисы очереди и документов Маркета.
+
+Готовность к отгрузке из продажи отправляется обычной POST-формой без подтверждения. `static/js/sale-market-actions.js` делегирует подтверждение только для `data-market-action="cancel"`, используя один диалог на страницу. После подтверждения отправляется исходная форма конкретного заказа; Escape и «Не отменять» не создают запрос. Сервер требует `confirm=yes` только для отмены. У кнопок нет выпадающего меню, флажков и статического текста с номером/статусом Маркета.
+
+`static/js/sale-market-print.js` делегирует `data-market-print` в POST `sales:market_print`, используя UUID запроса и GET `sales:market_print_status`. Браузер только наблюдает за заданием. `sales/label_printing.py` проверяет PDF 58×40 мм и печатает через Windows GDI; `run_label_print_worker` обрабатывает `MarketPrintJob`. `static/js/sale-market-scan.js` регистрируется в `window.GameBAT.registerGlobalBarcodeHandler` только для незавершённых продаж. `sales/market_fulfillment.py` хранит прогресс состава и защищает HTTP-повторы, печать и готовность. Контракт и проверяемые границы: [сборка сканером](market_scan_fulfillment.md). Старые `market_label`/`market_label_status` остаются внутренними маршрутами запроса официального PDF и не выполняют физическую печать.
 
 AJAX-сохранение цен находится в исторически названном `pricing-scroll.js`; имя не означает, что он только восстанавливает прокрутку. Он отправляет FormData, показывает состояние и учитывает новые правки во время запроса. В модальных формах CSS `display:grid` может переопределять HTML `hidden`, поэтому проверять существующие специальные правила.
 

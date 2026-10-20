@@ -64,7 +64,7 @@ class ProcurementPricingTests(TestCase):
 
     def test_prepayment_is_authoritative_and_markup_is_derived_on_server(self):
         self.update(self.rows(price_source="prepayment", prepayment="2000.01", markup="999", postpayment="1"))
-        self.assert_prices("965.01", "2000.01", "2080.01")
+        self.assert_prices("975", "2010", "2090")
 
     def test_postpayment_is_authoritative_and_both_other_values_are_derived(self):
         self.update(self.rows(price_source="postpayment", postpayment="3100", prepayment="1", markup="999"))
@@ -76,14 +76,14 @@ class ProcurementPricingTests(TestCase):
 
     def test_original_markup_editing_still_works(self):
         self.update(self.rows(markup="0.01", delivery="35.25"))
-        self.assert_prices("0.01", "1035.26", "1095.26")
+        self.assert_prices("4.75", "1040", "1100")
 
     def test_invalid_final_prices_and_unknown_source_do_not_write(self):
         for changes in (
             {"price_source": "prepayment", "prepayment": "1034.99"},
             {"price_source": "prepayment", "prepayment": "NaN"},
             {"price_source": "prepayment", "prepayment": "1000000000000000000"},
-            {"price_source": "postpayment", "postpayment": "2060"},
+            {"price_source": "postpayment", "postpayment": "2070"},
             {"price_source": "postpayment", "postpayment": "60"},
             {"price_source": "other"},
         ):
@@ -105,7 +105,7 @@ class ProcurementPricingTests(TestCase):
 
     def test_invalid_later_row_rolls_back_earlier_row(self):
         rows = self.rows(price_source="prepayment", prepayment="2000")
-        rows[self.items[1].pk].update(price_source="postpayment", postpayment="2060")
+        rows[self.items[1].pk].update(price_source="postpayment", postpayment="2070")
         with self.assertRaises(ValidationError):
             self.update(rows)
         self.assert_prices("0", "1035", "1095")
@@ -117,7 +117,7 @@ class ProcurementPricingTests(TestCase):
             "pricing_rows": json.dumps(self.rows(price_source="postpayment", postpayment="2080.01")),
         })
         self.assertRedirects(response, reverse("price:procurement_detail", args=(self.price_list.pk,)))
-        self.assert_prices("965.01", "2000.01", "2080.01")
+        self.assert_prices("975", "2010", "2090")
 
     def test_malformed_json_or_wrong_composition_does_not_write(self):
         self.client.force_login(self.user)
@@ -135,7 +135,7 @@ class ProcurementPricingTests(TestCase):
                 for name, value in (("markup", "10.25"), ("delivery", "35"))}
         response = self.client.post(reverse("price:procurement_update", args=(self.price_list.pk,)), data)
         self.assertEqual(response.status_code, 302)
-        self.assert_prices("10.25", "1045.25", "1105.25")
+        self.assert_prices("15", "1050", "1110")
 
     def test_delivery_only_user_cannot_change_final_price_through_json(self):
         worker = User.objects.create_user("delivery-only")
@@ -152,7 +152,7 @@ class ProcurementPricingTests(TestCase):
         worker.user_permissions.add(*Permission.objects.filter(codename__in=("view_price_page", "change_procurement_delivery")))
         self.client.force_login(worker)
         response = self.client.get(reverse("price:procurement_detail", args=(self.price_list.pk,)))
-        self.assertContains(response, "procurement-pricing.js?v=20261013-4")
+        self.assertContains(response, "procurement-pricing.js?v=20261020-1")
         self.assertContains(response, 'class="compact-input danger-text" name="markup_', count=2)
         self.assertContains(response, 'data-base="1000.00"')
         self.assertContains(response, f'name="prepayment_{self.items[0].pk}" value="1035.00"')
@@ -182,8 +182,9 @@ class ProcurementPricingTests(TestCase):
         self.update(rows, negative_markup_confirmed=True)
         item = self.items[1]
         item.refresh_from_db()
-        self.assertEqual(item.markup_rub, Decimal("-0.01"))
-        self.assertEqual(item.prepayment_price_rub, Decimal("1034.99"))
+        self.assertEqual(item.original_markup_rub, Decimal('-0.01'))
+        self.assertEqual(item.markup_rub, Decimal("5"))
+        self.assertEqual(item.prepayment_price_rub, Decimal("1040"))
         self.assertEqual(ProcurementPricePreference.objects.get(cd=item.cd).markup_rub, Decimal("-0.01"))
 
     def test_negative_markup_from_either_final_price_is_allowed_after_confirmation(self):

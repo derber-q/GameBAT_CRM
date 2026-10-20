@@ -5,9 +5,9 @@
 {% block content %}
 <div class="page-heading">
   <div><p class="eyebrow">Обязательный этап перед балансом</p><h1>Проверка цен поставки №{{ supply.pk }}</h1><p class="muted">Пока вы не подтвердите эту страницу, количество на складе и себестоимость карточек не изменятся.</p></div>
-  <a class="button button-secondary" href="{% url 'supplies:detail' supply.pk %}">К поставке</a>
+  <div class="heading-actions"><a class="button button-secondary" href="{% url 'supplies:edit' supply.pk %}">Редактировать состав</a><a class="button button-secondary" href="{% url 'supplies:detail' supply.pk %}">К поставке</a></div>
 </div>
-<form method="post" class="stacked-form">{% csrf_token %}
+<form method="post" class="stacked-form">{% csrf_token %}<input type="hidden" name="expected_revision_number" value="{{ supply.revision_number|unlocalize }}">
   <section class="panel table-panel">
     <div class="alert alert-info">Предупреждения о низких ценах не блокируют сохранение. Они рассчитаны по новой себестоимости.</div>
     <div class="table-scroll"><table><thead><tr><th>Товар</th><th class="numeric">Остаток до / после</th><th class="numeric">Старая / новая себестоимость</th><th>Опт / наценка, ₽</th><th>Цена Avito</th><th>Наценка Avito</th><th>Цена Яндекс</th><th>Наценка Яндекс</th></tr></thead><tbody>

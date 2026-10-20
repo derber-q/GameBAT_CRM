@@ -275,20 +275,25 @@ class ConsignmentServiceTests(TestCase):
         self.warehouse_stock.refresh_from_db()
         self.assertEqual(self.warehouse_stock.quantity, 9)
 
-    def test_transfer_page_shows_readonly_cost_next_to_receivable(self):
+    def test_transfer_page_shows_readonly_cost_and_wholesale_next_to_receivable(self):
+        self.product.wholesale_price = Decimal("2800.25")
+        self.product.save(update_fields=("wholesale_price",))
+        self.tech.wholesale_price = Decimal("0")
+        self.tech.save(update_fields=("wholesale_price",))
         self.client.force_login(self.user)
         response = self.client.get(reverse("consignment:transfer"))
 
         self.assertContains(
             response,
-            '<th class="numeric">Себестоимость</th><th>Магазин получает за единицу</th>',
+            '<th class="numeric">Себестоимость</th><th class="numeric">Оптовая цена</th><th>Магазин получает за единицу</th>',
             html=True,
         )
         self.assertNotContains(response, 'name="cost"')
+        self.assertNotContains(response, 'name="wholesale_price"')
         self.assertContains(response, "data-consignment-barcode-feedback")
         self.assertContains(response, "data-consignment-barcode-input")
         self.assertContains(response, "data-consignment-barcode-add")
-        self.assertContains(response, "consignment-transfer.js?v=consignment-barcode-2")
+        self.assertContains(response, "consignment-transfer.js?v=consignment-wholesale-1")
 
         failed_response = self.client.post(reverse("consignment:transfer"), {
             "warehouse": self.warehouse.pk,
@@ -299,12 +304,17 @@ class ConsignmentServiceTests(TestCase):
             "quantity": [1, 999],
             "receivable_per_unit": ["2500", "3500"],
             "cost": ["0.01", "0.01"],
+            "wholesale_price": ["0.01", "0.01"],
         })
         self.assertEqual(failed_response.status_code, 200)
         self.assertContains(failed_response, '"cost": "2400.00"')
         self.assertContains(failed_response, '"cost": "3000.00"')
+        self.assertContains(failed_response, '"wholesale_price": "2800.25"')
+        self.assertContains(failed_response, '"wholesale_price": "0.00"')
 
     def test_transfer_autocomplete_returns_current_cost_for_cd_and_tech(self):
+        self.product.wholesale_price = Decimal("2800.25")
+        self.product.save(update_fields=("wholesale_price",))
         self.client.force_login(self.user)
         endpoint = reverse("supplies:autocomplete")
 
@@ -317,6 +327,20 @@ class ConsignmentServiceTests(TestCase):
 
         self.assertEqual(cd_payload["results"][0]["cost"], "2400.00")
         self.assertEqual(tech_payload["results"][0]["cost"], "3000.00")
+        worker = User.objects.create_user("transfer-only")
+        worker.user_permissions.add(Permission.objects.get(
+            content_type__app_label="consignment", codename="transfer_stock"
+        ))
+        self.client.force_login(worker)
+        cd_payload = self.client.get(endpoint, {
+            "q": "CD-1", "warehouse": self.warehouse.pk, "context": "consignment",
+        }).json()
+        tech_payload = self.client.get(endpoint, {
+            "q": "TECH-1", "warehouse": self.warehouse.pk, "context": "consignment",
+        }).json()
+        self.assertEqual(cd_payload["results"][0]["wholesale_price"], "2800.25")
+        self.assertIsNone(tech_payload["results"][0]["wholesale_price"])
+        self.assertIsNone(cd_payload["results"][0]["prices"])
 
     def test_autocomplete_does_not_expose_cost_outside_transfer_access(self):
         worker = User.objects.create_user("sales-only", password="StrongWorker!123")
@@ -330,6 +354,10 @@ class ConsignmentServiceTests(TestCase):
         }).json()
 
         self.assertIsNone(payload["results"][0]["cost"])
+        self.assertIsNone(payload["results"][0]["wholesale_price"])
+        self.assertEqual(self.client.get(reverse("supplies:autocomplete"), {
+            "q": "CD-1", "warehouse": self.warehouse.pk, "context": "consignment",
+        }).status_code, 403)
 
     def test_list_groups_cd_by_platform_and_tech_by_product_type(self):
         second_platform = Platform.objects.create(name="PS4")

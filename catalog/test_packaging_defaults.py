@@ -26,6 +26,7 @@ class PackagingDefaultTests(TestCase):
 
     def test_cd_create_form_fills_only_missing_dimensions(self):
         form = CDCreateForm(data={
+            'newness_months': '0',
             "platform": self.platform.pk, "name": "Игра", "sku": "CD-FORM",
             "length_cm": "25.5", "width_cm": "", "height_cm": "",
         })
@@ -34,6 +35,7 @@ class PackagingDefaultTests(TestCase):
 
     def test_gamepad_create_form_fills_only_missing_dimensions(self):
         form = TechCreateForm(data={
+            'newness_months': '0',
             "brand": self.brand.pk, "product_type": self.gamepad_type.pk,
             "name": "DualSense", "sku": "TECH-FORM", "height_cm": "12",
         })

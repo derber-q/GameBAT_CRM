@@ -314,7 +314,7 @@
       const operationHelp = form.querySelector("[data-sale-operation-help]");
       if (operationHelp) operationHelp.textContent = operationMode() === "EXPENSE"
         ? "Расход уменьшит прибыль в статистике после завершения операции. Деньги из кассы не списываются."
-        : "Наличная продажа сразу пополнит кассу; остальные создадут неоплаченный заказ.";
+        : "Обычная оплата сразу завершает продажу; постоплата ожидает доставки и оплаты.";
       const hasAdjustment = [...body.querySelectorAll('input[name="unit_discount"], input[name="custom_unit_discount"]')].some(input => (cents(input.value || "0") ?? 0n) !== 0n);
       if (note) {
         note.required = digital || hasAdjustment;
@@ -453,9 +453,14 @@
 
     function syncCashReceivedVisibility() {
       if (!receivedContainer || !paymentInput) return;
-      const visible = paymentInput.value === "cash" && operationMode() !== "EXPENSE";
+      const immediate = ["cash", "bank_account"].includes(paymentInput.value);
+      const visible = immediate && operationMode() !== "EXPENSE";
       receivedContainer.hidden = !visible;
       if (receivedInput) receivedInput.disabled = !visible;
+      const hint = form.querySelector("[data-payment-workflow]");
+      if (hint) hint.textContent = immediate
+        ? "Продажа будет сразу завершена."
+        : "Продажа создаётся неоплаченной. Полученную сумму укажите при подтверждении оплаты. Завершение — после доставки и оплаты.";
     }
 
     function addLine(value = {}) {
@@ -721,6 +726,10 @@
     }
     if (priceTypeInput) priceTypeInput.addEventListener("change", recalculate);
     if (saleTypeInput) saleTypeInput.addEventListener("change", () => {
+      if (paymentInput && ["avito", "yandex_market"].includes(saleTypeInput.value)) {
+        paymentInput.value = "bank_transfer_postpay";
+      }
+      syncCashReceivedVisibility();
       syncCommissionVisibility();
       recalculate();
     });
@@ -746,7 +755,7 @@
         window.alert("Количество товара превышает остаток выбранного склада.");
         return;
       }
-      if (paymentInput?.value === "cash" && receivedInput?.value) {
+      if (["cash", "bank_account"].includes(paymentInput?.value) && receivedInput?.value && !receivedInput.disabled) {
         const currentTotal = [...body.querySelectorAll("tr")].reduce((sum, row) => {
           const price = selectedPrice(row);
           const quantity = moneyQuantity(row.classList.contains("sale-custom-line")

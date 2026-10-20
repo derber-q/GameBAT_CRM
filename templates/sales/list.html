@@ -1,9 +1,14 @@
 {% extends "base.html" %}
 {% load static %}
 {% block title %}{{ page_title }} · ReSOURCE{% endblock %}
+{% block body_class %}responsive-crm-page sale-market-page{% endblock %}
 {% block extra_head %}
-<link rel="stylesheet" href="{% static 'css/sales-list.css' %}?v=2">
-{% if state == 'incomplete' %}<script src="{% static 'js/sales-status.js' %}?v=1" defer></script>{% endif %}
+<link rel="stylesheet" href="{% static 'css/sales-list.css' %}?v=3">
+<link rel="stylesheet" href="{% static 'css/sale-market.css' %}?v=2">
+<script src="{% static 'js/sale-market-print.js' %}?v=2" defer></script>
+{% if state == 'incomplete' %}<script src="{% static 'js/sale-market-scan.js' %}?v=2" defer></script>{% endif %}
+<script src="{% static 'js/sale-market-actions.js' %}?v=1" defer></script>
+{% if state == 'incomplete' %}<script src="{% static 'js/sales-status.js' %}?v=3-market" defer></script>{% endif %}
 {% endblock %}
 {% block content %}
 <div class="page-heading"><div><p class="eyebrow">Продажи GameBAT</p><h1>{{ page_title }}</h1><p class="muted">Заказы, оплаты и исторические цены.</p></div>{% if perms.sales.create_sale or user.is_superuser %}<a class="button button-large" href="{% url 'sales:create' %}">Новая продажа</a>{% endif %}</div>
@@ -13,9 +18,14 @@
   <a class="button button-secondary" href="{% url 'sales:cancelled' %}" {% if state == 'cancelled' %}aria-current="page"{% endif %}>Отменённые продажи</a>
 </nav>
 <p role="status" aria-live="polite" id="sales-status-message"></p>
+{% if state == 'incomplete' and perms.yandex_market.manage_orders and perms.yandex_market.print_labels %}
+<form id="market-scan-controls" data-market-scan-url="{% url 'sales:market_scan' %}" hidden>{% csrf_token %}</form>
+<p role="status" aria-live="polite" id="market-scan-status">Сканируйте товары заказов Яндекса.</p>
+{% endif %}
 {% for group in groups %}
   {% include "sales/_list_group.html" %}
 {% endfor %}
+{% include 'sales/_market_cancel_dialog.html' %}
 {% if state == 'incomplete' %}
 <dialog id="sale-status-dialog" class="confirmation-dialog" aria-labelledby="sale-status-title">
   <form id="sale-status-confirm-form">
@@ -25,7 +35,7 @@
     <div class="field" id="sale-status-cash-field" hidden>
       <label for="sale-status-cash">Получено от покупателя</label>
       <input id="sale-status-cash" name="cash_received_amount" type="number" min="0" step="0.01">
-      <span class="help-text">Пустое поле — сумма товаров. Деньги будут зачислены в кассу склада.</span>
+      <span class="help-text">Пустое поле — сумма товаров. В кассу поступают только наличные.</span>
     </div>
     <div class="dialog-actions">
       <button class="button button-secondary" type="button" id="sale-status-cancel">Отмена</button>

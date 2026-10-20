@@ -4,12 +4,13 @@ from itertools import chain, islice
 from django.core.paginator import Paginator
 from .models import Sale
 from .services import can_mark_paid, next_order_status
+from .market_controls import with_market_controls, market_context
 
 
 def sales_queryset():
-    return Sale.objects.select_related(
+    return with_market_controls(Sale.objects.select_related(
         'warehouse', 'created_by', 'cancelled_by', 'consignment_platform',
-    ).prefetch_related('cd_items', 'tech_items', 'custom_items', 'consignment_items')
+    ).prefetch_related('cd_items', 'tech_items', 'custom_items', 'consignment_items'))
 
 
 def _items_preview(sale):
@@ -26,7 +27,8 @@ def _items_preview(sale):
 
 
 def status_context(sale, user, editable=True):
-    order = next_order_status(sale) if editable and (
+    market = market_context(sale, user, editable=editable)
+    order = next_order_status(sale) if not market and editable and (
         user.is_superuser or user.has_perm('sales.advance_order_status')) else None
     payment = editable and can_mark_paid(sale) and (
         user.is_superuser or user.has_perm('sales.mark_sale_paid'))
@@ -35,6 +37,7 @@ def status_context(sale, user, editable=True):
         'sale': sale, 'version': sale.updated_at.isoformat(), 'next_order': order,
         'next_order_label': Sale.OrderStatus(order).label if order else '',
         'can_mark_paid': payment, 'items_preview': items, 'has_more_items': has_more_items,
+        'market': market,
     }
 
 

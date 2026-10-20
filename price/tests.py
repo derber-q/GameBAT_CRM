@@ -329,10 +329,12 @@ class PriceExcelTests(TestCase):
             for worksheet in workbook.worksheets for row in worksheet.iter_rows() for cell in row
         ))
         sheet = workbook[MAIN_SHEET]
-        self.assertFalse(sheet.cell(HEADER_ROW + 1, 3).protection.locked)
+        product_row = find_sheet_row(sheet, item.product_name_snapshot)
+        self.assertTrue(sheet.cell(HEADER_ROW + 1, 3).protection.locked)
+        self.assertFalse(sheet.cell(product_row, 3).protection.locked)
         self.assertTrue(sheet.cell(sheet.max_row, 5).protection.locked)
-        sheet.cell(HEADER_ROW + 1, 2, 1)
-        sheet.cell(HEADER_ROW + 1, 3, 2)
+        sheet.cell(product_row, 2, 1)
+        sheet.cell(product_row, 3, 2)
         saved = workbook_bytes(workbook)
         imported_list, lines = import_procurement_order_xlsx(uploaded(saved))
         self.assertEqual(imported_list, price_list)

@@ -9,6 +9,15 @@
   const barcodeFeedback = form.querySelector("[data-consignment-barcode-feedback]");
   const initialLines = JSON.parse(document.getElementById("initial-consignment-lines").textContent);
 
+  function showMoney(cell, value) {
+    cell.textContent = value !== null && value !== undefined && value !== "" ? `${value} ₽` : "—";
+  }
+
+  function showRowPrices(row, result) {
+    showMoney(row.querySelector("[data-unit-cost]"), result?.cost);
+    showMoney(row.querySelector("[data-wholesale-price]"), result?.wholesale_price);
+  }
+
   function showBarcodeFeedback(message, isError = false) {
     if (!barcodeFeedback) return;
     barcodeFeedback.textContent = message;
@@ -67,12 +76,9 @@
     const costCell = document.createElement("td");
     costCell.className = "readonly-money";
     costCell.dataset.unitCost = "true";
-    const showCost = (result) => {
-      costCell.textContent = result && result.cost !== null && result.cost !== ""
-        ? `${result.cost} ₽`
-        : "—";
-    };
-    showCost(value);
+    const wholesaleCell = document.createElement("td");
+    wholesaleCell.className = "readonly-money";
+    wholesaleCell.dataset.wholesalePrice = "true";
 
     const amountCell = document.createElement("td");
     const amount = document.createElement("input");
@@ -85,7 +91,8 @@
     amount.value = value.receivable_per_unit || "";
     amountCell.append(amount);
 
-    row.append(productCell, quantityCell, costCell, amountCell, removeButton(row));
+    row.append(productCell, quantityCell, costCell, wholesaleCell, amountCell, removeButton(row));
+    showRowPrices(row, value);
     lines.append(row);
     window.GameBAT.attachAutocomplete({
       input: search,
@@ -96,7 +103,7 @@
       warehouseInput: warehouse,
       searchContext: form.dataset.searchContext,
       onSelect: (result, metadata = {}) => {
-        showCost(result);
+        showRowPrices(row, result);
         if (result && metadata.exactBarcode) {
           if (!quantity.value) quantity.value = "1";
           showBarcodeFeedback(`Добавлено: ${result.label}`);
@@ -114,6 +121,7 @@
       && row.querySelector('input[name="product_id"]')?.value === String(result.id)
     ));
     if (existingRow) {
+      showRowPrices(existingRow, result);
       const quantity = existingRow.querySelector('input[name="quantity"]');
       if (quantity) quantity.value = String(Math.max(0, Number(quantity.value) || 0) + 1);
       existingRow.querySelector('input[name="receivable_per_unit"]')?.focus();
@@ -131,6 +139,7 @@
         product_id: result.id,
         quantity: 1,
         cost: result.cost,
+        wholesale_price: result.wholesale_price,
       });
       row.querySelector('input[name="receivable_per_unit"]')?.focus();
       return;
@@ -139,9 +148,7 @@
     blankRow.querySelector('input[name="product_type"]').value = result.type;
     blankRow.querySelector('input[name="product_id"]').value = result.id;
     blankRow.querySelector('input[name="quantity"]').value = "1";
-    blankRow.querySelector("[data-unit-cost]").textContent = (
-      result.cost !== null && result.cost !== "" ? `${result.cost} ₽` : "—"
-    );
+    showRowPrices(blankRow, result);
     blankRow.querySelector('input[name="receivable_per_unit"]')?.focus();
   }
 

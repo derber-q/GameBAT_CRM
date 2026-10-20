@@ -17,6 +17,7 @@ from .models import Sale
 from catalog.models import CD, Tech
 from .listing import list_groups, sales_queryset, status_context
 from .storage_locations import sale_storage_locations
+from .market_controls import with_market_controls, market_context
 from .invoice_excel import render_sale_invoice_xlsx
 from .services import (
     advance_order_status, cancel_sale, create_sale, edit_postpay_sale_items,
@@ -284,9 +285,9 @@ def sale_wholesale_import(request):
 @permission_required_any("sales.view_sale_detail")
 def sale_detail(request, pk):
     sale = get_object_or_404(
-        Sale.objects.select_related(
-            "warehouse", "created_by", "consignment_platform"
-        ).prefetch_related("cd_items__cd", "tech_items__tech", "custom_items", "consignment_items"),
+        with_market_controls(Sale.objects.select_related(
+            "warehouse", "created_by", "paid_by", "consignment_platform"
+        ).prefetch_related("cd_items__cd", "tech_items__tech", "custom_items", "consignment_items")),
         pk=pk,
     )
     legacy_consignment_mirror = sale.sale_type == Sale.SaleType.CONSIGNMENT and bool(sale.consignment_items.all())
@@ -334,7 +335,6 @@ def sale_detail(request, pk):
     next_order = next_order_status(sale)
     labels = {
         Sale.OrderStatus.ASSEMBLED: "Отметить как собранный",
-        Sale.OrderStatus.SHIPPED: "Отметить как отправленный",
         Sale.OrderStatus.DELIVERED: "Отметить как доставленный",
     }
     next_status = (next_order, labels[next_order]) if next_order else None
@@ -345,6 +345,7 @@ def sale_detail(request, pk):
         cash_transactions = sale.cash_transactions.all()
     return render(request, "sales/detail.html", {
         "sale": sale, "rows": rows, "custom_items": custom_items, "next_status": next_status,
+        'market': market_context(sale, request.user),
         "cash_transactions": cash_transactions,
         "can_cancel": not sale.is_cancelled and not hasattr(sale, "yandex_order") and (
             request.user.is_superuser or request.user.has_perm("sales.cancel_sale")

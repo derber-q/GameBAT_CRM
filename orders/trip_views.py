@@ -3,7 +3,7 @@ from collections import defaultdict
 
 from django.contrib import messages
 from django.core.exceptions import ValidationError
-from django.db import OperationalError
+from django.db import OperationalError, transaction
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -14,11 +14,13 @@ from django.views.decorators.http import require_GET, require_POST, require_http
 
 from core.decorators import permission_required_all
 from partners.models import Supplier
-from .models import CustomerProcurementOrder
+from catalog.supplier_exclusions import exclusion_keys
+from .models import CustomerProcurementOrder, SupplierOrderBatch
 from .forms import TripAssignmentForm
 from .trips import (MANAGE_PERMISSIONS, can_manage_trips, change_trip_line, create_trip, trip_queryset,
-                    is_m_order_in_f, return_line_to_m, available_trips, assign_order_to_trip)
-from .trip_excel import supplier_order_xlsx
+                    is_m_order_in_f, return_line_to_m, available_trips, assign_order_to_trip,
+                    trip_supplier_chains, supplier_priority_state)
+from .trip_excel import supplier_order_xlsx, trip_order_xlsx
 
 VIEW_PERMISSIONS = ("orders.generate_supplier_orders", "partners.view_supplier_details")
 
@@ -69,11 +71,16 @@ def trip_detail(request, pk):
     can_edit = can_manage_trips(request.user) and all(order.status == CustomerProcurementOrder.Status.CREATED for order in batch.trip_orders.all())
     grouped, editor = defaultdict(list), {}
     suppliers = list(Supplier.objects.all()) if can_edit else []
-    for line in batch.lines.all():
-        line.can_return_to_m = is_m_order_in_f(line)
+    lines = list(batch.lines.all())
+    excluded = exclusion_keys((line.product_kind, line.product_id) for line in lines) if can_edit else set()
+    chains = trip_supplier_chains(lines, excluded=excluded) if can_edit else {}
+    priorities = {supplier.pk: supplier.priority for supplier in suppliers}
+    for line in lines:
+        line.can_return_to_m = is_m_order_in_f(line) and (line.product_kind, line.product_id, line.price_supplier_id) not in excluded
         grouped[line.supplier].append(line)
         if can_edit:
-            targets = sorted((supplier for supplier in suppliers if supplier.pk != line.supplier_id),
+            targets = sorted((supplier for supplier in suppliers if supplier.pk != line.supplier_id
+                              and (line.product_kind, line.product_id, supplier.pk) not in excluded),
                              key=lambda supplier: (-supplier.priority, supplier.name.casefold(), supplier.pk))
             allocations = []
             for allocation in line.allocations.all():
@@ -83,11 +90,13 @@ def trip_detail(request, pk):
                                     "recipient": item.order.recipient, "current": current,
                                     "elsewhere": current - allocation.quantity})
             editor[str(line.pk)] = {
+                **supplier_priority_state(line.supplier_id, {pk: priorities[pk] for pk in chains[line.price_list_item_id]}),
                 "name": line.product_name_snapshot, "quantity": line.quantity,
                 "url": reverse("orders:trip_line_update", args=(batch.pk, line.pk)),
                 "targets": [{"id": supplier.pk, "name": supplier.name, "priority": supplier.priority} for supplier in targets],
                 "prices": [{"id": offer.supplier_id, "name": offer.supplier.name, "price": str(offer.price_aed)}
-                           for offer in line.price_list_item.supplier_offers.all()],
+                           for offer in line.price_list_item.supplier_offers.all()
+                           if (line.product_kind, line.product_id, offer.supplier_id) not in excluded],
                 "price_supplier_id": line.price_supplier_id, "allocations": allocations,
             }
     return render(request, "orders/trip_detail.html", {
@@ -116,11 +125,29 @@ def trip_line_update(request, pk, line_pk):
 
 @never_cache
 @require_GET
+@permission_required_all(*VIEW_PERMISSIONS, "price.view_supplier_prices")
+def trip_full_export(request, pk):
+    with transaction.atomic():
+        batch = get_object_or_404(SupplierOrderBatch, pk=pk, price_list__isnull=False)
+        lines = list(batch.lines.select_related(
+            "supplier", "cd__platform", "cd__game_series", "tech__brand", "tech__product_type",
+        ).order_by("pk"))
+    response = HttpResponse(trip_order_xlsx(lines),
+                            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    response["Content-Disposition"] = content_disposition_header(True, f"trip_{pk}_all.xlsx")
+    response["X-Content-Type-Options"] = "nosniff"
+    return response
+
+
+@never_cache
+@require_GET
 @permission_required_all(*VIEW_PERMISSIONS)
 def trip_export(request, pk, supplier_pk):
-    batch = get_object_or_404(trip_queryset(), pk=pk, price_list__isnull=False)
+    batch = get_object_or_404(SupplierOrderBatch, pk=pk, price_list__isnull=False)
     supplier = get_object_or_404(Supplier, pk=supplier_pk)
-    lines = [line for line in batch.lines.all() if line.supplier_id == supplier.pk]
+    lines = list(batch.lines.filter(supplier=supplier).select_related(
+        "cd__platform", "cd__game_series", "tech__brand", "tech__product_type",
+    ).order_by("pk"))
     if not lines:
         from django.http import Http404
         raise Http404

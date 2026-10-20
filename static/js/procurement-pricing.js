@@ -13,11 +13,16 @@ document.addEventListener("DOMContentLoaded", () => {
     return `${value < 0n ? "-" : ""}${absolute / 100n}.${String(absolute % 100n).padStart(2, "0")}`;
   };
   const postpaymentFor = (value, surcharge = null) => value + (surcharge ?? (value < 200000n ? 6000n : (value < 300000n ? 8000n : 10000n)));
+  const roundCustomerPrice = (value) => ((value + 999n) / 1000n) * 1000n;
   const prepaymentFor = (value, surcharge = null) => {
     if (surcharge !== null) return value >= surcharge ? value - surcharge : null;
     for (const surcharge of [6000n, 8000n, 10000n]) {
       const candidate = value - surcharge;
       if (candidate >= 0n && postpaymentFor(candidate) === value) return candidate;
+    }
+    for (const candidate of [199999n, 299999n]) {
+      const originalPost = postpaymentFor(candidate);
+      if (originalPost <= value && roundCustomerPrice(originalPost) === roundCustomerPrice(value)) return candidate;
     }
     return null;
   };
@@ -70,15 +75,23 @@ document.addEventListener("DOMContentLoaded", () => {
       }
       const margin = prepaid - base - shipping;
       if (prepaid < 0n) return fail(changed, "Цена предоплаты не может быть отрицательной.");
-      const postpaid = postpaymentFor(prepaid, fixedSurcharge);
-      if (prepaid > maxMoney || postpaid > maxMoney || margin > maxMoney || margin < -maxMoney) {
+      const originalPost = postpaymentFor(prepaid, fixedSurcharge);
+      const roundedPrepaid = roundCustomerPrice(prepaid);
+      const postpaid = roundCustomerPrice(originalPost);
+      if (roundedPrepaid > maxMoney || postpaid > maxMoney || margin > maxMoney || margin < -maxMoney) {
         return fail(changed, "Цена превышает допустимую сумму.");
       }
       // Введённое поле не форматируем заново, чтобы не перемещать курсор при наборе.
       if (changed !== markup) markup.value = formatMoney(margin);
-      if (changed !== prepayment) prepayment.value = formatMoney(prepaid);
+      if (changed !== prepayment) prepayment.value = formatMoney(roundedPrepaid);
       if (changed !== postpayment) postpayment.value = formatMoney(postpaid);
-      if (changed !== surcharge) surcharge.value = formatMoney(postpaid - prepaid);
+      if (changed !== surcharge) surcharge.value = formatMoney(originalPost - prepaid);
+      const effective = row.querySelector('[data-effective-markup]');
+      if (effective) effective.textContent = formatMoney(roundedPrepaid - base - shipping);
+      const roundingPre = row.querySelector('[data-prepayment-rounding]');
+      const roundingPost = row.querySelector('[data-postpayment-rounding]');
+      if (roundingPre) roundingPre.textContent = formatMoney(roundedPrepaid - prepaid);
+      if (roundingPost) roundingPost.textContent = formatMoney(postpaid - originalPost);
       highlight();
     };
     fields.forEach((field) => field.addEventListener("input", () => {

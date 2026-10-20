@@ -66,7 +66,7 @@ class CustomSaleItemTests(TestCase):
         self.assertEqual(CDWarehouseStock.objects.get().quantity, 1)
         cancel_sale(actor=self.user, sale_id=sale.pk, comment="mixed cancel")
         self.assertEqual(CDWarehouseStock.objects.get().quantity, 2)
-        self.assertEqual(sale.__class__.objects.get(pk=sale.pk).refunded_amount, Decimal("0.00"))
+        self.assertEqual(sale.__class__.objects.get(pk=sale.pk).refunded_amount, Decimal("2000.00"))
 
     def test_custom_postpay_can_be_changed(self):
         sale = create_sale(actor=self.user, warehouse_id=self.warehouse.pk, price_type=Sale.PriceType.RETAIL,

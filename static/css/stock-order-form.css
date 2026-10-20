@@ -1,0 +1,27 @@
+.stock-order-page .heading-actions { flex-wrap: wrap; }
+.stock-order-page .section-heading > div { display: block; }
+.stock-order-page .section-heading { gap: 16px; }
+.stock-order-page .compact-search { max-width: 100%; }
+@media (max-width: 600px) {
+  .stock-order-page [data-stock-order-form] table,
+  .stock-order-page [data-stock-order-group] { display: block; }
+  .stock-order-page [data-stock-order-form] thead { display: none; }
+  .stock-order-page [data-stock-order-heading] { display: block; margin-top: 12px; }
+  .stock-order-page [data-stock-order-heading] th { display: block; white-space: normal; }
+  .stock-order-page [data-stock-order-row] {
+    display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--gb-border);
+  }
+  .stock-order-page [data-stock-order-row][hidden],
+  .stock-order-page [data-stock-order-group][hidden] { display: none; }
+  .stock-order-page [data-stock-order-row] td {
+    min-width: 0; padding: 0; border: 0; text-align: left; white-space: normal;
+  }
+  .stock-order-page [data-stock-order-row] td:first-child { grid-column: 1 / -1; }
+  .stock-order-page [data-stock-order-row] td:nth-child(5) { grid-column: 1; grid-row: 2; }
+  .stock-order-page [data-stock-order-row] td:nth-child(6) { grid-column: 2; grid-row: 2; }
+  .stock-order-page [data-stock-order-row] td[data-label]::before {
+    content: attr(data-label); display: block; color: var(--gb-text-muted);
+    font-size: 11px; margin-bottom: 5px;
+  }
+}

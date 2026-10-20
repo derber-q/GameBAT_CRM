@@ -44,5 +44,16 @@ for (const withSeries of [false, true]) {
   buttons[1].click();
   assert.equal(contents.child.hidden, false);
   assert.equal(buttons[1].getAttribute('aria-expanded'), 'true');
+  const attrs = {'aria-controls': 'dynamic', 'aria-expanded': 'false'};
+  let bindings = 0;
+  contents.dynamic = {hidden: true};
+  const dynamic = {getAttribute: key => attrs[key], setAttribute: (key, value) => attrs[key] = value,
+    addEventListener(event, handler) {bindings++; this[event] = handler;}};
+  buttons.push(dynamic);
+  window.GameBAT.attachCollapseControls();
+  window.GameBAT.attachCollapseControls();
+  assert.equal(bindings, 1);
+  dynamic.click();
+  assert.equal(contents.dynamic.hidden, false);
 }
 console.log('Collapse regression tests passed with and without game-series filter.');

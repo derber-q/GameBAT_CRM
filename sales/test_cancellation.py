@@ -190,7 +190,7 @@ class SaleCancellationTests(TestCase):
         self.assertEqual(self.register.balance, Decimal("0.00"))
 
         bank = self.create(Sale.PaymentMethod.BANK_ACCOUNT)
-        mark_sale_paid(actor=self.actor, sale_id=bank.pk)
+        self.assertTrue(bank.is_completed)
         before = self.register.balance
         cancel_sale(actor=self.actor, sale_id=bank.pk, comment="Безналичный возврат подтверждён")
         bank.refresh_from_db()

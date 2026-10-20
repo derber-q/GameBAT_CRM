@@ -102,17 +102,19 @@ class SaleServiceTests(TestCase):
     def test_bank_payment_never_changes_cash_register(self):
         register = self.warehouse.cash_register
         sale = self.create(Sale.PaymentMethod.BANK_ACCOUNT)
-        mark_sale_paid(actor=self.user, sale_id=sale.pk)
+        self.assertTrue(sale.is_completed)
+        self.assertEqual(sale.cash_received_amount, sale.total_amount)
         register.refresh_from_db()
         self.assertEqual(register.balance, 0)
         self.assertFalse(CashTransaction.objects.filter(sale=sale).exists())
 
     def test_order_status_is_strict_and_completion_requires_delivery_and_payment(self):
-        sale = self.create(Sale.PaymentMethod.BANK_ACCOUNT)
+        sale = self.create(Sale.PaymentMethod.BANK_TRANSFER_POSTPAY)
         with self.assertRaises(ValidationError):
-            advance_order_status(actor=self.user, sale_id=sale.pk, next_status=Sale.OrderStatus.SHIPPED)
+            advance_order_status(actor=self.user, sale_id=sale.pk, next_status='shipped')
+        with self.assertRaises(ValidationError):
+            advance_order_status(actor=self.user, sale_id=sale.pk, next_status=Sale.OrderStatus.DELIVERED)
         advance_order_status(actor=self.user, sale_id=sale.pk, next_status=Sale.OrderStatus.ASSEMBLED)
-        advance_order_status(actor=self.user, sale_id=sale.pk, next_status=Sale.OrderStatus.SHIPPED)
         mark_sale_paid(actor=self.user, sale_id=sale.pk)
         sale.refresh_from_db()
         self.assertIsNone(sale.completed_at)
@@ -120,13 +122,12 @@ class SaleServiceTests(TestCase):
         sale.refresh_from_db()
         self.assertIsNotNone(sale.completed_at)
 
-    def test_shipped_unpaid_postpay_is_editable_with_stock_deltas_and_snapshots(self):
+    def test_assembled_unpaid_postpay_is_editable_with_stock_deltas_and_snapshots(self):
         sale = self.create(Sale.PaymentMethod.CASH_POSTPAY)
         item = sale.cd_items.get()
         self.cd.avito_price = 999
         self.cd.save(update_fields=("avito_price",))
         advance_order_status(actor=self.user, sale_id=sale.pk, next_status=Sale.OrderStatus.ASSEMBLED)
-        advance_order_status(actor=self.user, sale_id=sale.pk, next_status=Sale.OrderStatus.SHIPPED)
         edit_postpay_sale_items(actor=self.user, sale_id=sale.pk, lines=[
             self.line(quantity=3), self.line(product=self.other_cd, quantity=1),
         ])
@@ -190,7 +191,7 @@ class SaleServiceTests(TestCase):
         with self.assertRaisesMessage(ValidationError, "оплаченного"):
             edit_postpay_sale_items(actor=self.user, sale_id=paid_sale.pk, lines=[self.line(quantity=1)])
         delivered_sale = self.create(Sale.PaymentMethod.CASH_POSTPAY, [self.line(quantity=1)])
-        for status in (Sale.OrderStatus.ASSEMBLED, Sale.OrderStatus.SHIPPED, Sale.OrderStatus.DELIVERED):
+        for status in (Sale.OrderStatus.ASSEMBLED, Sale.OrderStatus.DELIVERED):
             advance_order_status(actor=self.user, sale_id=delivered_sale.pk, next_status=status)
         with self.assertRaisesMessage(ValidationError, "доставленного"):
             edit_postpay_sale_items(actor=self.user, sale_id=delivered_sale.pk, lines=[self.line(quantity=1)])

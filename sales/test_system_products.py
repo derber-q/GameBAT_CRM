@@ -156,7 +156,7 @@ class SystemProductTests(TestCase):
         sale = self.sale([self.line("EXPENSE", price="0")], payment_method="cash_postpay")
         self.assertEqual(build_sales_statistics_report({}).totals.profit, 0)
         mark_sale_paid(actor=self.user, sale_id=sale.pk)
-        for status in ("assembled", "shipped", "delivered"):
+        for status in ("assembled", "delivered"):
             advance_order_status(actor=self.user, sale_id=sale.pk, next_status=status)
         self.assertEqual(build_sales_statistics_report({}).totals.profit, Decimal("-3000"))
         result = cancel_sale(actor=self.user, sale_id=sale.pk, comment="Отмена расхода")

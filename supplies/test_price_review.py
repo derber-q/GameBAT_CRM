@@ -66,6 +66,7 @@ class SupplyPriceReviewTests(TestCase):
         supply = self._pending_supply()
         self.client.force_login(self.user)
         response = self.client.post(reverse("supplies:price_review", args=(supply.pk,)), {
+            "expected_revision_number": supply.revision_number,
             f"cd_{self.product.pk}_wholesale_price": "225.50",
             f"cd_{self.product.pk}_avito_markup_from_wholesale": "250.00",
         })

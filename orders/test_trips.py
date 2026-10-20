@@ -255,12 +255,13 @@ class TripTests(TestCase):
         self.assertEqual(response["Content-Disposition"], f'attachment; filename="trip_{trip.pk}_A.xlsx"')
         sheet = load_workbook(BytesIO(response.content)).active
         self.assertEqual(tuple(cell.value for cell in sheet[1]), ("Наименование", "Артикул", "Цена, AED", "Количество"))
-        self.assertEqual(tuple(cell.value for cell in sheet[2]), ("Игра", "000123", 100, 0))
-        self.assertEqual(sheet["B2"].data_type, "s")
+        self.assertEqual(sheet["A2"].value, "CD · Платформа: PS5")
+        self.assertEqual(tuple(cell.value for cell in sheet[3]), ("Игра", "000123", 100, 0))
+        self.assertEqual(sheet["B3"].data_type, "s")
         self.assertTrue(sheet.column_dimensions["B"].hidden)
-        self.assertEqual(sheet["C2"].number_format, "#,##0")
-        self.assertEqual(sheet.max_row, 2)
-        self.assertFalse(sheet.merged_cells.ranges)
+        self.assertEqual(sheet["C3"].number_format, "#,##0")
+        self.assertEqual(sheet.max_row, 3)
+        self.assertEqual({str(area) for area in sheet.merged_cells.ranges}, {"A2:D2"})
         self.assertFalse(any('INSERT ' in q['sql'] or 'UPDATE ' in q['sql'] for q in queries))
 
     def test_permission_checks_apply_to_services_and_direct_urls(self):

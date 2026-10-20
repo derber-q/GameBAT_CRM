@@ -27,6 +27,7 @@ from .models import CustomerProcurementOrder
 from .services import (advance_order_status, create_customer_procurement_order, edit_created_order,
                        receive_stock_order, reduce_receiving_order)
 from .trips import create_trip, change_trip_line, assign_order_to_trip
+from .tests import order_product_rows
 
 
 class StockOrderTests(TestCase):
@@ -143,8 +144,9 @@ class StockOrderTests(TestCase):
         sheet = book.active
         self.assertEqual(tuple(cell.value for cell in sheet[4]),
                          ("Наименование", "Количество", "Цена, ₽", "Сумма, ₽"))
-        self.assertEqual(tuple(cell.value for cell in sheet[5]), (self.cd.name, 1, 2050, 2050))
-        self.assertEqual(tuple(cell.value for cell in sheet[6]), (self.tech.name, 1, 3160, 3160))
+        self.assertEqual([values for _row, values in order_product_rows(sheet)], [
+            (self.tech.name, 1, 3160, 3160), (self.cd.name, 1, 2050, 2050),
+        ])
         self.assertEqual(sheet.cell(sheet.max_row, 4).value, 5210)
         book.close()
         self.assertContains(self.client.get(reverse("orders:detail", args=(order.pk,))), url)

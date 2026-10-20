@@ -27,7 +27,7 @@ from .finalization import (
     apply_supply_finalization, rows_from_inputs, supply_has_complete_cost_calculations,
 )
 from .models import Supply, SupplyRevision
-from .services import accept_supply, cancel_supply, confirm_supply_price_review, revise_supply
+from .services import accept_supply, cancel_supply, confirm_supply_price_review, revise_supply, edit_pending_supply
 
 
 logger = logging.getLogger("gamebat.business")
@@ -208,20 +208,24 @@ def supply_create(request):
     })
 
 
-@permission_required("supplies.edit_accepted_supply", raise_exception=True)
+@permission_required_any("supplies.add_supply", "supplies.edit_accepted_supply")
 def supply_edit(request, pk):
     supply = get_object_or_404(
         Supply.objects.select_related("warehouse", "accepted_by"), pk=pk
     )
-    if supply.is_cancelled or supply.status != Supply.Status.ACCEPTED:
-        messages.error(request, "Редактировать можно только действующий принятый приход.")
+    pending = supply.status == Supply.Status.PRICE_REVIEW_REQUIRED
+    required = "supplies.add_supply" if pending else "supplies.edit_accepted_supply"
+    if not request.user.is_superuser and not request.user.has_perm(required):
+        raise PermissionDenied("Недостаточно прав для редактирования этого прихода.")
+    if supply.is_cancelled:
+        messages.error(request, "Отменённый приход нельзя редактировать.")
         return redirect("supplies:detail", pk=supply.pk)
     if request.method == "POST":
         try:
-            if request.POST.get("revision_confirmed") != "1":
+            if not pending and request.POST.get("revision_confirmed") != "1":
                 raise ValidationError("Подтвердите изменение уже принятого прихода.")
             lines, expenses, weight_transport_cost = _parse_supply_post(request.POST)
-            result = revise_supply(
+            result = (edit_pending_supply if pending else revise_supply)(
                 actor=request.user, supply_id=supply.pk,
                 expected_revision_number=request.POST.get("expected_revision_number"),
                 warehouse_id=request.POST.get("warehouse_id"), lines=lines, expenses=expenses,
@@ -235,6 +239,9 @@ def supply_edit(request, pk):
             )
             supply.refresh_from_db()
         else:
+            if pending:
+                messages.success(request, "Состав сохранён. Приход ещё не принят на склад.")
+                return redirect("supplies:detail", pk=supply.pk)
             messages.success(
                 request,
                 f"Приход №{result.supply.pk} сохранён как редакция {result.supply.revision_number}.",
@@ -242,6 +249,7 @@ def supply_edit(request, pk):
             return redirect("supplies:detail", pk=result.supply.pk)
     return render(request, "supplies/create.html", {
         "editing_supply": supply,
+        "editing_pending": pending,
         "suppliers": _supplier_options(request.user),
         "warehouses": Warehouse.objects.all(),
         "selected_warehouse": (
@@ -303,8 +311,11 @@ def supply_detail(request, pk):
         "can_cancel": not supply.is_cancelled and (
             request.user.is_superuser or request.user.has_perm("supplies.cancel_supply")
         ),
-        "can_edit": supply.status == Supply.Status.ACCEPTED and not supply.is_cancelled and (
-            request.user.is_superuser or request.user.has_perm("supplies.edit_accepted_supply")
+        "can_edit": not supply.is_cancelled and (
+            request.user.is_superuser or request.user.has_perm(
+                "supplies.add_supply" if supply.status == Supply.Status.PRICE_REVIEW_REQUIRED
+                else "supplies.edit_accepted_supply"
+            )
         ),
         "needs_price_review": supply.status == Supply.Status.PRICE_REVIEW_REQUIRED,
         "can_finalize": not supply.is_cancelled and supply_has_complete_cost_calculations(supply) and (
@@ -369,6 +380,7 @@ def supply_price_review(request, pk):
                     price_changes[key] = changes
             confirmed_supply, changed = confirm_supply_price_review(
                 actor=request.user, supply_id=supply.pk, price_changes=price_changes,
+                expected_revision_number=request.POST.get("expected_revision_number", ""),
             )
         except ValidationError as exc:
             messages.error(request, " ".join(exc.messages))
@@ -519,6 +531,7 @@ def product_autocomplete(request):
     include_cost = context in {"", "consignment"} and (
         request.user.is_superuser or request.user.has_perm("consignment.transfer_stock")
     )
+    include_wholesale = context == "consignment" and include_cost
     try:
         warehouse_id = int(request.GET.get("warehouse")) if request.GET.get("warehouse") else None
     except (TypeError, ValueError):
@@ -637,6 +650,7 @@ def product_autocomplete(request):
         "weight_grams": item.weight_grams,
         "can_set_weight": request.user.is_superuser or request.user.has_perm("catalog.change_cd_weight"),
         "cost": f"{item.cost:.2f}" if include_cost else None,
+        "wholesale_price": f"{item.wholesale_price:.2f}" if include_wholesale and item.wholesale_price is not None else None,
         "prices": {
             "retail": f"{item.avito_price:.2f}" if item.avito_price is not None else None,
             "wholesale": f"{item.wholesale_price:.2f}" if item.wholesale_price is not None else None,
@@ -657,6 +671,7 @@ def product_autocomplete(request):
         "weight_grams": item.weight_grams,
         "can_set_weight": request.user.is_superuser or request.user.has_perm("catalog.change_tech_weight"),
         "cost": f"{item.cost:.2f}" if include_cost else None,
+        "wholesale_price": f"{item.wholesale_price:.2f}" if include_wholesale and item.wholesale_price is not None else None,
         "prices": {
             "retail": f"{item.avito_price:.2f}" if item.avito_price is not None else None,
             "wholesale": f"{item.wholesale_price:.2f}" if item.wholesale_price is not None else None,

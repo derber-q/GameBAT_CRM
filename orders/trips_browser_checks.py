@@ -1,11 +1,13 @@
 """Полный сценарий рейса в Chromium на изолированной тестовой БД."""
 from io import BytesIO
+from contextlib import closing
 import os
 from pathlib import Path
 from unittest.mock import patch
 
 from django.conf import settings
 from django.contrib.staticfiles.testing import StaticLiveServerTestCase
+from django.db import connections
 from django.urls import reverse
 from openpyxl import load_workbook
 from playwright.sync_api import expect, sync_playwright
@@ -46,7 +48,7 @@ class TripsBrowserChecks(StaticLiveServerTestCase):
 
         output = Path(settings.BASE_DIR) / "outputs/trips-browser"
         output.mkdir(parents=True, exist_ok=True)
-        with sync_playwright() as pw:
+        with sync_playwright() as pw, closing(connections["default"]):
             browser = pw.chromium.launch()
             for width in (1280, 390):
                 customer = order(f"Клиент {width}", (2,))
@@ -83,7 +85,7 @@ class TripsBrowserChecks(StaticLiveServerTestCase):
                 with page.expect_download() as download:
                     page.locator(f'a[href="{reverse("orders:trip_export", args=(second.pk, supplier.pk))}"]').click()
                 book = load_workbook(BytesIO(Path(download.value.path()).read_bytes()))
-                self.assertEqual(sorted(row[3] for row in list(book.active.values)[1:]), [1, 8])
+                self.assertEqual(sorted(row[3] for row in book.active.values if row[1] in {p.sku for p in products}), [1, 8])
                 book.close()
                 page.screenshot(path=str(output / f"moved-orders-{width}.png"), full_page=True)
                 self.assertEqual(errors, [])
@@ -104,7 +106,7 @@ class TripsBrowserChecks(StaticLiveServerTestCase):
                     delivery_storage_usdt_per_kg=0, delivery_cd_rub=0)
         output = Path(settings.BASE_DIR) / "outputs/trips-browser"
         output.mkdir(parents=True, exist_ok=True)
-        with sync_playwright() as pw:
+        with sync_playwright() as pw, closing(connections["default"]):
             browser = pw.chromium.launch()
             for width in (1280, 390):
                 order = create_customer_procurement_order(actor=user, price_list_id=price.pk,
@@ -125,8 +127,8 @@ class TripsBrowserChecks(StaticLiveServerTestCase):
                     link.click()
                 workbook = load_workbook(BytesIO(Path(download.value.path()).read_bytes()))
                 self.assertEqual(download.value.suggested_filename, f"trip_{trip.pk}_F.xlsx")
-                self.assertEqual(workbook.active['C2'].value, 100)
-                self.assertEqual(workbook.active['D2'].value, 5)
+                row = next(row for row in workbook.active.values if row[1] == cd.sku)
+                self.assertEqual(row[2:4], (100, 5))
                 self.assertEqual(workbook.active.max_column, 4)
                 self.assertTrue(workbook.active.column_dimensions['B'].hidden)
                 page.screenshot(path=str(output / f'm-in-f-{width}.png'), full_page=True)
@@ -155,7 +157,7 @@ class TripsBrowserChecks(StaticLiveServerTestCase):
         source = price.items.get()
         output = Path(settings.BASE_DIR) / "outputs/trips-browser"
         output.mkdir(parents=True, exist_ok=True)
-        with sync_playwright() as pw:
+        with sync_playwright() as pw, closing(connections["default"]):
             browser = pw.chromium.launch()
             for width in (1280, 390):
                 orders = [create_customer_procurement_order(actor=user, price_list_id=price.pk,
@@ -209,9 +211,6 @@ class TripsBrowserChecks(StaticLiveServerTestCase):
                 target_row = page.locator(f'[data-trip-line="{target.pk}"]')
                 target_row.locator('[name="quantity"]').fill("0")
                 target_row.get_by_role("button", name="Изменить", exact=True).click()
-                page.locator('#trip-action').select_option('adjust')
-                page.locator('#trip-customer-rows input').fill("2")
-                page.locator('#trip-change-save').click()
                 expect(page.locator('#trip-change-dialog')).not_to_be_visible()
                 expect(page.locator(f'[data-trip-line="{target.pk}"]')).to_have_class('trip-zero-row')
                 target_row = page.locator(f'[data-trip-line="{target.pk}"]')
@@ -227,8 +226,8 @@ class TripsBrowserChecks(StaticLiveServerTestCase):
                 with page.expect_download() as download:
                     link.click()
                 workbook = load_workbook(BytesIO(Path(download.value.path()).read_bytes()))
-                self.assertEqual(workbook.active['C2'].value, 110)
-                self.assertEqual(workbook.active['D2'].value, 2)
+                row = next(row for row in workbook.active.values if row[1] == cd.sku)
+                self.assertEqual(row[2:4], (110, 2))
                 page.screenshot(path=str(output / f'trip-{width}.png'), full_page=True)
                 self.assertEqual(errors, [])
                 context.close()

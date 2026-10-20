@@ -7,6 +7,7 @@ from django import forms
 from django.core.exceptions import FieldDoesNotExist, ValidationError
 from django.forms import BaseFormSet, formset_factory
 from django.urls import reverse
+from partners.models import Supplier
 
 from warehouse.models import CDWarehouseStock, TechWarehouseStock, Warehouse
 from warehouse.storage_locations import normalize_storage_location_list
@@ -55,6 +56,7 @@ def product_version(instance):
         values[field_name] = value
     if instance.pk:
         values["barcodes"] = list(instance.barcodes.order_by("id").values_list("value", flat=True))
+        values['excluded_suppliers'] = list(instance.supplier_exclusions.order_by('supplier_id').values_list('supplier_id', flat=True))
         stocks = list(
             instance.warehouse_stocks.order_by("warehouse_id").prefetch_related(
                 "storage_assignments__location"
@@ -77,13 +79,100 @@ def product_version(instance):
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-class ProductCardFormMixin(forms.ModelForm):
+class SupplierExclusionChoiceField(forms.ModelMultipleChoiceField):
+    def label_from_instance(self, supplier):
+        return f'{supplier.safe_label} — Не участвует в подборе'
+
+
+class ProductOptionsForm(forms.ModelForm):
+    newness_months = forms.ChoiceField(
+        label='Продолжительность', initial='1',
+        choices=(('0', 'Не делать новинкой'), ('1', '1 месяц'), ('3', '3 месяца'),
+                 ('5', '5 месяцев'), ('custom', 'Своё количество месяцев')),
+        widget=forms.Select(attrs={'data-newness-duration': ''}),
+    )
+    newness_custom_months = forms.IntegerField(
+        label='Своё количество месяцев', min_value=1, required=False,
+        widget=forms.NumberInput(attrs={'data-newness-custom': '', 'min': '1', 'step': '1'}),
+    )
+    excluded_suppliers = SupplierExclusionChoiceField(
+        label='Исключить поставщиков из подбора', queryset=Supplier.objects.none(),
+        required=False, widget=forms.CheckboxSelectMultiple,
+        help_text='Предложения сохраняются и принимаются из Excel, но не участвуют в новом подборе и назначении закупки.',
+    )
+
+    def __init__(self, *args, user=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.creation_date_event = None
+        self.recovered_creation_date = False
+        self.fields['excluded_suppliers'].queryset = Supplier.objects.all()
+        if self.instance.pk:
+            months = self.instance.newness_months
+            self.initial['newness_months'] = str(months) if months in (0, 1, 3, 5) else 'custom'
+            self.initial['newness_custom_months'] = months if months not in (0, 1, 3, 5) else None
+            self.initial['excluded_suppliers'] = list(self.instance.supplier_exclusions.values_list('supplier_id', flat=True))
+            allowed = user and (user.is_superuser or user.has_perm(f'catalog.change_{self.instance._meta.model_name}'))
+            if not allowed or self.instance.is_archived:
+                for name in ('newness_months', 'newness_custom_months', 'excluded_suppliers'):
+                    self.fields[name].disabled = True
+                    self.fields[name].required = False
+        if self.instance.pk and self.instance.created_at is None:
+            events = list(self.instance.change_events.filter(field_changes__field_name='created').distinct().order_by('pk')[:2])
+            if len(events) == 1:
+                self.creation_date_event = events[0]
+                self.fields['newness_months'].help_text = 'При выборе срока дата создания будет восстановлена из единственного события создания в истории. Срок не начинается заново.'
+            else:
+                self.fields['newness_months'].help_text = 'Дата создания старой карточки не подтверждена. Назначение положительного срока будет отклонено.'
+
+    def clean(self):
+        data = super().clean()
+        duration = data.get('newness_months')
+        if duration == 'custom':
+            months = data.get('newness_custom_months')
+            if months is None:
+                self.add_error('newness_custom_months', 'Укажите положительное целое количество месяцев.')
+                data.pop('newness_months', None)
+            else:
+                data['newness_months'] = months
+        elif duration is not None:
+            data['newness_months'] = int(duration)
+        if data.get('newness_months', 0) > 0 and self.instance.pk and self.instance.created_at is None and self.creation_date_event:
+            # Это только восстановление даты для явного выбора пользователя,
+            # а не автоматическое присвоение статуса или ручного происхождения.
+            self.instance.created_at = self.creation_date_event.created_at
+            self.recovered_creation_date = True
+        return data
+
+
+class ProductCardFormMixin(ProductOptionsForm):
     version = forms.CharField(widget=forms.HiddenInput)
     cost_confirmed = forms.BooleanField(required=False, widget=forms.HiddenInput)
     field_permissions = {}
 
     def __init__(self, *args, user, **kwargs):
-        super().__init__(*args, **kwargs)
+        submitted = args[0] if args else kwargs.get('data')
+        self.submitted_fields = set(submitted or ())
+        instance = kwargs.get('instance')
+        if submitted is not None and instance is not None and instance.pk:
+            # Старые открытые формы не содержат новых опций. Их отсутствие
+            # сохраняет настройки; новая форма отмечает явное снятие checkbox.
+            compatible = submitted.copy()
+            if 'newness_months' not in compatible:
+                months = instance.newness_months
+                compatible['newness_months'] = str(months) if months in (0, 1, 3, 5) else 'custom'
+                if months not in (0, 1, 3, 5):
+                    compatible['newness_custom_months'] = str(months)
+            if 'excluded_suppliers' not in compatible and 'product_options_present' not in compatible:
+                ids = list(instance.supplier_exclusions.values_list('supplier_id', flat=True))
+                if hasattr(compatible, 'setlist'):
+                    compatible.setlist('excluded_suppliers', [str(pk) for pk in ids])
+                else:
+                    compatible['excluded_suppliers'] = ids
+            if args:
+                args = (compatible, *args[1:])
+            else:
+                kwargs['data'] = compatible
+        super().__init__(*args, user=user, **kwargs)
         self.user = user
         self.fields["weight_grams"].label = "Вес с упаковкой, г"
         self.allowed_fields = {
@@ -91,6 +180,8 @@ class ProductCardFormMixin(forms.ModelForm):
             for field_name, permission in self.field_permissions.items()
             if user.is_superuser or user.has_perm(permission)
         }
+        if user.is_superuser or user.has_perm(f'catalog.change_{self.instance._meta.model_name}'):
+            self.allowed_fields.update({'excluded_suppliers', 'newness_custom_months'})
         self.forbidden_fields = []
         stock_model = CDWarehouseStock if isinstance(self.instance, CD) else TechWarehouseStock
         stock_permission = (
@@ -203,8 +294,8 @@ class ProductCardFormMixin(forms.ModelForm):
         cleaned_data = super().clean()
         if not self.is_bound:
             return cleaned_data
-        accepted_keys = self.allowed_fields | {"version", "cost_confirmed", "csrfmiddlewaretoken"}
-        self.forbidden_fields = sorted(set(self.data.keys()) - accepted_keys)
+        accepted_keys = self.allowed_fields | {"version", "cost_confirmed", "csrfmiddlewaretoken", 'product_options_present'}
+        self.forbidden_fields = sorted(self.submitted_fields - accepted_keys)
         if self.forbidden_fields:
             labels = []
             for field_name in self.forbidden_fields:
@@ -246,7 +337,7 @@ class TechCardForm(ProductCardFormMixin):
         fields = TECH_CARD_FIELDS
 
 
-class ProductCreateFormMixin:
+class ProductCreateFormMixin(ProductOptionsForm):
     """Форма создаёт только карточку — без остатков, себестоимости и цен."""
 
     def __init__(self, *args, **kwargs):
@@ -263,6 +354,7 @@ class CDCreateForm(ProductCreateFormMixin, forms.ModelForm):
         fields = (
             "platform", "game_series", "name", "description", "sku", "cusa_ppsa_code",
             "weight_grams", "length_cm", "width_cm", "height_cm", "comment", "exclude_from_supplier_template",
+            'newness_months',
         )
 
 
@@ -276,6 +368,7 @@ class TechCreateForm(ProductCreateFormMixin, forms.ModelForm):
         fields = (
             "brand", "product_type", "name", "description", "sku",
             "weight_grams", "length_cm", "width_cm", "height_cm", "comment", "exclude_from_supplier_template",
+            'newness_months',
         )
 
 

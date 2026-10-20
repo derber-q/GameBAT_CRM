@@ -154,6 +154,7 @@ tbody tr:hover { background: rgba(220,229,231,.2); }
 .form-panel { max-width: 780px; }
 .stacked-form { display: grid; gap: 16px; }
 .field { display: grid; gap: 6px; }
+.field[hidden] { display: none; }
 .field label { color: var(--gb-text-strong); font-size: 12px; font-weight: 700; }
 .field small { color: var(--gb-text-muted); font-size: 11px; }
 .field ul { margin: 3px 0; padding-left: 20px; }

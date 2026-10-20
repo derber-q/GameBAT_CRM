@@ -354,15 +354,21 @@
     }
   }
 
-  document.querySelectorAll("[data-collapse-toggle]").forEach((button) => {
-    const content = document.getElementById(button.getAttribute("aria-controls"));
-    if (!content) return;
-    button.addEventListener("click", () => {
-      const expanded = button.getAttribute("aria-expanded") === "true";
-      button.setAttribute("aria-expanded", String(!expanded));
-      content.hidden = expanded;
+  const boundCollapseControls = new WeakSet();
+  function attachCollapseControls() {
+    document.querySelectorAll("[data-collapse-toggle]").forEach((button) => {
+      if (boundCollapseControls.has(button)) return;
+      const content = document.getElementById(button.getAttribute("aria-controls"));
+      if (!content) return;
+      boundCollapseControls.add(button);
+      button.addEventListener("click", () => {
+        const expanded = button.getAttribute("aria-expanded") === "true";
+        button.setAttribute("aria-expanded", String(!expanded));
+        content.hidden = expanded;
+      });
     });
-  });
+  }
+  attachCollapseControls();
 
   document.querySelectorAll("[data-dialog-open]").forEach((button) => {
     const dialog = document.getElementById(button.dataset.dialogOpen);
@@ -376,5 +382,5 @@
     });
   });
 
-  window.GameBAT = { attachAutocomplete, registerGlobalBarcodeHandler };
+  window.GameBAT = { attachAutocomplete, registerGlobalBarcodeHandler, attachCollapseControls };
 })();

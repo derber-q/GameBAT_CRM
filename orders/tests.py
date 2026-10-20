@@ -29,6 +29,14 @@ from .services import (
 from .trips import create_trip
 
 
+def order_product_rows(sheet):
+    """Товарные строки отчёта: количество задано числом, итог в конце исключён."""
+    quantity_column = sheet.max_column - 2
+    return [(index, tuple(cell.value for cell in sheet[index]))
+            for index in range(5, sheet.max_row)
+            if isinstance(sheet.cell(index, quantity_column).value, int)]
+
+
 class ProcurementOrderTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_superuser("admin", password="StrongAdmin!123")
@@ -87,8 +95,9 @@ class ProcurementOrderTests(TestCase):
         sheet = book.active
         self.assertEqual(tuple(cell.value for cell in sheet[4]),
                          ("Наименование", "Оплата", "Количество", "Цена, ₽", "Сумма, ₽"))
-        self.assertEqual(tuple(cell.value for cell in sheet[5]), ("Игра", "Предоплата", 2, 2000, 4000))
-        self.assertEqual(tuple(cell.value for cell in sheet[6]), ("Игра", "Постоплата", 1, 2080, 2080))
+        self.assertEqual([values for _row, values in order_product_rows(sheet)], [
+            ("Игра", "Предоплата", 2, 2000, 4000), ("Игра", "Постоплата", 1, 2080, 2080),
+        ])
         self.assertEqual(sheet.cell(sheet.max_row, 3).value, 3)
         self.assertEqual(sheet.cell(sheet.max_row, 5).value, 6080)
         self.assertEqual(book.sheetnames, ["Заказ"])
@@ -110,8 +119,9 @@ class ProcurementOrderTests(TestCase):
         self.cd_source.save()
         book = load_workbook(BytesIO(self.client.get(url).content))
         sheet = book.active
-        self.assertEqual(tuple(cell.value for cell in sheet[5]), ("Игра", "Предоплата", 1, 2000, 2000))
-        self.assertEqual(tuple(cell.value for cell in sheet[6]), ("Игра", "Постоплата", 2, 2080, 4160))
+        self.assertEqual([values for _row, values in order_product_rows(sheet)], [
+            ("Игра", "Предоплата", 1, 2000, 2000), ("Игра", "Постоплата", 2, 2080, 4160),
+        ])
         self.assertEqual(sheet.cell(sheet.max_row, 5).value, 6160)
         book.close()
 
@@ -128,7 +138,7 @@ class ProcurementOrderTests(TestCase):
         self.client.force_login(self.user)
         book = load_workbook(BytesIO(self.client.get(reverse("orders:export", args=(order.pk,))).content))
         sheet = book.active
-        self.assertEqual([sheet.cell(row, 3).value for row in (5, 6)], [0, 0])
+        self.assertEqual([values[2] for _row, values in order_product_rows(sheet)], [0, 0])
         self.assertEqual(sheet.cell(sheet.max_row, 5).value, 0)
         book.close()
 
@@ -155,10 +165,11 @@ class ProcurementOrderTests(TestCase):
         self.client.force_login(self.user)
         book = load_workbook(BytesIO(self.client.get(reverse("orders:export", args=(order.pk,))).content))
         sheet = book.active
-        self.assertEqual(sheet["A5"].data_type, "s")
-        self.assertEqual(sheet["A5"].value, "'" + item.product_name_snapshot)
-        self.assertEqual(Decimal(str(sheet["D5"].value)), Decimal("1234.56"))
-        self.assertEqual(Decimal(str(sheet["E5"].value)), Decimal("2469.12"))
+        row, values = order_product_rows(sheet)[0]
+        self.assertEqual(sheet.cell(row, 1).data_type, "s")
+        self.assertEqual(values[0], "'" + item.product_name_snapshot)
+        self.assertEqual(Decimal(str(values[3])), Decimal("1234.56"))
+        self.assertEqual(Decimal(str(values[4])), Decimal("2469.12"))
         self.assertEqual(Decimal(str(sheet.cell(sheet.max_row, 5).value)), Decimal("2469.12"))
         book.close()
 

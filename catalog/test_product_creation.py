@@ -34,6 +34,7 @@ class ProductCreationTests(TestCase):
 
         response = self.client.post(reverse("nomenclature:create"), {
             "product_kind": "cd",
+            'newness_months': '0',
             "platform": self.platform.pk,
             "name": "Новая игра",
             "description": "Описание",
@@ -58,6 +59,7 @@ class ProductCreationTests(TestCase):
         self.client.force_login(admin)
         response = self.client.post(reverse("nomenclature:create"), {
             "product_kind": "tech",
+            'newness_months': '0',
             "brand": self.brand.pk,
             "product_type": self.product_type.pk,
             "name": "Новая консоль",

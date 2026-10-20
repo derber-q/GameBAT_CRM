@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Импортные прайсы · ReSOURCE{% endblock %}
 {% block content %}
-<div class="page-heading"><div><p class="eyebrow">Прайс · поставщики и закупки</p><h1>Импортные прайсы</h1><p class="muted">Прайсы поставщиков и закупочный прайс.</p></div></div>
+<div class="page-heading"><div><p class="eyebrow">Прайс · поставщики и закупки</p><h1>Импортные прайсы</h1><p class="muted">Прайсы поставщиков и закупочный прайс.</p></div>{% if perms.orders.create_order and perms.price.view_supplier_prices %}<a class="button" href="{% url 'orders:stock_create' %}">Заказ на склад через форму</a>{% endif %}</div>
 <div class="price-section-grid">
   <section class="panel"><h2>Прайсы поставщиков</h2><p class="muted">Диски и техника загружаются отдельно. Файл обновляет цены активных товаров из него у выбранного поставщика. Пустая цена удаляет предложение. Цены — только AED.</p>
     {% if can_download_supplier %}<div class="heading-actions chip-list"><a class="button button-secondary" href="{% url 'price:supplier_template_kind' 'cd' %}">Пустой шаблон дисков</a><a class="button button-secondary" href="{% url 'price:supplier_template_kind' 'tech' %}">Пустой шаблон техники</a></div>{% endif %}
@@ -25,7 +25,7 @@
   </section>
   <section class="panel"><h2>Закупочный прайс</h2><p class="muted">Выбирается минимальная цена поставщика. При равной цене — поставщик с меньшим числом в поле «Приоритет» (1 — самый высокий), затем по алфавиту.</p>
     {% if can_create_procurement %}<form method="post" action="{% url 'price:procurement_create' %}" class="stacked-form">{% csrf_token %}{% include "price/_procurement_fields.html" %}<p class="muted">Если у участвующей техники не указан вес, программа попросит его перед созданием прайса. Группы тарифов настраиваются в справочнике типов товаров.</p><button class="button" type="submit">Создать закупочный прайс</button></form>{% endif %}
-    {% if price_lists %}<div class="price-history"><h3>Последние версии</h3>{% for item in price_lists %}<div class="heading-actions"><a href="{% url 'price:procurement_detail' item.pk %}">№{{ item.pk }} · {{ item.created_at|date:"d.m.Y H:i" }} · {{ item.items.count }} поз.</a>{% if can_export_stock %}<a class="button button-secondary" href="{% url 'price:procurement_stock_export' item.pk %}">Скачать прайс для заказа на склад</a>{% endif %}</div>{% endfor %}</div>{% endif %}
+    {% if price_lists %}<div class="price-history"><h3>Последние версии</h3>{% for item in price_lists %}<div class="heading-actions"><a href="{% url 'price:procurement_detail' item.pk %}">№{{ item.pk }} · {{ item.created_at|date:"d.m.Y H:i" }} · {{ item.items.count }} поз.</a>{% if perms.orders.create_order and perms.price.view_supplier_prices %}<a class="button" href="{% url 'orders:stock_create' %}?price_list={{ item.pk }}">Заказ на склад через форму</a>{% endif %}{% if can_export_stock %}<a class="button button-secondary" href="{% url 'price:procurement_stock_export' item.pk %}">Скачать прайс для заказа на склад</a>{% endif %}</div>{% endfor %}</div>{% endif %}
   </section>
 
 </div>

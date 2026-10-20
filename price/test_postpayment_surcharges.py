@@ -133,11 +133,11 @@ class ProcurementSurchargeTests(TestCase):
         item = version.items.get(tech=self.tech)
         self.assertEqual(item.markup_rub, 0)
         self.assertEqual(item.prepayment_price_rub, Decimal("2000"))
-        self.assertEqual(item.postpayment_price_rub, Decimal("2500.25"))
+        self.assertEqual(item.postpayment_price_rub, Decimal("2510"))
         self.assertEqual(ProcurementPricePreference.objects.get(tech=self.tech).postpayment_surcharge_rub, Decimal("500.25"))
         newer = self.create(exchange_rate_usdt_rub="90")
-        self.assertEqual(newer.items.get(tech=self.tech).postpayment_price_rub, Decimal("2750.25"))
-        self.assertEqual(version.items.get(tech=self.tech).postpayment_price_rub, Decimal("2500.25"))
+        self.assertEqual(newer.items.get(tech=self.tech).postpayment_price_rub, Decimal("2760"))
+        self.assertEqual(version.items.get(tech=self.tech).postpayment_price_rub, Decimal("2510"))
 
     def test_postpayment_edit_uses_fixed_surcharge_and_current_negative_confirmation(self):
         version = self.create()
@@ -151,7 +151,7 @@ class ProcurementSurchargeTests(TestCase):
         version = self.create()
         self.update(version, self.rows(version, product_kind="cd", postpayment_surcharge="333.33", surcharge_mode="fixed"))
         newer = self.create(exchange_rate_usdt_rub="120")
-        self.assertEqual(newer.items.get(cd=self.cd).postpayment_price_rub, Decimal("3333.33"))
+        self.assertEqual(newer.items.get(cd=self.cd).postpayment_price_rub, Decimal("3340"))
         self.assertEqual(ProcurementPricePreference.objects.get(cd=self.cd).postpayment_surcharge_rub, Decimal("333.33"))
 
     def test_invalid_surcharge_rolls_back_all_rows_and_memory(self):
@@ -183,7 +183,7 @@ class ProcurementSurchargeTests(TestCase):
         })
         self.assertEqual(response.status_code, 302)
         version = ProcurementPriceList.objects.get()
-        self.assertEqual(version.items.get(tech=self.tech).postpayment_price_rub, Decimal("2450.50"))
+        self.assertEqual(version.items.get(tech=self.tech).postpayment_price_rub, Decimal("2460"))
         self.assertEqual(self.create().items.get(tech=self.tech).postpayment_surcharge_rub, Decimal("450.50"))
 
     def test_unknown_rate_and_missing_weight_share_preparation_and_invalid_input_writes_nothing(self):

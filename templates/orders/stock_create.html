@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Заказ на склад через форму · ReSOURCE{% endblock %}
+{% block body_class %}responsive-crm-page stock-order-page{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{% static 'css/stock-order-form.css' %}?v=1"><script src="{% static 'js/stock-order-form.js' %}?v=1" defer></script>{% endblock %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">Импортные закупки</p><h1>Заказ на склад через форму</h1><p class="muted">Выберите версию прайса и укажите количество товаров. Склад поступления выбирается после доставки.</p></div><div class="heading-actions"><a class="button button-secondary" href="{% url 'orders:upload' %}">Загрузить заказ из Excel</a><a class="button button-secondary" href="{% url 'price:imports' %}">К импортным прайсам</a></div></div>
+{% if has_price_lists %}
+<form method="get" class="panel form-panel"><div class="field"><label for="{{ choice_form.price_list.id_for_label }}">{{ choice_form.price_list.label }}</label>{{ choice_form.price_list }}{% for error in choice_form.price_list.errors %}<span class="error-text">{{ error }}</span>{% endfor %}</div><button class="button button-secondary" type="submit">Показать товары</button></form>
+{% else %}<section class="panel"><p class="muted">Сохранённых импортных прайсов пока нет. Сначала создайте прайс в разделе «Импортные прайсы».</p></section>{% endif %}
+{% if form %}
+{% if price_list.excluded_item_count %}<div class="alert alert-warning">Не показано позиций: {{ price_list.excluded_item_count }}. Их поставщик в этой версии прайса теперь исключён из подбора. Сформируйте новый прайс, чтобы выбрать допустимое предложение.</div>{% endif %}
+<form method="post" data-stock-order-form>{% csrf_token %}<input type="hidden" name="price_list" value="{{ price_list.pk }}">
+<section class="panel form-panel stacked-form">
+{% if form.non_field_errors %}<div class="alert alert-error" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+<div class="field"><label for="{{ form.recipient.id_for_label }}">{{ form.recipient.label }}</label>{{ form.recipient }}<small class="muted">{{ form.recipient.help_text }}</small>{% for error in form.recipient.errors %}<span class="error-text">{{ error }}</span>{% endfor %}</div>
+<div class="field"><label for="{{ form.comment.id_for_label }}">{{ form.comment.label }}</label>{{ form.comment }}{% for error in form.comment.errors %}<span class="error-text">{{ error }}</span>{% endfor %}</div>
+</section>
+<section class="panel table-panel"><div class="section-heading"><div><h2>Товары из прайса №{{ price_list.pk }}</h2><p class="muted">Закупка включает доставку по этой версии прайса. Остаток и текущая себестоимость показаны для справки.</p></div><input class="compact-search" type="search" placeholder="Название или артикул" aria-label="Поиск товара" data-stock-order-search></div>
+<div class="table-scroll"><table><thead><tr><th>Товар</th><th class="numeric">Остаток всех складов</th><th class="numeric">Текущая себестоимость, ₽</th><th class="numeric">Себестоимость с доставкой, ₽</th><th>Количество к заказу</th><th class="numeric">Сумма, ₽</th></tr></thead>
+{% for group in groups %}<tbody data-stock-order-group><tr data-stock-order-heading><th colspan="6">{{ group.name }}</th></tr>{% for row in group.rows %}<tr data-stock-order-row data-search="{{ group.name }} {{ row.item.product_name_snapshot }} {{ row.item.article_snapshot }}"><td>{{ row.item.product_name_snapshot }}<br><small class="mono muted">{{ row.item.article_snapshot }}</small></td><td class="numeric" data-label="Остаток всех складов">{{ row.stock }}</td><td class="numeric" data-label="Текущая себестоимость, ₽">{{ row.current_cost|default_if_none:"—" }}</td><td class="numeric" data-label="Себестоимость с доставкой, ₽">{{ row.item.stock_unit_cost }}</td><td data-label="Количество к заказу">{{ row.quantity }}{% for error in row.quantity.errors %}<span class="error-text">{{ error }}</span>{% endfor %}</td><td class="numeric" data-label="Сумма, ₽" data-stock-order-line-total>0,00</td></tr>{% endfor %}</tbody>{% empty %}<tbody><tr><td colspan="6" class="empty-cell">В этой версии нет доступных для заказа товаров.</td></tr></tbody>{% endfor %}
+</table></div><p class="muted" data-stock-order-no-results hidden>По вашему запросу товары не найдены.</p></section>
+<div class="submit-bar"><div aria-live="polite"><b>Итого: <span data-stock-order-total>0,00</span> ₽</b><span>Выбрано: <span data-stock-order-units>0</span> шт.</span></div><button class="button button-large" type="submit" {% if not groups %}disabled{% endif %}>Проверить и показать состав</button></div>
+</form>
+{% endif %}
+{% endblock %}

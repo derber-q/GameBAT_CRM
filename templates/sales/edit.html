@@ -2,7 +2,7 @@
 {% load static %}
 {% block body_class %}sale-entry-page{% endblock %}
 {% block title %}Изменить {{ sale.visible_id }} · ReSOURCE{% endblock %}
-{% block extra_head %}<script src="{% static 'js/stock-lines.js' %}?v=global-barcode-1-sale-discounts-2-avito-commission-9-barcode-focus-2-signed-discount-1-system-products-1" defer></script>{% endblock %}
+{% block extra_head %}<script src="{% static 'js/stock-lines.js' %}?v=global-barcode-1-sale-discounts-2-avito-commission-9-barcode-focus-2-signed-discount-1-system-products-1-payments-2" defer></script>{% endblock %}
 {% block content %}
 <div class="page-heading"><div><p class="eyebrow">Неоплаченная постоплата</p><h1>Изменить {{ sale.visible_id }}</h1><p class="muted">Существующие позиции сохранят историческую цену; новые получат текущую {{ sale.get_price_type_display|lower }} цену.</p></div>{% if perms.sales.view_sale_detail or user.is_superuser %}<a class="button button-secondary" href="{% url 'sales:detail' sale.pk %}">Назад</a>{% endif %}</div>
 {{ initial_items|json_script:"initial-sale-items" }}

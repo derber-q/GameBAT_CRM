@@ -13,7 +13,7 @@ class SaleCreateForm(SingleWarehouseInitialMixin, forms.Form):
     cash_received_amount = forms.DecimalField(
         label="Получено от покупателя", required=False, min_value=0,
         max_digits=20, decimal_places=2,
-        help_text="Для наличной продажи. Если оставить пустым, будет принята стоимость товаров.",
+        help_text="Если оставить пустым, будет принята стоимость товаров. При постоплате сумма вводится при подтверждении оплаты.",
     )
     note = forms.CharField(
         label="Примечание", required=False, widget=forms.Textarea(attrs={"rows": 3}),

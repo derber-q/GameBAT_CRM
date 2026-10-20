@@ -178,7 +178,7 @@ class RetailTests(TestCase):
         from cash.models import CashTransaction
         from django.core.exceptions import ValidationError
         staff = get_user_model().objects.create_superuser(username="payment-staff", password="isolated-test-password")
-        for method in (Sale.PaymentMethod.CASH_POSTPAY, Sale.PaymentMethod.BANK_ACCOUNT):
+        for method in (Sale.PaymentMethod.CASH_POSTPAY, Sale.PaymentMethod.BANK_TRANSFER_POSTPAY):
             self.add()
             version = self.client.get(reverse("retailer:cart")).context["version"]
             response = self.client.post(reverse("retailer:checkout"), {"cart_version":version,"name":"Покупатель","phone":"+79991234567"}, HTTP_X_REQUESTED_WITH="XMLHttpRequest")

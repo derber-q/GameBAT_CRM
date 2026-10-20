@@ -24,8 +24,7 @@ logger = logging.getLogger("gamebat.business")
 CENT = Decimal("0.01")
 ORDER_TRANSITIONS = {
     Sale.OrderStatus.CREATED: Sale.OrderStatus.ASSEMBLED,
-    Sale.OrderStatus.ASSEMBLED: Sale.OrderStatus.SHIPPED,
-    Sale.OrderStatus.SHIPPED: Sale.OrderStatus.DELIVERED,
+    Sale.OrderStatus.ASSEMBLED: Sale.OrderStatus.DELIVERED,
 }
 
 
@@ -36,7 +35,7 @@ def next_order_status(sale):
 def can_mark_paid(sale):
     return (
         not sale.is_cancelled and sale.payment_status == Sale.PaymentStatus.UNPAID
-        and sale.payment_method in (Sale.PaymentMethod.CASH_POSTPAY, Sale.PaymentMethod.BANK_ACCOUNT)
+        and sale.is_postpayment
     )
 
 
@@ -95,7 +94,7 @@ def _selected_price(product, price_type):
 
 
 def _complete_if_ready(sale):
-    if sale.order_status == Sale.OrderStatus.DELIVERED and sale.payment_status == Sale.PaymentStatus.PAID:
+    if sale.is_completed:
         sale.completed_at = sale.completed_at or timezone.now()
         return True
     return False
@@ -108,6 +107,8 @@ def _cash_received(value, total):
         amount = Decimal(str(value)).quantize(CENT, rounding=ROUND_HALF_UP)
     except (InvalidOperation, TypeError, ValueError) as exc:
         raise ValidationError("Укажите корректную сумму, полученную от покупателя.") from exc
+    if not amount.is_finite() or amount >= Decimal("1e18"):
+        raise ValidationError("Укажите корректную сумму, полученную от покупателя.")
     if amount < total:
         raise ValidationError("Полученная сумма не может быть меньше стоимости продажи.")
     return amount
@@ -311,7 +312,7 @@ def create_sale(
                 f"На выбранном складе недостаточно товара «{product.name}»: доступно только {available} шт."
             )
         if external_prices is not None:
-            if sale_type != Sale.SaleType.YANDEX_MARKET or payment_method != Sale.PaymentMethod.BANK_ACCOUNT:
+            if sale_type != Sale.SaleType.YANDEX_MARKET or payment_method != Sale.PaymentMethod.BANK_TRANSFER_POSTPAY:
                 raise ValidationError("Внешние снимки цен предназначены для заказов Маркета.")
             try:
                 line_total = Decimal(str(external_prices[key])).quantize(CENT)
@@ -349,8 +350,9 @@ def create_sale(
     if any(discounts.values()) or any(line["unit_discount"] for line in custom_prepared):
         if not note:
             raise ValidationError("При использовании скидки или доплаты обязательно укажите примечание к продаже.")
-    immediate_cash = payment_method == Sale.PaymentMethod.CASH
-    actual_received = _cash_received(cash_received_amount, total) if immediate_cash else None
+    method = Sale.PaymentMethod(payment_method)
+    immediate_payment = method != Sale.PaymentMethod.UNDEFINED and not method.is_postpayment
+    actual_received = _cash_received(cash_received_amount, total) if immediate_payment else None
     extra_cash = (actual_received - total).quantize(CENT) if actual_received is not None else Decimal("0.00")
     sale = Sale.objects.create(
         operation_kind=operation, creation_key=creation_key, creation_fingerprint=fingerprint,
@@ -358,15 +360,18 @@ def create_sale(
         price_type=price_type,
         sale_type=sale_type,
         payment_method=payment_method,
-        order_status=Sale.OrderStatus.DELIVERED if immediate_cash else Sale.OrderStatus.CREATED,
-        payment_status=Sale.PaymentStatus.PAID if immediate_cash else Sale.PaymentStatus.UNPAID,
-        completed_at=timezone.now() if immediate_cash else None,
+        order_status=Sale.OrderStatus.DELIVERED if immediate_payment else Sale.OrderStatus.CREATED,
+        payment_status=Sale.PaymentStatus.PAID if immediate_payment else Sale.PaymentStatus.UNPAID,
+        paid_at=timezone.now() if immediate_payment else None,
+        paid_by=actor if immediate_payment else None,
         total_amount=total,
         cash_received_amount=actual_received,
         extra_cash_amount=extra_cash,
         note=note,
         created_by=actor,
     )
+    if _complete_if_ready(sale):
+        sale.save(update_fields=("completed_at",))
     sale.visible_id = f"SALE-{sale.pk:06d}"
     sale.save(update_fields=("visible_id",))
 
@@ -426,7 +431,7 @@ def create_sale(
     if consignment_lines:
         from consignment.services import consume_consignment_sale_lines
         consume_consignment_sale_lines(actor=actor, sale=sale, lines=consignment_lines)
-    if immediate_cash and operation != Sale.OperationKind.EXPENSE:
+    if immediate_payment and sale.is_cash_payment and operation != Sale.OperationKind.EXPENSE:
         credit_sale_payment(sale=sale, actor=actor)
     total_discount = sum(
         (discount * line["quantity"] for line, _, _, _, discount, _, _, _ in priced_lines),
@@ -451,7 +456,7 @@ def advance_order_status(*, actor, sale_id, next_status, _market=False):
         raise ValidationError("Статус этого заказа изменяется через блок Яндекс Маркета.")
     if sale.is_cancelled:
         raise ValidationError("Отменённую продажу изменять нельзя.")
-    if ORDER_TRANSITIONS.get(sale.order_status) != next_status:
+    if next_status not in Sale.OrderStatus.values or ORDER_TRANSITIONS.get(sale.order_status) != next_status:
         raise ValidationError("Этот переход статуса недопустим.")
     sale.order_status = next_status
     update_fields = ["order_status", "updated_at"]
@@ -470,8 +475,11 @@ def set_sale_payment_method(*, actor, sale_id, payment_method):
         raise ValidationError("Способ оплаты можно выбрать только для действующего неоплаченного заказа.")
     if sale.payment_method != Sale.PaymentMethod.UNDEFINED:
         raise ValidationError("Способ оплаты уже определён.")
-    if payment_method not in (Sale.PaymentMethod.CASH_POSTPAY, Sale.PaymentMethod.BANK_ACCOUNT):
-        raise ValidationError("Выберите наличные с последующим подтверждением или банковский счёт.")
+    # Совместимость с ранее открытой формой розничного заказа.
+    if payment_method == Sale.PaymentMethod.BANK_ACCOUNT:
+        payment_method = Sale.PaymentMethod.BANK_TRANSFER_POSTPAY
+    if payment_method not in (Sale.PaymentMethod.CASH_POSTPAY, Sale.PaymentMethod.BANK_TRANSFER_POSTPAY):
+        raise ValidationError("Выберите наличную или банковскую постоплату.")
     sale.payment_method = payment_method
     sale.full_clean()
     sale.save(update_fields=("payment_method", "updated_at"))
@@ -486,18 +494,17 @@ def mark_sale_paid(*, actor, sale_id, cash_received_amount=None):
         raise ValidationError("Отменённую продажу оплачивать нельзя.")
     if sale.payment_status == Sale.PaymentStatus.PAID:
         raise ValidationError("Заказ уже оплачен.")
-    if sale.payment_method == Sale.PaymentMethod.CASH_POSTPAY:
-        _validate_expense_received(sale.operation_kind, cash_received_amount)
-        sale.cash_received_amount = _cash_received(cash_received_amount, sale.total_amount)
-        sale.extra_cash_amount = (sale.cash_received_amount - sale.total_amount).quantize(CENT)
-        if sale.operation_kind != Sale.OperationKind.EXPENSE:
-            credit_sale_payment(sale=sale, actor=actor)
-    elif sale.payment_method != Sale.PaymentMethod.BANK_ACCOUNT:
+    if not sale.is_postpayment:
         raise ValidationError("Этот способ оплаты не поддерживает отложенное подтверждение.")
+    _validate_expense_received(sale.operation_kind, cash_received_amount)
+    sale.cash_received_amount = _cash_received(cash_received_amount, sale.total_amount)
+    sale.extra_cash_amount = (sale.cash_received_amount - sale.total_amount).quantize(CENT)
+    if sale.is_cash_payment and sale.operation_kind != Sale.OperationKind.EXPENSE:
+        credit_sale_payment(sale=sale, actor=actor)
     sale.payment_status = Sale.PaymentStatus.PAID
-    update_fields = ["payment_status", "updated_at"]
-    if sale.payment_method == Sale.PaymentMethod.CASH_POSTPAY:
-        update_fields.extend(("cash_received_amount", "extra_cash_amount"))
+    sale.paid_at = timezone.now()
+    sale.paid_by = actor
+    update_fields = ["payment_status", "updated_at", "cash_received_amount", "extra_cash_amount", "paid_at", "paid_by"]
     if _complete_if_ready(sale):
         update_fields.append("completed_at")
     sale.save(update_fields=update_fields)
@@ -536,8 +543,8 @@ def edit_postpay_sale_items(*, actor, sale_id, lines, note=None):
         raise ValidationError("Состав заказа Маркета нельзя редактировать как обычную продажу.")
     if sale.is_cancelled:
         raise ValidationError("Состав отменённой продажи изменять нельзя.")
-    if sale.payment_method != Sale.PaymentMethod.CASH_POSTPAY:
-        raise ValidationError("Редактировать можно только продажу с наличной постоплатой.")
+    if not sale.is_postpayment:
+        raise ValidationError("Редактировать можно только продажу с постоплатой.")
     if sale.payment_status == Sale.PaymentStatus.PAID:
         raise ValidationError("Состав оплаченного заказа изменять нельзя.")
     if sale.order_status == Sale.OrderStatus.DELIVERED:
@@ -732,13 +739,13 @@ def cancel_sale(*, actor, sale_id, comment, _market=False, restore_stock=True):
     refund_transaction = None
     refund_amount = Decimal("0.00")
     if sale.payment_status == Sale.PaymentStatus.PAID and sale.operation_kind != Sale.OperationKind.EXPENSE:
-        if sale.payment_method in (Sale.PaymentMethod.CASH, Sale.PaymentMethod.CASH_POSTPAY):
+        if sale.is_cash_payment:
             refund_transaction = refund_sale_payment(
                 sale=sale, actor=actor, comment=f"Отмена {sale.visible_id}: {comment}",
             )
             refund_amount = refund_transaction.amount
-        elif sale.payment_method == Sale.PaymentMethod.BANK_ACCOUNT:
-            refund_amount = sale.total_amount
+        elif sale.is_bank_payment:
+            refund_amount = sale.cash_received_amount if sale.cash_received_amount is not None else sale.total_amount
 
     for product_type, product_field, item in (locked_items if restore_stock else []):
         key = (product_type, getattr(item, f"{product_field}_id"))

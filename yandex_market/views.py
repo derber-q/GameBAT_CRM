@@ -23,11 +23,10 @@ from warehouse.inventory import global_stock
 from warehouse.models import Warehouse
 from .client import MarketError, YandexMarketClient, api_key
 from .content import CONTENT_FIELDS, LOCKED_CARD, OFFER_SCHEMA, DELETE_FIELDS, content_values_equal
-from .documents import save_image
+from .documents import save_image, request_labels
 from .forms import ContentForm, IntegrationForm
 from .models import ApiLog, Integration, LabelDocument, Media, OfferConnection, OrderMetadata, RemoteOffer, ReturnMetadata, SyncJob
-from .orders import accept_return, available_actions, action_payload
-from .packing import validate_boxes
+from .orders import accept_return, available_actions, request_order_action
 from .queue import enqueue, product_after_commit
 from .services import activate, audit, bind_offer, check_connection, create_offer, refresh_category, refresh_offer, set_offer_hidden, unlink_offer, store_api_key, connections_with_stock, store_offer
 
@@ -398,23 +397,13 @@ def order_action(request, pk):
     confirmed(request)
     order = get_object_or_404(OrderMetadata.objects.select_related("integration"), pk=pk)
     action = request.POST.get("action")
-    payload = {"order_id": order.order_id}
-    if action == "refresh":
-        kind = "order"
-    elif action == "boxes":
+    boxes = None
+    if action == "boxes":
         try:
             boxes = json.loads(request.POST.get("boxes", ""))
         except ValueError:
             raise ValidationError("Не удалось прочитать состав коробок.") from None
-        validate_boxes(order, boxes)
-        payload["boxes"] = boxes
-        kind = "boxes"
-    else:
-        action_payload(order, action)
-        payload["action"] = action
-        kind = "order_action"
-    enqueue(order.integration, kind, order.order_id, payload, actor=request.user)
-    audit(order.integration, request.user, kind, order.order_id, requested_action=action)
+    request_order_action(order_id=order.pk, actor=request.user, action=action, boxes=boxes)
     messages.success(request, "Задание поставлено в очередь. Статус обновится после ответа Маркета.")
     return redirect("yandex_market:order", pk=pk)
 
@@ -440,26 +429,14 @@ def label_request(request):
     orders = list(integration.orders.filter(pk__in=[int(i) for i in ids if i.isdecimal()]))
     if not orders or len(orders) != len(set(ids)) or len(orders) > 1000:
         raise ValidationError("Выберите от 1 до 1000 заказов одного магазина.")
-    values = {"integration": integration, "format": format_name, "created_by": request.user}
-    if len(orders) == 1:
-        values["order"] = orders[0]
-        box_id, shipment_id = request.POST.get("box"), request.POST.get("shipment")
-        if box_id or shipment_id:
-            if not box_id or not shipment_id or not box_id.isdecimal() or not shipment_id.isdecimal():
-                raise ValidationError("Укажите идентификаторы коробки и отправления.")
-            values.update(box_id=int(box_id), shipment_id=int(shipment_id))
-    else:
-        values["order_ids"] = [o.order_id for o in orders]
-    with transaction.atomic():
-        document = LabelDocument.objects.create(**values)
-        transaction.on_commit(lambda: enqueue(integration, "label", document.pk, {"document_id": document.pk}, actor=request.user))
-        audit(integration, request.user, "labels_requested", document.pk, orders=[o.order_id for o in orders])
+    document = request_labels(integration=integration, orders=orders, actor=request.user, format_name=format_name,
+                             box_id=request.POST.get('box'), shipment_id=request.POST.get('shipment'))
     return redirect("yandex_market:label", pk=document.pk)
 
 
 @access("print_labels")
 def label_detail(request, pk):
-    return render(request, "yandex_market/label.html", {"document": get_object_or_404(LabelDocument, pk=pk)})
+    return render(request, "yandex_market/label.html", {"document": get_object_or_404(LabelDocument.objects.select_related('order__sale'), pk=pk)})
 
 
 @access("print_labels")

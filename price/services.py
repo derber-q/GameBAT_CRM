@@ -1,6 +1,6 @@
 import logging
 from collections import Counter, defaultdict
-from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from decimal import Decimal, InvalidOperation, ROUND_CEILING, ROUND_HALF_UP
 
 from django.core.exceptions import ValidationError
 from django.core.validators import DecimalValidator
@@ -9,6 +9,7 @@ from django.db.models import Q
 
 from catalog.models import ProductType, Tech
 from catalog.product_identifiers import set_product_weight
+from catalog.supplier_exclusions import exclusion_keys
 from pricing.models import SupplierCDPrice, SupplierTechPrice
 
 from .models import ProcurementPriceList, ProcurementPriceListItem, ProcurementPricePreference, ProcurementSupplierOffer
@@ -52,7 +53,24 @@ def calculate_postpayment(prepayment, *, surcharge=None):
     return (price + surcharge).quantize(CENT, rounding=ROUND_HALF_UP)
 
 
-def calculate_prepayment(postpayment, *, surcharge=None):
+def round_customer_price(value):
+    try:
+        price = Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError) as exc:
+        raise ValidationError('Покупательская цена: укажите корректное число.') from exc
+    if not price.is_finite() or price < 0:
+        raise ValidationError('Покупательская цена должна быть неотрицательной.')
+    return ((price / Decimal('10')).to_integral_value(rounding=ROUND_CEILING) * Decimal('10')).quantize(CENT)
+
+
+def rounded_customer_prices(prepayment, *, surcharge=None):
+    raw_pre = decimal_value(prepayment, nonnegative=True, label='Цена предоплаты')
+    raw_post = calculate_postpayment(raw_pre, surcharge=surcharge)
+    pre, post = round_customer_price(raw_pre), round_customer_price(raw_post)
+    return pre, post, pre - raw_pre, post - raw_post
+
+
+def calculate_prepayment(postpayment, *, surcharge=None, rounded=False):
     price = decimal_value(postpayment, nonnegative=True, label="Цена постоплаты")
     if surcharge is not None:
         surcharge = validated_postpayment_surcharge(surcharge)
@@ -64,6 +82,13 @@ def calculate_prepayment(postpayment, *, surcharge=None):
         prepayment = price - surcharge
         if prepayment >= 0 and calculate_postpayment(prepayment) == price:
             return prepayment
+    if rounded:
+        # Округление делает достижимыми края разрывов 2060 и 3080,
+        # сохраняя прежнее правило выбора доплаты по исходной предоплате.
+        for candidate in (Decimal('1999.99'), Decimal('2999.99')):
+            original_post = calculate_postpayment(candidate)
+            if original_post <= price and round_customer_price(original_post) == round_customer_price(price):
+                return candidate
     raise ValidationError(
         "Цена постоплаты не соответствует правилу расчёта. Допустимо: от 60 до 2059,99 RUB, "
         "от 2080 до 3079,99 RUB или от 3100 RUB."
@@ -89,9 +114,13 @@ def _supplier_offers(*, lock=False):
 
 def resolve_best_suppliers(offers=None):
     offers = offers if offers is not None else _supplier_offers()
+    excluded = exclusion_keys(offers)
     minimum_candidates = {}
     unique_wins = Counter()
     for key, product_offers in offers.items():
+        product_offers = [row for row in product_offers if (*key, row[0].pk) not in excluded]
+        if not product_offers:
+            continue
         minimum = min(price for _, price, _ in product_offers)
         candidates = [(supplier, price, product) for supplier, price, product in product_offers if price == minimum]
         minimum_candidates[key] = candidates
@@ -219,6 +248,8 @@ def create_procurement_price_list(
     if not offers:
         raise ValidationError("Нет ни одной положительной актуальной цены поставщика.")
     winners, _ = resolve_best_suppliers(offers)
+    if not winners:
+        raise ValidationError('Нет доступных предложений: все поставщики исключены из подбора участвующих товаров.')
     tech_products = _prepare_procurement_weights(winners=winners, weights=weights, actor=actor)
     preferences = _price_preferences(winners)
     postpayment_surcharges = postpayment_surcharges or {}
@@ -279,7 +310,9 @@ def create_procurement_price_list(
                 "Измените наценку в предыдущем прайсе и повторите создание."
             )
         surcharge = surcharges[(kind, product.pk)]
-        postpayment = calculate_postpayment(prepayment, surcharge=surcharge)
+        raw_markup = markup
+        prepayment, postpayment, pre_extra, post_extra = rounded_customer_prices(prepayment, surcharge=surcharge)
+        markup = prepayment - base - delivery
         for amount in (markup, delivery, prepayment, postpayment):
             DecimalValidator(max_digits=20, decimal_places=2)(amount)
         values = {
@@ -292,6 +325,9 @@ def create_procurement_price_list(
             "exchange_rate_aed_rub": rate,
             "base_price_rub": base,
             "markup_rub": markup,
+            'original_markup_rub': raw_markup,
+            'prepayment_rounding_extra_rub': pre_extra,
+            'postpayment_rounding_extra_rub': post_extra,
             "delivery_rub": delivery,
             "weight_grams_snapshot": product.weight_grams,
             "delivery_group_snapshot": delivery_group,
@@ -310,7 +346,7 @@ def create_procurement_price_list(
     for item in items:
         if item.product_kind == "tech" and item.tech_id in custom_surcharge_ids:
             preference = preferences.get(("tech", item.tech_id)) or ProcurementPricePreference(tech_id=item.tech_id)
-            preference.markup_rub = item.markup_rub
+            preference.markup_rub = item.configured_markup_rub
             preference.postpayment_surcharge_rub = item.postpayment_surcharge_rub
             preference.source_item = item
             preference.updated_by = actor
@@ -319,6 +355,7 @@ def create_procurement_price_list(
         "Закупочный прайс создан: user_id=%s price_list_id=%s usdt_aed=%s usdt_rub=%s rate=%s items=%s",
         actor.pk, price_list.pk, rate_usdt_aed, rate_usdt_rub, rate, len(items),
     )
+    price_list.unavailable_products = [rows[0][2] for key, rows in offers.items() if key not in winners]
     return price_list
 
 
@@ -409,36 +446,37 @@ def update_procurement_pricing(
         if source == "prepayment":
             prepayment = decimal_value(values.get("prepayment"), nonnegative=True, label="Цена предоплаты")
         elif source == "postpayment":
-            prepayment = calculate_prepayment(values.get("postpayment"), surcharge=surcharge)
+            prepayment = calculate_prepayment(values.get("postpayment"), surcharge=surcharge, rounded=True)
         elif source == "markup":
             markup = decimal_value(values.get("markup"), label="Наценка")
             prepayment = item.base_price_rub + markup + delivery
         else:
             raise ValidationError("Неизвестный способ изменения цены закупочного прайса.")
         markup = prepayment - item.base_price_rub - delivery
-        if not can_change_markup and markup != item.markup_rub:
+        if not can_change_markup and markup != item.configured_markup_rub:
             raise ValidationError("У вас нет права изменять наценку.")
         if not can_change_delivery and delivery != item.delivery_rub:
             raise ValidationError("У вас нет права изменять доставку.")
         prepayment = (item.base_price_rub + markup + delivery).quantize(CENT, rounding=ROUND_HALF_UP)
-        item.markup_rub = markup
+        item.original_markup_rub = markup
         item.delivery_rub = delivery
-        item.prepayment_price_rub = prepayment
         item.postpayment_surcharge_rub = surcharge
-        item.postpayment_price_rub = calculate_postpayment(prepayment, surcharge=surcharge)
+        item.prepayment_price_rub, item.postpayment_price_rub, item.prepayment_rounding_extra_rub, item.postpayment_rounding_extra_rub = rounded_customer_prices(prepayment, surcharge=surcharge)
+        item.markup_rub = item.prepayment_price_rub - item.base_price_rub - delivery
         item.full_clean()
-    negative_items = [item for item in items.values() if item.markup_rub < 0]
+    negative_items = [item for item in items.values() if item.configured_markup_rub < 0]
     if negative_items and negative_markup_confirmed is not True:
         raise NegativeProcurementMarkup(negative_items)
     preferences = _price_preferences(((item.product_kind, item.product_id) for item in items.values()), lock=True)
     for item in items.values():
         item.save(update_fields=(
-            "markup_rub", "delivery_rub", "prepayment_price_rub", "postpayment_price_rub", "postpayment_surcharge_rub"
+            "markup_rub", "original_markup_rub", 'prepayment_rounding_extra_rub', 'postpayment_rounding_extra_rub',
+            "delivery_rub", "prepayment_price_rub", "postpayment_price_rub", "postpayment_surcharge_rub"
         ))
         preference = preferences.get((item.product_kind, item.product_id))
         if preference is None:
             preference = ProcurementPricePreference(**{f"{item.product_kind}_id": item.product_id})
-        preference.markup_rub = item.markup_rub
+        preference.markup_rub = item.configured_markup_rub
         # Старая ставка снимка не становится ручным правилом без её изменения сотрудником.
         if item.pk in surcharge_changes:
             preference.postpayment_surcharge_rub = surcharge_changes[item.pk]

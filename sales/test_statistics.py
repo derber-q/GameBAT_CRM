@@ -67,7 +67,7 @@ class SalesStatisticsTests(TestCase):
 
     def test_only_completed_not_cancelled_and_completed_date_not_created_date(self):
         completed = self.sale()
-        unfinished = self.sale(payment=Sale.PaymentMethod.BANK_ACCOUNT)
+        unfinished = self.sale(payment=Sale.PaymentMethod.BANK_TRANSFER_POSTPAY)
         cancelled = self.sale()
         from .services import cancel_sale
         cancel_sale(actor=self.user, sale_id=cancelled.pk, comment="Тест отмены")
@@ -97,7 +97,7 @@ class SalesStatisticsTests(TestCase):
         self.assertEqual(sale.cd_items.get(cd=self.product).unit_cost_snapshot, Decimal("1000"))
         self.assertEqual(sale.cd_items.get(cd=second).unit_cost_snapshot, Decimal("700"))
         mark_sale_paid(actor=self.user, sale_id=sale.pk)
-        for status in (Sale.OrderStatus.ASSEMBLED, Sale.OrderStatus.SHIPPED, Sale.OrderStatus.DELIVERED):
+        for status in (Sale.OrderStatus.ASSEMBLED, Sale.OrderStatus.DELIVERED):
             advance_order_status(actor=self.user, sale_id=sale.pk, next_status=status)
         self.assertEqual(self.report().totals.cost, Decimal("2700"))
 
@@ -169,9 +169,7 @@ class SalesStatisticsTests(TestCase):
         self.product.save(update_fields=("game_series",))
         cash_sale = self.sale()
         bank_sale = self.sale(payment=Sale.PaymentMethod.BANK_ACCOUNT)
-        mark_sale_paid(actor=self.user, sale_id=bank_sale.pk)
-        for status in (Sale.OrderStatus.ASSEMBLED, Sale.OrderStatus.SHIPPED, Sale.OrderStatus.DELIVERED):
-            advance_order_status(actor=self.user, sale_id=bank_sale.pk, next_status=status)
+        self.assertTrue(bank_sale.is_completed)
         self.assertEqual(self.report(product_query="001234-STATS").totals.sales_count, 2)
         self.assertEqual(self.report(platform=self.platform, game_series=series).totals.sales_count, 2)
         self.assertEqual(self.report(payment_methods=[Sale.PaymentMethod.CASH]).totals.sales_count, 1)

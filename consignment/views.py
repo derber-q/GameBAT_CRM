@@ -160,6 +160,7 @@ def _submitted_transfer_lines(post):
             "quantity": value(quantities),
             "receivable_per_unit": value(amounts),
             "cost": f"{product.cost:.2f}" if product else "",
+            "wholesale_price": f"{product.wholesale_price:.2f}" if product and product.wholesale_price is not None else None,
         })
     return rows
 

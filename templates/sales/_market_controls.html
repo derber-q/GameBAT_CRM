@@ -1,0 +1,29 @@
+<div class="sale-market-controls" data-market-order="{{ market.order.pk }}">
+  {% if market.order.last_error %}<p class="alert alert-error">{{ market.order.last_error }}</p>{% endif %}
+  {% if market.latest_request.state == 'pending' or market.latest_request.state == 'running' %}<small role="status">Запрос в Маркет обрабатывается. Обновите страницу после выполнения.</small>{% elif market.latest_request.state == 'error' %}<p class="alert alert-error">Не удалось выполнить запрос: {{ market.latest_request.last_error }}</p>{% endif %}
+  {% if market.order.fake %}<p class="help-text">Тестовый заказ</p>{% endif %}
+  {% if market.can_manage %}
+    {% if market.needs_boxes %}<p class="help-text">Укажите коробки в заказе Маркета перед готовностью к отгрузке.</p>{% endif %}
+    <div class="sale-market-actions">
+      {% if market.needs_boxes %}<button type="button" class="button button-small" disabled>Готов к отгрузке</button>{% endif %}
+      {% for value,label in market.actions.items %}
+      <form method="post" action="{% url 'sales:market_action' sale.pk %}" data-market-action="{{ value }}" data-market-order-number="{{ market.order.order_id }}">
+        {% csrf_token %}
+        <input type="hidden" name="return_to" value="{{ market_return_to }}">
+        <input type="hidden" name="market_status" value="{{ market.order.status }}">
+        <input type="hidden" name="market_substatus" value="{{ market.order.substatus }}">
+        <input type="hidden" name="action" value="{{ value }}">
+        {% if value == 'cancel' %}<input type="hidden" name="confirm" value="">{% endif %}
+        <button type="submit" class="button button-small{% if value == 'cancel' %} button-danger{% endif %}"{% if value == 'ready' and not market.label_printed %} disabled title="Сначала напечатайте стикер"{% endif %}>{% if value == 'cancel' %}Отменить заказ{% else %}{{ label }}{% endif %}</button>
+      </form>
+      {% endfor %}
+    </div>
+  {% elif not market.order.integration.enabled %}<small class="help-text">Обмен с Маркетом выключен.</small>{% endif %}
+  {% if market.can_print and not market.order.fake %}
+    <form method="post" action="{% url 'sales:market_print' sale.pk %}" class="sale-market-form" data-market-print>
+      {% csrf_token %}
+      <button type="submit" class="button button-small">Напечатать стикер Яндекса</button>
+      <small class="help-text" role="status" aria-live="polite" data-market-print-status>58×40 мм</small>
+    </form>
+  {% endif %}
+</div>

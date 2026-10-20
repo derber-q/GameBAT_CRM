@@ -88,4 +88,14 @@ if (-not $SiteOnly -and -not (Test-IntegrationWorker)) {
 }
 
 Write-Output "CRM: $networkUrl"
+if (-not $SiteOnly) {
+    $escapedProjectDir = [Regex]::Escape($projectDir)
+    $printWorker = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+        $_.CommandLine -match $escapedProjectDir -and $_.CommandLine -match 'manage\.py run_label_print_worker\s*$'
+    } | Select-Object -First 1
+    if (-not $printWorker) {
+        Start-Process -FilePath $pythonExe -ArgumentList @('manage.py', 'run_label_print_worker') `
+            -WorkingDirectory $projectDir -WindowStyle Hidden
+    }
+}
 if (-not $NoBrowser) { Start-Process $networkUrl }

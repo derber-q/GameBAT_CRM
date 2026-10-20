@@ -183,6 +183,10 @@ class MarketTests(TestCase):
         self.assertEqual(line.line_total, Decimal("100.01"))
         self.assertEqual(line.unit_price, Decimal("33.34"))
         self.assertEqual(first.sale.payment_status, Sale.PaymentStatus.UNPAID)
+        self.assertEqual(first.sale.payment_method, Sale.PaymentMethod.BANK_TRANSFER_POSTPAY)
+        self.assertIsNone(first.sale.cash_received_amount)
+        self.assertIsNone(first.sale.completed_at)
+        self.assertFalse(first.sale.cash_transactions.exists())
         self.product.yandex_market_price = Decimal("500")
         self.product.cost = Decimal("80")
         self.product.save()
@@ -228,6 +232,27 @@ class MarketTests(TestCase):
         import_order(self.integration, self.payload(status="DELIVERY", substatus=""))
         import_order(self.integration, self.payload(status="CANCELLED", substatus=""))
         self.assertEqual(self.stock_quantity(), 7)
+
+    def test_delivery_and_pickup_keep_sale_assembled_until_actual_delivery(self):
+        from sales.services import mark_sale_paid
+
+        order = import_order(self.integration, self.payload(status='PROCESSING', substatus='READY_TO_SHIP'))
+        mark_sale_paid(actor=self.user, sale_id=order.sale_id)
+        for status in ('DELIVERY', 'PICKUP'):
+            order = import_order(self.integration, self.payload(status=status, substatus=''))
+            order.sale.refresh_from_db()
+            self.assertEqual(order.status, status)
+            self.assertEqual(order.sale.order_status, Sale.OrderStatus.ASSEMBLED)
+            self.assertTrue(order.shipped_once)
+            self.assertFalse(order.sale.is_completed)
+            self.assertIsNone(order.sale.completed_at)
+            self.assertEqual(self.stock_quantity(), 7)
+        order = import_order(self.integration, self.payload(status='DELIVERED', substatus=''))
+        order.sale.refresh_from_db()
+        self.assertEqual(order.sale.order_status, Sale.OrderStatus.DELIVERED)
+        self.assertTrue(order.sale.is_completed)
+        self.assertEqual(self.stock_quantity(), 7)
+        self.assertFalse(order.sale.cash_transactions.exists())
 
     def test_missed_delivery_event_does_not_restore_unredeemed_order(self):
         import_order(self.integration, self.payload())

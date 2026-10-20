@@ -69,6 +69,7 @@ staticfiles/
 .integration-encryption-key
 .resource-token-encryption-key
 .yandex-market-key
+.label-printer.json
 backups/
 reports/
 outputs/

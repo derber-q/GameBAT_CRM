@@ -23,6 +23,9 @@ function environment(specifications = [{}]) {
       'postpayment-surcharge': field(spec.surcharge ?? '60.00', spec.readOnly ?? false),
       'price-source': field('markup'),
       'price-error': {textContent: ''},
+      'effective-markup': {textContent: ''},
+      'prepayment-rounding': {textContent: ''},
+      'postpayment-rounding': {textContent: ''},
     };
     return {fields, dataset: {base: spec.base ?? '1000.00', itemId: String(index + 1), surchargeMode: spec.mode ?? 'tiered'},
       querySelector(selector) { return fields[selector.slice(6, -1)]; }};
@@ -59,8 +62,8 @@ function environment(specifications = [{}]) {
 const env = environment([{}, {}]);
 const fields = env.rows[0].fields;
 for (const [value, markup, postpayment] of [
-  ['1999.99', '964.99', '2059.99'], ['2000', '965.00', '2080.00'],
-  ['2999.99', '1964.99', '3079.99'], ['3000', '1965.00', '3100.00'],
+  ['1999.99', '964.99', '2060.00'], ['2000', '965.00', '2080.00'],
+  ['2999.99', '1964.99', '3080.00'], ['3000', '1965.00', '3100.00'],
 ]) {
   fields.prepayment.enter(value);
   assert.equal(fields.prepayment.value, value);
@@ -69,8 +72,9 @@ for (const [value, markup, postpayment] of [
   assert.equal(fields['price-source'].value, 'prepayment');
 }
 for (const [value, prepayment, markup] of [
-  ['2059.99', '1999.99', '964.99'], ['2080', '2000.00', '965.00'],
-  ['3079.99', '2999.99', '1964.99'], ['3100', '3000.00', '1965.00'],
+  ['2059.99', '2000.00', '964.99'], ['2080', '2000.00', '965.00'],
+  ['2060', '2000.00', '964.99'], ['3080', '3000.00', '1964.99'],
+  ['3079.99', '3000.00', '1964.99'], ['3100', '3000.00', '1965.00'],
 ]) {
   fields.postpayment.enter(value);
   assert.equal(fields.postpayment.value, value);
@@ -78,7 +82,7 @@ for (const [value, prepayment, markup] of [
   assert.equal(fields.markup.value, markup);
   assert.equal(fields['price-source'].value, 'postpayment');
 }
-for (const value of ['59.99', '2060', '2079.99', '3080', '3099.99']) {
+for (const value of ['59.99', '2070', '2079.99', '3090', '3099.99']) {
   fields.postpayment.enter(value);
   assert.notEqual(fields.postpayment.validationMessage, '');
   assert.notEqual(fields['price-error'].textContent, '');
@@ -88,12 +92,12 @@ fields.postpayment.enter('2080');
 assert.equal(fields.postpayment.validationMessage, '');
 assert.equal(fields['price-error'].textContent, '');
 fields.delivery.enter('100');
-assert.equal(fields.prepayment.value, '2065.00');
-assert.equal(fields.postpayment.value, '2145.00');
+assert.equal(fields.prepayment.value, '2070.00');
+assert.equal(fields.postpayment.value, '2150.00');
 assert.equal(fields['price-source'].value, 'markup');
 fields.markup.enter('0.01');
-assert.equal(fields.prepayment.value, '1100.01');
-assert.equal(fields.postpayment.value, '1160.01');
+assert.equal(fields.prepayment.value, '1110.00');
+assert.equal(fields.postpayment.value, '1170.00');
 for (const value of ['', '-1', 'NaN', 'Infinity', '1.001', '1e3']) {
   fields.prepayment.enter(value);
   assert.notEqual(fields.prepayment.validationMessage, '');
@@ -111,15 +115,15 @@ assert.equal(env.rows[1].fields.markup.value, '100.00');
 
 const exact = environment([{base: '0.10', delivery: '0.20'}]).rows[0].fields;
 exact.markup.enter('0.10');
-assert.equal(exact.prepayment.value, '0.40');
-assert.equal(exact.postpayment.value, '60.40');
+assert.equal(exact.prepayment.value, '10.00');
+assert.equal(exact.postpayment.value, '70.00');
 exact.prepayment.enter('0,41');
 assert.equal(exact.markup.value, '0.11');
 
 const large = environment([{base: '9999999999999900.01', delivery: '0.01'}]).rows[0].fields;
 large.markup.enter('0.01');
-assert.equal(large.prepayment.value, '9999999999999900.03');
-assert.equal(large.postpayment.value, '10000000000000000.03');
+assert.equal(large.prepayment.value, '9999999999999910.00');
+assert.equal(large.postpayment.value, '10000000000000010.00');
 large.prepayment.enter('999999999999999999.99');
 assert.match(large.prepayment.validationMessage, /превышает/);
 
@@ -146,8 +150,8 @@ const negative = environment([{markup: '-0.01'}]);
 const negativeFields = negative.rows[0].fields;
 assert.ok(negativeFields.markup.classList.values.has('danger-text'));
 negativeFields.markup.enter('-35.01');
-assert.equal(negativeFields.prepayment.value, '999.99');
-assert.equal(negativeFields.postpayment.value, '1059.99');
+assert.equal(negativeFields.prepayment.value, '1000.00');
+assert.equal(negativeFields.postpayment.value, '1060.00');
 let prevented = false;
 negative.form.events.submit({preventDefault() { prevented = true; }});
 assert.ok(prevented);
@@ -199,7 +203,7 @@ assert.equal(fixedFields.markup.value, '525.00');
 assert.equal(fixedFields.postpayment.validationMessage, '');
 fixedFields['postpayment-surcharge'].enter('250.25');
 assert.equal(fixedFields.prepayment.value, '1560.00');
-assert.equal(fixedFields.postpayment.value, '1810.25');
+assert.equal(fixedFields.postpayment.value, '1820.00');
 assert.equal(fixedFields.markup.value, '525.00');
 fixedFields.postpayment.enter('250');
 assert.match(fixedFields.postpayment.validationMessage, /меньше доплаты/);
@@ -213,5 +217,17 @@ const cdOverride = environment().rows[0];
 cdOverride.fields['postpayment-surcharge'].enter('125');
 assert.equal(cdOverride.dataset.surchargeMode, 'fixed');
 cdOverride.fields.prepayment.enter('3000');
-assert.equal(cdOverride.fields.postpayment.value, '3125.00');
+assert.equal(cdOverride.fields.postpayment.value, '3130.00');
 console.log('Фиксированная доплата Tech, ручная ставка, обратный расчёт и переопределение CD: OK');
+
+const independent = environment([{base: '2800.00', markup: '201.00', delivery: '0.00', mode: 'fixed', surcharge: '126.00'}]).rows[0].fields;
+for (let repeat = 0; repeat < 2; repeat += 1) {
+  independent.markup.enter('201.00');
+  assert.equal(independent.prepayment.value, '3010.00');
+  assert.equal(independent.postpayment.value, '3130.00');
+  assert.equal(independent['effective-markup'].textContent, '210.00');
+  assert.equal(independent['prepayment-rounding'].textContent, '9.00');
+  assert.equal(independent['postpayment-rounding'].textContent, '3.00');
+  assert.equal(independent['postpayment-surcharge'].value, '126.00');
+}
+console.log('Независимое округление и сохранение исходной наценки и доплаты: OK');

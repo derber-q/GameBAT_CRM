@@ -1,7 +1,8 @@
 {% extends "base.html" %}
 {% load static %}
 {% block title %}Новое наименование · ReSOURCE{% endblock %}
-{% block extra_head %}<script src="{% static 'js/barcode-formset.js' %}?v=multiple-barcodes-1" defer></script>{% endblock %}
+{% block body_class %}responsive-crm-page nomenclature-options-page{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{% static 'css/product-options.css' %}?v=20261020-1"><script src="{% static 'js/barcode-formset.js' %}?v=multiple-barcodes-1" defer></script><script src="{% static 'js/product-options.js' %}?v=20261020-1" defer></script>{% endblock %}
 {% block content %}
 <div class="page-heading">
   <div><p class="eyebrow">Номенклатура</p><h1>Новое наименование</h1><p class="muted">Создаётся только карточка товара. Остаток и себестоимость появятся после прихода.</p></div>
@@ -23,8 +24,9 @@
   <div class="section-heading section-heading-plain"><div><h2>Карточка {{ product_kind_label }}</h2></div></div>
   {% if form.non_field_errors %}<div class="alert alert-error">{{ form.non_field_errors }}</div>{% endif %}
   <div class="product-form-grid">
-    {% for field in form %}{% include "nomenclature/_field.html" with field=field %}{% endfor %}
+    {% for field in form %}{% if field.name != 'newness_months' and field.name != 'newness_custom_months' and field.name != 'excluded_suppliers' %}{% include "nomenclature/_field.html" with field=field %}{% endif %}{% endfor %}
   </div>
+  {% include "nomenclature/_product_options.html" %}
   {% include "nomenclature/_barcode_formset.html" with barcode_editable=True %}
   <p class="muted creation-system-note">Складской остаток: 0 · Средняя себестоимость: 0,00 ₽. Эти значения нельзя вводить вручную.</p>
   <div class="form-actions"><button class="button button-large" type="submit">Создать наименование</button></div>

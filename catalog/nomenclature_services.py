@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
+from django.utils import timezone
 
 from pricing.services import update_product_prices
 from warehouse.models import CDWarehouseStock, TechWarehouseStock, Warehouse
@@ -14,6 +15,7 @@ from .models import CD, ProductChangeEvent, Tech
 from .nomenclature_forms import CDCardForm, TechCardForm, barcode_formset, product_version
 from .product_identifiers import ensure_product_article, save_barcode_formset
 from .product_fields import CD_CARD_FIELDS, PRICING_FIELDS, TECH_CARD_FIELDS
+from .supplier_exclusions import set_supplier_exclusions
 
 logger = logging.getLogger("gamebat.business")
 
@@ -22,10 +24,12 @@ CREATE_FIELDS = {
     "cd": (
         "platform", "game_series", "name", "description", "sku", "cusa_ppsa_code",
         "weight_grams", "length_cm", "width_cm", "height_cm", "comment", "exclude_from_supplier_template",
+        'newness_months',
     ),
     "tech": (
         "brand", "product_type", "name", "description", "sku",
         "weight_grams", "length_cm", "width_cm", "height_cm", "comment", "exclude_from_supplier_template",
+        'newness_months',
     ),
 }
 
@@ -48,7 +52,8 @@ def product_configuration(product_kind):
 
 
 @transaction.atomic
-def create_product(*, actor, product_kind, data, barcode_formset_instance=None):
+def create_product(*, actor, product_kind, data, barcode_formset_instance=None,
+                   creation_source=CD.CreationSource.AUTOMATIC):
     """Атомарно создаёт номенклатурную карточку с нулевым системным состоянием и audit."""
     if product_kind not in CREATE_FIELDS:
         raise ValueError("Неизвестный тип товара.")
@@ -58,9 +63,16 @@ def create_product(*, actor, product_kind, data, barcode_formset_instance=None):
         for field in CREATE_FIELDS[product_kind]
         if field in data
     }
-    product = model(**values)
+    if creation_source not in (CD.CreationSource.WEB, CD.CreationSource.AUTOMATIC):
+        raise ValidationError('Неизвестный источник создания товара.')
+    product = model(**values, created_by=actor, creation_source=creation_source)
+    if creation_source == CD.CreationSource.WEB:
+        product.newness_backfill_checked_at = timezone.now()
     product.full_clean()
     product.save()
+    selected_suppliers = data.get('excluded_suppliers', ())
+    if selected_suppliers:
+        set_supplier_exclusions(product=product, supplier_ids=[s.pk for s in selected_suppliers], actor=actor, creating=True)
     ensure_product_article(product)
     barcode_changes = save_barcode_formset(product=product, formset=barcode_formset_instance)
     legacy_barcode = str(data.get("barcode") or "").strip()
@@ -104,6 +116,9 @@ def create_product(*, actor, product_kind, data, barcode_formset_instance=None):
         instance=product,
         changes=changes,
         source=ProductChangeEvent.Source.NOMENCLATURE,
+        action_kind='product_web_create' if creation_source == CD.CreationSource.WEB else 'product_automatic_create',
+        action_object_id=product.pk,
+        action_label='Создание через веб-форму' if creation_source == CD.CreationSource.WEB else 'Автоматическое создание',
     )
     logger.info(
         "Товар создан: user_id=%s type=%s product_id=%s",
@@ -177,7 +192,8 @@ def update_product_card(*, actor, product_kind, product_id, data, barcode_data=N
     ]
     product_fields = [field for field in changed_fields if field in audited_fields]
     barcodes_changed = bool(barcode_formset_instance and barcode_formset_instance.has_changed())
-    if not product_fields and not stock_fields and not storage_location_fields and not barcodes_changed:
+    exclusions_changed = 'excluded_suppliers' in changed_fields
+    if not product_fields and not stock_fields and not storage_location_fields and not barcodes_changed and not exclusions_changed:
         return ProductUpdateResult(product=product, form=form, barcode_formset=barcode_formset_instance)
 
     for field_name in storage_location_fields:
@@ -197,7 +213,20 @@ def update_product_card(*, actor, product_kind, product_id, data, barcode_data=N
     card_fields = [field for field in product_fields if field not in PRICING_FIELDS]
     price_fields = [field for field in product_fields if field in PRICING_FIELDS]
     if card_fields:
+        if 'newness_months' in card_fields:
+            product.newness_backfill_checked_at = timezone.now()
+            card_fields.append('newness_backfill_checked_at')
+            if form.recovered_creation_date:
+                card_fields.append('created_at')
         product.save(update_fields=tuple(card_fields))
+        if form.recovered_creation_date and 'newness_months' in card_fields:
+            record_product_changes(
+                actor=None, instance=product, source=ProductChangeEvent.Source.CRM,
+                action_kind='creation_date_recovery', action_object_id=product.pk,
+                action_label='Восстановление даты создания из истории',
+                changes=[field_change(field_name='created_at', field_label='Дата создания из аудита', old_value='', new_value=product.created_at.isoformat()),
+                         field_change(field_name='creation_date_evidence', field_label='Основание', old_value='', new_value=f'Событие создания #{form.creation_date_event.pk}')],
+            )
     if price_fields:
         update_product_prices(
             actor=actor,
@@ -257,6 +286,8 @@ def update_product_card(*, actor, product_kind, product_id, data, barcode_data=N
         )
 
     barcode_changes = save_barcode_formset(product=product, formset=barcode_formset_instance)
+    if exclusions_changed:
+        set_supplier_exclusions(product=product, supplier_ids=[s.pk for s in form.cleaned_data['excluded_suppliers']], actor=actor)
     changes = changed_snapshots(product, before, product_fields) + stock_changes + barcode_changes
     try:
         record_product_changes(

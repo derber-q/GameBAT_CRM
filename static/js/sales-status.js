@@ -22,7 +22,7 @@
     const row = select.closest('[data-sale-row]');
     pending = {row, field: select.dataset.statusField, value};
     question.textContent = `${row.dataset.saleId}: изменить статус ${pending.field === 'order' ? 'заказа' : 'оплаты'} с «${select.options[select.selectedIndex].textContent}» на «${selectedLabel}»?`;
-    cashField.hidden = !(pending.field === 'payment' && row.dataset.paymentMethod === 'cash_postpay');
+    cashField.hidden = !(pending.field === 'payment');
     cash.value = ''; cash.min = row.dataset.total; cash.placeholder = row.dataset.total;
     dialog.showModal();
   });
@@ -57,6 +57,7 @@
         if (!empty.hidden && Number(count.textContent) > 0) empty.firstElementChild.textContent = 'На этой странице продаж больше нет. Откройте другую страницу группы.';
       } else if (result.row_html) {
         row.outerHTML = result.row_html;
+        if (typeof window !== 'undefined') window.GameBAT?.attachCollapseControls?.();
       }
       message.textContent = `${row.dataset.saleId}: ${result.message || 'Ошибка изменения статуса.'}${result.success && result.is_completed ? ' Продажа перемещена в завершённые.' : ''}`;
     } catch (error) {

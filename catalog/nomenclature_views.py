@@ -31,7 +31,7 @@ from .product_media import (
 )
 from .product_identifiers import generate_unique_barcode, render_barcode_svg_data_url
 from .product_filters import filter_product_querysets, product_filter_context
-from .product_ordering import cd_order_key, tech_brand_groups
+from .nomenclature_grouping import get_nomenclature_grouping
 
 logger = logging.getLogger("gamebat.business")
 
@@ -83,19 +83,8 @@ def nomenclature_list(request, product_kind=None):
         ))
     cds, tech_items = filter_product_querysets(cds, tech_items, filters)
 
-    platform_products = defaultdict(list)
-    for product in sorted(cds, key=cd_order_key):
-        platform_products[product.platform].append(product)
-    cd_groups = []
-    for platform, products in platform_products.items():
-        series_products = defaultdict(list)
-        for product in products:
-            series_products[product.game_series].append(product)
-        ordered_series = sorted(
-            series_products.items(),
-            key=lambda group: (group[0] is None, group[0].name.casefold() if group[0] else ""),
-        )
-        cd_groups.append((platform, {"count": len(products), "series_groups": ordered_series}))
+    grouping = get_nomenclature_grouping(tech_items, cds)
+    cd_groups = grouping["cd_groups"]
     tech_groups = defaultdict(list)
     for product in tech_items:
         tech_groups[product.product_type].append(product)
@@ -111,7 +100,7 @@ def nomenclature_list(request, product_kind=None):
         "query": filters.search,
         "cd_groups": cd_groups,
         "tech_groups": list(tech_groups.items()),
-        "tech_brand_groups": tech_brand_groups([product for products in tech_groups.values() for product in products]),
+        "tech_brand_groups": grouping["tech_brand_groups"],
         "can_add_cd": product_kind != "tech" and (
             request.user.is_superuser or request.user.has_perm("catalog.add_cd")
         ),
@@ -177,7 +166,7 @@ def product_create(request):
     if product_kind and (product_kind not in permissions or not permissions[product_kind]):
         raise PermissionDenied
     form_class = {"cd": CDCreateForm, "tech": TechCreateForm}.get(product_kind)
-    form = form_class(request.POST or None) if form_class else None
+    form = form_class(request.POST or None, user=request.user) if form_class else None
     barcode_data = None
     if request.method == "POST" and form:
         barcode_data = request.POST
@@ -198,6 +187,7 @@ def product_create(request):
             product = create_product(
                 actor=request.user, product_kind=product_kind, data=form.cleaned_data,
                 barcode_formset_instance=barcodes,
+                creation_source=CD.CreationSource.WEB,
             )
         except ValidationError as exc:
             form.add_error(None, exc)

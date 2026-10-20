@@ -49,6 +49,10 @@ const reply = (result) => resolve({headers: {get: () => 'application/json'}, jso
   const payment = submit(); reply({success: false, row_html: '<tr>actual unpaid</tr>', message: 'Касса недоступна'}); await payment;
   assert.equal(row.outerHTML, '<tr>actual unpaid</tr>'); assert(!removed);
   assert(elements['sales-status-message'].textContent.includes('Касса недоступна'));
+  row.dataset.paymentMethod = 'bank_transfer_postpay';
+  select.value = 'paid'; change();
+  assert.equal(elements['sale-status-cash-field'].hidden, false);
+  callbacks['sale-status-cancel:click']();
   select.value = 'paid'; change(); const completed = submit();
   reply({success: true, is_completed: true, message: 'OK'}); await completed;
   assert(removed); assert.equal(Number(count.textContent), 0); assert.equal(empty.hidden, false);

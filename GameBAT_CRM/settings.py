@@ -8,6 +8,7 @@ from cryptography.fernet import Fernet
 from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+LABEL_PRINTER_CONFIG_PATH = BASE_DIR / '.label-printer.json'
 
 # В репозитории нет фиксированного секрета. Локальный ключ хранится в игнорируемом
 # файле, а production должен передавать DJANGO_SECRET_KEY через окружение.

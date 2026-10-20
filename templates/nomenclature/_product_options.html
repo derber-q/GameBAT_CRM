@@ -1,0 +1,15 @@
+<input type="hidden" name="product_options_present" value="1">
+<section class="panel product-form-section">
+  <h2>Срок действия статуса «Новинка»</h2>
+  <div class="product-form-grid" data-newness-options>
+    {% include "nomenclature/_field.html" with field=form.newness_months %}
+    <div data-newness-custom-wrap>{% include "nomenclature/_field.html" with field=form.newness_custom_months %}</div>
+  </div>
+  {% if product.created_at %}<p class="muted">Создан: {{ product.created_at|date:"d.m.Y H:i" }}. {% if product.newness_until %}Новинка до {{ product.newness_until|date:"d.m.Y H:i" }}.{% else %}Статус не назначен.{% endif %} Срок всегда отсчитывается от даты создания.</p>{% endif %}
+</section>
+<section class="panel product-form-section">
+  <h2>Исключить поставщиков из подбора</h2>
+  {{ form.excluded_suppliers }}
+  {% for error in form.excluded_suppliers.errors %}<p class="error-text">{{ error }}</p>{% endfor %}
+  <p class="muted">{{ form.excluded_suppliers.help_text }}</p>
+</section>

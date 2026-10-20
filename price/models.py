@@ -134,6 +134,15 @@ class ProcurementPriceListItem(models.Model):
     markup_rub = models.DecimalField(
         "Наценка, RUB", max_digits=20, decimal_places=2, default=0,
     )
+    original_markup_rub = models.DecimalField(
+        'Наценка до округления, RUB', max_digits=20, decimal_places=2, null=True, blank=True,
+    )
+    prepayment_rounding_extra_rub = models.DecimalField(
+        'Округление предоплаты, RUB', max_digits=20, decimal_places=2, default=0, validators=[MinValueValidator(0)],
+    )
+    postpayment_rounding_extra_rub = models.DecimalField(
+        'Округление постоплаты, RUB', max_digits=20, decimal_places=2, default=0, validators=[MinValueValidator(0)],
+    )
     delivery_rub = models.DecimalField(
         "Доставка, RUB", max_digits=20, decimal_places=2, default=0, validators=[MinValueValidator(0)]
     )
@@ -186,6 +195,8 @@ class ProcurementPriceListItem(models.Model):
                 condition=models.Q(postpayment_price_rub__gte=0), name="proc_postpayment_nonnegative"
             ),
             models.CheckConstraint(condition=models.Q(postpayment_surcharge_rub__gte=0), name="proc_surcharge_nonnegative"),
+            models.CheckConstraint(condition=models.Q(prepayment_rounding_extra_rub__gte=0, prepayment_rounding_extra_rub__lt=10), name='proc_prepayment_rounding_range'),
+            models.CheckConstraint(condition=models.Q(postpayment_rounding_extra_rub__gte=0, postpayment_rounding_extra_rub__lt=10), name='proc_postpayment_rounding_range'),
         ]
 
     @property
@@ -204,6 +215,14 @@ class ProcurementPriceListItem(models.Model):
         if self.postpayment_surcharge_rub is not None:
             return self.postpayment_surcharge_rub
         return self.postpayment_price_rub - self.prepayment_price_rub
+
+    @property
+    def configured_markup_rub(self):
+        return self.original_markup_rub if self.original_markup_rub is not None else self.markup_rub
+
+    @property
+    def effective_postpayment_markup_rub(self):
+        return self.postpayment_price_rub - self.base_price_rub - self.delivery_rub
 
     @property
     def stock_unit_cost(self):

@@ -12,6 +12,10 @@ FBS_CALCULATION_FIELDS = {
     "yandex_desired_profit", "yandex_calculated_price", "yandex_market_price",
     "yandex_pricing_integration", "yandex_pricing_category",
 }
+CATALOG_METADATA_FIELDS = {
+    'created_at', 'created_by', 'creation_source', 'newness_months',
+    'newness_until', 'newness_backfill_checked_at',
+}
 
 
 def _enqueue_for_product(product):
@@ -25,8 +29,8 @@ def _enqueue_for_product(product):
 @receiver(post_save, sender=CD, dispatch_uid="avito_sync_cd")
 @receiver(post_save, sender=Tech, dispatch_uid="avito_sync_tech")
 def product_changed(sender, instance, update_fields=None, **kwargs):
-    # Параметры и рекомендация FBS не меняют цену или остаток Avito.
-    if update_fields and set(update_fields).issubset(FBS_CALCULATION_FIELDS):
+    # Параметры FBS и срок выделения в Excel не меняют данные объявления Avito.
+    if update_fields and set(update_fields).issubset(FBS_CALCULATION_FIELDS | CATALOG_METADATA_FIELDS):
         return
     _enqueue_for_product(instance)
 

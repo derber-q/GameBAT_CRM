@@ -40,12 +40,24 @@ class Sale(models.Model):
         UNDEFINED = "undefined", "Не определён"
         CASH = "cash", "Наличные"
         CASH_POSTPAY = "cash_postpay", "Наличные — постоплата"
-        BANK_ACCOUNT = "bank_account", "Банковский счёт"
+        BANK_ACCOUNT = "bank_account", "Банковский перевод"
+        BANK_TRANSFER_POSTPAY = "bank_transfer_postpay", "Банковский перевод — постоплата"
+
+        @property
+        def is_cash_payment(self):
+            return self in (self.CASH, self.CASH_POSTPAY)
+
+        @property
+        def is_bank_payment(self):
+            return self in (self.BANK_ACCOUNT, self.BANK_TRANSFER_POSTPAY)
+
+        @property
+        def is_postpayment(self):
+            return self in (self.CASH_POSTPAY, self.BANK_TRANSFER_POSTPAY)
 
     class OrderStatus(models.TextChoices):
         CREATED = "created", "Создан"
         ASSEMBLED = "assembled", "Собран"
-        SHIPPED = "shipped", "Отправлен"
         DELIVERED = "delivered", "Доставлен"
 
     class PaymentStatus(models.TextChoices):
@@ -90,6 +102,11 @@ class Sale(models.Model):
     created_at = models.DateTimeField("Создана", auto_now_add=True)
     updated_at = models.DateTimeField("Обновлена", auto_now=True)
     completed_at = models.DateTimeField("Завершена", null=True, blank=True, editable=False)
+    paid_at = models.DateTimeField("Оплата подтверждена", null=True, blank=True, editable=False)
+    paid_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="paid_sales",
+        verbose_name="Подтвердил оплату", null=True, blank=True, editable=False,
+    )
     total_amount = models.DecimalField("Сумма", max_digits=20, decimal_places=2, default=0, editable=False)
     cash_received_amount = models.DecimalField(
         "Получено от покупателя", max_digits=20, decimal_places=2,
@@ -156,10 +173,10 @@ class Sale(models.Model):
             ),
             models.CheckConstraint(
                 condition=(
-                    models.Q(payment_method__in=("cash", "cash_postpay"))
+                    ~models.Q(payment_method="undefined")
                     | models.Q(cash_received_amount__isnull=True, extra_cash_amount=0)
                 ),
-                name="sale_bank_has_no_cash_received",
+                name="sale_undefined_has_no_received",
             ),
             models.CheckConstraint(
                 condition=(
@@ -175,6 +192,18 @@ class Sale(models.Model):
                 name="sale_cancellation_fields_consistent",
             ),
         ]
+
+    @property
+    def is_cash_payment(self):
+        return self.PaymentMethod(self.payment_method).is_cash_payment
+
+    @property
+    def is_bank_payment(self):
+        return self.PaymentMethod(self.payment_method).is_bank_payment
+
+    @property
+    def is_postpayment(self):
+        return self.PaymentMethod(self.payment_method).is_postpayment
 
     @property
     def is_completed(self):
@@ -201,9 +230,10 @@ class Sale(models.Model):
     def is_postpay_editable(self):
         return (
             not self.is_cancelled
-            and self.payment_method == self.PaymentMethod.CASH_POSTPAY
+            and self.is_postpayment
             and self.payment_status == self.PaymentStatus.UNPAID
             and self.order_status != self.OrderStatus.DELIVERED
+            and not hasattr(self, "yandex_order")
         )
 
     @property
@@ -455,3 +485,45 @@ class SaleConsignmentItem(models.Model):
     @property
     def product(self):
         return self.cd if self.product_kind == self.ProductKind.CD else self.tech
+
+
+class MarketPicking(models.Model):
+    order = models.OneToOneField('yandex_market.OrderMetadata', on_delete=models.PROTECT, related_name='picking')
+    required = models.JSONField(default=dict)
+    scanned = models.JSONField(default=dict)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+
+class MarketScanEvent(models.Model):
+    request_id = models.UUIDField(unique=True)
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    barcode = models.CharField(max_length=100)
+    order = models.ForeignKey('yandex_market.OrderMetadata', on_delete=models.PROTECT, null=True)
+    result = models.JSONField(default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
+class MarketPrintJob(models.Model):
+    request_id = models.UUIDField(default=uuid.uuid4, unique=True)
+    order = models.ForeignKey('yandex_market.OrderMetadata', on_delete=models.PROTECT, related_name='print_jobs')
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    ready_after_print = models.BooleanField(default=False)
+    state = models.CharField(max_length=24, default='pending')
+    document = models.ForeignKey('yandex_market.LabelDocument', on_delete=models.PROTECT, null=True)
+    refresh_job = models.ForeignKey('yandex_market.SyncJob', on_delete=models.PROTECT, null=True, related_name='+')
+    boxes_job = models.ForeignKey('yandex_market.SyncJob', on_delete=models.PROTECT, null=True, related_name='+')
+    ready_job = models.ForeignKey('yandex_market.SyncJob', on_delete=models.PROTECT, null=True, related_name='+')
+    printer_name = models.CharField(max_length=200)
+    printer_job_id = models.PositiveIntegerField(null=True)
+    spooled_at = models.DateTimeField(null=True)
+    printed_at = models.DateTimeField(null=True)
+    last_error = models.TextField(blank=True)
+    lease = models.UUIDField(null=True)
+    leased_at = models.DateTimeField(null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['order'], condition=models.Q(ready_after_print=True),
+                      name='one_market_automatic_print_per_order')]

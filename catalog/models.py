@@ -10,6 +10,7 @@ from django.core.validators import MinValueValidator
 from django.db import models, transaction
 from django.db.models.functions import Lower
 from django.urls import reverse
+from django.utils import timezone
 
 from .packaging_defaults import CD_DIMENSIONS, fill_new_product_dimensions
 from .profit_defaults import CD_DESIRED_PROFIT, fill_new_product_desired_profit
@@ -122,8 +123,25 @@ def product_gallery_image_upload_to(instance, filename):
 
 
 class ProductBase(models.Model):
+    class CreationSource(models.TextChoices):
+        UNKNOWN = 'unknown', 'Происхождение не подтверждено'
+        WEB = 'web', 'Веб-форма номенклатуры'
+        AUTOMATIC = 'automatic', 'Команда, скрипт или автоматическое создание'
+
     objects = ProductQuerySet.as_manager()
     name = models.CharField("Название", max_length=255)
+    created_at = models.DateTimeField('Создан', null=True, blank=True, editable=False, db_index=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='+', editable=False, verbose_name='Кем создан',
+    )
+    creation_source = models.CharField(
+        'Происхождение карточки', max_length=16, choices=CreationSource.choices,
+        default=CreationSource.UNKNOWN, editable=False,
+    )
+    newness_months = models.PositiveIntegerField('Срок новинки, месяцев', default=0)
+    newness_until = models.DateTimeField('Новинка до', null=True, blank=True, editable=False, db_index=True)
+    newness_backfill_checked_at = models.DateTimeField('Проверка переноса статуса новинки', null=True, blank=True, editable=False)
     description = models.TextField("Описание", blank=True)
     title_image = models.ImageField(
         "Титульное фото", upload_to=product_title_image_upload_to, blank=True,
@@ -205,6 +223,16 @@ class ProductBase(models.Model):
         self._pending_legacy_barcode = str(value or "").strip()
 
     def save(self, *args, **kwargs):
+        from .newness import newness_expiry
+
+        if self._state.adding:
+            if self.created_at is None:
+                self.created_at = timezone.now()
+        fields = kwargs.get('update_fields')
+        if fields is None or self._state.adding or {'newness_months', 'created_at'} & set(fields):
+            self.newness_until = newness_expiry(self.created_at, self.newness_months)
+            if fields is not None:
+                kwargs['update_fields'] = set(fields) | {'newness_until'}
         fill_new_product_dimensions(self)
         fill_new_product_desired_profit(self)
         pending = self._pending_legacy_barcode
@@ -230,6 +258,9 @@ class ProductBase(models.Model):
         super().clean()
         fill_new_product_dimensions(self)
         fill_new_product_desired_profit(self)
+        if self.newness_months and not self._state.adding:
+            from .newness import newness_expiry
+            newness_expiry(self.created_at, self.newness_months)
         self.sku = str(self.sku or "").strip()
         for field_name, label in (("length_cm", "Длина"), ("width_cm", "Ширина"), ("height_cm", "Высота")):
             value = getattr(self, field_name)
@@ -240,6 +271,11 @@ class ProductBase(models.Model):
                     raise ValidationError({field_name: f"{label} товара: укажите число."}) from exc
                 if not size.is_finite() or size <= 0:
                     raise ValidationError({field_name: f"{label} товара должна быть больше 0."})
+
+    @property
+    def is_new(self):
+        now = timezone.now()
+        return bool(self.created_at and self.created_at <= now and self.newness_until and now < self.newness_until)
 
 
 class CD(ProductBase):
@@ -324,6 +360,23 @@ class Tech(ProductBase):
                 condition=models.Q(weight_grams__gt=0) | models.Q(weight_grams__isnull=True),
                 name="tech_weight_positive_or_null",
             ),
+        ]
+
+
+class ProductSupplierExclusion(models.Model):
+    cd = models.ForeignKey(CD, on_delete=models.CASCADE, null=True, blank=True, related_name='supplier_exclusions')
+    tech = models.ForeignKey(Tech, on_delete=models.CASCADE, null=True, blank=True, related_name='supplier_exclusions')
+    supplier = models.ForeignKey('partners.Supplier', on_delete=models.PROTECT, related_name='product_exclusions')
+    created_at = models.DateTimeField('Исключён', auto_now_add=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+
+    class Meta:
+        verbose_name = 'исключение поставщика для товара'
+        verbose_name_plural = 'исключения поставщиков для товаров'
+        constraints = [
+            models.CheckConstraint(condition=(models.Q(cd__isnull=False, tech__isnull=True) | models.Q(cd__isnull=True, tech__isnull=False)), name='supplier_exclusion_exact_product'),
+            models.UniqueConstraint(fields=('cd', 'supplier'), condition=models.Q(cd__isnull=False), name='unique_supplier_exclusion_cd'),
+            models.UniqueConstraint(fields=('tech', 'supplier'), condition=models.Q(tech__isnull=False), name='unique_supplier_exclusion_tech'),
         ]
 
 

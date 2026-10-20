@@ -38,7 +38,7 @@ class SaleStatisticsFilterForm(forms.Form):
                                          widget=forms.CheckboxSelectMultiple)
     warehouse = forms.ModelChoiceField(label="Склад", queryset=Warehouse.objects.all(), required=False,
                                        empty_label="Все склады")
-    payment_methods = forms.MultipleChoiceField(label="Способ оплаты", choices=Sale.PaymentMethod.choices,
+    payment_methods = forms.MultipleChoiceField(label="Способ оплаты", choices=[choice for choice in Sale.PaymentMethod.choices if choice[0] != Sale.PaymentMethod.UNDEFINED],
                                                 required=False, widget=forms.CheckboxSelectMultiple)
     product_query = forms.CharField(label="Товар: ID, артикул, название, штрихкод, CUSA/PPSA", required=False)
     platform = forms.ModelChoiceField(label="Платформа CD", queryset=Platform.objects.all(), required=False)

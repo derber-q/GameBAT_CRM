@@ -8,10 +8,49 @@ from urllib.request import Request, build_opener
 from PIL import Image
 from django.core.exceptions import ValidationError
 from django.core.files.base import ContentFile
+from django.db import transaction
+from django.db.models import Q
 
 from .client import MarketError, NoRedirect
 from .content import public_https
-from .models import LabelDocument, Media
+from .models import LabelDocument, Media, OrderMetadata
+
+
+@transaction.atomic
+def request_labels(*, integration, orders, actor, format_name='A7', box_id=None, shipment_id=None, reuse=False):
+    """Официальный PDF получает worker; повторный запрос из продажи использует тот же документ."""
+    from django.core.exceptions import PermissionDenied
+    from .queue import enqueue
+    from .services import audit
+
+    if not actor.has_perm('yandex_market.print_labels'):
+        raise PermissionDenied
+    if format_name not in {'A7', 'A4', 'A9', 'A9_HORIZONTALLY'}:
+        raise ValidationError('Неизвестный формат ярлыка.')
+    if not orders or len(orders) > 1000 or any(o.integration_id != integration.pk for o in orders):
+        raise ValidationError('Выберите от 1 до 1000 заказов одного магазина.')
+    values = {'integration': integration, 'format': format_name, 'created_by': actor}
+    if len(orders) == 1:
+        order = OrderMetadata.objects.select_for_update().get(pk=orders[0].pk)
+        values['order'] = order
+        if box_id or shipment_id:
+            if not box_id or not shipment_id or not str(box_id).isdecimal() or not str(shipment_id).isdecimal():
+                raise ValidationError('Укажите идентификаторы коробки и отправления.')
+            values.update(box_id=int(box_id), shipment_id=int(shipment_id))
+        if reuse:
+            document = order.labels.filter(format=format_name, box_id=values.get('box_id'),
+                shipment_id=values.get('shipment_id')).filter(
+                    Q(state__in=['pending', 'processing']) | (Q(state='done') & ~Q(file=''))
+                ).order_by('-pk').first()
+            if document:
+                return document
+    else:
+        values['order_ids'] = [o.order_id for o in orders]
+    document = LabelDocument.objects.create(**values)
+    # Документ и DB-задание фиксируются вместе; worker увидит оба только после commit.
+    enqueue(integration, 'label', document.pk, {'document_id': document.pk}, actor=actor)
+    audit(integration, actor, 'labels_requested', document.pk, orders=[o.order_id for o in orders])
+    return document
 
 
 def download_public(url, *, pdf=False):

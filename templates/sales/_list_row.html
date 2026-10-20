@@ -14,7 +14,9 @@
   <td class="numeric strong">{{ sale.total_amount }}</td>
   <td>{{ sale.get_payment_method_display }}</td>
   <td>
-    {% if row.next_order %}
+    {% if row.market %}
+      {% include 'sales/_market_controls.html' with market=row.market market_return_to='list' %}
+    {% elif row.next_order %}
       <select class="sale-status sale-status-{{ sale.order_status }}" data-status-field="order" data-current="{{ sale.order_status }}" aria-label="Статус заказа {{ sale.visible_id }}">
         <option value="{{ sale.order_status }}">{{ sale.get_order_status_display }}</option>
         <option value="{{ row.next_order }}">{{ row.next_order_label }}</option>

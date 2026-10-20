@@ -260,6 +260,9 @@ def procurement_create(request):
             "procurement_form": form, "weights_form": weights_form, "surcharges_form": surcharges_form,
         })
     messages.success(request, f"Закупочный прайс №{price_list.pk} создан.")
+    unavailable = getattr(price_list, 'unavailable_products', ())
+    if unavailable:
+        messages.warning(request, f'Нет доступных предложений для {len(unavailable)} товаров: все их поставщики исключены. Эти товары не включены в новый прайс. ' + '; '.join(p.name for p in unavailable[:5]))
     negative_count = price_list.items.filter(markup_rub__lt=0).count()
     if negative_count:
         messages.warning(request, f"В {negative_count} позициях подставлена сохранённая отрицательная наценка. Проверьте выделенные поля.")

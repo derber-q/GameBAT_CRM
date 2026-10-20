@@ -4,8 +4,9 @@ from collections import defaultdict
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation, ROUND_DOWN, ROUND_HALF_UP, localcontext
 
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from catalog.audit import field_change, record_product_changes, stock_change
@@ -149,7 +150,8 @@ def allocate_weight_transport_cost(*, lines, products, total_transport_cost):
 _old_owned_quantity = warehouse_owned_quantity
 
 
-def accept_supply(*, accepted_by, warehouse_id, lines, expenses=(), weight_transport_cost=0, defer_balance=False):
+def accept_supply(*, accepted_by, warehouse_id, lines, expenses=(), weight_transport_cost=0,
+                  defer_balance=False, _pending_supply=None):
     """Принимает поставку целиком и пересчитывает среднюю стоимость товаров.
 
     Расходы делятся на физические единицы. В средневзвешенной стоимости участвует
@@ -201,8 +203,7 @@ def accept_supply(*, accepted_by, warehouse_id, lines, expenses=(), weight_trans
                 goods_total = sum(
                     (line.purchase_unit_cost * line.quantity for line in prepared_lines), Decimal("0")
                 )
-                supply = Supply.objects.create(
-                    accepted_by=accepted_by,
+                supply_values = dict(
                     warehouse=warehouse,
                     total_units=total_units,
                     goods_total_before_expenses=goods_total.quantize(CENT, rounding=ROUND_HALF_UP),
@@ -214,6 +215,19 @@ def accept_supply(*, accepted_by, warehouse_id, lines, expenses=(), weight_trans
                     ),
                     status=(Supply.Status.PRICE_REVIEW_REQUIRED if defer_balance else Supply.Status.ACCEPTED),
                 )
+                if _pending_supply is None:
+                    supply = Supply.objects.create(accepted_by=accepted_by, **supply_values)
+                else:
+                    if not defer_balance or _pending_supply.status != Supply.Status.PRICE_REVIEW_REQUIRED:
+                        raise ValidationError("Изменять без приёмки можно только ожидающий приход.")
+                    supply = _pending_supply
+                    for field, value in supply_values.items():
+                        setattr(supply, field, value)
+                    supply.save(update_fields=tuple(supply_values))
+                    supply.cd_items.all().delete()
+                    supply.tech_items.all().delete()
+                    supply.expenses.all().delete()
+                    supply.cost_calculations.all().delete()
                 SupplyExpense.objects.bulk_create(
                     [SupplyExpense(supply=supply, name=e.name, amount=e.amount) for e in prepared_expenses]
                 )
@@ -334,8 +348,8 @@ def accept_supply(*, accepted_by, warehouse_id, lines, expenses=(), weight_trans
                 SupplyCostCalculation.objects.bulk_create(cost_calculations)
 
             logger.info(
-                "Поставка принята: user_id=%s supply_id=%s units=%s",
-                accepted_by.pk, supply.pk, total_units,
+                "Поставка сохранена: user_id=%s supply_id=%s units=%s status=%s",
+                accepted_by.pk, supply.pk, total_units, supply.status,
             )
             return supply
     except Exception:
@@ -344,7 +358,39 @@ def accept_supply(*, accepted_by, warehouse_id, lines, expenses=(), weight_trans
 
 
 @transaction.atomic
-def confirm_supply_price_review(*, actor, supply_id, price_changes=None):
+def edit_pending_supply(*, actor, supply_id, expected_revision_number, warehouse_id, lines,
+                        expenses=(), weight_transport_cost=0, reason=""):
+    """Пересчитать ожидающий приход, сохранив редакцию и не меняя склад или цены."""
+    if not actor.is_superuser and not actor.has_perm("supplies.add_supply"):
+        raise PermissionDenied("Недостаточно прав для редактирования ожидающего прихода.")
+    supply = Supply.objects.select_for_update().select_related("warehouse", "accepted_by").get(pk=supply_id)
+    if supply.status != Supply.Status.PRICE_REVIEW_REQUIRED:
+        raise ValidationError("Этот приход уже принят или отменён. Обновите страницу.")
+    try:
+        expected = int(expected_revision_number)
+    except (TypeError, ValueError) as exc:
+        raise ValidationError("Обновите страницу прихода перед сохранением изменений.") from exc
+    if expected != supply.revision_number:
+        raise ValidationError("Приход был изменён другим пользователем. Обновите страницу.")
+    _snapshot_supply_revision(
+        supply=supply, actor=actor,
+        reason=str(reason or "Изменение состава до приёмки.").strip(),
+        diff_summary={"pending": True, "balance_changed": False},
+    )
+    accept_supply(
+        accepted_by=actor, warehouse_id=warehouse_id, lines=lines, expenses=expenses,
+        weight_transport_cost=weight_transport_cost, defer_balance=True, _pending_supply=supply,
+    )
+    _supersede_supply_finalizations(supply=supply, new_revision_number=supply.revision_number + 1)
+    supply.revision_number += 1
+    supply.last_revised_at = timezone.now()
+    supply.last_revised_by = actor
+    supply.save(update_fields=("revision_number", "last_revised_at", "last_revised_by"))
+    return supply
+
+
+@transaction.atomic
+def confirm_supply_price_review(*, actor, supply_id, price_changes=None, expected_revision_number=None):
     """Атомарно сохраняет цены и только затем ставит ожидающий приход на баланс."""
     try:
         supply = Supply.objects.select_for_update().select_related("warehouse").get(pk=supply_id)
@@ -354,6 +400,13 @@ def confirm_supply_price_review(*, actor, supply_id, price_changes=None):
         return supply, False
     if supply.status != Supply.Status.PRICE_REVIEW_REQUIRED:
         raise ValidationError("Этот приход нельзя поставить на баланс.")
+    if expected_revision_number is not None:
+        try:
+            current_revision = int(expected_revision_number)
+        except (TypeError, ValueError) as exc:
+            raise ValidationError("Обновите страницу проверки прихода.") from exc
+        if current_revision != supply.revision_number:
+            raise ValidationError("Состав прихода изменён. Проверьте обновлённые количества и цены.")
 
     calculations = list(
         supply.cost_calculations.select_for_update().select_related("cd", "tech").order_by("id")
@@ -420,8 +473,9 @@ def confirm_supply_price_review(*, actor, supply_id, price_changes=None):
         )
     supply.status = Supply.Status.ACCEPTED
     supply.price_reviewed_at = timezone.now()
+    supply.accepted_at = supply.price_reviewed_at
     supply.price_reviewed_by = actor
-    supply.save(update_fields=("status", "price_reviewed_at", "price_reviewed_by"))
+    supply.save(update_fields=("status", "accepted_at", "price_reviewed_at", "price_reviewed_by"))
     transaction.on_commit(_enqueue_google_sheets_after_supply)
     logger.info("Поставка поставлена на баланс: user_id=%s supply_id=%s", actor.pk, supply.pk)
     return supply, True
@@ -619,6 +673,14 @@ def _calculation_values(*, supply, product_type, product, old_quantity, old_cost
     }, resulting_cost, resulting_quantity
 
 
+def _unreceived_supply_ids():
+    """Расчёты ожидающих и отменённых до приёмки приходов не входят в историю склада."""
+    return Supply.objects.filter(
+        Q(status=Supply.Status.PRICE_REVIEW_REQUIRED)
+        | Q(status=Supply.Status.CANCELLED, revisions__diff_summary__unreceived_cancelled=True)
+    ).values("pk")
+
+
 def _replay_product_valuation(*, supply, product_type, product, incoming, old_target_calculation):
     """Replays one product from the edited supply's original historical position."""
     product_filter = {f"{product_type}_id": product.pk}
@@ -626,11 +688,12 @@ def _replay_product_valuation(*, supply, product_type, product, incoming, old_ta
     later_calculations = list(
         SupplyCostCalculation.objects.select_for_update().select_related("supply")
         .filter(product_kind=product_type, supply__accepted_at__gt=supply.accepted_at, **product_filter)
+        .exclude(supply_id__in=_unreceived_supply_ids())
         .order_by("supply__accepted_at", "supply_id", "id")
     )
     later_supply_ids = set(item_model.objects.filter(
         product_id=product.pk, supply__accepted_at__gt=supply.accepted_at,
-    ).values_list("supply_id", flat=True))
+    ).exclude(supply_id__in=_unreceived_supply_ids()).values_list("supply_id", flat=True))
     calculation_supply_ids = {row.supply_id for row in later_calculations}
     if later_supply_ids - calculation_supply_ids:
         raise ValidationError(
@@ -1027,6 +1090,7 @@ def _recalculated_cost(*, product_type, product_id, excluded_supply_id):
     calculations = list(
         SupplyCostCalculation.objects.select_for_update().select_related("supply")
         .filter(product_kind=product_type, **product_filter)
+        .exclude(supply_id__in=_unreceived_supply_ids())
         .order_by("supply__accepted_at", "supply_id", "id")
     )
     target = next((row for row in calculations if row.supply_id == excluded_supply_id), None)
@@ -1040,7 +1104,7 @@ def _recalculated_cost(*, product_type, product_id, excluded_supply_id):
         item_model.objects.filter(
             product_id=product_id,
             supply__accepted_at__gte=first.supply.accepted_at,
-        ).values_list("supply_id", flat=True)
+        ).exclude(supply_id__in=_unreceived_supply_ids()).values_list("supply_id", flat=True)
     )
     calculation_supply_ids = {row.supply_id for row in calculations}
     if historical_supply_ids - calculation_supply_ids:
@@ -1110,6 +1174,10 @@ def cancel_supply(*, actor, supply_id, comment):
     if supply.is_cancelled:
         return SupplyCancellationResult(supply=supply, cancelled=False, costs={})
     if supply.status == Supply.Status.PRICE_REVIEW_REQUIRED:
+        _snapshot_supply_revision(
+            supply=supply, actor=actor, reason=comment,
+            diff_summary={"unreceived_cancelled": True, "balance_changed": False},
+        )
         supply.status = Supply.Status.CANCELLED
         supply.cancelled_at = timezone.now()
         supply.cancelled_by = actor

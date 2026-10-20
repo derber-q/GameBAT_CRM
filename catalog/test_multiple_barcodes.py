@@ -55,6 +55,7 @@ class MultipleBarcodeTests(TestCase):
 
     def test_create_cd_three_and_tech_two_preserve_leading_zero(self):
         cd_payload = {
+            'newness_months': '0',
             "product_kind": "cd", "platform": self.platform.pk, "name": "Три кода",
             "sku": "CD-THREE", **barcode_data(["111", "00123456", "333"]),
         }
@@ -64,6 +65,7 @@ class MultipleBarcodeTests(TestCase):
         self.assertEqual(list(cd.barcodes.order_by("id").values_list("value", flat=True)), ["111", "00123456", "333"])
 
         tech_payload = {
+            'newness_months': '0',
             "product_kind": "tech", "brand": self.brand.pk,
             "product_type": self.product_type.pk, "name": "Два кода",
             "sku": "TECH-TWO", **barcode_data(["444", "555"]),

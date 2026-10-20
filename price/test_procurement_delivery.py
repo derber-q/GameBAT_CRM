@@ -88,15 +88,15 @@ class ProcurementDeliveryTests(TestCase):
         item = price_list.items.get(cd=cd)
         self.assertEqual(price_list.delivery_cd_rub, Decimal("35.25"))
         self.assertEqual(item.delivery_rub, Decimal("35.25"))
-        self.assertEqual(item.prepayment_price_rub, Decimal("2035.25"))
-        self.assertEqual(item.postpayment_price_rub, Decimal("2115.25"))
+        self.assertEqual(item.prepayment_price_rub, Decimal("2040"))
+        self.assertEqual(item.postpayment_price_rub, Decimal("2120"))
         self.assertIsNone(item.delivery_usdt_per_kg_snapshot)
         self.assertEqual(price_list.items.get(tech=self.tech).delivery_rub, Decimal("120"))
         newer = self.create(delivery_cd_rub="50", exchange_rate_usdt_rub="90")
         self.assertEqual(newer.items.get(cd=cd).delivery_rub, Decimal("50"))
         item.refresh_from_db()
         price_list.refresh_from_db()
-        self.assertEqual(item.prepayment_price_rub, Decimal("2035.25"))
+        self.assertEqual(item.prepayment_price_rub, Decimal("2040"))
         self.assertEqual(price_list.delivery_cd_rub, Decimal("35.25"))
 
     def test_cd_delivery_is_added_to_each_disc_and_zero_is_allowed(self):
@@ -110,7 +110,7 @@ class ProcurementDeliveryTests(TestCase):
                 self.assertEqual(items.count(), 2)
                 for item in items:
                     self.assertEqual(item.delivery_rub, Decimal(tariff))
-                    self.assertEqual(item.prepayment_price_rub, item.base_price_rub + Decimal(tariff))
+                    self.assertEqual(item.prepayment_price_rub, item.base_price_rub + Decimal(tariff) + item.prepayment_rounding_extra_rub)
 
     def test_cd_delivery_is_required_and_rejects_invalid_money(self):
         self.client.force_login(self.user)

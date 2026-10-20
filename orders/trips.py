@@ -6,6 +6,7 @@ from django.db import transaction
 
 from partners.models import Supplier
 from price.models import ProcurementSupplierOffer
+from catalog.supplier_exclusions import exclusion_keys
 from .models import (
     CustomerProcurementOrder, CustomerProcurementOrderItem, OrderAdjustment, OrderAdjustmentChange,
     SupplierOrderBatch, SupplierOrderBatchLine, SupplierTripAllocation, SupplierTripChange,
@@ -35,7 +36,22 @@ def trip_queryset():
     )
 
 
+def _batch_exclusions(batch):
+    # Объект рейса загружается заново внутри каждой операции. Одна выборка
+    # допуска обслуживает весь состав этой транзакции, без запроса на строку.
+    if not hasattr(batch, '_current_supplier_exclusions'):
+        batch._current_supplier_exclusions = exclusion_keys()
+    return batch._current_supplier_exclusions
+
+
+def _check_supplier_admission(batch, source, *supplier_ids):
+    blocked = _batch_exclusions(batch)
+    if any((source.product_kind, source.product_id, supplier_id) in blocked for supplier_id in supplier_ids):
+        raise ValidationError(f'{source.product_name_snapshot}: поставщик или источник цены исключён из подбора этого товара.')
+
+
 def _line_for(batch, source, supplier_id, price_supplier_id, price):
+    _check_supplier_admission(batch, source, supplier_id, price_supplier_id)
     line, _ = SupplierOrderBatchLine.objects.get_or_create(
         batch=batch, supplier_id=supplier_id, price_list_item=source, price_supplier_id=price_supplier_id,
         defaults={"product_kind": source.product_kind, source.product_kind: source.product,
@@ -226,7 +242,8 @@ def assign_order_to_trip(*, actor, order_id, target_batch_id, target_revision,
                     price_aed=item.supplier_price_aed_snapshot,
                 ).exists():
                     raise ValidationError("Для товаров M требуются поставщик F и сохранённая цена M.")
-                supplier_id = f.pk
+                if (item.product_kind, item.product_id, f.pk) not in _batch_exclusions(target):
+                    supplier_id = f.pk
             line = _line_for(target, item.price_list_item, supplier_id,
                              item.selected_supplier_id, item.supplier_price_aed_snapshot)
             line.quantity += item.quantity
@@ -297,9 +314,45 @@ def _record_customer_changes(actor, changes, batch):
         _save_totals(order, list(order.items.all()))
 
 
+def trip_supplier_chains(lines, *, excluded=None):
+    lines = list(lines)
+    if excluded is None:
+        excluded = exclusion_keys((line.product_kind, line.product_id) for line in lines)
+    """Сохранённые предложения товара и его фактические получатели только в этом рейсе."""
+    chains = {}
+    for line in lines:
+        suppliers = chains.setdefault(line.price_list_item_id, set())
+        suppliers.add(line.supplier_id)
+        suppliers.update(offer.supplier_id for offer in line.price_list_item.supplier_offers.all()
+                         if (line.product_kind, line.product_id, offer.supplier_id) not in excluded)
+    return chains
+
+
+def supplier_priority_state(supplier_id, priorities):
+    """При равном максимуме не выбирает последнего по букве, имени или ID."""
+    maximum = max(priorities.values())
+    at_maximum = [key for key, priority in priorities.items() if priority == maximum]
+    return {
+        "is_last_supplier": at_maximum == [supplier_id],
+        "priority_ambiguous": supplier_id in at_maximum and len(at_maximum) > 1,
+    }
+
+
+def _automatic_reduction(allocations, quantity):
+    """Сохраняет доли других поставщиков; нуль и одного получателя распределяет без выбора."""
+    active = [row for row in allocations if row.quantity > 0]
+    if quantity and len(active) != 1:
+        return None
+    return [{
+        "allocation_id": row.pk,
+        "final_quantity": row.order_item.quantity - row.quantity + (quantity if row.quantity else 0),
+    } for row in allocations]
+
+
 @transaction.atomic
 def change_trip_line(*, actor, batch_id, line_id, revision, quantity, action,
-                     target_supplier_id=None, price_supplier_id=None, distribution=None):
+                     target_supplier_id=None, price_supplier_id=None, distribution=None,
+                     _allow_priority_transfer=False, _exclusions=None):
     _require_manage(actor)
     try:
         batch = SupplierOrderBatch.objects.select_for_update().get(pk=batch_id, price_list__isnull=False)
@@ -307,6 +360,8 @@ def change_trip_line(*, actor, batch_id, line_id, revision, quantity, action,
         line = SupplierOrderBatchLine.objects.select_for_update().select_related("price_list_item__cd", "price_list_item__tech").get(pk=line_id, batch=batch)
     except (SupplierOrderBatch.DoesNotExist, SupplierOrderBatchLine.DoesNotExist, ValueError, TypeError) as exc:
         raise ValidationError("Рейс или строка не найдены.") from exc
+    if _exclusions is not None:
+        batch._current_supplier_exclusions = _exclusions
     if batch.revision != expected_revision:
         raise ValidationError("Рейс уже изменён другим запросом. Обновите страницу.")
     orders = list(CustomerProcurementOrder.objects.select_for_update().filter(trip=batch).order_by("pk"))
@@ -317,6 +372,8 @@ def change_trip_line(*, actor, batch_id, line_id, revision, quantity, action,
     if new_quantity > 2147483647:
         raise ValidationError("Слишком большое количество.")
     old_quantity = line.quantity
+    if new_quantity > old_quantity:
+        _check_supplier_admission(batch, line.price_list_item, line.supplier_id, line.price_supplier_id)
     if new_quantity == old_quantity:
         raise ValidationError("Количество не изменилось.")
     allocations = list(line.allocations.select_for_update().select_related("order_item__order").order_by("order_item__order_id", "pk"))
@@ -324,6 +381,14 @@ def change_trip_line(*, actor, batch_id, line_id, revision, quantity, action,
     if action == "transfer":
         if new_quantity >= old_quantity:
             raise ValidationError("Перенос доступен только при уменьшении количества.")
+        if not _allow_priority_transfer:
+            chain_lines = list(batch.lines.filter(price_list_item_id=line.price_list_item_id).select_related(
+                "price_list_item",
+            ).prefetch_related("price_list_item__supplier_offers"))
+            chain = trip_supplier_chains(chain_lines, excluded=_batch_exclusions(batch))[line.price_list_item_id]
+            priorities = dict(Supplier.objects.select_for_update().filter(pk__in=chain).values_list("pk", "priority"))
+            if supplier_priority_state(line.supplier_id, priorities)["is_last_supplier"]:
+                raise ValidationError("Это последний поставщик товара по приоритету. Уменьшите количество в связанных заказах без переноса.")
         try:
             supplier = Supplier.objects.get(pk=target_supplier_id)
             offer = ProcurementSupplierOffer.objects.get(price_list_item=line.price_list_item, supplier_id=price_supplier_id)
@@ -357,6 +422,8 @@ def change_trip_line(*, actor, batch_id, line_id, revision, quantity, action,
                       price_supplier_id=offer.supplier_id, price_aed=str(offer.price_aed))
         description = f"Перенесено {old_quantity - new_quantity} шт. поставщику {supplier.letter} по цене {offer.supplier.letter}"
     elif action == "adjust":
+        if distribution is None and new_quantity < old_quantity:
+            distribution = _automatic_reduction(allocations, new_quantity)
         if not isinstance(distribution, list):
             raise ValidationError("Укажите итоговое количество каждого заказчика.")
         wanted = {}
@@ -436,12 +503,18 @@ def apply_m_to_f_rule(*, actor, batch_id):
         return {"lines": 0, "units": 0}
     if "F" not in suppliers:
         raise ValidationError("Для товаров M требуется поставщик с буквой F в справочнике.")
+    excluded = _batch_exclusions(batch)
+    lines = [line for line in lines if (line.product_kind, line.product_id, suppliers['F'].pk) not in excluded]
+    if not lines:
+        return {'lines': 0, 'units': 0}
     result = {"lines": len(lines), "units": sum(line.quantity for line in lines)}
     for line in lines:
         batch = change_trip_line(
             actor=actor, batch_id=batch.pk, line_id=line.pk, revision=batch.revision,
             quantity=0, action="transfer", target_supplier_id=suppliers["F"].pk,
             price_supplier_id=suppliers["M"].pk,
+            _allow_priority_transfer=True,
+            _exclusions=excluded,
         )
     SupplierTripChange.objects.create(
         batch=batch, actor=actor, revision=batch.revision,
@@ -465,4 +538,5 @@ def return_line_to_m(*, actor, batch_id, line_id, revision):
         actor=actor, batch_id=batch_id, line_id=line_id, revision=revision,
         quantity=0, action="transfer", target_supplier_id=line.price_supplier_id,
         price_supplier_id=line.price_supplier_id,
+        _allow_priority_transfer=True,
     )

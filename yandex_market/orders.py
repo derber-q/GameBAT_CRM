@@ -23,8 +23,10 @@ AFTER_SHIPMENT_CANCELLATIONS = {
 STATUS_MAP = {
     ("PROCESSING", "STARTED"): Sale.OrderStatus.CREATED,
     ("PROCESSING", "READY_TO_SHIP"): Sale.OrderStatus.ASSEMBLED,
-    ("DELIVERY", ""): Sale.OrderStatus.SHIPPED,
-    ("PICKUP", ""): Sale.OrderStatus.SHIPPED,
+    # До фактической доставки продажа остаётся собранной. Внешняя отгрузка
+    # отдельно хранится в OrderMetadata и по-прежнему определяет правила возврата.
+    ("DELIVERY", ""): Sale.OrderStatus.ASSEMBLED,
+    ("PICKUP", ""): Sale.OrderStatus.ASSEMBLED,
     ("DELIVERED", ""): Sale.OrderStatus.DELIVERED,
 }
 
@@ -75,6 +77,41 @@ def action_payload(order, action):
             raise ValidationError("Сначала создайте продажу и передайте состав коробок.")
         return {"order": {"status": "PROCESSING", "substatus": "READY_TO_SHIP"}}
     return {"order": {"status": "CANCELLED", "substatus": "SHOP_FAILED"}}
+
+
+@transaction.atomic
+def request_order_action(*, order_id, actor, action, boxes=None, expected_status=None):
+    """Ставит проверенное действие в существующую очередь, не меняя локальную доставку."""
+    from django.core.exceptions import PermissionDenied
+    from .packing import validate_boxes
+    from .queue import enqueue
+    from .services import audit
+
+    if not actor.has_perm('yandex_market.manage_orders'):
+        raise PermissionDenied
+    order = OrderMetadata.objects.select_for_update().select_related('integration').get(pk=order_id)
+    if not order.integration.enabled:
+        raise ValidationError('Обмен с Маркетом выключен.')
+    if order.fake:
+        raise ValidationError('Действия по тестовому заказу недоступны из CRM.')
+    if expected_status is not None and action != 'refresh' and expected_status != (order.status, order.substatus):
+        raise ValidationError('Статус Маркета изменился. Обновите страницу и повторите действие.')
+    payload = {'order_id': order.order_id}
+    if action == 'refresh':
+        kind = 'order'
+    elif action == 'boxes':
+        if order.status != 'PROCESSING' or order.substatus != 'STARTED':
+            raise ValidationError('Коробки можно изменять только до готовности к отгрузке.')
+        validate_boxes(order, boxes)
+        payload['boxes'] = boxes
+        kind = 'boxes'
+    else:
+        action_payload(order, action)
+        payload['action'] = action
+        kind = 'order_action'
+    job = enqueue(order.integration, kind, order.order_id, payload, actor=actor)
+    audit(order.integration, actor, kind, order.order_id, requested_action=action)
+    return job
 
 
 def import_order(integration, payload):
@@ -156,7 +193,7 @@ def _apply_order(pk, payload):
         try:
             sale = create_sale(actor=integration.operator, warehouse_id=integration.fulfillment_warehouse_id,
                                price_type=Sale.PriceType.YANDEX_MARKET, sale_type=Sale.SaleType.YANDEX_MARKET,
-                               payment_method=Sale.PaymentMethod.BANK_ACCOUNT, lines=lines, external_prices=prices,
+                               payment_method=Sale.PaymentMethod.BANK_TRANSFER_POSTPAY, lines=lines, external_prices=prices,
                                note=f"Заказ Яндекс Маркета №{order.order_id}. Выплата подтверждается отдельно.")
         except ValidationError as exc:
             if any("недостаточно товара" in message for message in exc.messages):

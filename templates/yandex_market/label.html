@@ -1,1 +1,17 @@
-{% extends 'yandex_market/base.html' %}{% block heading %}Ярлыки Маркета #{{ document.pk }}{% endblock %}{% block market_content %}<section class="panel"><p>Формат: {{ document.format }} · Состояние: {{ document.state }}</p>{% if document.last_error %}<div class="alert alert-info">{{ document.last_error }}</div>{% endif %}{% if document.state == 'done' %}<div class="ym-actions"><a class="button" href="{% url 'yandex_market:label_file' document.pk %}" target="_blank" rel="noopener">Открыть и напечатать PDF</a><a class="button button-secondary" href="{% url 'yandex_market:label_file' document.pk %}?download=1">Скачать PDF</a></div>{% else %}<p>Документ формируется фоновым обработчиком. При большом количестве заказов Маркет готовит отчёт асинхронно.</p><a class="button button-secondary" href="">Обновить состояние</a>{% endif %}</section>{% endblock %}
+{% extends 'yandex_market/base.html' %}
+{% block heading %}Ярлыки Маркета #{{ document.pk }}{% endblock %}
+{% block market_content %}
+<section class="panel">
+  {% if document.order.sale_id and perms.sales.view_sale_detail %}<p><a href="{% url 'sales:detail' document.order.sale_id %}">Вернуться к продаже</a></p>{% elif perms.sales.view_sales %}<p><a href="{% url 'sales:incomplete' %}">Вернуться к незавершённым продажам</a></p>{% endif %}
+  <p>Формат: {{ document.format }} · Состояние: {{ document.state }}</p>
+  {% if document.last_error %}<div class="alert alert-info">{{ document.last_error }}</div>{% endif %}
+  {% if document.state == 'done' %}
+    <div class="ym-actions"><a class="button" href="{% url 'yandex_market:label_file' document.pk %}" target="_blank" rel="noopener">Открыть и напечатать PDF</a><a class="button button-secondary" href="{% url 'yandex_market:label_file' document.pk %}?download=1">Скачать PDF</a></div>
+  {% elif document.state == 'error' %}
+    <p>Не удалось сформировать стикер. Проверьте ошибку и повторите запрос со страницы продажи или заказа Маркета.</p>
+  {% else %}
+    <p>Документ формируется фоновым обработчиком. При большом количестве заказов Маркет готовит отчёт асинхронно.</p>
+    <a class="button button-secondary" href="">Обновить состояние</a>
+  {% endif %}
+</section>
+{% endblock %}

@@ -1,0 +1,12 @@
+.nomenclature-options-page .product-form-grid { align-items: start; }
+.nomenclature-options-page .field,
+.nomenclature-options-page .barcode-value-field { min-width: 0; }
+.nomenclature-options-page [data-newness-custom-wrap][hidden] { display: none; }
+.nomenclature-options-page #id_excluded_suppliers { display: grid; gap: 8px; }
+.procurement-options-page .heading-actions { flex-wrap: wrap; min-width: 0; max-width: 100%; }
+@media (max-width: 700px) {
+  .nomenclature-options-page .product-form-grid { grid-template-columns: minmax(0, 1fr); }
+  .nomenclature-options-page .barcode-form-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .nomenclature-options-page .barcode-value-field { grid-column: 1 / -1; }
+  .nomenclature-options-page .barcode-readonly-list .barcode-form-row { grid-template-columns: minmax(0, 1fr) auto; }
+}

@@ -77,8 +77,17 @@ def tech_price_order(product, *, for_excel=False):
     return key, title
 
 
+def platform_order_key(platform):
+    name = normalized_order_name(platform.name if hasattr(platform, 'name') else platform)
+    # Только два поколения Switch меняют взаимный порядок; остальные ключи прежние.
+    if name in {'nintendo switch', 'nintendo switch 1', 'nintendo switch 2'}:
+        return 'nintendo switch', 0 if name == 'nintendo switch 2' else 1, name
+    return name, 0, name
+
+
 def cd_order_key(product):
-    return normalized_order_name(product.platform.name), normalized_order_name(product.name), product.pk
+    platform = product.platform.name if product.platform is not None else "Без платформы"
+    return platform_order_key(platform), normalized_order_name(product.name), product.pk
 
 
 def tech_brand_groups(items, *, product_of=lambda item: item):

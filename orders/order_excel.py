@@ -8,6 +8,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.worksheet.page import PageMargins
 
 from core.excel_layout import wrapped_text_height
+from catalog.nomenclature_grouping import nomenclature_product_groups
 from price.excel import GRAY, LIGHT, TEAL, WHITE, safe_text
 
 
@@ -47,22 +48,33 @@ def order_xlsx(*, order, items):
         cell.alignment = Alignment(wrap_text=True, vertical="center", horizontal="center")
     sheet.row_dimensions[4].height = 30
 
+    items = list(items)
+    groups = nomenclature_product_groups(
+        [item for item in items if item.product_kind == "tech"],
+        [item for item in items if item.product_kind == "cd"], product_of=lambda item: item.product,
+    )
     rows = []
-    for item in items:
+    for title, item in ((title, item) for _kind, title, group in groups for item in group):
         if order.is_stock_order:
-            rows.append((item.product_name_snapshot, item.quantity, item.prepayment_unit_price))
+            rows.append((title, (item.product_name_snapshot, item.quantity, item.prepayment_unit_price)))
         else:
             for label, quantity, price in (
                 ("Предоплата", item.prepayment_quantity, item.prepayment_unit_price),
                 ("Постоплата", item.postpayment_quantity, item.postpayment_unit_price),
             ):
                 if quantity or not item.quantity:
-                    rows.append((item.product_name_snapshot, label, quantity, price))
+                    rows.append((title, (item.product_name_snapshot, label, quantity, price)))
 
     total_quantity = 0
     total_amount = Decimal("0.00")
     border = Border(bottom=Side(style="thin", color=GRAY))
-    for values in rows:
+    previous_group = None
+    for title, values in rows:
+        if title != previous_group:
+            text_row(sheet.max_row + 1, title, bold=True)
+            for cell in sheet[sheet.max_row]:
+                cell.fill = PatternFill("solid", fgColor=LIGHT)
+            previous_group = title
         quantity, price = values[-2:]
         amount = price * quantity
         sheet.append([safe_text(value) if isinstance(value, str) else value for value in (*values, amount)])

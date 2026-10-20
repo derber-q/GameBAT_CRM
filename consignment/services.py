@@ -552,7 +552,7 @@ def record_consignment_sale(*, actor, product_type, stock_id, quantity, payment_
     """Фиксирует продажу с реализации без повторного списания со склада."""
     allowed_payment_methods = {Sale.PaymentMethod.CASH, Sale.PaymentMethod.BANK_ACCOUNT}
     if payment_method not in allowed_payment_methods:
-        raise ValidationError("Выберите наличные или банковский счёт.")
+        raise ValidationError("Выберите наличные или банковский перевод.")
     _, stock_model, _, sale_item_model, product_field = _configuration(product_type)
     try:
         stock = stock_model.objects.select_related("warehouse", "platform").get(pk=stock_id)
@@ -563,8 +563,8 @@ def record_consignment_sale(*, actor, product_type, stock_id, quantity, payment_
         warehouse=stock.warehouse, consignment_platform=stock.platform,
         price_type=Sale.PriceType.CONSIGNMENT, sale_type=Sale.SaleType.CONSIGNMENT,
         payment_method=payment_method, order_status=Sale.OrderStatus.DELIVERED,
-        payment_status=Sale.PaymentStatus.PAID, completed_at=now, total_amount=0,
-        cash_received_amount=0 if payment_method == Sale.PaymentMethod.CASH else None,
+        payment_status=Sale.PaymentStatus.PAID, completed_at=now, paid_at=now, paid_by=actor, total_amount=0,
+        cash_received_amount=0,
         extra_cash_amount=Decimal("0.00"), created_by=actor,
     )
     sale.visible_id = f"SALE-{sale.pk:06d}"
@@ -583,8 +583,7 @@ def record_consignment_sale(*, actor, product_type, stock_id, quantity, payment_
         **{product_field: snapshot.product},
     )
     sale.total_amount = items[0].line_total
-    if payment_method == Sale.PaymentMethod.CASH:
-        sale.cash_received_amount = sale.total_amount
+    sale.cash_received_amount = sale.total_amount
     sale.save(update_fields=("total_amount", "cash_received_amount"))
     if payment_method == Sale.PaymentMethod.CASH:
         credit_sale_payment(sale=sale, actor=actor)

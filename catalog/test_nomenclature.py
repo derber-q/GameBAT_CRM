@@ -709,6 +709,7 @@ class ProductAdminAuditTests(NomenclatureDataMixin, TestCase):
 
     def test_cd_and_tech_changes_from_admin_use_the_shared_audit(self):
         cd_response = self.client.post(reverse("admin:catalog_cd_change", args=(self.cd.pk,)), {
+            'newness_months': '0',
             "platform": self.cd.platform_id,
             "name": "CD из Admin",
             "description": self.cd.description,
@@ -728,6 +729,7 @@ class ProductAdminAuditTests(NomenclatureDataMixin, TestCase):
         })
         self.assertEqual(cd_response.status_code, 302)
         tech_response = self.client.post(reverse("admin:catalog_tech_change", args=(self.tech.pk,)), {
+            'newness_months': '0',
             "brand": self.tech.brand_id,
             "product_type": self.tech.product_type_id,
             "name": "Tech из Admin",

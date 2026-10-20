@@ -1,6 +1,7 @@
 from django.urls import path
 
 from . import views
+from . import market_views
 
 app_name = "sales"
 urlpatterns = [
@@ -9,6 +10,12 @@ urlpatterns = [
     path("completed/", views.sale_completed_list, name="completed"),
     path("cancelled/", views.sale_cancelled_list, name="cancelled"),
     path("<int:pk>/status/", views.sale_inline_status, name="inline_status"),
+    path('<int:pk>/market-action/', market_views.sale_market_action, name='market_action'),
+    path('market-scan/', market_views.sale_market_scan, name='market_scan'),
+    path('<int:pk>/market-print/', market_views.sale_market_print, name='market_print'),
+    path('market-print/<uuid:request_id>/', market_views.sale_market_print_status, name='market_print_status'),
+    path('<int:pk>/market-label/', market_views.sale_market_label, name='market_label'),
+    path('<int:pk>/market-label/<int:document_id>/', market_views.sale_market_label_status, name='market_label_status'),
     path("new/", views.sale_create, name="create"),
     path("new/import-wholesale/", views.sale_wholesale_import, name="import_wholesale"),
     path("<int:pk>/", views.sale_detail, name="detail"),

@@ -83,13 +83,12 @@ class SaleCashReceivedTests(TestCase):
         sale.refresh_from_db()
         self.assertEqual(sale.cash_received_amount, Decimal("4500.00"))
 
-    def test_bank_ignores_cash_received_and_does_not_touch_register(self):
+    def test_bank_saves_received_and_does_not_touch_register(self):
         sale = self.create(Sale.PaymentMethod.BANK_ACCOUNT, "9000")
-        mark_sale_paid(actor=self.actor, sale_id=sale.pk, cash_received_amount="9000")
         sale.refresh_from_db()
         self.warehouse.cash_register.refresh_from_db()
-        self.assertIsNone(sale.cash_received_amount)
-        self.assertEqual(sale.extra_cash_amount, Decimal("0.00"))
+        self.assertEqual(sale.cash_received_amount, Decimal("9000.00"))
+        self.assertEqual(sale.extra_cash_amount, Decimal("4500.00"))
         self.assertEqual(self.warehouse.cash_register.balance, Decimal("0.00"))
 
     def test_cancel_refunds_actual_received_not_goods_total(self):

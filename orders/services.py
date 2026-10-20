@@ -8,6 +8,7 @@ from django.db import transaction
 from cash.models import CashRegister, CashTransaction
 from price.models import ProcurementPriceList, ProcurementPriceListItem
 from warehouse.models import Warehouse
+from catalog.supplier_exclusions import validate_supplier_assignments
 
 from .models import (
     CustomerOrderStatusEvent,
@@ -119,6 +120,7 @@ def create_customer_procurement_order(*, actor, price_list_id, recipient, commen
         raise ValidationError("Одна из позиций отсутствует в исходном закупочном прайсе.")
     if any(item.product.is_archived for item in source_items.values()):
         raise ValidationError("Удалённый товар нельзя включить в новый заказ.")
+    validate_supplier_assignments((item.product_kind, item.product_id, item.selected_supplier_id, item.product_name_snapshot) for item in source_items.values())
     order = CustomerProcurementOrder.objects.create(
         recipient=recipient, comment=str(comment or "").strip(), price_list=price_list, created_by=actor,
         purpose=purpose,
@@ -165,6 +167,11 @@ def edit_created_order(*, actor, order_id, recipient, comment, lines):
         item.price_list_item_id: item
         for item in CustomerProcurementOrderItem.objects.select_for_update().filter(order=order)
     }
+    validate_supplier_assignments(
+        (sources[key].product_kind, sources[key].product_id, sources[key].selected_supplier_id, sources[key].product_name_snapshot)
+        for key, quantities in prepared.items()
+        if key not in existing or sum(quantities) > existing[key].prepayment_quantity + existing[key].postpayment_quantity
+    )
     for source_id, item in list(existing.items()):
         quantities = prepared.get(source_id)
         if quantities is None:
@@ -457,6 +464,8 @@ def create_supplier_order_batch(*, actor, order_ids):
         aggregated[key]["supplier_cost_total"] += item.supplier_price_aed_snapshot * quantity
     if not aggregated:
         raise ValidationError("В выбранных заказах нет товарных позиций.")
+    validate_supplier_assignments((data['item'].product_kind, data['item'].product_id, supplier_id, data['item'].product_name_snapshot)
+                                  for (supplier_id, _kind, _pk), data in aggregated.items())
     batch = SupplierOrderBatch.objects.create(created_by=actor)
     batch.source_orders.set(orders)
     lines = []

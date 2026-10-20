@@ -4,8 +4,10 @@ from uuid import uuid4
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
+from django.db.models import Prefetch
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils.http import content_disposition_header
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_GET, require_POST
@@ -15,8 +17,9 @@ from price.excel import import_procurement_order_files
 from price.models import ProcurementPriceListItem
 
 from .forms import ProcurementOrderHeaderForm, ProcurementOrderUploadForm, ReceivingAdjustmentForm
-from .models import CustomerProcurementOrder, SupplierOrderBatch
+from .models import CustomerProcurementOrder, SupplierOrderBatch, SupplierTripAllocation
 from .order_excel import order_xlsx
+from .order_supplier_excel import build_order_supplier_rows, order_suppliers_xlsx
 from .trips import can_manage_trips
 from .services import (
     advance_order_status,
@@ -79,6 +82,7 @@ def order_list(request):
         "can_create": request.user.is_superuser or request.user.has_perm("orders.create_order"),
         "can_export": request.user.has_perm("orders.view_order_detail"),
         "can_generate_batches": can_generate_batches,
+        "can_export_trips": can_generate_batches and request.user.has_perm("price.view_supplier_prices"),
         "can_create_trip": can_manage_trips(request.user),
         "trip_creation_key": str(uuid4()),
     })
@@ -102,7 +106,9 @@ def order_upload(request):
                 "purpose": purpose,
             }
             return redirect("orders:preview")
-    return render(request, "orders/upload.html", {"form": form})
+    return render(request, "orders/upload.html", {
+        "form": form, "can_create_stock": request.user.has_perm("price.view_supplier_prices"),
+    })
 
 
 @never_cache
@@ -112,13 +118,41 @@ def order_export(request, pk):
     with transaction.atomic():
         order = get_object_or_404(CustomerProcurementOrder, pk=pk)
         _require_stock_prices(request.user, order.purpose)
-        items = list(order.items.only(
-            "order_id", "product_name_snapshot", "prepayment_quantity", "postpayment_quantity",
-            "prepayment_unit_price", "postpayment_unit_price",
-        ).order_by("product_name_snapshot", "pk"))
+        items = list(order.items.select_related(
+            "cd__platform", "cd__game_series", "tech__brand", "tech__product_type",
+        ).order_by("pk"))
     response = HttpResponse(order_xlsx(order=order, items=items),
                             content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     response["Content-Disposition"] = content_disposition_header(True, f"zakaz_{pk}.xlsx")
+    return response
+
+
+@never_cache
+@require_GET
+@permission_required_all("orders.view_order_detail", "price.view_supplier_prices")
+def order_suppliers_export(request, pk):
+    try:
+        with transaction.atomic():
+            order = get_object_or_404(CustomerProcurementOrder, pk=pk)
+            items = order.items.select_related(
+                "selected_supplier", "cd__platform", "cd__game_series", "tech__brand", "tech__product_type",
+            ).order_by("pk")
+            if order.trip_id:
+                items = items.prefetch_related(Prefetch(
+                    "trip_allocations", queryset=SupplierTripAllocation.objects.filter(
+                        line__batch_id=order.trip_id,
+                    ).select_related("line__supplier").order_by("pk"),
+                ))
+            rows = build_order_supplier_rows(order=order, items=list(items))
+    except ValidationError as exc:
+        messages.error(request, " ".join(exc.messages))
+        return redirect("orders:detail", pk=pk)
+    response = HttpResponse(order_suppliers_xlsx(
+        order=order, rows=rows,
+        show_supplier_details=request.user.is_superuser or request.user.has_perm("partners.view_supplier_details"),
+    ), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    response["Content-Disposition"] = content_disposition_header(True, f"zakaz_{pk}_suppliers.xlsx")
+    response["X-Content-Type-Options"] = "nosniff"
     return response
 
 
@@ -129,6 +163,9 @@ def order_preview(request):
         messages.error(request, "Сначала загрузите заполненный закупочный прайс.")
         return redirect("orders:upload")
     _require_stock_prices(request.user, draft.get("purpose"))
+    from_form = draft.get("entry_method") == "form"
+    back_url = (f"{reverse('orders:stock_create')}?price_list={draft['price_list_id']}"
+                if from_form else reverse("orders:upload"))
     item_ids = [row["price_list_item_id"] for row in draft["lines"]]
     items = {
         item.pk: item
@@ -140,13 +177,15 @@ def order_preview(request):
     for row in draft["lines"]:
         item = items.get(row["price_list_item_id"])
         if item is None:
-            messages.error(request, "Сохранённый прайс изменён. Загрузите файл повторно.")
+            messages.error(request, "Выбранная позиция больше недоступна. Проверьте состав заказа заново.")
             request.session.pop(DRAFT_SESSION_KEY, None)
-            return redirect("orders:upload")
+            return redirect(back_url)
         preview_rows.append({"item": item, **row})
     if request.method == "POST":
         try:
-            order = create_customer_procurement_order(actor=request.user, **draft)
+            order = create_customer_procurement_order(actor=request.user, **{
+                key: value for key, value in draft.items() if key != "entry_method"
+            })
         except ValidationError as exc:
             messages.error(request, " ".join(exc.messages))
         else:
@@ -154,7 +193,8 @@ def order_preview(request):
             messages.success(request, f"Заказ №{order.pk} создан без проведения оплаты.")
             return redirect("orders:detail", pk=order.pk)
     return render(request, "orders/preview.html", {"draft": draft, "rows": preview_rows,
-                  "is_stock_order": draft.get("purpose") == CustomerProcurementOrder.Purpose.STOCK})
+                  "is_stock_order": draft.get("purpose") == CustomerProcurementOrder.Purpose.STOCK,
+                  "back_url": back_url, "from_form": from_form})
 
 
 @require_GET

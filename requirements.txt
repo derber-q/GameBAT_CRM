@@ -5,3 +5,5 @@ python-barcode==0.16.1
 cryptography==46.0.3
 google-api-python-client==2.184.0
 google-auth==2.41.1
+PyMuPDF==1.28.2
+pywin32==312; sys_platform == "win32"

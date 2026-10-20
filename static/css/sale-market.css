@@ -1,0 +1,17 @@
+.sale-market-controls { display: grid; gap: 8px; min-width: 250px; max-width: 460px; white-space: normal; overflow-wrap: anywhere; }
+.sale-market-controls small { display: block; }
+.sale-market-controls p { margin: 0; }
+.sale-market-controls .sale-market-form { display: grid; gap: 8px; min-width: 0; padding-top: 8px; border-top: 1px solid var(--gb-border); }
+.sale-market-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.sale-market-actions form { margin: 0; }
+.sale-market-controls .button { justify-self: start; white-space: normal; text-align: left; }
+.sale-market-panel { margin-bottom: 20px; }
+.sale-market-page .heading-actions { flex-wrap: wrap; min-width: 0; max-width: 100%; }
+.sale-market-page .page-heading > div { min-width: 0; overflow-wrap: anywhere; }
+.sale-market-page .detail-grid > .panel { min-width: 0; }
+.sale-market-page .details dd { min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 600px) {
+  .sale-market-panel .sale-market-controls { min-width: 0; max-width: 100%; }
+  .sale-market-page .detail-grid { grid-template-columns: minmax(0, 1fr); }
+  .sale-market-page .details { grid-template-columns: minmax(0, 1fr); }
+}

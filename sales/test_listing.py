@@ -22,7 +22,7 @@ class SaleListingTests(TestCase):
         self.stock = CDWarehouseStock.objects.create(cd=self.cd, warehouse=self.warehouse, quantity=1000)
         self.client.force_login(self.actor)
 
-    def sale(self, kind=Sale.SaleType.RETAIL, method=Sale.PaymentMethod.BANK_ACCOUNT):
+    def sale(self, kind=Sale.SaleType.RETAIL, method=Sale.PaymentMethod.BANK_TRANSFER_POSTPAY):
         return create_sale(actor=self.actor, warehouse_id=self.warehouse.pk, price_type=Sale.PriceType.RETAIL,
                            sale_type=kind, payment_method=method,
                            lines=[{'product_type': 'cd', 'product_id': self.cd.pk, 'quantity': 1}], note='Keep this note')
@@ -59,7 +59,7 @@ class SaleListingTests(TestCase):
             self.assertContains(response, 'Keep this note')
             self.assertContains(response, 'Статус заказа')
             self.assertContains(response, 'Статус оплаты')
-            self.assertContains(response, 'css/sales-list.css?v=2')
+            self.assertContains(response, 'css/sales-list.css?v=3')
             if name != 'incomplete':
                 self.assertNotContains(response, 'data-status-field=')
 
@@ -86,13 +86,22 @@ class SaleListingTests(TestCase):
         self.assertContains(page, f'data-version="{sale.updated_at.isoformat()}"')
         self.assertContains(page, 'value="assembled"')
         self.assertNotContains(page, 'value="delivered"')
+        self.assertNotContains(page, 'Отправлен')
+        self.assertNotContains(page, 'value="shipped"')
         self.assertEqual(self.post(sale, value='delivered').status_code, 400)
-        for value in ('assembled', 'shipped', 'delivered'):
+        for value in ('assembled', 'delivered'):
             response = self.post(sale, value=value)
             self.assertEqual(response.status_code, 200)
             self.assertIn('class="sale-items-preview-name" title="Disc">Disc</span>', response.json()['row_html'])
             self.assertEqual(response.json()['order_status'], value)
             sale.refresh_from_db()
+            if value == 'assembled':
+                rejected = self.post(sale, value='shipped')
+                self.assertEqual(rejected.status_code, 400)
+                self.assertEqual(rejected.json()['order_status'], 'assembled')
+                detail = self.client.get(reverse('sales:detail', args=[sale.pk]))
+                self.assertContains(detail, 'Отметить как доставленный')
+                self.assertNotContains(detail, 'Отметить как отправленный')
         response = self.post(sale, field='payment', value='paid')
         self.assertTrue(response.json()['is_completed'])
         self.assertEqual(response.json()['payment_status'], 'paid')
@@ -122,7 +131,7 @@ class SaleListingTests(TestCase):
     def test_stale_and_double_request_do_not_advance_again(self):
         sale = self.sale()
         self.assertEqual(self.post(sale).status_code, 200)
-        response = self.post(sale, value='shipped')
+        response = self.post(sale, value='delivered')
         self.assertEqual(response.status_code, 409)
         self.assertEqual(response.json()['order_status'], 'assembled')
         sale.refresh_from_db()
@@ -176,7 +185,7 @@ class SaleListingTests(TestCase):
         # No business transitions needed for pagination fixtures.
         Sale.objects.bulk_create([
             Sale(warehouse=self.warehouse, created_by=self.actor, price_type='retail',
-                 sale_type='retail', payment_method='bank_account') for _ in range(45)
+                 sale_type='retail', payment_method='bank_transfer_postpay') for _ in range(45)
         ])
         self.sale(Sale.SaleType.AVITO)
         response = self.client.get(url, {'page_retail': 2})
@@ -186,7 +195,7 @@ class SaleListingTests(TestCase):
         Sale.objects.bulk_create([
             Sale(warehouse=self.warehouse, created_by=self.actor, price_type='wholesale',
                  sale_type=Sale.SaleType.WHOLESALE,
-                 payment_method='bank_account')
+                 payment_method='bank_transfer_postpay')
             for index in range(51)
         ])
         response = self.client.get(url, {'page_wholesale': 2})

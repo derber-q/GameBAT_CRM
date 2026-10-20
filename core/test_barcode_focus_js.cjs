@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-function environment(kind, initialItems = []) {
+function environment(kind, initialItems = [], paymentControls = false) {
   const focusLog = [];
   const autocomplete = [];
   let activeElement;
@@ -75,6 +75,17 @@ function environment(kind, initialItems = []) {
   const total = field('strong', { dataset: { saleIntermediateTotal: '' } });
   const commission = field('strong', { dataset: { saleCommissionTotal: '' } });
   const netTotal = field('strong', { dataset: { saleNetTotal: '' } });
+  let payment, saleType, received, receivedContainer, paymentHint;
+  if (paymentControls) {
+    form.dataset.paymentSelectId = 'id_payment_method';
+    form.dataset.saleTypeSelectId = 'id_sale_type';
+    payment = field('select', { id: 'id_payment_method', value: 'cash' });
+    saleType = field('select', { id: 'id_sale_type', value: 'retail' });
+    receivedContainer = field('div', { dataset: { cashReceivedContainer: '' } });
+    received = new Element('input'); received.name = 'cash_received_amount';
+    receivedContainer.append(received);
+    paymentHint = field('span', { dataset: { paymentWorkflow: '' } });
+  }
   field('script', { id: 'initial-sale-items', textContent: JSON.stringify(initialItems) });
   field('button', { className: kind === 'sale' ? 'add-stock-line' : 'add-supply-line' });
   field('button', { className: 'add-custom-line' });
@@ -115,7 +126,7 @@ function environment(kind, initialItems = []) {
     assert(!focusLog.some(entry => entry.element === barcode), 'Нельзя возвращаться к штрихкоду над списком');
   }
   return { rows, autocomplete, feedback, barcode, barcodeButton, requests, focusLog, product, assertQuantityFocus,
-    form, total, commission, netTotal,
+    form, total, commission, netTotal, payment, saleType, received, receivedContainer, paymentHint,
     scan: async result => { results = Array.isArray(result) ? result : [result]; await scanner(results[0].barcodes[0]); },
     setResults: value => { results = value; },
   };
