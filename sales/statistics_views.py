@@ -31,8 +31,10 @@ def statistics_index(request):
     params = request.GET.copy()
     params.pop("page", None)
     params.pop("product_page", None)
+    params.pop("operation_page", None)
     return render(request, "sales/statistics.html", {
         "form": form, "report": report, "sale_page": sale_page, "product_page": product_page,
+        'operation_page': Paginator(report.operations, 50).get_page(request.GET.get('operation_page')) if report else None,
         "filter_query": params.urlencode(), "today": timezone.localdate().isoformat(),
         "can_export": request.user.is_superuser or request.user.has_perm("sales.export_sales_statistics"),
         "can_view_sale_detail": request.user.is_superuser or request.user.has_perm("sales.view_sale_detail"),

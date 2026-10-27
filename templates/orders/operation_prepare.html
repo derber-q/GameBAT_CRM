@@ -1,0 +1,10 @@
+{% extends 'base.html' %}
+{% block body_class %}responsive-crm-page trip-order-page{% endblock %}
+{% block title %}Операция по заказу №{{ order.pk }} · ReSOURCE{% endblock %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">{{ order.trip }} · Заказ №{{ order.pk }}</p><h1>{% if order.is_stock_order %}Создать приход{% else %}Создать продажу{% endif %}</h1></div><a class="button button-secondary" href="{% url 'orders:detail' order.pk %}">К заказу</a></div>
+<form method="post">{% csrf_token %}
+<section class="panel form-panel"><h2>Курсы для этой операции</h2><p class="help-text">Введите курсы USDT/RUB и USDT/AED, как в импортном прайсе. Закупка в рублях = цена в AED ÷ USDT/AED × USDT/RUB. Доставка пересчитается, цена покупателя сохранится. Курсы фиксируются при создании операции.</p>{{ form.non_field_errors }}{% for field in form %}<div class="field"><label for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% if field.help_text %}<span class="help-text">{{ field.help_text }}</span>{% endif %}{{ field.errors }}</div>{% endfor %}</section>
+{% if metadata %}<section class="panel"><h2>Недостающие данные товаров</h2><p class="help-text">Данные сохранятся в номенклатуре. Штрихкод можно оставить пустым. Для дисков PS4/PS5 обязательны CUSA/PPSA.</p><div class="responsive-form-grid">{% for row in metadata %}<section class="panel"><h3>{{ row.product.name }}</h3>{% for field in row.form %}<div class="field"><label for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{{ field.errors }}</div>{% endfor %}</section>{% endfor %}</div></section>{% endif %}
+<button class="button" type="submit">Продолжить к {% if order.is_stock_order %}приходу{% else %}продаже{% endif %}</button>
+</form>{% endblock %}

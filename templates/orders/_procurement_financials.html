@@ -1,0 +1,11 @@
+{% if financial or financial_error %}
+<section class="panel" data-procurement-financials>
+  <h2>Закупочные затраты{% if not order.is_stock_order %} и ожидаемая прибыль{% endif %}</h2>
+  {% if financial_error %}<p class="error-text" role="status">{{ financial_error }}</p>{% else %}
+  <dl class="summary"><dt>Закупка с сохранённой доставкой, ₽</dt><dd data-procurement-cost>{{ financial.cost_rub }}</dd>
+    {% if is_trip %}<dt>Всего поставщикам, AED</dt><dd>{{ financial.total_aed }}</dd><dt>В том числе закупка на склад, ₽</dt><dd>{{ financial.stock_cost_rub }}</dd>{% endif %}
+    {% if financial.profit_rub != None %}<dt>Ожидаемая прибыль по покупателям, ₽</dt><dd data-procurement-profit><span {% if financial.profit_rub < 0 %}class="error-text"{% endif %}>{{ financial.profit_rub }}</span></dd>{% endif %}
+  </dl><p class="help-text">Для оформленных операций используются зафиксированные курсы и себестоимость; до оформления — исторические данные прайса. Согласованные суммы покупателей сохраняются.</p>
+  {% endif %}
+</section>
+{% endif %}

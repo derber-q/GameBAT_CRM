@@ -15,6 +15,7 @@ from partners.models import Supplier
 from pricing.models import SupplierCDPrice, SupplierTechPrice
 from orders.models import CustomerProcurementOrder
 from orders.services import advance_order_status, create_customer_procurement_order, receive_stock_order
+from orders.fulfillment_test_helpers import receive_with_test_rates as receive_stock_order
 from orders.trips import create_trip
 from warehouse.models import Warehouse
 
@@ -46,7 +47,7 @@ class ProcurementNomenclatureExcelTests(TestCase):
         assassin = GameSeries.objects.create(name="Assassin's Creed")
         cls.ns = CD.objects.create(name="Zulu Zelda", platform=ns, game_series=zelda, sku="000-cd-1")
         cls.ns2 = CD.objects.create(name="Alpha Assassin", platform=ns2, game_series=assassin, sku="000-cd-2")
-        cls.ps5 = CD.objects.create(name="Beta без серии", platform=ps5, sku="000-cd-3")
+        cls.ps5 = CD.objects.create(name="Beta без серии", platform=ps5, sku="000-cd-3", cusa_ppsa_code='PPSA-00001')
         for index, product in enumerate((cls.ns, cls.ns2, cls.ps5)):
             SupplierCDPrice.objects.create(supplier=cls.supplier, cd=product, price=Decimal("41.123456") + index)
         for index, product in enumerate((cls.white, cls.edge)):
@@ -177,11 +178,11 @@ class ProcurementNomenclatureExcelTests(TestCase):
         self.assertEqual(sum(line.quantity for line in trip.lines.all()), sum(expected.values()))
         advance_order_status(actor=self.user, order_id=order.pk, next_status=order.Status.CONFIRMED)
         advance_order_status(actor=self.user, order_id=order.pk, next_status=order.Status.RECEIVING)
-        received_order = receive_stock_order(actor=self.user, order_id=order.pk, warehouse_id=Warehouse.objects.first().pk)
+        received_order = receive_stock_order(actor=self.user, order_id=order.pk, warehouse_id=Warehouse.objects.create(name='Склад Excel').pk)
         supply = received_order.supply
         self.assertEqual(supply.cd_items.count() + supply.tech_items.count(), len(expected))
         order.refresh_from_db()
-        self.assertEqual(order.status, order.Status.COMPLETED)
+        self.assertEqual(order.status, order.Status.RECEIVING)
 
     def test_customer_import_rejects_shifted_product_rows(self):
         workbook = load_workbook(BytesIO(generate_procurement_customer_xlsx(actor=self.user, price_list_id=self.price.pk)))

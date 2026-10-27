@@ -314,7 +314,7 @@ class ProductRemovalTests(TestCase):
             )
 
     def test_cancelled_supply_history_remains_readable_after_archive(self):
-        product = self.cd("Историческая поставка")
+        product = self.cd("Историческая поставка", cusa_ppsa_code="PPSA-00001")
         supply = accept_supply(
             accepted_by=self.user, warehouse_id=self.warehouse.pk,
             lines=[{"product_type": "cd", "product_id": product.pk, "supplier_id": self.supplier.pk,

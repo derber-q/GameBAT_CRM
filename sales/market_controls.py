@@ -4,12 +4,13 @@ from .models import MarketPrintJob
 
 from yandex_market.models import LabelDocument, SyncJob
 from yandex_market.orders import available_actions
+from .notifications import can_acknowledge
 
 
 def with_market_controls(queryset):
     return queryset.annotate(has_market_label_printed=Exists(MarketPrintJob.objects.filter(
         order_id=OuterRef('yandex_order__pk'), printed_at__isnull=False,
-    ))).select_related('yandex_order__integration').prefetch_related(Prefetch(
+    ))).select_related('yandex_order__integration', 'yandex_order__staff_attention').prefetch_related(Prefetch(
         'yandex_order__labels', to_attr='sale_labels',
         queryset=LabelDocument.objects.filter(box_id__isnull=True, shipment_id__isnull=True).order_by('-pk'),
     ), Prefetch('yandex_order__integration__jobs', to_attr='sale_order_jobs',
@@ -38,9 +39,12 @@ def market_context(sale, user, *, editable=True):
     documents = order.sale_labels
     latest_request = next((job for job in order.integration.sale_order_jobs
                            if job.payload.get('order_id') == order.order_id), None)
+    attention = getattr(order, 'staff_attention', None)
     return {'order': order, 'status_label': status_label, 'actions': actions if can_manage else {},
             'can_manage': can_manage, 'needs_boxes': needs_boxes,
             'can_print': user.has_perm('yandex_market.print_labels'),
             'can_view_order': user.has_perm('yandex_market.view_integration'),
             'label_printed': sale.has_market_label_printed,
+            'attention': attention, 'needs_acknowledgement': bool(attention and not attention.acknowledged_at),
+            'can_acknowledge': can_acknowledge(user),
             'label': documents[0] if documents else None, 'latest_request': latest_request}

@@ -1,0 +1,7 @@
+{% extends 'base.html' %}
+{% block body_class %}responsive-crm-page trip-order-page{% endblock %}
+{% block title %}Проверка товаров заказа №{{ order.pk }} · ReSOURCE{% endblock %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">{{ order.trip }} · Заказ №{{ order.pk }}</p><h1>Проверка товаров</h1><p class="muted">Курсы и доставка уже зафиксированы для всего рейса.</p></div><a class="button button-secondary" href="{% url 'orders:trip_detail' order.trip_id %}">К рейсу</a></div>
+<form method="post">{% csrf_token %}<section class="panel"><h2>Недостающие данные товаров</h2><p class="help-text">Штрихкод необязателен. В поле CUSA/PPSA допускается любой непустой код.</p><div class="responsive-form-grid">{% for row in metadata %}<section class="panel"><h3>{{ row.product.name }}</h3>{% for field in row.form %}<div class="field"><label for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{{ field.errors }}</div>{% endfor %}</section>{% endfor %}</div></section><button class="button" type="submit">Продолжить к {% if order.is_stock_order %}приходу{% else %}продаже{% endif %}</button></form>
+{% endblock %}

@@ -10,6 +10,7 @@ from openpyxl.worksheet.page import PageMargins
 from core.excel_layout import wrapped_text_height
 from catalog.nomenclature_grouping import nomenclature_product_groups
 from price.excel import GRAY, LIGHT, TEAL, WHITE, safe_text
+from .trip_prices import stock_purchase_rows
 
 
 def order_xlsx(*, order, items):
@@ -56,13 +57,16 @@ def order_xlsx(*, order, items):
     rows = []
     for title, item in ((title, item) for _kind, title, group in groups for item in group):
         if order.is_stock_order:
-            rows.append((title, (item.product_name_snapshot, item.quantity, item.prepayment_unit_price)))
+            for quantity, price in stock_purchase_rows(order, item):
+                rows.append((title, (item.product_name_snapshot, quantity, price)))
+        elif not item.quantity:
+            rows.append((title, (item.product_name_snapshot, "Не отгружено", 0, None)))
         else:
             for label, quantity, price in (
                 ("Предоплата", item.prepayment_quantity, item.prepayment_unit_price),
                 ("Постоплата", item.postpayment_quantity, item.postpayment_unit_price),
             ):
-                if quantity or not item.quantity:
+                if quantity:
                     rows.append((title, (item.product_name_snapshot, label, quantity, price)))
 
     total_quantity = 0
@@ -76,7 +80,7 @@ def order_xlsx(*, order, items):
                 cell.fill = PatternFill("solid", fgColor=LIGHT)
             previous_group = title
         quantity, price = values[-2:]
-        amount = price * quantity
+        amount = price * quantity if price is not None else Decimal("0.00")
         sheet.append([safe_text(value) if isinstance(value, str) else value for value in (*values, amount)])
         row = sheet.max_row
         for cell in sheet[row]:
@@ -88,7 +92,8 @@ def order_xlsx(*, order, items):
                 cell.fill = PatternFill("solid", fgColor=LIGHT)
         sheet.cell(row, quantity_column).number_format = "0"
         for column, value in ((last_column - 1, price), (last_column, amount)):
-            sheet.cell(row, column).number_format = "#,##0" if value == value.to_integral_value() else "#,##0.00"
+            if value is not None:
+                sheet.cell(row, column).number_format = "#,##0" if value == value.to_integral_value() else "#,##0.00"
         sheet.row_dimensions[row].height = wrapped_text_height(
             values[0], widths[0], font_name="Arial", font_size=11, min_height=28,
         )

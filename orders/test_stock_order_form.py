@@ -1,8 +1,11 @@
 """Создание складского импортного заказа без Excel и совместимость загрузки."""
 from decimal import Decimal
+from uuid import uuid4
 
 from django.contrib.auth.models import Permission
 from django.test import TestCase
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 
 from accounts.models import User
@@ -15,7 +18,9 @@ from pricing.models import SupplierCDPrice, SupplierTechPrice
 from sales.models import Sale
 from supplies.models import Supply
 from warehouse.models import CDWarehouseStock, TechWarehouseStock, Warehouse
-from .models import CustomerProcurementOrder
+from .models import CustomerProcurementOrder, SupplierOrderBatch
+from .services import create_customer_procurement_order
+from .trips import change_trip_line, create_trip
 
 
 def create_stock_form_fixture(target):
@@ -56,6 +61,12 @@ class StockOrderFormTests(TestCase):
             employee.user_permissions.add(Permission.objects.get(content_type__app_label=app, codename=code))
         return employee
 
+    def order(self, purpose, cd_quantity, tech_quantity=0):
+        return create_customer_procurement_order(actor=self.user, price_list_id=self.price.pk,
+            recipient="На склад", comment="", purpose=purpose, lines=[{
+                "price_list_item_id": source.pk, "prepayment_quantity": quantity, "postpayment_quantity": 0,
+            } for source, quantity in ((self.cd_source, cd_quantity), (self.tech_source, tech_quantity)) if quantity])
+
     def test_form_has_physical_stock_current_cost_and_saved_landed_cost(self):
         CDWarehouseStock.objects.create(cd=self.cd, warehouse=self.warehouse, quantity=2)
         other = Warehouse.objects.create(name="Другой склад")
@@ -69,8 +80,61 @@ class StockOrderFormTests(TestCase):
         self.assertEqual(rows[1]["stock"], 5)
         self.assertEqual(rows[1]["current_cost"], Decimal("111.25"))
         self.assertEqual(rows[1]["item"].stock_unit_cost, Decimal("2050.25"))
+        self.assertIsNone(response.context['previous_trip'])
+        self.assertEqual([row['previous_trip_quantity'] for row in rows], [0, 0])
+        self.assertContains(response, 'На склад в предыдущем рейсе')
+        self.assertContains(response, 'css/stock-order-form.css?v=2')
         self.assertContains(response, 'data-unit-kopecks="205025"')
         self.assertContains(response, reverse("orders:upload"))
+
+    def test_previous_trip_counts_only_stock_orders_across_versions_and_supplier_transfers(self):
+        old = self.order('stock', 50, 40)
+        create_trip(actor=self.user, order_ids=[old.pk], creation_key=uuid4())
+        customer = self.order('customer', 100, 90)
+        first, second = self.order('stock', 2, 3), self.order('stock', 3)
+        trip = create_trip(actor=self.user, order_ids=[customer.pk, first.pk, second.pk], creation_key=uuid4())
+        self.order('stock', 88, 77)
+        SupplierOrderBatch.objects.create(created_by=self.user)
+        supplier = Supplier.objects.create(name='Второй поставщик', letter='B', priority=2,
+            legal_entity='B', phone_1='1', highlight_color='#37A7BA')
+        self.cd_source.supplier_offers.create(supplier=supplier, price_aed=110)
+        line = trip.lines.get(cd=self.cd)
+        change_trip_line(actor=self.user, batch_id=trip.pk, line_id=line.pk, revision=trip.revision,
+            quantity=line.quantity - 2, action='transfer', target_supplier_id=supplier.pk,
+            price_supplier_id=self.supplier.pk)
+        with CaptureQueriesContext(connection) as queries:
+            response = self.client.get(self.url, {'price_list': self.price.pk})
+        self.assertEqual(response.context['previous_trip'].pk, trip.pk)
+        rows = {row['item'].product_kind: row for group in response.context['groups'] for row in group['rows']}
+        self.assertEqual(rows['cd']['previous_trip_quantity'], 5)
+        self.assertEqual(rows['tech']['previous_trip_quantity'], 3)
+        self.assertEqual(sum('FROM "orders_customerprocurementorderitem"' in query['sql'] for query in queries), 1)
+        self.assertFalse(any(query['sql'].lstrip().upper().startswith(('INSERT ', 'UPDATE ', 'DELETE '))
+            for query in queries))
+        newer = create_procurement_price_list(actor=self.user, exchange_rate_usdt_aed=4,
+            exchange_rate_usdt_rub=100, delivery_general_usdt_per_kg=0,
+            delivery_devices_usdt_per_kg=0, delivery_storage_usdt_per_kg=0, delivery_cd_rub=0)
+        response = self.client.get(self.url, {'price_list': newer.pk})
+        self.assertEqual(response.context['previous_trip'].pk, trip.pk)
+        rows = {row['item'].product_kind: row for group in response.context['groups'] for row in group['rows']}
+        self.assertEqual((rows['cd']['previous_trip_quantity'], rows['tech']['previous_trip_quantity']), (5, 3))
+        for supplier_line in trip.lines.filter(cd=self.cd).order_by('pk'):
+            trip.refresh_from_db()
+            change_trip_line(actor=self.user, batch_id=trip.pk, line_id=supplier_line.pk,
+                revision=trip.revision, quantity=0, action='adjust')
+        response = self.client.get(self.url)
+        rows = {row['item'].product_kind: row for group in response.context['groups'] for row in group['rows']}
+        self.assertEqual((rows['cd']['previous_trip_quantity'], rows['tech']['previous_trip_quantity']), (0, 3))
+
+    def test_latest_customer_only_trip_does_not_fall_back_to_older_stock_trip(self):
+        stock = self.order('stock', 20)
+        create_trip(actor=self.user, order_ids=[stock.pk], creation_key=uuid4())
+        customer = self.order('customer', 99)
+        latest = create_trip(actor=self.user, order_ids=[customer.pk], creation_key=uuid4())
+        response = self.client.get(self.url)
+        self.assertEqual(response.context['previous_trip'].pk, latest.pk)
+        self.assertTrue(all(row['previous_trip_quantity'] == 0
+            for group in response.context['groups'] for row in group['rows']))
 
     def test_preview_back_and_creation_share_existing_stock_order_service(self):
         response = self.client.post(self.url, self.data())

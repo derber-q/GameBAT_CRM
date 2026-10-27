@@ -3,10 +3,11 @@ import logging
 import hashlib
 import json
 import uuid
+from collections import defaultdict
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
 from django.utils import timezone
 
@@ -19,6 +20,9 @@ from warehouse.storage_services import clear_storage_locations_if_zero
 from warehouse.valuation import warehouse_owned_quantity, weighted_warehouse_cost
 from .commissions import calculate_avito_commission
 from .models import Sale, SaleCDItem, SaleTechItem, SaleCustomItem
+from partners.customers import resolve_customer
+from .partner_payments import money, payment_values, record_settlement, reverse_settlement, resolve_payment_partner
+from core.db_retry import retry_database_lock
 
 logger = logging.getLogger("gamebat.business")
 CENT = Decimal("0.01")
@@ -33,6 +37,9 @@ def next_order_status(sale):
 
 
 def can_mark_paid(sale):
+    if sale.direct_delivery:
+        from orders.arrival import document_waits_finalization
+        if document_waits_finalization(sale):return False
     return (
         not sale.is_cancelled and sale.payment_status == Sale.PaymentStatus.UNPAID
         and sale.is_postpayment
@@ -60,7 +67,7 @@ def _validate_choice(value, choices, message):
     return value
 
 
-def _locked_inventory(warehouse_id, lines):
+def _locked_inventory(warehouse_id, lines, *, direct_delivery=False):
     """Блокирует товары и локальные остатки; product lock синхронизирует продажи с пересчётом cost."""
     products, stocks = {}, {}
     for product_type in ("cd", "tech"):
@@ -70,13 +77,15 @@ def _locked_inventory(warehouse_id, lines):
             (product_type, product.pk): product
             for product in product_model.objects.active().select_for_update().filter(pk__in=ids).order_by("pk")
         })
+        if direct_delivery:
+            continue
         stocks.update({
             (product_type, getattr(stock, f"{product_field}_id")): stock
             for stock in stock_model.objects.select_for_update().filter(
                 warehouse_id=warehouse_id, **{f"{product_field}_id__in": ids}
             ).order_by(product_field)
         })
-    if len(products) != len(lines):
+    if len(products) != len({(line["product_type"], line["product_id"]) for line in lines}):
         raise ValidationError("Выберите существующий товар из списка.")
     return products, stocks
 
@@ -158,20 +167,28 @@ def _prepare_custom_line(line, *, sale_type):
     return values
 
 
-def _line_discounts(lines):
-    discounts = {}
-    for line in lines:
+def _sale_product_lines(lines):
+    """Сохраняет строки продажи; складской normalizer вызывается отдельно для каждой."""
+    prepared = []
+    for source in lines:
+        line = normalise_product_lines([source])[0]
         try:
-            key = (str(line.get("product_type") or "").lower(), int(line.get("product_id")))
-            discount = Decimal(str(line.get("unit_discount") or 0)).quantize(CENT, rounding=ROUND_HALF_UP)
+            discount = Decimal(str(source.get("unit_discount") or 0)).quantize(CENT, rounding=ROUND_HALF_UP)
         except (InvalidOperation, TypeError, ValueError) as exc:
-            raise ValidationError("Укажите корректный товар и скидку.") from exc
+            raise ValidationError("Укажите корректную скидку или доплату.") from exc
         if not discount.is_finite():
             raise ValidationError("Укажите корректную скидку или доплату.")
-        if key in discounts and discounts[key] != discount:
-            raise ValidationError("Для повторяющихся строк одного товара укажите одинаковую скидку.")
-        discounts[key] = discount
-    return discounts
+        line.update(unit_discount=discount, note=str(source.get("line_note") or "").strip(),
+                    item_id=source.get("item_id"))
+        prepared.append(line)
+    return prepared
+
+
+def _product_quantities(lines):
+    totals = defaultdict(int)
+    for line in lines:
+        totals[(line["product_type"], line["product_id"])] += line["quantity"]
+    return totals
 
 
 MIXED_OPERATION_ERROR = "Цифровые товары и расходы необходимо оформлять отдельной продажей."
@@ -220,6 +237,15 @@ def _prepare_manual_lines(lines, *, sale_type, note):
     return operation, prepared
 
 
+def _validate_partner_debt(*, partner, sale_type, operation, total, received):
+    if partner is None or sale_type != Sale.SaleType.WHOLESALE:
+        raise ValidationError('Продажа в долг доступна только партнёру из справочника в оптовой продаже.')
+    if operation == Sale.OperationKind.EXPENSE or total <= 0:
+        raise ValidationError('Для продажи в долг нужна положительная стоимость товаров.')
+    if received not in (None, '') and money(received) != 0:
+        raise ValidationError('При продаже в долг полученная сумма должна быть равна нулю.')
+
+
 def _validate_expense_received(operation, amount):
     if operation == Sale.OperationKind.EXPENSE and amount not in (None, ""):
         try:
@@ -259,10 +285,44 @@ def _commission_audit_snapshot(sale):
     return ",".join(rows) or "none"
 
 
-@transaction.atomic
+@retry_database_lock
 def create_sale(
     *, actor, warehouse_id, price_type, sale_type, payment_method, lines,
     cash_received_amount=None, note="", external_prices=None, creation_key=None,
+    partner_id=None, partner_name="", settlement_confirmation="",
+):
+    """Обычная продажа; заказы и цены Маркета доступны только внутреннему импорту."""
+    if sale_type == Sale.SaleType.YANDEX_MARKET or price_type == Sale.PriceType.YANDEX_MARKET:
+        raise ValidationError("Продажи и цены Яндекс Маркета доступны только через автоматическую интеграцию.")
+    return _create_sale(actor=actor, warehouse_id=warehouse_id, price_type=price_type,
+        sale_type=sale_type, payment_method=payment_method, lines=lines,
+        cash_received_amount=cash_received_amount, note=note, external_prices=external_prices, creation_key=creation_key,
+        partner_id=partner_id, partner_name=partner_name, settlement_confirmation=settlement_confirmation)
+
+
+@transaction.atomic
+def create_market_sale(*, order, lines, external_prices):
+    """Доверенный путь импорта: настройки берутся из существующего заказа, а не HTTP."""
+    from yandex_market.models import OrderMetadata
+    if not isinstance(order, OrderMetadata) or not order.pk:
+        raise ValidationError("Для автоматической продажи нужен существующий заказ Маркета.")
+    stored = OrderMetadata.objects.select_for_update().select_related('integration').get(pk=order.pk)
+    if stored.sale_id or stored.fake:
+        raise ValidationError("Заказ уже связан с продажей либо является тестовым.")
+    integration = stored.integration
+    if not integration.operator_id or not integration.fulfillment_warehouse_id:
+        raise ValidationError("Настройте склад выполнения и ответственного сотрудника Маркета.")
+    return _create_sale(actor=integration.operator, warehouse_id=integration.fulfillment_warehouse_id,
+        price_type=Sale.PriceType.YANDEX_MARKET, sale_type=Sale.SaleType.YANDEX_MARKET,
+        payment_method=Sale.PaymentMethod.BANK_TRANSFER_POSTPAY, lines=lines, external_prices=external_prices,
+        note=f"Заказ Яндекс Маркета №{stored.order_id}. Выплата подтверждается отдельно.")
+
+
+@transaction.atomic
+def _create_sale(
+    *, actor, warehouse_id, price_type, sale_type, payment_method, lines,
+    cash_received_amount=None, note="", external_prices=None, creation_key=None,
+    partner_id=None, partner_name="", settlement_confirmation="", _direct_rows=None, _prepaid=Decimal('0.00'),
 ):
     """Списывает локальный stock и для наличной продажи в той же транзакции проводит кассу."""
     fingerprint = ""
@@ -275,6 +335,7 @@ def create_sale(
             "actor": actor.pk, "warehouse": str(warehouse_id), "price": price_type,
             "type": sale_type, "payment": payment_method, "lines": lines,
             "received": cash_received_amount, "note": note,
+            "partner_id": str(partner_id or ''), "partner_name": partner_name,
         }, sort_keys=True, default=str).encode()).hexdigest()
         existing = Sale.objects.filter(creation_key=creation_key).first()
         if existing:
@@ -286,27 +347,41 @@ def create_sale(
     _validate_choice(price_type, Sale.PriceType, "Выберите тип цены.")
     _validate_choice(sale_type, Sale.SaleType, "Выберите тип продажи.")
     _validate_choice(payment_method, Sale.PaymentMethod, "Выберите способ оплаты.")
+    if sale_type != Sale.SaleType.WHOLESALE and (partner_id or partner_name):
+        raise ValidationError('Заказчик в этой форме доступен только для оптовой продажи.')
+    partner, customer_name = resolve_customer(partner_id=partner_id, partner_name=partner_name,
+        required=sale_type == Sale.SaleType.WHOLESALE)
+    if price_type == Sale.PriceType.WHOLESALE and sale_type != Sale.SaleType.WHOLESALE:
+        raise ValidationError("Оптовая цена доступна только для оптовой продажи.")
     operation, custom_prepared = _prepare_manual_lines(lines, sale_type=sale_type, note=note)
     _validate_expense_received(operation, cash_received_amount)
     if operation != Sale.OperationKind.NORMAL and (external_prices is not None or sale_type == Sale.SaleType.CONSIGNMENT or price_type == Sale.PriceType.CONSIGNMENT):
         raise ValidationError("Системные позиции нельзя оформлять как реализацию или внешний заказ.")
-    discounts = _line_discounts(product_lines)
-    commission_flags = _line_commission_flags(product_lines, sale_type=sale_type)
     if not product_lines and not custom_prepared and not consignment_lines:
         raise ValidationError("Добавьте хотя бы один товар, позицию реализации или произвольную позицию.")
-    prepared = normalise_product_lines(product_lines) if product_lines else []
+    prepared = _sale_product_lines(product_lines)
     try:
         warehouse = Warehouse.objects.select_for_update().get(pk=warehouse_id)
     except Warehouse.DoesNotExist as exc:
         raise ValidationError("Выберите существующий склад.") from exc
+    direct = _direct_rows is not None
+    if direct and (sale_type != Sale.SaleType.WHOLESALE or price_type != Sale.PriceType.WHOLESALE or custom_prepared or consignment_lines):
+        raise ValidationError('Прямая отгрузка доступна только для товаров клиентского заказа рейса.')
     products, stocks = _locked_inventory(warehouse.pk, prepared) if prepared else ({}, {})
+    warehouse_prepared = [line for index, line in enumerate(prepared)
+                          if not direct or _direct_rows[index].get('origin', 'trip') == 'warehouse']
+    for key, quantity in _product_quantities(warehouse_prepared).items():
+        if key not in stocks or stocks[key].quantity < quantity:
+            available = stocks[key].quantity if key in stocks else 0
+            raise ValidationError(f"На выбранном складе недостаточно товара «{products[key].name}»: доступно только {available} шт.")
     priced_lines = []
     total = Decimal("0")
-    for line in prepared:
+    for index, line in enumerate(prepared):
+        line_direct = direct and _direct_rows[index].get('origin', 'trip') != 'warehouse'
         key = (line["product_type"], line["product_id"])
         product = products[key]
         stock = stocks.get(key)
-        if stock is None or stock.quantity < line["quantity"]:
+        if not line_direct and (stock is None or stock.quantity < line["quantity"]):
             available = stock.quantity if stock is not None else 0
             raise ValidationError(
                 f"На выбранном складе недостаточно товара «{product.name}»: доступно только {available} шт."
@@ -322,14 +397,14 @@ def create_sale(
                 raise ValidationError("Некорректная стоимость строки внешнего заказа.")
             price = (line_total / line["quantity"]).quantize(CENT, rounding=ROUND_HALF_UP)
         else:
-            price = _selected_price(product, price_type)
-            discount = discounts[key]
+            price = Decimal(_direct_rows[index]['unit_price']) if direct else _selected_price(product, price_type)
+            discount = line["unit_discount"]
             if discount > price:
                 raise ValidationError(f"Скидка на товар «{product.name}» не может превышать цену.")
             line_total = ((price - discount) * line["quantity"]).quantize(CENT, rounding=ROUND_HALF_UP)
         if external_prices is not None:
             discount = Decimal("0.00")
-        commission_enabled = commission_flags[key]
+        commission_enabled = _commission_enabled(sale_type=sale_type)
         commission_amount = calculate_avito_commission(
             line_total, enabled=commission_enabled,
         )
@@ -347,14 +422,31 @@ def create_sale(
     note = str(note or "").strip()
     if operation != Sale.OperationKind.NORMAL and total >= Decimal("1e18"):
         raise ValidationError("Сумма системной операции превышает допустимый размер.")
-    if any(discounts.values()) or any(line["unit_discount"] for line in custom_prepared):
+    if any(line["unit_discount"] for line in prepared + custom_prepared):
         if not note:
             raise ValidationError("При использовании скидки или доплаты обязательно укажите примечание к продаже.")
     method = Sale.PaymentMethod(payment_method)
+    if (method == Sale.PaymentMethod.CASH and partner is not None and total > 0
+            and cash_received_amount not in (None, '') and money(cash_received_amount) == 0):
+        method = Sale.PaymentMethod.PARTNER_DEBT
+    if _prepaid and (not method.is_cash_payment or method == Sale.PaymentMethod.PARTNER_DEBT):
+        raise ValidationError('По заказу уже внесена предоплата наличными. Выберите наличную оплату или наличную постоплату.')
+    if method == Sale.PaymentMethod.PARTNER_DEBT:
+        _validate_partner_debt(partner=partner, sale_type=sale_type, operation=operation,
+            total=total, received=cash_received_amount)
+    payment_method = method.value
     immediate_payment = method != Sale.PaymentMethod.UNDEFINED and not method.is_postpayment
-    actual_received = _cash_received(cash_received_amount, total) if immediate_payment else None
-    extra_cash = (actual_received - total).quantize(CENT) if actual_received is not None else Decimal("0.00")
+    actual_received, extra_cash, repayment, offset = (None, Decimal('0.00'), Decimal('0.00'), Decimal('0.00'))
+    if method == Sale.PaymentMethod.PARTNER_DEBT:
+        actual_received = Decimal('0.00')
+    elif immediate_payment:
+        actual_received, extra_cash, repayment, offset = payment_values(actor=actor, sale_type=sale_type,
+            partner=partner, total=total, received=cash_received_amount, note=note,
+            confirmation=settlement_confirmation, creation_key=creation_key)
+    if actual_received is not None and actual_received < _prepaid:
+        raise ValidationError('Полученная сумма с учётом предоплаты не может быть меньше уже внесённой предоплаты.')
     sale = Sale.objects.create(
+        direct_delivery=direct, procurement_prepaid_amount=_prepaid,
         operation_kind=operation, creation_key=creation_key, creation_fingerprint=fingerprint,
         warehouse=warehouse,
         price_type=price_type,
@@ -369,48 +461,56 @@ def create_sale(
         extra_cash_amount=extra_cash,
         note=note,
         created_by=actor,
+        partner=partner, partner_name_snapshot=customer_name,
+        debt_repayment_amount=repayment, debt_offset_amount=offset,
     )
     if _complete_if_ready(sale):
         sale.save(update_fields=("completed_at",))
     sale.visible_id = f"SALE-{sale.pk:06d}"
     sale.save(update_fields=("visible_id",))
+    record_settlement(sale=sale, actor=actor)
 
     cd_items, tech_items = [], []
-    for (
+    for index, (
         line, product, stock, price, discount, line_total,
         commission_enabled, commission_amount,
-    ) in priced_lines:
-        old_quantity = stock.quantity
-        stock.quantity -= line["quantity"]
-        stock.full_clean()
-        stock.save(update_fields=("quantity",))
-        record_product_changes(
-            actor=actor,
-            instance=product,
-            source=ProductChangeEvent.Source.CRM,
-            action_kind=ProductChangeEvent.ActionKind.SALE,
-            action_object_id=sale.pk,
-            action_label=f"Продажа {sale.visible_id}",
-            changes=[stock_change(
-                warehouse=warehouse,
-                old_quantity=old_quantity,
-                new_quantity=stock.quantity,
-            )],
-        )
-        clear_storage_locations_if_zero(
-            stock=stock,
-            actor=actor,
-            action_kind=ProductChangeEvent.ActionKind.SALE,
-            action_object_id=sale.pk,
-            action_label=f"Продажа {sale.visible_id}",
-        )
+    ) in enumerate(priced_lines):
+        line_direct = direct and _direct_rows[index].get('origin', 'trip') != 'warehouse'
+        if not line_direct:
+            old_quantity = stock.quantity
+            stock.quantity -= line["quantity"]
+            stock.full_clean()
+            stock.save(update_fields=("quantity",))
+            record_product_changes(
+                actor=actor,
+                instance=product,
+                source=ProductChangeEvent.Source.CRM,
+                action_kind=ProductChangeEvent.ActionKind.SALE,
+                action_object_id=sale.pk,
+                action_label=f"Продажа {sale.visible_id}",
+                changes=[stock_change(
+                    warehouse=warehouse,
+                    old_quantity=old_quantity,
+                    new_quantity=stock.quantity,
+                )],
+            )
+            clear_storage_locations_if_zero(
+                stock=stock,
+                actor=actor,
+                action_kind=ProductChangeEvent.ActionKind.SALE,
+                action_object_id=sale.pk,
+                action_label=f"Продажа {sale.visible_id}",
+            )
         values = dict(
-            sale=sale, quantity=line["quantity"], unit_price=price, unit_discount=discount,
+            sale=sale, quantity=line["quantity"], unit_price=price, unit_discount=discount, note=line["note"],
             line_total=line_total,
             avito_commission_enabled=commission_enabled,
             avito_commission_amount=commission_amount,
             product_name_snapshot=product.name, article_snapshot=product.sku,
-            unit_cost_snapshot=product.cost,
+            unit_cost_snapshot=Decimal(_direct_rows[index]['unit_cost']) if line_direct else product.cost,
+            is_direct_delivery=line_direct,
+            trip_cost_row_id=_direct_rows[index].get('trip_cost_row_id') if direct else None,
+            trip_cost_slot=_direct_rows[index].get('trip_cost_slot', 0) if direct else 0,
         )
         if line["product_type"] == "cd":
             cd_items.append(SaleCDItem(cd=product, **values))
@@ -451,7 +551,10 @@ def create_sale(
 
 @transaction.atomic
 def advance_order_status(*, actor, sale_id, next_status, _market=False):
+    from orders.arrival import lock_document_trip
+    lock_document_trip('sale',sale_id)
     sale = Sale.objects.select_for_update().get(pk=sale_id)
+    sale._trip_actor = actor
     if not _market and hasattr(sale, "yandex_order"):
         raise ValidationError("Статус этого заказа изменяется через блок Яндекс Маркета.")
     if sale.is_cancelled:
@@ -487,27 +590,63 @@ def set_sale_payment_method(*, actor, sale_id, payment_method):
     return sale
 
 
+@retry_database_lock
 @transaction.atomic
-def mark_sale_paid(*, actor, sale_id, cash_received_amount=None):
+def mark_sale_paid(*, actor, sale_id, cash_received_amount=None, settlement_confirmation="", note=None,
+                   settlement_partner_id=None):
+    from orders.arrival import lock_document_trip
+    lock_document_trip('sale',sale_id)
     sale = Sale.objects.select_for_update().select_related("warehouse").get(pk=sale_id)
+    sale._trip_actor = actor
+    from orders.arrival import assert_document_finalized
+    assert_document_finalized(sale)
     if sale.is_cancelled:
         raise ValidationError("Отменённую продажу оплачивать нельзя.")
     if sale.payment_status == Sale.PaymentStatus.PAID:
         raise ValidationError("Заказ уже оплачен.")
     if not sale.is_postpayment:
         raise ValidationError("Этот способ оплаты не поддерживает отложенное подтверждение.")
+    original_partner_id = sale.partner_id
+    if settlement_partner_id not in (None, ''):
+        if not actor.has_perm('sales.mark_sale_paid'):
+            raise PermissionDenied('Нет права подтверждения оплаты.')
+        partner = resolve_payment_partner(sale, settlement_partner_id)
+        if not sale.partner_id:
+            sale.partner = partner
+            sale.partner_name_snapshot = partner.name
+    if sale.procurement_prepaid_amount:
+        received = sale.total_amount if cash_received_amount in (None, '') else money(cash_received_amount)
+        if not sale.is_cash_payment or received < sale.procurement_prepaid_amount:
+            raise ValidationError('Укажите наличную оплату с учётом уже внесённого аванса заказа.')
     _validate_expense_received(sale.operation_kind, cash_received_amount)
-    sale.cash_received_amount = _cash_received(cash_received_amount, sale.total_amount)
-    sale.extra_cash_amount = (sale.cash_received_amount - sale.total_amount).quantize(CENT)
+    if note is not None:
+        sale.note = str(note or '').strip()
+    if (sale.is_cash_payment and sale.partner_id and sale.total_amount > 0
+            and cash_received_amount not in (None, '') and money(cash_received_amount) == 0):
+        _validate_partner_debt(partner=sale.partner, sale_type=sale.sale_type, operation=sale.operation_kind,
+            total=sale.total_amount, received=cash_received_amount)
+        sale.payment_method = Sale.PaymentMethod.PARTNER_DEBT
+        sale.cash_received_amount = Decimal('0.00')
+    else:
+        sale.cash_received_amount, sale.extra_cash_amount, sale.debt_repayment_amount, sale.debt_offset_amount = payment_values(
+            actor=actor, sale_type=sale.sale_type, partner=sale.partner, total=sale.total_amount,
+            received=cash_received_amount, note=sale.note, confirmation=settlement_confirmation, sale_id=sale.pk)
+    record_settlement(sale=sale, actor=actor)
     if sale.is_cash_payment and sale.operation_kind != Sale.OperationKind.EXPENSE:
+        if sale.cash_received_amount < sale.procurement_prepaid_amount:
+            raise ValidationError('Полученная сумма с учётом предоплаты меньше уже внесённого аванса.')
         credit_sale_payment(sale=sale, actor=actor)
     sale.payment_status = Sale.PaymentStatus.PAID
     sale.paid_at = timezone.now()
     sale.paid_by = actor
-    update_fields = ["payment_status", "updated_at", "cash_received_amount", "extra_cash_amount", "paid_at", "paid_by"]
+    update_fields = ["payment_status", "payment_method", "updated_at", "cash_received_amount", "extra_cash_amount", "paid_at", "paid_by", "debt_repayment_amount", "debt_offset_amount", "note"]
+    if sale.partner_id != original_partner_id:
+        update_fields.extend(('partner', 'partner_name_snapshot'))
     if _complete_if_ready(sale):
         update_fields.append("completed_at")
     sale.save(update_fields=update_fields)
+    if sale.partner_id != original_partner_id:
+        logger.info('Партнёр выбран при оплате: user_id=%s sale_id=%s partner_id=%s', actor.pk, sale.pk, sale.partner_id)
     logger.info(
         "Оплата подтверждена: user_id=%s sale_id=%s cash_received=%s extra_cash=%s",
         actor.pk, sale.pk, sale.cash_received_amount, sale.extra_cash_amount,
@@ -520,6 +659,8 @@ def update_sale_note(*, actor, sale_id, note):
     sale = Sale.objects.select_for_update().get(pk=sale_id)
     old_note = sale.note
     sale.note = str(note or "").strip()
+    if (sale.debt_offset_amount or sale.debt_repayment_amount or (sale.debt_charge_amount and not sale.is_partner_debt)) and not sale.note:
+        raise ValidationError('У продажи с расчётом задолженности примечание обязательно.')
     sale.save(update_fields=("note", "updated_at"))
     logger.info(
         "Примечание продажи изменено: user_id=%s sale_id=%s old_length=%s new_length=%s",
@@ -529,15 +670,16 @@ def update_sale_note(*, actor, sale_id, note):
 
 
 @transaction.atomic
-def edit_postpay_sale_items(*, actor, sale_id, lines, note=None):
+def edit_postpay_sale_items(*, actor, sale_id, lines, note=None, partner_id=None, partner_name=None):
     """Применяет разницы stock одним блоком; существующие строки сохраняют unit_price."""
     custom_lines = [line for line in lines if line.get("product_type") in ("custom", "system")]
     consignment_lines = [line for line in lines if line.get("product_type") == "consignment"]
     product_lines = [line for line in lines if line.get("product_type") in ("cd", "tech")]
-    discounts = _line_discounts(product_lines)
     if not product_lines and not custom_lines and not consignment_lines:
         raise ValidationError("Добавьте хотя бы один товар, позицию реализации или произвольную позицию.")
-    prepared = normalise_product_lines(product_lines) if product_lines else []
+    prepared = _sale_product_lines(product_lines)
+    from orders.arrival import lock_document_trip
+    lock_document_trip('sale',sale_id)
     sale = Sale.objects.select_for_update().get(pk=sale_id)
     if hasattr(sale, "yandex_order"):
         raise ValidationError("Состав заказа Маркета нельзя редактировать как обычную продажу.")
@@ -549,10 +691,19 @@ def edit_postpay_sale_items(*, actor, sale_id, lines, note=None):
         raise ValidationError("Состав оплаченного заказа изменять нельзя.")
     if sale.order_status == Sale.OrderStatus.DELIVERED:
         raise ValidationError("Состав доставленного заказа изменять нельзя.")
+    if sale.direct_delivery:
+        from orders.fulfillment import edit_direct_sale
+        return edit_direct_sale(actor=actor, sale=sale, lines=lines, note=note,
+                                partner_id=partner_id, partner_name=partner_name)
+    if sale.sale_type == Sale.SaleType.WHOLESALE:
+        if (partner_id is not None or partner_name is not None) and not (
+                partner_id is not None and str(partner_id) == str(sale.partner_id) and not partner_name):
+            sale.partner, sale.partner_name_snapshot = resolve_customer(partner_id=partner_id, partner_name=partner_name or '', required=True)
+        elif not sale.partner_name_snapshot:
+            raise ValidationError('Для редактирования оптовой продажи укажите заказчика.')
     resulting_note = sale.note if note is None else str(note or "").strip()
     operation, custom_prepared = _prepare_manual_lines(lines, sale_type=sale.sale_type, note=resulting_note)
     sale.operation_kind = operation
-    commission_flags = _line_commission_flags(product_lines, sale_type=sale.sale_type)
     old_commission_snapshot = _commission_audit_snapshot(sale)
     resulting_note = sale.note if note is None else str(note or "").strip()
     from consignment.services import (
@@ -562,99 +713,70 @@ def edit_postpay_sale_items(*, actor, sale_id, lines, note=None):
     if consignment_lines:
         quote_consignment_sale_lines(consignment_lines)
 
-    existing = {}
-    for product_type, item_model, product_field in (
-        ("cd", SaleCDItem, "cd"), ("tech", SaleTechItem, "tech")
-    ):
-        for item in item_model.objects.select_for_update().filter(sale=sale):
-            existing[(product_type, getattr(item, f"{product_field}_id"))] = item
-    desired = {(line["product_type"], line["product_id"]): line["quantity"] for line in prepared}
-    all_lines = [
-        {"product_type": product_type, "product_id": product_id, "quantity": quantity}
-        for (product_type, product_id), quantity in {
-            **{key: item.quantity for key, item in existing.items()}, **desired
-        }.items()
-    ]
+    existing, by_product = {}, defaultdict(list)
+    for kind, model, field in (("cd", SaleCDItem, "cd"), ("tech", SaleTechItem, "tech")):
+        for item in model.objects.select_for_update().filter(sale=sale).order_by("pk"):
+            existing[(kind, item.pk)] = item
+            by_product[(kind, getattr(item, field + "_id"))].append(item)
+    old_totals = {key: sum(item.quantity for item in items) for key, items in by_product.items()}
+    desired = _product_quantities(prepared)
+    all_lines = [{"product_type": key[0], "product_id": key[1], "quantity": max(desired.get(key, 0), old_totals.get(key, 0))}
+                 for key in old_totals.keys() | desired.keys()]
     products, stocks = _locked_inventory(sale.warehouse_id, all_lines)
-
-    for key in set(existing) | set(desired):
-        old_quantity = existing[key].quantity if key in existing else 0
-        new_quantity = desired.get(key, 0)
-        delta = new_quantity - old_quantity
+    matched = set()
+    for line in prepared:
+        key = (line["product_type"], line["product_id"])
+        item = None
+        if line["item_id"] not in (None, ""):
+            try:
+                identity = (key[0], int(line["item_id"]))
+            except (ValueError, TypeError) as exc:
+                raise ValidationError("Некорректный ID строки продажи.") from exc
+            item = existing.get(identity)
+            if item is None or item not in by_product[key] or identity in matched:
+                raise ValidationError("Строка продажи изменена или указана повторно. Обновите форму.")
+            matched.add(identity)
+        elif line["item_id"] is None:
+            # Совместимость вызовов старого API без item_id; новые HTTP-строки передают пустой ID.
+            candidates = [value for value in by_product[key] if (key[0], value.pk) not in matched]
+            if len(candidates) == 1:
+                item = candidates[0]
+                matched.add((key[0], item.pk))
+            elif len(candidates) > 1:
+                raise ValidationError("Для повторных строк при редактировании необходим ID строки.")
+        product = products[key]
+        if item is None:
+            _, _, model, field = _configuration(key[0])
+            item = model(sale=sale, **{field: product}, unit_price=_selected_price(product, sale.price_type),
+                         product_name_snapshot=product.name, article_snapshot=product.sku, unit_cost_snapshot=product.cost)
+        item.quantity, item.unit_discount, item.note = line["quantity"], line["unit_discount"], line["note"]
+        if item.unit_discount > item.unit_price:
+            raise ValidationError(f"Скидка на товар «{item.product_name_snapshot}» не может превышать цену.")
+        item.line_total = ((item.unit_price - item.unit_discount) * item.quantity).quantize(CENT, rounding=ROUND_HALF_UP)
+        item.avito_commission_enabled = _commission_enabled(sale_type=sale.sale_type)
+        item.avito_commission_amount = calculate_avito_commission(item.line_total, enabled=item.avito_commission_enabled)
+        item.full_clean()
+        item.save()
+    for identity, item in existing.items():
+        if identity not in matched:
+            item.delete()
+    for key in old_totals.keys() | desired.keys():
+        delta = desired.get(key, 0) - old_totals.get(key, 0)
         stock = stocks.get(key)
-        if stock is None:
-            raise ValidationError("Остаток товара на выбранном складе не найден.")
-        if delta > 0 and stock.quantity < delta:
+        if stock is None or stock.quantity < delta:
             raise ValidationError(f"На выбранном складе недостаточно товара «{products[key].name}».")
-        if delta == 0:
+        if not delta:
             continue
-        old_stock_quantity = stock.quantity
+        old_quantity = stock.quantity
         stock.quantity -= delta
         stock.full_clean()
         stock.save(update_fields=("quantity",))
-        record_product_changes(
-            actor=actor,
-            instance=products[key],
-            source=ProductChangeEvent.Source.CRM,
-            action_kind=ProductChangeEvent.ActionKind.SALE,
-            action_object_id=sale.pk,
+        record_product_changes(actor=actor, instance=products[key], source=ProductChangeEvent.Source.CRM,
+            action_kind=ProductChangeEvent.ActionKind.SALE, action_object_id=sale.pk,
             action_label=f"Продажа {sale.visible_id}",
-            changes=[stock_change(
-                warehouse=sale.warehouse,
-                old_quantity=old_stock_quantity,
-                new_quantity=stock.quantity,
-            )],
-        )
-        clear_storage_locations_if_zero(
-            stock=stock,
-            actor=actor,
-            action_kind=ProductChangeEvent.ActionKind.SALE,
-            action_object_id=sale.pk,
-            action_label=f"Продажа {sale.visible_id}",
-        )
-
-    for key, item in list(existing.items()):
-        new_quantity = desired.get(key, 0)
-        if not new_quantity:
-            item.delete()
-        else:
-            item.quantity = new_quantity
-            item.unit_discount = discounts[key]
-            if item.unit_discount > item.unit_price:
-                raise ValidationError(f"Скидка на товар «{item.product_name_snapshot}» не может превышать цену.")
-            item.line_total = ((item.unit_price - item.unit_discount) * new_quantity).quantize(CENT, rounding=ROUND_HALF_UP)
-            item.avito_commission_enabled = commission_flags[key]
-            item.avito_commission_amount = calculate_avito_commission(
-                item.line_total, enabled=item.avito_commission_enabled,
-            )
-            item.full_clean()
-            item.save(update_fields=(
-                "quantity", "unit_discount", "line_total",
-                "avito_commission_enabled", "avito_commission_amount",
-            ))
-    for key, quantity in desired.items():
-        if key in existing:
-            continue
-        product_type, _ = key
-        product = products[key]
-        price = _selected_price(product, sale.price_type)
-        discount = discounts[key]
-        if discount > price:
-            raise ValidationError(f"Скидка на товар «{product.name}» не может превышать цену.")
-        values = dict(
-            sale=sale, quantity=quantity, unit_price=price, unit_discount=discount,
-            line_total=((price - discount) * quantity).quantize(CENT, rounding=ROUND_HALF_UP),
-            product_name_snapshot=product.name, article_snapshot=product.sku,
-            unit_cost_snapshot=product.cost,
-        )
-        values["avito_commission_enabled"] = commission_flags[key]
-        values["avito_commission_amount"] = calculate_avito_commission(
-            values["line_total"], enabled=values["avito_commission_enabled"],
-        )
-        if product_type == "cd":
-            SaleCDItem.objects.create(cd=product, **values)
-        else:
-            SaleTechItem.objects.create(tech=product, **values)
+            changes=[stock_change(warehouse=sale.warehouse, old_quantity=old_quantity, new_quantity=stock.quantity)])
+        clear_storage_locations_if_zero(stock=stock, actor=actor, action_kind=ProductChangeEvent.ActionKind.SALE,
+            action_object_id=sale.pk, action_label=f"Продажа {sale.visible_id}")
 
     SaleCustomItem.objects.filter(sale=sale).delete()
     SaleCustomItem.objects.bulk_create([
@@ -674,14 +796,14 @@ def edit_postpay_sale_items(*, actor, sale_id, lines, note=None):
         (item.line_total for item in sale.tech_items.all()), Decimal("0")
     ) + sum((item.line_total for item in sale.custom_items.all()), Decimal("0"))
     total += sum((item.line_total for item in sale.consignment_items.all()), Decimal("0"))
-    if any(discounts.values()) or any(line["unit_discount"] for line in custom_prepared):
+    if any(line["unit_discount"] for line in prepared + custom_prepared):
         if not resulting_note:
             raise ValidationError("При использовании скидки или доплаты обязательно укажите примечание к продаже.")
     sale.total_amount = total.quantize(CENT, rounding=ROUND_HALF_UP)
     if operation != Sale.OperationKind.NORMAL and sale.total_amount >= Decimal("1e18"):
         raise ValidationError("Сумма системной операции превышает допустимый размер.")
     sale.note = resulting_note
-    sale.save(update_fields=("total_amount", "note", "operation_kind", "updated_at"))
+    sale.save(update_fields=("total_amount", "note", "operation_kind", "updated_at", 'partner', 'partner_name_snapshot'))
     total_discount = sum(
         (item.unit_discount * item.quantity for item in sale.cd_items.all()), Decimal("0.00")
     ) + sum(
@@ -698,12 +820,15 @@ def edit_postpay_sale_items(*, actor, sale_id, lines, note=None):
     return sale
 
 
+@retry_database_lock
 @transaction.atomic
 def cancel_sale(*, actor, sale_id, comment, _market=False, restore_stock=True):
     """Возвращает товары и фактическую оплату, сохраняя продажу и все исходные строки."""
     comment = str(comment or "").strip()
     if not comment:
         raise ValidationError("Укажите причину отмены продажи.")
+    from orders.arrival import lock_document_trip
+    lock_document_trip('sale',sale_id)
     sale = Sale.objects.select_for_update().select_related("warehouse").get(pk=sale_id)
     if not _market and hasattr(sale, "yandex_order"):
         raise ValidationError("Отмените заказ через блок Яндекс Маркета; отправленный товар принимается отдельным возвратом.")
@@ -711,6 +836,7 @@ def cancel_sale(*, actor, sale_id, comment, _market=False, restore_stock=True):
         raise ValidationError("Отмена обычной продажи должна восстановить товар.")
     if sale.is_cancelled:
         return SaleCancellationResult(sale=sale, cancelled=False)
+    reverse_settlement(sale=sale, actor=actor, comment=comment)
     Warehouse.objects.select_for_update().get(pk=sale.warehouse_id)
 
     lines = []
@@ -724,14 +850,14 @@ def cancel_sale(*, actor, sale_id, comment, _market=False, restore_stock=True):
             .filter(sale=sale).order_by(product_field)
         )
         if not (sale.sale_type == Sale.SaleType.CONSIGNMENT and has_consignment_snapshots):
+            items = [item for item in items if not item.is_direct_delivery]
             locked_items.extend((product_type, product_field, item) for item in items)
-        if not (sale.sale_type == Sale.SaleType.CONSIGNMENT and has_consignment_snapshots):
             lines.extend({
                 "product_type": product_type,
                 "product_id": getattr(item, f"{product_field}_id"),
                 "quantity": item.quantity,
             } for item in items)
-    if not lines and not SaleCustomItem.objects.filter(sale=sale).exists():
+    if not sale.direct_delivery and not lines and not SaleCustomItem.objects.filter(sale=sale).exists():
         if not sale.consignment_items.exists():
             raise ValidationError("В продаже нет товарных позиций для возврата.")
     products, stocks = _locked_inventory(sale.warehouse_id, lines) if lines else ({}, {})
@@ -740,10 +866,12 @@ def cancel_sale(*, actor, sale_id, comment, _market=False, restore_stock=True):
     refund_amount = Decimal("0.00")
     if sale.payment_status == Sale.PaymentStatus.PAID and sale.operation_kind != Sale.OperationKind.EXPENSE:
         if sale.is_cash_payment:
-            refund_transaction = refund_sale_payment(
-                sale=sale, actor=actor, comment=f"Отмена {sale.visible_id}: {comment}",
-            )
-            refund_amount = refund_transaction.amount
+            if ((sale.cash_received_amount != 0 or sale.debt_offset_amount == 0)
+                    and not (sale.procurement_prepaid_amount and sale.cash_received_amount == sale.procurement_prepaid_amount)):
+                refund_transaction = refund_sale_payment(
+                    sale=sale, actor=actor, comment=f"Отмена {sale.visible_id}: {comment}",
+                )
+                refund_amount = refund_transaction.amount
         elif sale.is_bank_payment:
             refund_amount = sale.cash_received_amount if sale.cash_received_amount is not None else sale.total_amount
 

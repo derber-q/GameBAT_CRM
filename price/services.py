@@ -7,13 +7,15 @@ from django.core.validators import DecimalValidator
 from django.db import transaction
 from django.db.models import Q
 
-from catalog.models import ProductType, Tech
+from catalog.models import ProductChangeEvent, ProductType, Tech
+from catalog.audit import field_change, record_product_changes
 from catalog.product_identifiers import set_product_weight
 from catalog.supplier_exclusions import exclusion_keys
 from pricing.models import SupplierCDPrice, SupplierTechPrice
 
 from .models import ProcurementPriceList, ProcurementPriceListItem, ProcurementPricePreference, ProcurementSupplierOffer
 from .postpayment_rules import tech_postpayment_surcharge
+from .procurement_suppliers import apply_supplier_choice
 
 logger = logging.getLogger("gamebat.business")
 CENT = Decimal("0.01")
@@ -210,6 +212,32 @@ def _prepare_procurement_weights(*, winners, weights, actor):
     return products
 
 
+def weighted_procurement_delivery(*, weight_grams, tariff, dollar_rate, label='Доставка'):
+    """Действующая весовая формула для прайса и сохранённых расчётов операций рейса."""
+    return decimal_value(Decimal(weight_grams) / Decimal('1000') * tariff * dollar_rate,
+                         nonnegative=True, label=label)
+
+
+def procurement_delivery(*, product, kind, price_list):
+    """Единый расчёт доставки единицы по зафиксированным тарифам прайса."""
+    if kind == 'cd':
+        if price_list.delivery_cd_rub is None:
+            raise ValidationError('В прайсе не сохранена доставка диска.')
+        return decimal_value(price_list.delivery_cd_rub, nonnegative=True), '', None
+    group = product.product_type.procurement_delivery_group
+    rates = {
+        ProductType.DeliveryGroup.GENERAL: price_list.delivery_general_usdt_per_kg,
+        ProductType.DeliveryGroup.DEVICES: price_list.delivery_devices_usdt_per_kg,
+        ProductType.DeliveryGroup.STORAGE: price_list.delivery_storage_usdt_per_kg,
+    }
+    tariff = rates.get(group)
+    if tariff is None or not product.weight_grams or not price_list.exchange_rate_usdt_rub:
+        raise ValidationError(f'{product.name}: для доставки нужны вес, сохранённый тариф и курс USDT/RUB.')
+    delivery = weighted_procurement_delivery(weight_grams=product.weight_grams, tariff=tariff,
+        dollar_rate=price_list.exchange_rate_usdt_rub, label=f'{product.name}: доставка')
+    return delivery, group, tariff
+
+
 @transaction.atomic
 def create_procurement_price_list(
     *, actor, exchange_rate_usdt_aed, exchange_rate_usdt_rub,
@@ -285,19 +313,9 @@ def create_procurement_price_list(
     )
     items = []
     for (kind, _), (supplier, supplier_price, product) in winners.items():
-        delivery = cd_delivery
-        delivery_group = ""
-        delivery_rate = None
         if kind == "tech":
             product = tech_products[product.pk]
-            delivery_group = product.product_type.procurement_delivery_group
-            if delivery_group not in delivery_rates:
-                raise ValidationError(f"{product.product_type}: не задана группа тарифа доставки.")
-            delivery_rate = delivery_rates[delivery_group]
-            delivery = decimal_value(
-                Decimal(product.weight_grams) / Decimal("1000") * delivery_rate * rate_usdt_rub,
-                nonnegative=True, label=f"{product.name}: доставка",
-            )
+        delivery, delivery_group, delivery_rate = procurement_delivery(product=product, kind=kind, price_list=price_list)
         # Промежуточную сумму в USDT не округляем; рубли округляются один раз до копеек.
         base = decimal_value(supplier_price / rate_usdt_aed * rate_usdt_rub, nonnegative=True, label="База, RUB")
         DecimalValidator(max_digits=20, decimal_places=2)(base)
@@ -420,12 +438,18 @@ def update_procurement_pricing(
     items = {
         item.pk: item
         for item in ProcurementPriceListItem.objects.select_for_update().filter(price_list=price_list)
+            .select_related('selected_supplier', 'cd', 'tech').prefetch_related('supplier_offers__supplier')
     }
     if set(rows) != set(items):
         raise ValidationError("Состав закупочного прайса изменён или передан не полностью.")
     surcharge_changes = {}
+    supplier_changes = {}
+    excluded = exclusion_keys((item.product_kind, item.product_id) for item in items.values())
     for item_id, values in rows.items():
         item = items[item_id]
+        before_supplier = apply_supplier_choice(item, price_list, values, actor, excluded)
+        if before_supplier is not None:
+            supplier_changes[item_id] = before_supplier
         delivery = decimal_value(values.get("delivery"), nonnegative=True, label="Доставка")
         original_surcharge = None if item.postpayment_surcharge_mode == "tiered" else item.effective_postpayment_surcharge_rub
         surcharge = original_surcharge
@@ -471,8 +495,21 @@ def update_procurement_pricing(
     for item in items.values():
         item.save(update_fields=(
             "markup_rub", "original_markup_rub", 'prepayment_rounding_extra_rub', 'postpayment_rounding_extra_rub',
-            "delivery_rub", "prepayment_price_rub", "postpayment_price_rub", "postpayment_surcharge_rub"
+            "delivery_rub", "prepayment_price_rub", "postpayment_price_rub", "postpayment_surcharge_rub",
+            "selected_supplier", "supplier_price_aed", "base_price_rub",
         ))
+        if item.pk in supplier_changes:
+            old_supplier, old_price, old_base = supplier_changes[item.pk]
+            record_product_changes(actor=actor, instance=item.product, source=ProductChangeEvent.Source.CRM,
+                changes=[
+                    field_change(field_name=f'procurement_supplier_{price_list.pk}',
+                        field_label=f'Поставщик закупочного прайса №{price_list.pk}',
+                        old_value=old_supplier, new_value=item.selected_supplier_id),
+                    field_change(field_name=f'procurement_supplier_price_{price_list.pk}',
+                        field_label='Сохранённая закупочная цена AED', old_value=old_price, new_value=item.supplier_price_aed),
+                    field_change(field_name=f'procurement_base_{price_list.pk}',
+                        field_label='База закупки RUB', old_value=old_base, new_value=item.base_price_rub),
+                ])
         preference = preferences.get((item.product_kind, item.product_id))
         if preference is None:
             preference = ProcurementPricePreference(**{f"{item.product_kind}_id": item.product_id})

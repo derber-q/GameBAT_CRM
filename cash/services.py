@@ -122,8 +122,22 @@ def credit_sale_payment(*, sale, actor):
     ).exists():
         raise ValidationError("Оплата этой продажи уже проведена.")
     amount = sale.cash_received_amount if sale.cash_received_amount is not None else sale.total_amount
-    if amount < sale.total_amount:
+    shortfall = sale.debt_offset_amount + sale.debt_charge_amount
+    if amount < 0 or amount + shortfall < sale.total_amount:
         raise ValidationError("Полученная сумма не может быть меньше стоимости продажи.")
+    if amount < sale.total_amount and not sale.creditor_movements.filter(
+        kind='sale_debt' if sale.debt_charge_amount else 'offset', amount=shortfall,
+        delta=shortfall, reversal_of__isnull=True, creditor_id=sale.partner.creditor_id,
+    ).exists():
+        raise ValidationError('Не найден подтверждённый расчёт задолженности.')
+    if amount == 0 and shortfall > 0:
+        return None
+    # Предоплата уже проведена журналом закупочного заказа и остаётся его авансом при отмене продажи.
+    amount -= sale.procurement_prepaid_amount
+    if amount < 0:
+        raise ValidationError('Полученная сумма меньше ранее внесённой предоплаты заказа.')
+    if amount == 0:
+        return None
     register.balance += amount
     register.full_clean()
     register.save(update_fields=("balance",))

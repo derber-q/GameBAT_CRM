@@ -1,4 +1,5 @@
 from django.test import TestCase
+from django.contrib.auth.models import Permission
 from django.urls import reverse
 
 from accounts.models import User
@@ -72,7 +73,7 @@ class InternalPageSmokeTests(TestCase):
         nav_html = html[html.index('<nav class="main-nav"'):html.index("</nav>")]
         labels = (
             "Продажа", "Номенклатура", "Склад", "Приход",
-            "Перемещения", "Реализация", "Ценообразование", "stuf",
+            "Реализация", "Ценообразование", "stuf",
         )
         positions = [nav_html.index(f">{label}</a>") for label in labels]
 
@@ -92,7 +93,8 @@ class InternalPageSmokeTests(TestCase):
         self.assertIn(">Общие остатки</a>", warehouse_menu)
         self.assertIn("Склад Варфоломеева 265", warehouse_menu)
         self.assertIn("Склад Резервный склад", warehouse_menu)
-        self.assertNotIn(">Перемещения</a>", warehouse_menu)
+        self.assertTrue(warehouse_menu.rstrip().endswith(">Перемещения</a>"))
+        self.assertEqual(nav_html.count(">Перемещения</a>"), 1)
 
         sales_trigger = nav_html.index(">Продажа</a>")
         sales_menu_start = nav_html.index('<div class="nav-dropdown-menu">', sales_trigger)
@@ -116,3 +118,21 @@ class InternalPageSmokeTests(TestCase):
             response,
             f'href="{reverse("consignment:platform", args=(sales_platform.pk,))}">Площадка</a>',
         )
+
+    def test_transfer_only_user_keeps_warehouse_menu_without_stock_access(self):
+        employee = User.objects.create_user('transfer-menu-worker')
+        employee.user_permissions.add(Permission.objects.get(content_type__app_label='warehouse', codename='view_transfers'))
+        self.client.force_login(employee)
+        response = self.client.get(reverse('warehouse:transfer_list'))
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context['nav']['warehouse'])
+        self.assertFalse(response.context['nav']['warehouse_global'])
+        self.assertFalse(response.context['nav']['warehouse_details'])
+        self.assertContains(response, '>Склад</a>')
+        self.assertContains(response, '>Перемещения</a>', count=1)
+        self.assertEqual(self.client.get(reverse('warehouse:global_stock')).status_code, 403)
+        employee.user_permissions.set(Permission.objects.filter(
+            content_type__app_label='warehouse', codename='view_global_stock'))
+        response = self.client.get(reverse('warehouse:global_stock'))
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, '>Перемещения</a>')

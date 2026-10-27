@@ -15,7 +15,7 @@ logger = logging.getLogger("gamebat.business")
 @permission_required_any("creditors.view_creditors")
 def creditor_list(request):
     return render(request, "creditors/list.html", {
-        "creditors": Creditor.objects.all(),
+        "creditors": Creditor.objects.select_related('partner'),
         "can_add": request.user.is_superuser or request.user.has_perm("creditors.add_creditor"),
         "can_change": request.user.is_superuser or request.user.has_perm("creditors.change_creditor"),
         "can_change_debt": request.user.is_superuser or request.user.has_perm("creditors.change_debt"),
@@ -35,11 +35,11 @@ def creditor_create(request):
 
 @permission_required_any("creditors.view_creditors")
 def creditor_detail(request, pk):
-    creditor = get_object_or_404(Creditor, pk=pk)
+    creditor = get_object_or_404(Creditor.objects.select_related('partner'), pk=pk)
     can_view_history = request.user.is_superuser or request.user.has_perm("creditors.view_history")
     return render(request, "creditors/detail.html", {
         "creditor": creditor,
-        "transactions": creditor.transactions.select_related("warehouse", "actor") if can_view_history else [],
+        "transactions": creditor.transactions.select_related("warehouse", "actor", 'sale') if can_view_history else [],
         "can_view_history": can_view_history,
         "can_change": request.user.is_superuser or request.user.has_perm("creditors.change_creditor"),
         "can_change_debt": request.user.is_superuser or request.user.has_perm("creditors.change_debt"),

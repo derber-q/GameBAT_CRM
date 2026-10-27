@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "ReSOURCE · Avito Check",
+  "version": "1.4.0",
+  "description": "Минимальная цена из CRM и переход к следующему ручному поиску на Avito.",
+  "permissions": ["storage"],
+  "host_permissions": ["http://127.0.0.1/*", "http://localhost/*", "http://192.168.0.131/*"],
+  "background": {"service_worker": "background.js"},
+  "content_scripts": [
+    {
+      "matches": ["http://127.0.0.1/crm/pricing/avito-check/*", "http://localhost/crm/pricing/avito-check/*", "http://192.168.0.131/crm/pricing/avito-check/*"],
+      "js": ["protocol.js", "crm.js"]
+    },
+    {
+      "matches": ["https://www.avito.ru/*", "https://avito.ru/*"],
+      "css": ["cards.css"],
+      "js": ["protocol.js", "cards.js", "panel.js"]
+    }
+  ]
+}

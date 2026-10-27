@@ -230,4 +230,4 @@ class SalesCreateBarcodeUiTests(TestCase):
         self.assertContains(response, "data-sale-barcode-add")
         self.assertContains(response, "stock-lines.js?v=global-barcode-1")
         self.assertContains(response, "app.js?v=collapse-fix-3")
-        self.assertContains(response, "gamebat.css?v=price-control-3")
+        self.assertContains(response, "gamebat.css?v=trip-operations-3-price-control-3")

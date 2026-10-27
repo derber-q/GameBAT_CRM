@@ -2,13 +2,19 @@ from django.urls import path
 
 from . import views
 from . import market_views
+from . import notification_views
+from . import partner_views
 
 app_name = "sales"
 urlpatterns = [
+    path('partner-settlement/preview/', partner_views.settlement_preview, name='settlement_preview'),
     path("", views.sale_list, name="list"),
     path("incomplete/", views.sale_list, name="incomplete"),
     path("completed/", views.sale_completed_list, name="completed"),
     path("cancelled/", views.sale_cancelled_list, name="cancelled"),
+    path('market-pending/', notification_views.pending_orders, name='market_pending'),
+    path('market-notifications/', notification_views.notification_status, name='market_notifications'),
+    path('market-notifications/<int:attention_id>/acknowledge/', notification_views.acknowledge, name='market_acknowledge'),
     path("<int:pk>/status/", views.sale_inline_status, name="inline_status"),
     path('<int:pk>/market-action/', market_views.sale_market_action, name='market_action'),
     path('market-scan/', market_views.sale_market_scan, name='market_scan'),

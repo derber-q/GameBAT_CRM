@@ -1,4 +1,7 @@
 """Экспорт актуальных партий реализации без себестоимости и финансовых снимков."""
+from uuid import uuid4
+from openpyxl.worksheet.datavalidation import DataValidation
+from .reports import sign_report
 from decimal import Decimal
 from io import BytesIO
 from itertools import groupby
@@ -40,6 +43,8 @@ def _stock_rows(platform, user):
 
 def generate_consignment_xlsx(*, platform, user):
     sections = _stock_rows(platform, user)
+    report_id = str(uuid4())
+    identities = []
     workbook = Workbook()
     sheet = workbook.active
     sheet.title = "Реализация"
@@ -53,14 +58,14 @@ def generate_consignment_xlsx(*, platform, user):
     sheet.merge_cells("A2:E2")
     sheet["A2"] = f"Дата формирования: {timezone.localtime():%d.%m.%Y %H:%M:%S}"
     sheet["A2"].font = Font(size=10, color="7B8999")
-    headers = ("Наименование", "Артикул", "Количество", "Вознаграждение за единицу, ₽", "Общая сумма, ₽")
+    headers = ("Наименование", "Остаток на реализации", "Цена за единицу, ₽", "Количество реализованного", "Сумма реализованного, ₽")
     for column, header in enumerate(headers, 1):
         cell = sheet.cell(4, column, header)
         cell.font = Font(bold=True, color=WHITE)
         cell.fill = PatternFill("solid", fgColor=TEAL)
         cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
     sheet.row_dimensions[4].height = 44
-    for column, width in zip("ABCDE", (62, 24, 14, 25, 24)):
+    for column, width in zip("ABCDE", (62, 18, 21, 23, 25)):
         sheet.column_dimensions[column].width = width
     sheet.freeze_panes = "A5"
 
@@ -73,6 +78,12 @@ def generate_consignment_xlsx(*, platform, user):
         cell.alignment = Alignment(wrap_text=True, vertical="center")
         sheet.row_dimensions[row].height = max(24, 16 * len(wrap(str(cell.value), 100)))
 
+    sheet.column_dimensions["F"].hidden = True
+    validation = DataValidation(type="whole", operator="greaterThanOrEqual", formula1=0, allow_blank=True)
+    validation.errorTitle = "Количество реализованного"
+    validation.error = "Введите целое неотрицательное число."
+    validation.showErrorMessage = True
+    sheet.add_data_validation(validation)
     total_quantity = 0
     total_amount = Decimal("0.00")
     border = Border(bottom=Side(style="thin", color=GRAY))
@@ -87,16 +98,21 @@ def generate_consignment_xlsx(*, platform, user):
                 quantity, reward = stock["quantity"], stock["receivable_per_unit"]
                 amount = quantity * reward
                 # Каждая реальная партия остаётся самостоятельной строкой, как в интерфейсе.
-                sheet.append((safe_text(stock[f"{product}__name"]), safe_text(stock[f"{product}__sku"]),
-                              quantity, reward, amount))
-                row_number = sheet.max_row
+                identity = f"{product}:{stock['pk']}"
+                identities.append(identity)
+                token = sign_report({'report_id': report_id, 'platform_id': platform.pk, 'kind': product,
+                                     'stock_id': stock['pk'], 'quantity': quantity, 'price': str(reward)})
+                row_number = sheet.max_row + 1
+                sheet.append((safe_text(stock[f"{product}__name"]), quantity, reward, 0,
+                              f'=IF(D{row_number}="",0,C{row_number}*D{row_number})', token))
+                validation.add(sheet.cell(row_number, 4))
                 for cell in sheet[row_number]:
                     cell.border = border
                     cell.alignment = Alignment(vertical="center", wrap_text=cell.column < 3,
                                                horizontal="right" if cell.column > 2 else "left")
-                sheet.cell(row_number, 2).number_format = "@"
-                sheet.cell(row_number, 3).number_format = "0"
-                for column in (4, 5):
+                sheet.cell(row_number, 2).number_format = "0"
+                sheet.cell(row_number, 4).number_format = "0"
+                for column in (3, 5):
                     sheet.cell(row_number, column).number_format = MONEY_FORMAT
                 lines = max(len(wrap(str(sheet.cell(row_number, 1).value), 53)),
                             len(wrap(str(sheet.cell(row_number, 2).value), 20)), 1)
@@ -105,7 +121,13 @@ def generate_consignment_xlsx(*, platform, user):
                 total_amount += amount
     if not total_quantity:
         group_heading("Нет товаров на реализации")
-    sheet.append(("Итого", None, total_quantity, None, total_amount))
+    last = sheet.max_row
+    sheet.append(("Итого площадка должна за реализованные товары", None, None, None, f"=SUM(E5:E{last})"))
+    metadata = workbook.create_sheet("_resource_report")
+    metadata.sheet_state = "veryHidden"
+    token = sign_report({'version': 1, 'report_id': report_id, 'platform_id': platform.pk, 'identities': identities})
+    for offset in range(0, len(token), 30000):
+        metadata.append((token[offset:offset+30000],))
     for cell in sheet[sheet.max_row]:
         cell.font = Font(bold=True, color=BLUE)
         cell.fill = PatternFill("solid", fgColor=LIGHT)

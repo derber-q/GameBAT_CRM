@@ -7,6 +7,7 @@ from warehouse.form_defaults import SingleWarehouseInitialMixin
 from warehouse.models import Warehouse
 
 from .models import PriceDocumentSettings
+from partners.customers import CustomerSelectionForm
 
 
 class SafeSupplierChoiceField(forms.ModelChoiceField):
@@ -26,6 +27,10 @@ class PriceDocumentSettingsForm(forms.ModelForm):
 
 class WarehousePriceForm(SingleWarehouseInitialMixin, forms.Form):
     warehouse = forms.ModelChoiceField(label="Склад", queryset=Warehouse.objects.all())
+
+
+class WholesaleWarehousePriceForm(SingleWarehouseInitialMixin, CustomerSelectionForm):
+    warehouse = forms.ModelChoiceField(label='Склад', queryset=Warehouse.objects.all())
 
 
 class SupplierPriceUploadForm(forms.Form):

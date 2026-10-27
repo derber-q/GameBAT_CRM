@@ -28,13 +28,6 @@ function Stop-StaleGameBATServer {
     Start-Sleep -Milliseconds 300
 }
 
-function Test-IntegrationWorker {
-    $escapedProjectDir = [Regex]::Escape($projectDir)
-    return [bool](Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
-        $_.CommandLine -match $escapedProjectDir -and $_.CommandLine -match "run_integration_worker"
-    } | Select-Object -First 1)
-}
-
 if (-not (Test-Path -LiteralPath $pythonExe)) {
     Add-Type -AssemblyName PresentationFramework
     [System.Windows.MessageBox]::Show(
@@ -79,12 +72,19 @@ if (-not (Test-AllGameBATAddresses)) {
     }
 }
 
-if (-not $SiteOnly -and -not (Test-IntegrationWorker)) {
-    Start-Process `
-        -FilePath $pythonExe `
-        -ArgumentList @("manage.py", "run_integration_worker") `
-        -WorkingDirectory $projectDir `
-        -WindowStyle Hidden
+if (-not $SiteOnly) {
+    $runtimeDir = Join-Path $projectDir 'outputs\localhost'
+    New-Item -ItemType Directory -Path $runtimeDir -Force | Out-Null
+    foreach ($service in @('avito', 'yandex', 'google')) {
+        if (-not (Test-GameBATIntegrationWorker -ProjectDir $projectDir -Service $service)) {
+            $workerLogPrefix = Join-Path $runtimeDir ((Get-Date -Format 'yyyyMMdd_HHmmss_fff') + "_${service}_worker")
+            Start-Process -FilePath $pythonExe `
+                -ArgumentList @('-u', 'manage.py', 'run_integration_worker', '--service', $service) `
+                -WorkingDirectory $projectDir -WindowStyle Hidden `
+                -RedirectStandardOutput "$workerLogPrefix.stdout.log" `
+                -RedirectStandardError "$workerLogPrefix.stderr.log"
+        }
+    }
 }
 
 Write-Output "CRM: $networkUrl"

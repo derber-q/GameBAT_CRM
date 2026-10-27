@@ -28,7 +28,7 @@ class SupplyServiceTests(TestCase):
             legal_entity="ООО Альфа", phone_1="+79990000000",
         )
         self.warehouse = Warehouse.objects.create(name="Тестовый склад")
-        self.cd = CD.objects.create(
+        self.cd = CD.objects.create(cusa_ppsa_code="PPSA-00001",
             platform=self.platform, name="Игра", sku="CD-1", barcode="001", cost=0
         )
         self.tech = Tech.objects.create(
@@ -253,7 +253,7 @@ class SupplyAutocompleteTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_superuser("admin", password="StrongAdmin!123")
         platform = Platform.objects.create(name="PS5")
-        self.cd = CD.objects.create(
+        self.cd = CD.objects.create(cusa_ppsa_code="PPSA-00001",
             platform=platform, name="Grand Theft Auto V", sku="GTA5", barcode="123"
         )
         self.warehouse = Warehouse.objects.create(name="Склад")

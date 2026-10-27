@@ -47,7 +47,7 @@ class ConsignmentExcelBrowserChecks(StaticLiveServerTestCase):
                 download = downloaded.value
                 self.assertIsNone(download.failure())
                 workbook = load_workbook(BytesIO(Path(download.path()).read_bytes()))
-                self.assertTrue(any(row[0] == cd.name and row[2] == 3 and row[4] == 370.35
+                self.assertTrue(any(row[0] == cd.name and row[1] == 3 and row[2] == 123.45 and row[3] == 0
                                     for row in workbook.active.iter_rows(values_only=True)))
                 page.screenshot(path=str(output / f"collapsed-{width}.png"), full_page=True)
                 page.goto(self.live_server_url + reverse("consignment:platform", args=(shop.pk,)))

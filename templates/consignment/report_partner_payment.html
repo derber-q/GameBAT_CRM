@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% block title %}Партнёр для частичной оплаты{% endblock %}
+{% block content %}<div class="page-heading"><h1>Партнёр для частичной оплаты {{ sale.visible_id }}</h1></div>
+<section class="panel"><p>Получено: {{ received }} ₽. В долг новому партнёру: <strong>{{ debt }} ₽</strong>. Партнёр будет связан с площадкой {{ sale.consignment_platform.name }} и этой продажей.</p>
+<form method="post" class="stacked-form">{% csrf_token %}{{ form.as_p }}<div class="field"><label for="payment-note">Примечание к расчёту задолженности</label><textarea id="payment-note" name="payment_note" required>{{ request.POST.payment_note|default:sale.note }}</textarea></div>
+<div class="heading-actions"><button class="button" type="submit">Создать партнёра и принять оплату</button><a class="button button-secondary" href="{% url 'sales:detail' sale.pk %}">Отмена</a></div></form></section>{% endblock %}

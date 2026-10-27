@@ -47,3 +47,22 @@ function Get-GameBATServerProcesses {
             -and $_.CommandLine -match '\bmanage\.py"?\s+runserver\s+(?:\S+:)?8000(?:\s|$)'
     }
 }
+
+function Test-GameBATIntegrationWorker {
+    param(
+        [Parameter(Mandatory)][string]$ProjectDir,
+        [Parameter(Mandatory)][ValidateSet('avito', 'yandex', 'google')][string]$Service
+    )
+    $projectPattern = [Regex]::Escape($ProjectDir.TrimEnd('\')) + '(?:\\|")'
+    $workers = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+        $_.Name -match '^python' -and $_.CommandLine -match $projectPattern `
+            -and $_.CommandLine -match '\bmanage\.py"?\s+run_integration_worker(?:\s|$)'
+    }
+    foreach ($worker in $workers) {
+        $selection = [Regex]::Match($worker.CommandLine, '--service(?:=|\s+)["'']?(all|avito|yandex|google)\b', 'IgnoreCase')
+        if (-not $selection.Success -or $selection.Groups[1].Value -eq 'all' -or $selection.Groups[1].Value -eq $Service) {
+            return $true
+        }
+    }
+    return $false
+}

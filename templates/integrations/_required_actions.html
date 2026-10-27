@@ -7,7 +7,7 @@
     </form>
     {% endif %}
   </div>
-  <p class="muted">Выполните действие вручную на Avito, затем нажмите «Обновить». CRM проверит статусы, но не будет публиковать или снимать объявления.</p>
+  <p class="muted">CRM автоматически проверяет статусы Avito каждые 15 минут. Для проверки сразу нажмите «Обновить». Публикацию и снятие объявлений выполняйте на Avito.</p>
   <p class="muted">Остаток — суммарно по складам, без реализации. Статусы — по последнему получению данных Avito; до обновления они могут быть устаревшими.</p>
   {% if actions_refresh_job %}
   <div {% if actions_refresh_job.status == 'pending' or actions_refresh_job.status == 'running' %}data-actions-status-url="{% url 'integrations:required_actions_status' actions_refresh_job.pk %}"{% endif %}>
@@ -17,6 +17,7 @@
     {% if actions_refresh_job.status == 'error' %}<p class="muted">Обновление не завершено. Данные могут быть устаревшими; повторите проверку.</p>{% endif %}
   </div>
   {% endif %}
+  <div data-required-actions-list>
   {% if required_actions %}
   <table class="avito-actions-table">
     <colgroup><col class="action-listing"><col class="action-product"><col class="action-stock"><col class="action-label"></colgroup>
@@ -33,4 +34,5 @@
     </tbody>
   </table>
   {% else %}<p>Необходимых действий нет.</p>{% endif %}
+  </div>
 </section>

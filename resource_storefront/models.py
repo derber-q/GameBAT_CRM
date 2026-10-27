@@ -9,6 +9,7 @@ from warehouse.models import Warehouse
 
 
 class WholesaleContact(models.Model):
+    partner = models.ForeignKey("partners.Partner", on_delete=models.PROTECT, null=True, blank=True, related_name="wholesale_contacts", verbose_name="Партнёр")
     name = models.CharField("Контактное имя", max_length=160)
     phone = models.CharField("Основной номер телефона", max_length=40)
     address = models.TextField("Адрес", blank=True)

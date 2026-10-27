@@ -90,7 +90,7 @@ class OrderExcelGroupingTests(TestCase):
         book = load_workbook(BytesIO(response.content))
         sheet = book.active
         self.assertEqual(self.titles(sheet), ["Tech · Sony · Консоли", "CD · Платформа: PS5"])
-        rows = [tuple(row) for row in sheet.iter_rows(min_row=2, values_only=True) if isinstance(row[3], int)]
-        self.assertEqual(rows, [("Консоль", "000-tech", 140, 3), ("Игра", "000123", 100, 2), ("Игра", "000123", 110, 3)])
-        self.assertTrue(sheet.column_dimensions["B"].hidden)
+        rows = [tuple(row) for row in sheet.iter_rows(min_row=2, values_only=True) if isinstance(row[4], int)]
+        self.assertEqual(rows, [("Консоль", None, "000-tech", 140, 3), ("Игра", None, "000123", 100, 2), ("Игра", None, "000123", 110, 3)])
+        self.assertTrue(sheet.column_dimensions["C"].hidden)
         book.close()

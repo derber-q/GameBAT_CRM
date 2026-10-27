@@ -19,7 +19,7 @@ class SupplyWeightTransportTests(TestCase):
         platform = Platform.objects.create(name="PS5")
         brand = Brand.objects.create(name="Sony")
         product_type = ProductType.objects.create(name="Консоль")
-        self.cd = CD.objects.create(
+        self.cd = CD.objects.create(cusa_ppsa_code="PPSA-00001",
             platform=platform, name="Лёгкий товар", sku="CD-W", weight_grams=100, cost=0,
         )
         self.tech = Tech.objects.create(
@@ -93,7 +93,7 @@ class SupplyWeightTransportTests(TestCase):
         self.assertEqual(supply.cd_items.get().allocated_transport_cost, Decimal("100.00"))
         self.assertEqual(supply.tech_items.get().allocated_transport_cost, Decimal("300.00"))
 
-        third = CD.objects.create(
+        third = CD.objects.create(cusa_ppsa_code="PPSA-00001",
             platform=self.cd.platform, name="Третий", sku="CD-3", weight_grams=100,
         )
         rounded = accept_supply(

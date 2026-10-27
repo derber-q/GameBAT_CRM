@@ -10,7 +10,8 @@ from .statistics_service import CHANNEL_LABELS
 
 
 def _append(sheet, values):
-    sheet.append([value if value is not None else "Недоступно" for value in values])
+    sheet.append([("'" + value if isinstance(value, str) and value.startswith(('=', '+', '-', '@')) else value)
+        if value is not None else "Недоступно" for value in values])
 
 
 def _header(sheet, values):
@@ -50,6 +51,9 @@ def render_statistics_workbook(report):
         ("Вид операции", dict(Sale.OperationKind.choices).get(filters.get("operation_kind"), "Все операции")),
         ("Продано единиц", totals.units), ("Стоимость товаров", totals.goods_total),
         ("Переплаты", totals.overpayment), ("Фактическая выручка", totals.actual_revenue),
+        ('Партнёр', str(filters.get('partner') or filters.get('arbitrary_partner_name') or 'Все партнёры')),
+        ('Фактически получено денег / чистое движение', totals.actual_money),
+        ('Погашено долгов', totals.debt_repayment), ('Взаимозачёт', totals.debt_offset), ('Изменение задолженности', totals.debt_change),
         ("Комиссия Avito", totals.commission),
         ("Себестоимость", totals.cost), ("Чистая прибыль", totals.profit),
         ("Маржа, %", totals.margin), ("Наценка, %", totals.markup),
@@ -63,24 +67,25 @@ def render_statistics_workbook(report):
     sales = workbook.create_sheet("Продажи")
     _header(sales, ("ID", "Дата завершения", "Склад", "Канал", "Оплата", "Стоимость товаров",
                     "Переплата", "Фактическая выручка", "Комиссия Avito", "Себестоимость", "Чистая прибыль",
-                    "Маржа, %", "Наценка, %", "Единиц", "Позиций", "Нет себестоимости", "Вид операции", "Примечание"))
+                    "Маржа, %", "Наценка, %", "Единиц", "Позиций", "Нет себестоимости", "Вид операции", "Примечание", 'Партнёр', 'Получено денег', 'Погашение долга', 'Взаимозачёт'))
     items = workbook.create_sheet("Позиции продаж")
     _header(items, ("Продажа ID", "Дата завершения", "Тип", "Товар ID", "Артикул", "Товар",
                     "Количество", "Цена единицы", "Себестоимость единицы", "Выручка",
                     "Комиссия Avito", "Выручка после комиссии",
-                    "Себестоимость", "Прибыль", "Маржа, %", "Наценка, %", "Примечание"))
+                    "Себестоимость", "Прибыль", "Маржа, %", "Наценка, %", "Примечание", "Прибыль за 1 шт."))
     for row in report.sales:
         sale = row.sale
         date = timezone.localtime(sale.completed_at).replace(tzinfo=None)
         _append(sales, (sale.pk, date, sale.warehouse.name, row.channel_label,
                         sale.get_payment_method_display(), row.goods_total, row.overpayment,
                         row.actual_revenue, row.commission, row.cost, row.profit, row.margin, row.markup,
-                        row.units, row.positions, row.missing_lines, sale.get_operation_kind_display(), sale.note))
+                        row.units, row.positions, row.missing_lines, sale.get_operation_kind_display(), sale.note,
+                        sale.partner_name_snapshot, sale.cash_received_amount, sale.debt_repayment_amount, sale.debt_offset_amount))
         for line in row.lines:
             _append(items, (sale.pk, date, line.kind.upper(), line.product_id, line.sku, line.name,
                             line.quantity, line.unit_price, line.unit_cost, line.revenue,
                             line.commission, line.net_revenue,
-                            line.cost, line.profit, line.margin, line.markup, sale.note))
+                            line.cost, line.profit, line.margin, line.markup, sale.note, line.unit_profit))
 
     products = workbook.create_sheet("Товары")
     _header(products, ("Тип", "ID", "Артикул", "Товар", "Категория", "Продано единиц",
@@ -106,6 +111,13 @@ def render_statistics_workbook(report):
         t = row.totals
         _append(series, (row.label, t.sales_count, t.units, t.actual_revenue, t.commission, t.cost, t.profit, t.expenses_count))
 
+    operations = workbook.create_sheet('Все операции')
+    _header(operations, ('Дата', 'Тип операции', 'Партнёр', 'Продажа', 'Сумма операции', 'Движение денег',
+        'Погашение долга', 'Взаимозачёт', 'Изменение долга', 'Долг до', 'Долг после', 'Примечание', 'Заказ ID'))
+    for row in report.operations:
+        _append(operations, (timezone.localtime(row.date).replace(tzinfo=None), row.kind, row.partner_name,
+            row.sale.visible_id if row.sale else '', row.amount, row.actual_money, row.repayment, row.offset,
+            row.debt_change, row.old_debt, row.new_debt, row.comment, row.order_id))
     for sheet in workbook:
         for column in sheet.columns:
             letter = column[0].column_letter

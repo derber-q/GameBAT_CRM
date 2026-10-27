@@ -2,9 +2,10 @@ from django import forms
 
 from warehouse.form_defaults import SingleWarehouseInitialMixin
 from warehouse.models import Warehouse
+from partners.customers import CustomerSelectionForm, resolve_customer
 
 
-class ProcurementOrderUploadForm(forms.Form):
+class ProcurementOrderUploadForm(CustomerSelectionForm):
     recipient = forms.CharField(label="Получатель / название закупки", max_length=255, required=False,
                                help_text="Для клиентского заказа обязателен; для закупки на наличие можно оставить пустым.")
     comment = forms.CharField(label="Комментарий", required=False, widget=forms.Textarea(attrs={"rows": 3}))
@@ -14,6 +15,9 @@ class ProcurementOrderUploadForm(forms.Form):
 
     def clean(self):
         data = super().clean()
+        if data.get('customer'):
+            _, name = resolve_customer(partner_id=data.get('partner_id'), partner_name=data.get('partner_name', ''))
+            data['recipient'] = data.get('recipient') or name
         uploads = {kind: data[f"{kind}_file"] for kind in ("cd", "tech") if data.get(f"{kind}_file")}
         if data.get("stock_file"):
             if uploads or self.files.get("file"):
@@ -34,7 +38,7 @@ class ProcurementOrderUploadForm(forms.Form):
         return data
 
 
-class ProcurementOrderHeaderForm(forms.Form):
+class ProcurementOrderHeaderForm(CustomerSelectionForm):
     recipient = forms.CharField(label="Получатель", max_length=255)
     comment = forms.CharField(label="Комментарий", required=False, widget=forms.Textarea(attrs={"rows": 3}))
 

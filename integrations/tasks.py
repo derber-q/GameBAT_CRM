@@ -9,6 +9,7 @@ from .client import AvitoAPIError
 from .manual_sync import reconcile_active_listings
 from .models import AvitoSyncJob
 from .services import reconcile_all, refresh_remote_listings, sync_profile
+from .queue import ensure_required_actions_refresh
 
 
 RETRY_DELAYS = (60, 180, 300, 300)
@@ -38,6 +39,7 @@ def _reschedule_after_database_lock(job):
 
 
 def ensure_periodic_jobs():
+    ensure_required_actions_refresh()
     # Прерванная задача не должна навсегда оставаться running. Время обновления
     # служит признаком активности; интервалы согласовывать с долгими сверками.
     now = timezone.now()

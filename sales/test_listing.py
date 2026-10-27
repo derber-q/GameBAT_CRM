@@ -11,7 +11,7 @@ from cash.models import CashRegister, CashTransaction
 from catalog.models import CD, Platform
 from warehouse.models import CDWarehouseStock, Warehouse
 from .models import Sale
-from .services import create_sale, advance_order_status, mark_sale_paid, cancel_sale
+from .services import create_sale, _create_sale, advance_order_status, mark_sale_paid, cancel_sale
 
 
 class SaleListingTests(TestCase):
@@ -23,9 +23,11 @@ class SaleListingTests(TestCase):
         self.client.force_login(self.actor)
 
     def sale(self, kind=Sale.SaleType.RETAIL, method=Sale.PaymentMethod.BANK_TRANSFER_POSTPAY):
-        return create_sale(actor=self.actor, warehouse_id=self.warehouse.pk, price_type=Sale.PriceType.RETAIL,
+        # Старые ручные продажи Маркета остаются историческими данными, но новый публичный путь закрыт.
+        creator = _create_sale if kind == Sale.SaleType.YANDEX_MARKET else create_sale
+        return creator(actor=self.actor, warehouse_id=self.warehouse.pk, price_type=Sale.PriceType.RETAIL,
                            sale_type=kind, payment_method=method,
-                           lines=[{'product_type': 'cd', 'product_id': self.cd.pk, 'quantity': 1}], note='Keep this note')
+                           lines=[{'product_type': 'cd', 'product_id': self.cd.pk, 'quantity': 1}], note='Keep this note', partner_name='Тестовый заказчик' if kind == 'wholesale' else '')
 
     def post(self, sale, field='order', value='assembled', **extra):
         data = {'field': field, 'value': value, 'confirmed': '1', 'version': sale.updated_at.isoformat()}
@@ -35,7 +37,9 @@ class SaleListingTests(TestCase):
     def test_pages_group_all_types_exclusively_and_keep_columns(self):
         expected = {name: [] for name in ('incomplete', 'completed', 'cancelled')}
         for kind in Sale.SaleType.values:
-            expected['incomplete'].append(self.sale(kind).pk)
+            incomplete = self.sale(kind)
+            if kind != Sale.SaleType.CONSIGNMENT:
+                expected['incomplete'].append(incomplete.pk)
             expected['completed'].append(self.sale(kind, Sale.PaymentMethod.CASH).pk)
             cancelled = self.sale(kind)
             cancel_sale(actor=self.actor, sale_id=cancelled.pk, comment='Duplicate order')
@@ -44,7 +48,10 @@ class SaleListingTests(TestCase):
             response = self.client.get(reverse('sales:' + name))
             self.assertEqual(response.status_code, 200)
             groups = response.context['groups']
-            self.assertEqual([g['kind'] for g in groups], Sale.SaleType.values)
+            order = Sale.SaleType.values if name == 'cancelled' else ['wholesale', 'avito', 'yandex_market', 'retail'] if name in ('list', 'incomplete') else ['yandex_market', 'wholesale', 'avito', 'retail']
+            if name == 'completed':
+                order = [*order, 'consignment']
+            self.assertEqual([g['kind'] for g in groups], order)
             self.assertEqual(sorted(row['sale'].pk for g in groups for row in g['rows']), sorted(pks))
             for group in groups:
                 self.assertTrue(all(row['sale'].sale_type in group['sale_types'] for row in group['rows']))

@@ -41,6 +41,7 @@
       const option = document.createElement('option');
       option.value = String(entry.id);
       option.textContent = label(entry);
+      option.disabled = !!entry.disabled;
       select.appendChild(option);
     });
   }
@@ -112,7 +113,7 @@
       action.value = canTransfer ? 'transfer' : 'adjust';
       document.getElementById('trip-change-mode').hidden = !canTransfer;
       document.getElementById('trip-priority-ambiguity').hidden = !line.priority_ambiguous || !canTransfer;
-      options(target, line.targets, entry => `${entry.name} · приоритет ${entry.priority}`);
+      options(target, line.targets, entry => `${entry.name} · приоритет ${entry.priority}${entry.disabled ? ' · инвойс принят' : ''}`);
       options(price, line.prices, entry => `${entry.name} · ${entry.price} AED`);
       price.value = String(line.price_supplier_id);
       rows.replaceChildren();

@@ -1,11 +1,14 @@
 {% extends "base.html" %}
 {% load static l10n %}
 {% block title %}Проверка цен · Поставка №{{ supply.pk }} · ReSOURCE{% endblock %}
-{% block extra_head %}<script src="{% static 'js/wholesale-margin.js' %}?v=1" defer></script>{% endblock %}
+{% block extra_head %}
+<link rel="stylesheet" href="{% static 'css/supply-price-review.css' %}?v=1">
+<script src="{% static 'js/wholesale-margin.js' %}?v=1" defer></script>
+{% endblock %}
 {% block content %}
 <div class="page-heading">
   <div><p class="eyebrow">Обязательный этап перед балансом</p><h1>Проверка цен поставки №{{ supply.pk }}</h1><p class="muted">Пока вы не подтвердите эту страницу, количество на складе и себестоимость карточек не изменятся.</p></div>
-  <div class="heading-actions"><a class="button button-secondary" href="{% url 'supplies:edit' supply.pk %}">Редактировать состав</a><a class="button button-secondary" href="{% url 'supplies:detail' supply.pk %}">К поставке</a></div>
+  <div class="heading-actions">{% if not trip_price_review %}<a class="button button-secondary" href="{% url 'supplies:edit' supply.pk %}">Редактировать состав</a>{% endif %}<a class="button button-secondary" href="{% url 'supplies:detail' supply.pk %}">К поставке</a></div>
 </div>
 <form method="post" class="stacked-form">{% csrf_token %}<input type="hidden" name="expected_revision_number" value="{{ supply.revision_number|unlocalize }}">
   <section class="panel table-panel">
@@ -17,7 +20,7 @@
         <td class="numeric">{{ calc.old_owned_quantity }} / <strong>{{ calc.resulting_quantity }}</strong></td>
         <td class="numeric">{{ calc.old_unit_cost|floatformat:2 }} / <strong>{{ calc.resulting_unit_cost|floatformat:2 }}</strong></td>
         <td><div class="supply-wholesale-pair" data-wholesale-margin data-cost="{{ calc.resulting_unit_cost|unlocalize }}"><input type="number" step="0.01" min="0" name="{{ calc.product_kind }}_{{ product.pk }}_wholesale_price" data-wholesale-value aria-label="Оптовая цена: {{ product.name }}" value="{{ product.wholesale_price|default_if_none:''|unlocalize }}" {% if not row.editable.wholesale_price %}disabled{% endif %}><span class="price-pair-separator" aria-hidden="true">/</span><span class="wholesale-margin-value" data-wholesale-margin-value title="Оптовая цена минус новая себестоимость">{% if row.wholesale_margin != None %}{{ row.wholesale_margin|floatformat:2 }}{% else %}—{% endif %}</span></div>{% if row.warnings.wholesale_price %}<span class="warning-text">{{ row.warnings.wholesale_price }}</span>{% endif %}</td>
-        <td><input type="number" step="0.01" min="0" name="{{ calc.product_kind }}_{{ product.pk }}_avito_price" value="{{ product.avito_price|default_if_none:''|unlocalize }}" {% if not row.editable.avito_price %}disabled{% endif %}>{% if row.warnings.avito_price %}<span class="warning-text">{{ row.warnings.avito_price }}</span>{% endif %}</td>
+        <td><div class="supply-avito-price-control"><input type="number" step="0.01" min="0" name="{{ calc.product_kind }}_{{ product.pk }}_avito_price" aria-label="Цена Авито: {{ product.name }}" value="{{ product.avito_price|default_if_none:''|unlocalize }}" {% if not row.editable.avito_price %}disabled{% endif %}><a class="button button-secondary button-small" href="{{ row.avito_search_url }}" target="_blank" rel="noopener noreferrer" aria-label="Avito Check: {{ product.name }} (новая вкладка)">Avito Check ↗</a></div>{% if row.warnings.avito_price %}<span class="warning-text">{{ row.warnings.avito_price }}</span>{% endif %}</td>
         <td><input type="number" step="0.01" min="0" name="{{ calc.product_kind }}_{{ product.pk }}_avito_markup_from_wholesale" value="{{ product.avito_markup_from_wholesale|default_if_none:''|unlocalize }}" {% if not row.editable.avito_markup_from_wholesale %}disabled{% endif %}></td>
         <td><input type="number" step="0.01" min="0" name="{{ calc.product_kind }}_{{ product.pk }}_yandex_market_price" value="{{ product.yandex_market_price|default_if_none:''|unlocalize }}" {% if not row.editable.yandex_market_price %}disabled{% endif %}>{% if row.warnings.yandex_market_price %}<span class="warning-text">{{ row.warnings.yandex_market_price }}</span>{% endif %}</td>
         <td><input type="number" step="0.01" min="0" name="{{ calc.product_kind }}_{{ product.pk }}_yandex_markup_from_wholesale" value="{{ product.yandex_markup_from_wholesale|default_if_none:''|unlocalize }}" {% if not row.editable.yandex_markup_from_wholesale %}disabled{% endif %}></td>

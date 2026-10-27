@@ -1,0 +1,8 @@
+{% if market.needs_acknowledgement %}
+<div class="market-attention-actions" data-market-attention="{{ market.attention.pk }}">
+  <span class="badge market-new-order" data-market-new-badge>Новый заказ</span>
+  {% if market.can_acknowledge %}
+  <form method="post" action="{% url 'sales:market_acknowledge' market.attention.pk %}" data-market-ack>{% csrf_token %}<button class="button button-small" type="submit">Заказ принят</button></form>
+  {% endif %}
+</div>
+{% endif %}

@@ -6,12 +6,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}ReSOURCE{% endblock %}</title>
   <link rel="icon" href="{% static 'img/gamebat-favicon.ico' %}" sizes="32x32" type="image/x-icon">
-  <link rel="stylesheet" href="{% static 'css/gamebat.css' %}?v=price-control-3-avito-commission-4-product-media-1-pricing-stock-filter-1-resource-crm-routes-1-avito-check-4-pricing-columns-1-sale-layout-1-supply-barcode-1-wholesale-margin-2-signed-discount-1-system-operations-1-stats-sale-actions-1-pricing-storage-1-payments-2">
+  <link rel="stylesheet" href="{% static 'css/gamebat.css' %}?v=trip-operations-3-price-control-3-avito-commission-4-product-media-1-pricing-stock-filter-1-resource-crm-routes-1-avito-check-4-pricing-columns-1-sale-layout-1-supply-barcode-1-wholesale-margin-2-signed-discount-1-system-operations-1-stats-sale-cards-2-pricing-storage-1-payments-2">
   <script src="{% static 'js/app.js' %}?v=collapse-fix-3-pricing-stock-filter-1-resource-crm-routes-1-nomenclature-split-1-market-collapse-1" defer></script>
   <script src="{% static 'js/product-image-preview.js' %}?v=product-media-1" defer></script>
+  {% include 'sales/_notification_assets.html' %}
   {% block extra_head %}{% endblock %}
+  <script src="{% static 'js/partner-customers.js' %}?v=2" defer></script>
+  <script src="{% static 'js/partner-settlements.js' %}?v=4" defer></script>
 </head>
-<body class="{% block body_class %}{% endblock %}" data-exchange-rates-url="{% url 'core:exchange_rates' %}">
+<body class="{% block body_class %}{% endblock %}" data-exchange-rates-url="{% url 'core:exchange_rates' %}" data-partner-settlement-url="{% url 'sales:settlement_preview' %}">
   {% if user.is_authenticated %}
     <header class="topbar">
       <a class="brand" href="{% url 'core:home' %}"><span class="brand-mark">RS</span><span>Re<b>SOURCE</b></span></a>
@@ -32,6 +35,7 @@
         </div>{% endif %}
         {% if nav.orders %}<a class="{% if request.resolver_match.namespace == 'orders' %}active{% endif %}" href="{% url 'orders:list' %}">Заказы</a>{% endif %}
         {% if nav.creditors %}<a class="{% if request.resolver_match.namespace == 'creditors' %}active{% endif %}" href="{% url 'creditors:list' %}">Кредиторы</a>{% endif %}
+        {% if nav.partners %}<a href="{% url 'partners:partner_list' %}">Партнёры</a>{% endif %}
         {% if nav.nomenclature %}
           <div class="nav-dropdown">
             <a class="nav-dropdown-trigger {% if request.resolver_match.namespace == 'nomenclature' %}active{% endif %}" href="{% url 'nomenclature:list' %}" aria-haspopup="true">Номенклатура</a>
@@ -45,20 +49,22 @@
         {% if nav.warehouse %}
           <div class="nav-dropdown">
             {% if nav.warehouse_global %}
-              <a class="nav-dropdown-trigger {% if request.resolver_match.namespace == 'catalog' %}active{% elif request.resolver_match.namespace == 'warehouse' and 'transfer' not in request.resolver_match.url_name %}active{% endif %}" href="{% url 'catalog:warehouse' %}" aria-haspopup="true">Склад</a>
+              <a class="nav-dropdown-trigger {% if request.resolver_match.namespace == 'catalog' or request.resolver_match.namespace == 'warehouse' %}active{% endif %}" href="{% url 'catalog:warehouse' %}" aria-haspopup="true">Склад</a>
             {% elif nav.warehouse_details and nav_warehouses %}
-              <a class="nav-dropdown-trigger {% if request.resolver_match.namespace == 'warehouse' and 'transfer' not in request.resolver_match.url_name %}active{% endif %}" href="{% url 'warehouse:detail' nav_warehouses.0.id %}" aria-haspopup="true">Склад</a>
+              <a class="nav-dropdown-trigger {% if request.resolver_match.namespace == 'warehouse' %}active{% endif %}" href="{% url 'warehouse:detail' nav_warehouses.0.id %}" aria-haspopup="true">Склад</a>
+            {% elif nav.transfers %}
+              <a class="nav-dropdown-trigger {% if request.resolver_match.namespace == 'warehouse' %}active{% endif %}" href="{% url 'warehouse:transfer_list' %}" aria-haspopup="true">Склад</a>
             {% else %}
               <a class="nav-dropdown-trigger" href="{% url 'core:home' %}" aria-haspopup="true">Склад</a>
             {% endif %}
             <div class="nav-dropdown-menu">
               {% if nav.warehouse_global %}<a href="{% url 'catalog:warehouse' %}">Общие остатки</a>{% endif %}
               {% if nav.warehouse_details %}{% for warehouse in nav_warehouses %}<a href="{% url 'warehouse:detail' warehouse.id %}">Склад {{ warehouse.name }}</a>{% endfor %}{% endif %}
+              {% if nav.transfers %}<a class="{% if request.resolver_match.namespace == 'warehouse' and 'transfer' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'warehouse:transfer_list' %}">Перемещения</a>{% endif %}
             </div>
           </div>
         {% endif %}
         {% if nav.supplies %}<a class="{% if request.resolver_match.namespace == 'supplies' %}active{% endif %}" href="{% url 'supplies:list' %}">Приход</a>{% endif %}
-        {% if nav.transfers %}<a class="{% if request.resolver_match.namespace == 'warehouse' and 'transfer' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'warehouse:transfer_list' %}">Перемещения</a>{% endif %}
         {% if nav.consignment %}
           <div class="nav-dropdown">
             <a class="nav-dropdown-trigger {% if request.resolver_match.namespace == 'consignment' %}active{% endif %}" href="{% url 'consignment:list' %}" aria-haspopup="true">Реализация</a>
@@ -114,6 +120,7 @@
         <span data-rate-symbol="USDT/AED" data-rate-decimals="2">USDT/AED <b>—</b></span>
       </div>
       <div class="session-tools">
+        {% include 'sales/_notification_counter.html' %}
         <span class="clock"><b id="gb-date">—</b><span id="gb-time">—</span></span>
         {% if nav.admin %}<a class="button button-ghost button-small" href="{% url 'admin:index' %}">Админ-панель</a>{% endif %}
         <a class="username" href="{% url 'accounts:password_change' %}">{{ user.username }}</a>
@@ -122,6 +129,7 @@
     </header>
   {% endif %}
   <main class="page {% block page_class %}{% endblock %}">
+    {% include 'sales/_notification_panel.html' %}
     {% if messages %}
       <div class="messages" aria-live="polite">
         {% for message in messages %}<div class="alert alert-{{ message.tags|default:'info' }}">{{ message }}</div>{% endfor %}

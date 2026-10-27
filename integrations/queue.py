@@ -5,7 +5,29 @@ from django.db import transaction
 from django.db.utils import OperationalError, ProgrammingError
 from django.utils import timezone
 
-from .models import AvitoProductProfile, AvitoSyncJob
+from .models import AvitoProductProfile, AvitoSyncJob, IntegrationCredential
+
+
+@transaction.atomic
+def ensure_required_actions_refresh():
+    """Одна общая задача ручной и автоматической проверки статусов каждые 15 минут."""
+    if not IntegrationCredential.objects.filter(provider='avito').exclude(
+        encrypted_client_id='').exclude(encrypted_client_secret='').exists():
+        return
+    now = timezone.now()
+    job, created = AvitoSyncJob.objects.select_for_update().get_or_create(
+        dedupe_key='required-actions-refresh', defaults={
+            'job_type': AvitoSyncJob.JobType.STATUS_REFRESH, 'run_after': now + timedelta(minutes=15),
+            'phase': 'Автоматическая проверка статусов Avito',
+        })
+    if not created and job.status in (AvitoSyncJob.Status.DONE, AvitoSyncJob.Status.ERROR):
+        if now >= (job.finished_at or job.updated_at) + timedelta(minutes=15):
+            job.status = AvitoSyncJob.Status.PENDING
+            job.run_after, job.attempts, job.last_error = now, 0, ''
+            job.phase = 'Автоматическая проверка статусов Avito'
+            job.started_at = job.finished_at = None
+            job.save()
+    return job
 
 
 def enqueue_profile_sync(profile_id, *, delay_seconds=None):

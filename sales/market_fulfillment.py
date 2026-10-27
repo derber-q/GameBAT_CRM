@@ -165,7 +165,7 @@ def _step(job):
     if not job.document_id:
         with transaction.atomic():
             job.document = request_labels(integration=order.integration, orders=[order], actor=job.actor,
-                format_name='A9_HORIZONTALLY', reuse=not job.ready_after_print)
+                format_name='A9_HORIZONTALLY', reuse=True)
             job.state = 'waiting_pdf'
             _save(job, 'document', 'state')
         return True

@@ -1,0 +1,7 @@
+{% extends 'base.html' %}
+{% block title %}{{ partner.name }} · ReSOURCE{% endblock %}
+{% block content %}
+<div class="page-heading"><h1>{{ partner.name }}</h1><div class="heading-actions">{% if perms.partners.change_partner and perms.partners.view_partner_contacts %}<a class="button" href="{% url 'partners:partner_edit' partner.pk %}">Редактировать</a>{% endif %}<a class="button button-secondary" href="{% url 'partners:partner_list' %}">К списку</a></div></div>
+<section class="panel"><dl>{% if show_contacts %}<dt>Контактное лицо</dt><dd>{{ partner.contact_person|default:'—' }}</dd><dt>Телефоны</dt><dd>{{ partner.phone_1|default:'—' }} · {{ partner.phone_2|default:'—' }}</dd><dt>Telegram</dt><dd>{% include 'partners/_partner_telegram.html' %}</dd><dt>Адрес</dt><dd>{{ partner.address|default:'—'|linebreaksbr }}</dd>{% endif %}<dt>Площадка реализации</dt><dd>{{ partner.platform|default:'—' }}</dd><dt>Статус</dt><dd>{% if partner.is_archived %}В архиве{% else %}Действующий{% endif %}</dd></dl>
+{% if perms.creditors.view_creditors %}<a class="button" href="{% url 'creditors:detail' partner.creditor_id %}">Кредиторский счёт</a>{% endif %}</section>
+{% endblock %}

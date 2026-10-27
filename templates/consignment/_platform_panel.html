@@ -4,6 +4,7 @@
     <span class="section-heading-meta"><span class="count" data-platform-count>{{ presentation.count }} поз.</span><span class="collapse-indicator" aria-hidden="true">▼</span></span>
   </button>
   <div class="heading-actions consignment-platform-content">
+    {% if perms.sales.create_sale %}<a class="button button-secondary" href="{% url 'consignment:report_import' presentation.platform.pk %}">Загрузить отчёт реализации</a>{% endif %}
     <a class="button button-secondary" href="{% url 'consignment:platform_export' presentation.platform.pk %}">Скачать Excel</a>
   </div>
   <div id="consignment-platform-{{ presentation.platform.pk }}" class="collapsible-content consignment-platform-content">

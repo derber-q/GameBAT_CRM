@@ -447,6 +447,7 @@ def checkout(request):
                 actor=None, warehouse_id=config.warehouse_id, price_type=Sale.PriceType.WHOLESALE,
                 sale_type=Sale.SaleType.WHOLESALE, payment_method=Sale.PaymentMethod.CASH_POSTPAY,
                 lines=lines,
+                partner_id=contact.partner_id, partner_name='' if contact.partner_id else contact.name,
             )
             sale.storefront_source = "resource_storefront"
             sale.wholesale_contact = contact
@@ -568,7 +569,9 @@ def contacts(request):
     for row in rows:
         row.active_link = row.access_links.filter(is_active=True).first()
         row.copy_token = recover_token(row.active_link) if row.active_link else ""
-    return render(request, "resource_storefront/contacts.html", {"contacts": rows, "query": term})
+    from partners.models import Partner
+    return render(request, "resource_storefront/contacts.html", {"contacts": rows, "query": term,
+        'partners': Partner.objects.filter(is_archived=False).only('pk', 'name')})
 
 
 @permission_required_any("resource_storefront.manage_wholesale_contacts")
@@ -582,6 +585,14 @@ def contact_save(request, pk=None):
     try:
         if not contact.name or not contact.phone:
             raise ValidationError("Имя и основной телефон обязательны.")
+        if 'partner' in request.POST:
+            from partners.models import Partner
+            value = request.POST.get('partner')
+            if value and not value.isdecimal():
+                raise ValidationError('Выберите действующего партнёра.')
+            if value and not Partner.objects.filter(pk=value, is_archived=False).exists():
+                raise ValidationError('Выберите действующего партнёра.')
+            contact.partner_id = value or None
         if len(contact.phone) > 40 or not re.fullmatch(r"[+0-9() .\-/]{5,40}", contact.phone):
             raise ValidationError("Проверьте формат телефона.")
         contact.full_clean()

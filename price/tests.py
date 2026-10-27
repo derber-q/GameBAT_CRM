@@ -111,8 +111,10 @@ class PriceExcelTests(TestCase):
             with self.subTest(kind=kind):
                 response = self.client.post(reverse(f"price:{url_name}"), {
                     "warehouse": self.moscow.pk,
+                    'customer': 'custom', 'custom_partner_name': 'Тестовый заказчик',
                 })
-                expected = f"ReSOURCE Price List {kind} {date}.xlsx"
+                suffix = ' Тестовый заказчик' if url_name == 'wholesale_export' else ''
+                expected = f"ReSOURCE Price List {kind}{suffix} {date}.xlsx"
                 self.assertEqual(response.status_code, 200)
                 self.assertEqual(
                     response["Content-Disposition"],
@@ -145,7 +147,7 @@ class PriceExcelTests(TestCase):
         )
         wholesale = generate_wholesale_price_xlsx(
             warehouse_id=self.moscow.pk, actor=self.user
-        )
+        , partner_name='Тестовый заказчик')
         for content in (retail, wholesale):
             workbook = load_workbook(BytesIO(content), data_only=False)
             sheet = workbook[MAIN_SHEET]
@@ -165,7 +167,7 @@ class PriceExcelTests(TestCase):
         workbook.close()
 
     def test_wholesale_file_has_availability_formulas_ids_and_import_ignores_price(self):
-        content = generate_wholesale_price_xlsx(warehouse_id=self.moscow.pk, actor=self.user)
+        content = generate_wholesale_price_xlsx(warehouse_id=self.moscow.pk, actor=self.user, partner_name='Тестовый заказчик')
         workbook = load_workbook(BytesIO(content), data_only=False)
         sheet = workbook[MAIN_SHEET]
         product_row = find_sheet_row(sheet, self.cd.name)
@@ -190,7 +192,7 @@ class PriceExcelTests(TestCase):
             import_wholesale_price_to_sale(uploaded(changed))
 
     def test_wholesale_formula_quantity_is_rejected(self):
-        content = generate_wholesale_price_xlsx(warehouse_id=self.moscow.pk, actor=self.user)
+        content = generate_wholesale_price_xlsx(warehouse_id=self.moscow.pk, actor=self.user, partner_name='Тестовый заказчик')
         workbook = load_workbook(BytesIO(content), data_only=False)
         sheet = workbook[MAIN_SHEET]
         sheet.cell(find_sheet_row(sheet, self.cd.name), 4, "=1+1")
@@ -199,7 +201,7 @@ class PriceExcelTests(TestCase):
 
     def test_wholesale_upload_prefills_normal_sale_without_automatic_write(self):
         self.client.force_login(self.user)
-        content = generate_wholesale_price_xlsx(warehouse_id=self.moscow.pk, actor=self.user)
+        content = generate_wholesale_price_xlsx(warehouse_id=self.moscow.pk, actor=self.user, partner_name='Тестовый заказчик')
         workbook = load_workbook(BytesIO(content), data_only=False)
         sheet = workbook[MAIN_SHEET]
         sheet.cell(find_sheet_row(sheet, self.cd.name), 4, 2)
@@ -455,7 +457,7 @@ class PriceExcelTests(TestCase):
                 self.assertEqual(getattr(self.client, method)(url, data).status_code, 403)
 
     def test_malformed_or_wrong_document_is_rejected(self):
-        content = generate_wholesale_price_xlsx(warehouse_id=self.moscow.pk, actor=self.user)
+        content = generate_wholesale_price_xlsx(warehouse_id=self.moscow.pk, actor=self.user, partner_name='Тестовый заказчик')
         with self.assertRaisesMessage(ValidationError, "другого типа"):
             import_procurement_order_xlsx(uploaded(content))
         workbook = load_workbook(BytesIO(content), data_only=False)
@@ -466,7 +468,7 @@ class PriceExcelTests(TestCase):
     def test_formula_injection_is_neutralized(self):
         self.cd.name = "=HYPERLINK(\"bad\")"
         self.cd.save(update_fields=("name",))
-        content = generate_wholesale_price_xlsx(warehouse_id=self.moscow.pk, actor=self.user)
+        content = generate_wholesale_price_xlsx(warehouse_id=self.moscow.pk, actor=self.user, partner_name='Тестовый заказчик')
         workbook = load_workbook(BytesIO(content), data_only=False)
         sheet = workbook[MAIN_SHEET]
         product_row = find_sheet_row(sheet, "'=HYPERLINK(\"bad\")")

@@ -1,0 +1,9 @@
+.procurement-supplier-offers { display: flex; flex-wrap: wrap; align-items: center; gap: 3px; min-width: 150px; }
+.procurement-supplier-offer { padding: 3px 5px; border: 1px solid transparent; border-radius: 5px; white-space: nowrap; }
+.procurement-supplier-offer.is-selected { color: #14532d; background: #dcfce7; border-color: #86efac; font-weight: 700; }
+.procurement-supplier-offer.is-selected::before { content: "✓ "; }
+.procurement-supplier-offer.is-excluded:not(.is-selected) { color: #64748b; text-decoration: line-through; }
+.procurement-supplier-offer.is-expensive:not(.is-selected) { color: #b91c1c; background: #fef2f2; border-color: #fecaca; }
+.procurement-supplier-select { min-width: 135px; max-width: 240px; }
+.procurement-table .procurement-total-cost { width: 1%; padding-left: 8px; padding-right: 8px; white-space: nowrap; }
+.procurement-table th.procurement-total-cost > span { display: block; }

@@ -1,0 +1,9 @@
+{% load static %}
+<form method="post" action="{% url 'orders:arrival_supply_post' supply.pk %}" class="stacked-form" data-independent-expenses>
+{% csrf_token %}<input type="hidden" name="revision_number" value="{{ supply.revision_number }}">
+<h3>Независимые дополнительные расходы — необязательно</h3><p class="help-text">Фактическая доставка рейса уже включена в себестоимость. Здесь укажите только другие расходы этого поступления.</p>
+<div data-independent-expense-list><div class="heading-actions"><input type="text" name="expense_name" placeholder="Название расхода" aria-label="Название независимого расхода" maxlength="255"><input type="number" name="expense_amount" min="0" step="0.01" placeholder="Сумма, ₽" aria-label="Сумма независимого расхода"></div></div>
+<template data-independent-expense-template><div class="heading-actions"><input type="text" name="expense_name" placeholder="Название расхода" aria-label="Название независимого расхода" maxlength="255"><input type="number" name="expense_amount" min="0" step="0.01" placeholder="Сумма, ₽" aria-label="Сумма независимого расхода"></div></template>
+<div class="heading-actions"><button class="button button-secondary" type="button" data-add-independent-expense>Добавить расход</button><button class="button" type="submit">Проверить цены и принять приход</button></div>
+</form>
+<script src="{% static 'js/trip-supply-expenses.js' %}?v=1" defer></script>

@@ -74,7 +74,7 @@ class StorageLocationFeatureTests(TestCase):
         self.platform = Platform.objects.create(name="PS5")
         self.brand = Brand.objects.create(name="Sony")
         self.product_type = ProductType.objects.create(name="Консоль")
-        self.cd = CD.objects.create(
+        self.cd = CD.objects.create(cusa_ppsa_code="PPSA-00001",
             platform=self.platform, name="Игра", sku="CD-1", barcode="1", avito_price=100, cost=100,
         )
         self.other_cd = CD.objects.create(
@@ -300,7 +300,7 @@ class StorageLocationFeatureTests(TestCase):
         self.assertFalse(self.tech_stock.storage_assignments.exists())
 
     def test_supply_cancellation_to_zero_clears_location(self):
-        zero_stock_product = CD.objects.create(
+        zero_stock_product = CD.objects.create(cusa_ppsa_code="PPSA-00001",
             platform=self.platform, name="Товар прихода", sku="CD-SUPPLY", barcode="3", cost=0,
         )
         stock = CDWarehouseStock.objects.create(warehouse=self.warehouse, cd=zero_stock_product, quantity=0)

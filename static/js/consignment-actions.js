@@ -1,5 +1,28 @@
 (() => {
   'use strict';
+  document.addEventListener('submit', async event => {
+    const form = event.target.closest('.inline-reward-form');
+    if (!form) return;
+    event.preventDefault();
+    if (form.dataset.busy || !form.reportValidity()) return;
+    const row = form.closest('[data-consignment-row]');
+    const button = form.querySelector('button');
+    const message = document.getElementById('consignment-action-message');
+    form.dataset.busy = '1';
+    button.disabled = true;
+    try {
+      const response = await fetch(form.action, {method:'POST', body:new FormData(form),
+        credentials:'same-origin', headers:{Accept:'application/json'}});
+      if (!response.headers.get('content-type')?.includes('application/json')) throw new Error('Не удалось сохранить. Повторите попытку.');
+      const result = await response.json();
+      if (!response.ok || !result.success) throw new Error(result.message || 'Не удалось сохранить.');
+      const position = window.scrollY;
+      if (result.row_html) row.outerHTML = result.row_html;
+      window.scrollTo({top:position, behavior:'instant'});
+      message.textContent = result.message;
+    } catch (error) { message.textContent = error.message; }
+    finally { button.disabled = false; delete form.dataset.busy; }
+  });
   const get = (id) => document.getElementById('consignment-' + id);
   const dialog = get('action-dialog');
   if (!dialog) return;

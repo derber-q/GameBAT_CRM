@@ -8,8 +8,8 @@
 <section class="panel table-panel"><div class="table-scroll"><table>
   <thead><tr><th>Название</th><th class="numeric">Текущая задолженность</th><th>Описание</th><th>Действия</th></tr></thead>
   <tbody>{% for creditor in creditors %}<tr>
-    <td class="strong"><a href="{% url 'creditors:detail' creditor.pk %}">{{ creditor.name }}</a></td>
-    <td class="numeric strong">{{ creditor.current_debt }} ₽</td>
+    <td class="strong"><a href="{% url 'creditors:detail' creditor.pk %}">{{ creditor.display_name }}</a></td>
+    <td class="numeric strong">{{ creditor.debt_amount }} ₽<br><small>{{ creditor.debt_direction }}</small></td>
     <td>{{ creditor.description|default:"—"|truncatechars:120 }}</td>
     <td><div class="table-actions">{% if can_change_debt %}<a class="table-action" href="{% url 'creditors:debt' creditor.pk %}">Изменить долг</a>{% endif %}{% if can_change %}<a class="table-action" href="{% url 'creditors:edit' creditor.pk %}">Редактировать</a>{% endif %}</div></td>
   </tr>{% empty %}<tr><td colspan="4" class="empty-cell">Кредиторов пока нет.</td></tr>{% endfor %}</tbody>

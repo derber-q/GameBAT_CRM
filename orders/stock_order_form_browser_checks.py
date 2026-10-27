@@ -3,6 +3,7 @@ from contextlib import closing
 import os
 from pathlib import Path
 from unittest.mock import patch
+from uuid import uuid4
 
 from django.conf import settings
 from django.contrib.staticfiles.testing import StaticLiveServerTestCase
@@ -12,6 +13,8 @@ from playwright.sync_api import expect, sync_playwright
 
 from .models import CustomerProcurementOrder
 from .test_stock_order_form import create_stock_form_fixture
+from .services import create_customer_procurement_order
+from .trips import create_trip
 
 
 class StockOrderFormBrowserChecks(StaticLiveServerTestCase):
@@ -19,6 +22,12 @@ class StockOrderFormBrowserChecks(StaticLiveServerTestCase):
     def test_import_page_form_preview_back_and_creation_on_two_widths(self):
         create_stock_form_fixture(self)
         self.client.force_login(self.user)
+        previous_orders = [create_customer_procurement_order(actor=self.user, price_list_id=self.price.pk,
+            recipient='Предыдущий рейс', comment='', purpose=purpose, lines=[{
+                'price_list_item_id': source.pk, 'prepayment_quantity': quantity, 'postpayment_quantity': 0,
+            } for source, quantity in ((self.cd_source, cd_quantity), (self.tech_source, tech_quantity))])
+            for purpose, cd_quantity, tech_quantity in (('stock', 5, 3), ('customer', 99, 88))]
+        previous_trip = create_trip(actor=self.user, order_ids=[order.pk for order in previous_orders], creation_key=uuid4())
         output = Path(settings.BASE_DIR) / "outputs/stock-order-form-browser"
         output.mkdir(parents=True, exist_ok=True)
         with sync_playwright() as pw, closing(connections["default"]):
@@ -37,6 +46,11 @@ class StockOrderFormBrowserChecks(StaticLiveServerTestCase):
                 self.assertLessEqual(page.evaluate("document.documentElement.scrollWidth"), width)
                 cd = page.locator(f'[name="quantity_{self.cd_source.pk}"]')
                 tech = page.locator(f'[name="quantity_{self.tech_source.pk}"]')
+                expect(page.locator('[data-stock-order-previous-trip]')).to_contain_text(f'№{previous_trip.pk}')
+                expect(page.locator('[data-stock-order-row]').filter(has=cd).locator(
+                    '[data-stock-order-previous-quantity]')).to_have_text('5')
+                expect(page.locator('[data-stock-order-row]').filter(has=tech).locator(
+                    '[data-stock-order-previous-quantity]')).to_have_text('3')
                 cd.fill("3")
                 tech.fill("2")
                 expect(page.locator("[data-stock-order-total]")).to_have_text("12 470,75")

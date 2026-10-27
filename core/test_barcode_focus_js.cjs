@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-function environment(kind, initialItems = [], paymentControls = false) {
+function environment(kind, initialItems = [], paymentControls = false, priceControls = null) {
   const focusLog = [];
   const autocomplete = [];
   let activeElement;
@@ -75,7 +75,7 @@ function environment(kind, initialItems = [], paymentControls = false) {
   const total = field('strong', { dataset: { saleIntermediateTotal: '' } });
   const commission = field('strong', { dataset: { saleCommissionTotal: '' } });
   const netTotal = field('strong', { dataset: { saleNetTotal: '' } });
-  let payment, saleType, received, receivedContainer, paymentHint;
+  let payment, saleType, received, receivedContainer, paymentHint, priceType;
   if (paymentControls) {
     form.dataset.paymentSelectId = 'id_payment_method';
     form.dataset.saleTypeSelectId = 'id_sale_type';
@@ -85,6 +85,15 @@ function environment(kind, initialItems = [], paymentControls = false) {
     received = new Element('input'); received.name = 'cash_received_amount';
     receivedContainer.append(received);
     paymentHint = field('span', { dataset: { paymentWorkflow: '' } });
+  }
+  if (priceControls) {
+    form.dataset.priceSelectId = 'id_price_type';
+    priceType = field('select', { id: 'id_price_type', value: priceControls.priceType || 'retail' });
+    for (const value of ['retail', 'wholesale']) {
+      const option = new Element('option'); option.value = value; priceType.append(option);
+    }
+    priceType.options = priceType.children;
+    if (saleType) saleType.value = priceControls.saleType || 'retail';
   }
   field('script', { id: 'initial-sale-items', textContent: JSON.stringify(initialItems) });
   field('button', { className: kind === 'sale' ? 'add-stock-line' : 'add-supply-line' });
@@ -126,7 +135,7 @@ function environment(kind, initialItems = [], paymentControls = false) {
     assert(!focusLog.some(entry => entry.element === barcode), 'Нельзя возвращаться к штрихкоду над списком');
   }
   return { rows, autocomplete, feedback, barcode, barcodeButton, requests, focusLog, product, assertQuantityFocus,
-    form, total, commission, netTotal, payment, saleType, received, receivedContainer, paymentHint,
+    form, total, commission, netTotal, payment, saleType, received, receivedContainer, paymentHint, priceType,
     scan: async result => { results = Array.isArray(result) ? result : [result]; await scanner(results[0].barcodes[0]); },
     setResults: value => { results = value; },
   };
@@ -144,15 +153,16 @@ async function main() {
       const first = env.rows.children[0];
       first.querySelector('input[name="quantity"]').value = '7';
       await env.scan(env.product(1));
-      assert.equal(env.rows.children.length, 40);
-      assert.equal(first.querySelector('input[name="quantity"]').value, '8');
-      env.assertQuantityFocus(first);
+      assert.equal(env.rows.children.length, 41);
+      assert.equal(first.querySelector('input[name="quantity"]').value, '7');
+      assert.equal(env.rows.children.at(-1).querySelector('input[name="quantity"]').value, '1');
+      env.assertQuantityFocus(env.rows.children.at(-1));
       env.barcode.value = env.product(2).barcodes[0];
       env.setResults([env.product(2)]);
       env.barcodeButton.click();
       await new Promise(resolve => setImmediate(resolve));
       assert.equal(new URL(env.requests.at(-1).url, 'http://test').searchParams.get('q'), env.product(2).barcodes[0]);
-      env.assertQuantityFocus(env.rows.children[1]);
+      env.assertQuantityFocus(env.rows.children.at(-1));
     } else {
       const last = env.rows.children.at(-1);
       last.querySelector('select[name="supplier_id"]').value = '12';

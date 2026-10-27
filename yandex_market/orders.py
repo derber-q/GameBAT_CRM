@@ -9,7 +9,7 @@ from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
 from sales.models import Sale
-from sales.services import advance_order_status, cancel_sale, create_sale
+from sales.services import advance_order_status, cancel_sale, create_market_sale
 from warehouse.receipts import receive_return
 from .models import AuditEvent, OfferConnection, OrderLine, OrderMetadata, ReturnMetadata
 
@@ -191,10 +191,7 @@ def _apply_order(pk, payload):
             lines.append({"product_type": key[0], "product_id": key[1], "quantity": quantity})
             references.append((item, connection, prices[key] / quantity))
         try:
-            sale = create_sale(actor=integration.operator, warehouse_id=integration.fulfillment_warehouse_id,
-                               price_type=Sale.PriceType.YANDEX_MARKET, sale_type=Sale.SaleType.YANDEX_MARKET,
-                               payment_method=Sale.PaymentMethod.BANK_TRANSFER_POSTPAY, lines=lines, external_prices=prices,
-                               note=f"Заказ Яндекс Маркета №{order.order_id}. Выплата подтверждается отдельно.")
+            sale = create_market_sale(order=order, lines=lines, external_prices=prices)
         except ValidationError as exc:
             if any("недостаточно товара" in message for message in exc.messages):
                 raise ValidationError("Требуется внутреннее перемещение товара на склад выполнения заказов. " + " ".join(exc.messages)) from exc
@@ -205,6 +202,8 @@ def _apply_order(pk, payload):
         for item, connection, unit_price in references:
             OrderLine.objects.create(order=order, remote_item_id=item["id"], connection=connection,
                                      quantity=item["count"], unit_price=unit_price.quantize(Decimal("0.01")))
+        from sales.notifications import require_staff_acknowledgement
+        require_staff_acknowledgement(order)
     else:
         known = {line.remote_item_id: line for line in order.lines.select_related("connection__remote_offer")}
         changed = len(known) != len(order.items) or any(

@@ -12,6 +12,7 @@ from .models import (
     SupplierOrderBatch, SupplierOrderBatchLine, SupplierTripAllocation, SupplierTripChange,
 )
 from .services import _quantity, _save_totals
+from .order_editing import require_untransferred_order
 
 MANAGE_PERMISSIONS = (
     "orders.generate_supplier_orders", "orders.edit_created_order",
@@ -30,8 +31,10 @@ def _require_manage(actor):
 
 def trip_queryset():
     return SupplierOrderBatch.objects.select_related("price_list", "created_by").prefetch_related(
-        "source_orders", "trip_orders__items", "lines__supplier", "lines__price_supplier",
+        "source_orders", "trip_orders__items", "trip_orders__operations", "lines__supplier", "lines__price_supplier",
+        "lines__cd__platform", "lines__tech__product_type",
         "lines__price_list_item__supplier_offers__supplier", "lines__allocations__order_item__order",
+        "lines__allocations__order_item__order__operations",
         "changes__actor",
     )
 
@@ -50,9 +53,9 @@ def _check_supplier_admission(batch, source, *supplier_ids):
         raise ValidationError(f'{source.product_name_snapshot}: поставщик или источник цены исключён из подбора этого товара.')
 
 
-def _line_for(batch, source, supplier_id, price_supplier_id, price):
+def _line_for(batch, source, supplier_id, price_supplier_id, price, *, price_updated_at=None):
     _check_supplier_admission(batch, source, supplier_id, price_supplier_id)
-    line, _ = SupplierOrderBatchLine.objects.get_or_create(
+    line, created = SupplierOrderBatchLine.objects.get_or_create(
         batch=batch, supplier_id=supplier_id, price_list_item=source, price_supplier_id=price_supplier_id,
         defaults={"product_kind": source.product_kind, source.product_kind: source.product,
                   "product_name_snapshot": source.product_name_snapshot, "article_snapshot": source.article_snapshot,
@@ -60,6 +63,11 @@ def _line_for(batch, source, supplier_id, price_supplier_id, price):
     )
     if line.supplier_price_aed_snapshot != price:
         raise ValidationError("Сохранённая цена строки изменилась. Обновите страницу.")
+    if price_updated_at and line.supplier_price_updated_at is None:
+        if not created:
+            raise ValidationError('Нельзя объединить скорректированную закупку с другой самостоятельной партией.')
+        line.supplier_price_updated_at = price_updated_at
+        line.save(update_fields=('supplier_price_updated_at',))
     return line
 
 
@@ -84,6 +92,8 @@ def create_trip(*, actor, order_ids, creation_key, name=""):
     orders = list(CustomerProcurementOrder.objects.select_for_update().filter(pk__in=ids).order_by("pk"))
     if len(orders) != len(ids):
         raise ValidationError("Один из выбранных заказов не найден.")
+    for order in orders:
+        require_untransferred_order(order)
     if any(order.status != order.Status.CREATED for order in orders):
         raise ValidationError("В рейс можно включить только заказы в статусе «Создан».")
     if any(order.trip_id for order in orders):
@@ -145,7 +155,12 @@ def available_trips(*, price_list_id, exclude_id=None):
 
 
 def _require_editable_trip(batch):
+    from .arrival_models import TripArrival
+    if TripArrival.objects.filter(trip=batch,arrived_at__isnull=False).exists():
+        raise ValidationError('Рейс приехал. Исходные партии зафиксированы; используйте сверку фактического поступления.')
     orders = list(batch.trip_orders.select_for_update().order_by("pk"))
+    for order in orders:
+        require_untransferred_order(order)
     if any(order.status != order.Status.CREATED for order in orders):
         raise ValidationError("Рейс зафиксирован: один из заказов уже подтверждён.")
     if {order.pk for order in orders} != set(batch.source_orders.values_list("pk", flat=True)):
@@ -211,7 +226,8 @@ def assign_order_to_trip(*, actor, order_id, target_batch_id, target_revision,
         for allocation in allocations:
             old_line = source_lines.setdefault(allocation.line_id, allocation.line)
             new_line = _line_for(target, old_line.price_list_item, old_line.supplier_id,
-                                 old_line.price_supplier_id, old_line.supplier_price_aed_snapshot)
+                                 old_line.price_supplier_id, old_line.supplier_price_aed_snapshot,
+                                 price_updated_at=old_line.supplier_price_updated_at)
             new_line.quantity += allocation.quantity
             if new_line.quantity > 2147483647:
                 raise ValidationError("Слишком большое количество в рейсе назначения.")
@@ -315,16 +331,20 @@ def _record_customer_changes(actor, changes, batch):
 
 
 def trip_supplier_chains(lines, *, excluded=None):
+    """Предложения, фактические получатели и допустимый получатель M по чужой цене."""
     lines = list(lines)
     if excluded is None:
         excluded = exclusion_keys((line.product_kind, line.product_id) for line in lines)
-    """Сохранённые предложения товара и его фактические получатели только в этом рейсе."""
+    fallback_ids = list(Supplier.objects.filter(letter='M').values_list('pk', flat=True))
     chains = {}
     for line in lines:
         suppliers = chains.setdefault(line.price_list_item_id, set())
         suppliers.add(line.supplier_id)
         suppliers.update(offer.supplier_id for offer in line.price_list_item.supplier_offers.all()
                          if (line.product_kind, line.product_id, offer.supplier_id) not in excluded)
+        # M принимает запрос и без собственной цены, например по сохранённой цене A.
+        suppliers.update(supplier_id for supplier_id in fallback_ids
+                         if (line.product_kind, line.product_id, supplier_id) not in excluded)
     return chains
 
 
@@ -365,8 +385,8 @@ def change_trip_line(*, actor, batch_id, line_id, revision, quantity, action,
     if batch.revision != expected_revision:
         raise ValidationError("Рейс уже изменён другим запросом. Обновите страницу.")
     orders = list(CustomerProcurementOrder.objects.select_for_update().filter(trip=batch).order_by("pk"))
-    if not orders or any(order.status != order.Status.CREATED for order in orders):
-        raise ValidationError("Рейс зафиксирован: один из клиентских заказов уже подтверждён.")
+    if not orders:
+        raise ValidationError("В рейсе нет заказов.")
     _assert_balances(batch)
     new_quantity = _quantity(quantity, "Количество поставщика")
     if new_quantity > 2147483647:
@@ -377,6 +397,11 @@ def change_trip_line(*, actor, batch_id, line_id, revision, quantity, action,
     if new_quantity == old_quantity:
         raise ValidationError("Количество не изменилось.")
     allocations = list(line.allocations.select_for_update().select_related("order_item__order").order_by("order_item__order_id", "pk"))
+    for allocation in allocations:
+        if allocation.quantity:
+            require_untransferred_order(allocation.order_item.order)
+            if allocation.order_item.order.status != CustomerProcurementOrder.Status.CREATED:
+                raise ValidationError("Строка рейса зафиксирована: один из связанных заказов уже подтверждён.")
     detail = {"line_id": line.pk, "before": old_quantity, "after": new_quantity, "action": action}
     if action == "transfer":
         if new_quantity >= old_quantity:
@@ -447,6 +472,10 @@ def change_trip_line(*, actor, batch_id, line_id, revision, quantity, action,
             allocated = wanted[allocation.pk] - elsewhere
             if allocated < 0:
                 raise ValidationError("Итог заказчика не может быть меньше количества у других поставщиков.")
+            if allocated != allocation.quantity:
+                require_untransferred_order(item.order)
+                if item.order.status != CustomerProcurementOrder.Status.CREATED:
+                    raise ValidationError("Изменять количество можно только в созданном заказе.")
             if new_quantity < old_quantity and allocated > allocation.quantity:
                 raise ValidationError("При уменьшении нельзя увеличить долю другого заказчика.")
             if new_quantity > old_quantity and allocated < allocation.quantity:

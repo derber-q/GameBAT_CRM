@@ -1,0 +1,11 @@
+{% if operation %}
+<section class="panel">
+  <div class="heading-actions"><span class="badge">{% if operation.sale_id %}{% if operation.calculation.arrival_id %}Продажа по заказу рейса{% else %}Прямая отгрузка по заказу рейса{% endif %}{% else %}Приход по заказу рейса{% endif %}</span>{% if perms.orders.view_order_detail %}<a href="{% url 'orders:detail' operation.order_id %}">Заказ №{{ operation.order_id }}</a>{% endif %}</div>
+  {% if perms.price.view_supplier_prices %}<p class="help-text">Зафиксированные курсы: {% if operation.calculation.usd_aed %}USDT/RUB {{ operation.usd_rub }} · USDT/AED {{ operation.calculation.usd_aed }}{% else %}USD/RUB {{ operation.usd_rub }} · AED/RUB {{ operation.aed_rub }}{% endif %}. Доставка включена в себестоимость.</p>{% endif %}
+  {% with arrival=operation.order.trip.arrival %}{% if arrival.arrived %}
+    {% if arrival.finalized %}<p class="help-text">Себестоимость рейса финализирована. Документ завершается отдельно.</p>{% else %}<p class="alert alert-info">Себестоимость и ожидаемая прибыль предварительные. Завершение доступно после итоговой финализации рейса.</p>{% if perms.orders.view_order_detail %}<a class="button button-secondary" href="{% url 'orders:arrival_receipt' operation.order_id %}">Сверить фактическое поступление</a>{% endif %}{% endif %}
+    {% if perms.orders.generate_supplier_orders and perms.partners.view_supplier_details %}<a class="button button-secondary" href="{% url 'orders:trip_detail' operation.order.trip_id %}">Открыть рейс</a>{% endif %}
+  {% endif %}{% endwith %}
+  {% if operation.sale.procurement_prepaid_amount %}<p class="help-text">Аванс по заказу: {{ operation.sale.procurement_prepaid_amount }} ₽. Полученную сумму указывайте вместе с авансом; в кассу попадёт только разница. При отмене продажи аванс остаётся на закупочном заказе.</p>{% endif %}
+</section>
+{% endif %}

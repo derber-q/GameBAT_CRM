@@ -7,6 +7,7 @@ from price.models import ProcurementPriceList
 
 from .models import CustomerProcurementOrder
 from .stock_order_form import StockOrderCreateForm, StockOrderPriceListForm, stock_order_groups, stock_order_items
+from .stock_order_form import previous_trip_stock_quantities
 from .views import DRAFT_SESSION_KEY
 
 
@@ -14,11 +15,11 @@ from .views import DRAFT_SESSION_KEY
 @require_http_methods(["GET", "POST"])
 @permission_required_all("orders.create_order", "price.view_supplier_prices")
 def stock_order_create(request):
-    latest = ProcurementPriceList.objects.first()
+    latest = ProcurementPriceList.objects.filter(is_trip_addition=False).first()
     selected_id = (request.POST.get("price_list") if request.method == "POST"
                    else request.GET.get("price_list", latest.pk if latest else ""))
     choice_form = StockOrderPriceListForm({"price_list": selected_id})
-    price_list, form, groups = None, None, []
+    price_list, form, groups, previous_trip = None, None, [], None
     if latest and choice_form.is_valid():
         price_list = choice_form.cleaned_data["price_list"]
         items = stock_order_items(price_list)
@@ -36,8 +37,10 @@ def stock_order_create(request):
                 "purpose": CustomerProcurementOrder.Purpose.STOCK, "entry_method": "form",
             }
             return redirect("orders:preview")
-        groups = stock_order_groups(items, form)
+        previous_trip, previous_trip_quantities = previous_trip_stock_quantities()
+        groups = stock_order_groups(items, form, previous_trip_quantities=previous_trip_quantities)
     return render(request, "orders/stock_create.html", {
         "choice_form": choice_form, "form": form, "price_list": price_list,
         "groups": groups, "has_price_lists": latest is not None,
+        "previous_trip": previous_trip,
     })

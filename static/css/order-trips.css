@@ -1,7 +1,44 @@
 .trip-line-form { display: flex; align-items: center; gap: 8px; }
+.trip-price-cell { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.trip-price-cell button { white-space: nowrap; }
+.trip-price-dialog { width: min(820px, calc(100vw - 24px)); max-width: calc(100vw - 24px); max-height: calc(100dvh - 24px); overflow-y: auto; }
+.trip-price-dialog [hidden] { display: none; }
+.trip-price-dialog td { white-space: normal; }
+.trip-price-dialog .trip-price-increase, .trip-price-dialog .trip-price-loss { color: #ac243f; font-weight: 700; }
+.trip-price-order-summary { margin-top: 12px; padding: 10px; background: #f5f8fa; border-radius: 6px; }
+body.order-trip-page { min-width: 0; }
+.order-trip-page .panel { min-width: 0; }
+@media (max-width: 1700px) {
+  .order-trip-page .topbar { flex-wrap: wrap; width: 100%; }
+  .order-trip-page .main-nav { order: 3; flex-basis: 100%; flex-wrap: wrap; min-width: 0; }
+}
+@media (max-width: 760px) {
+  .order-trip-page .brand { min-width: 0; min-height: 52px; }
+  .order-trip-page .main-nav a { min-height: 44px; }
+  .order-trip-page .session-tools { max-width: 100%; flex-wrap: wrap; padding: 8px; }
+  .order-trip-page .page { max-width: 100%; padding: 16px 10px 36px; }
+  .order-trip-page .page-heading { flex-wrap: wrap; gap: 12px; }
+  .order-trip-page .table-scroll { max-width: 100%; }
+}
+@media (max-width: 600px) {
+  .trip-price-dialog .dialog-actions { flex-direction: column; }
+  .trip-price-dialog .dialog-actions button { width: 100%; }
+  .trip-price-dialog .summary { font-size: 13px; }
+}
 .trip-line-form input { width: 90px; min-width: 70px; }
 .trip-return-form { margin-top: 8px; }
+.trip-supplier-heading { flex-wrap: wrap; gap: 12px; }
+.trip-supplier-title { flex-wrap: wrap; }
+.trip-invoice-form { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 0; }
+.trip-invoice-form label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; white-space: nowrap; font-weight: 600; }
+.trip-invoice-form input { margin: 0; }
+.trip-invoice-accepted { border-color: #58a378; box-shadow: inset 4px 0 #58a378; }
+.trip-invoice-accepted .section-heading { background: #e7f5ed; }
+.trip-invoice-accepted tbody tr:not(.trip-zero-row) { background: #f3faf5; }
+.trip-invoice-accepted .trip-product-group th { background: #dfefe5; }
+.trip-invoice-note { margin: 0; padding: 10px 16px; color: #286743; background: #edf8f1; border-bottom: 1px solid #c1ddcc; }
 .trip-zero-row { background: #fff1d6; }
+.trip-product-group th { background: #f5f8fa; color: #344b61; text-align: left; }
 .trip-dialog { width: min(850px, 94vw); max-width: 94vw; }
 .trip-dialog .table-scroll { max-height: 40vh; }
 .trip-dialog [hidden] { display: none !important; }

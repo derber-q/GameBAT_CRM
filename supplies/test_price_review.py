@@ -17,7 +17,7 @@ class SupplyPriceReviewTests(TestCase):
         self.user = User.objects.create_superuser("review-admin", password="StrongAdmin!123")
         self.warehouse = Warehouse.objects.create(name="Склад проверки цен")
         platform = Platform.objects.create(name="PS5")
-        self.product = CD.objects.create(
+        self.product = CD.objects.create(cusa_ppsa_code="PPSA-00001",
             platform=platform, name="Игра", sku="REVIEW-1", cost=Decimal("100.00"),
             wholesale_price=Decimal("150.00"),
         )

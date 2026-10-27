@@ -145,7 +145,7 @@ class SonyGamepadExcelSortingTests(TestCase):
         wholesale = generate_wholesale_price_xlsx(
             warehouse_id=self.warehouse.pk,
             actor=self.user,
-        )
+         partner_name='Тестовый заказчик')
 
         self.assertEqual(skipped, 0)
         for content in (retail, wholesale):

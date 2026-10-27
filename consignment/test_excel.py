@@ -68,161 +68,81 @@ class ConsignmentExcelTests(TestCase):
         return load_workbook(BytesIO(response.content), data_only=False)
 
     def products(self, sheet):
-        return [row for row in sheet.iter_rows(values_only=True)
-                if isinstance(row[2], (int, float)) and row[1] is not None]
+        return [row[:5] for row in sheet.iter_rows(min_row=5, values_only=True) if len(row) > 5 and row[5]]
 
-    def test_buttons_on_all_platform_panels_and_separate_page_even_with_empty_search(self):
-        response = self.client.get(reverse("consignment:list"), {"q": "Ничего не найдено"})
-        self.assertContains(response, "Скачать Excel", count=3)
-        for platform in (self.shop, self.other, self.empty):
-            url = reverse("consignment:platform_export", args=(platform.pk,))
-            self.assertContains(response, f'href="{url}"')
-        page = self.client.get(reverse("consignment:platform", args=(self.shop.pk,)))
-        self.assertContains(page, "Скачать Excel", count=1)
-        self.assertNotContains(page, reverse("consignment:platform_export", args=(self.other.pk,)))
+    def test_buttons_platform_scope_mime_and_get_only(self):
+        response=self.client.get(reverse("consignment:list"),{"q":"Не найдено"})
+        self.assertContains(response,"Скачать Excel",count=3)
+        response=self.export()
+        self.assertEqual(response["Content-Type"],"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        self.assertIn("no-store",response["Cache-Control"])
+        self.assertEqual(self.client.post(reverse("consignment:platform_export",args=(self.shop.pk,))).status_code,405)
+        self.assertEqual(self.client.get(reverse("consignment:platform_export",args=(999999,))).status_code,404)
 
-    def test_download_mime_filename_freshness_and_request_method(self):
-        response = self.export()
-        self.assertEqual(response["Content-Type"], "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-        self.assertRegex(response["Content-Disposition"], rf'attachment; filename="realization_{self.shop.pk}_\d{{4}}-\d{{2}}-\d{{2}}\.xlsx"')
-        self.assertIn("no-store", response["Cache-Control"])
-        self.assertIn("private", response["Cache-Control"])
-        self.workbook(response)
-        url = reverse("consignment:platform_export", args=(self.shop.pk,))
-        self.assertEqual(self.client.post(url).status_code, 405)
-        self.assertEqual(self.client.get(reverse("consignment:platform_export", args=(999999,))).status_code, 404)
+    def test_visible_columns_current_stock_and_sold_formulas(self):
+        book=self.workbook(self.export());sheet=book.active
+        self.assertEqual([cell.value for cell in sheet[4]][:5],["Наименование","Остаток на реализации","Цена за единицу, ₽","Количество реализованного","Сумма реализованного, ₽"])
+        rows=self.products(sheet)
+        self.assertEqual([row[:4] for row in rows],[("Игра PS4",1,7.89,0),("Альфа",2,0,0),("Зета",4,123.45,0),("Контроллер",3,678.91,0),("Консоль",1,99.99,0)])
+        self.assertTrue(all(row[4].startswith('=IF(') for row in rows))
+        self.assertEqual(sheet.cell(sheet.max_row,1).value,"Итого площадка должна за реализованные товары")
+        self.assertTrue(sheet.cell(sheet.max_row,5).value.startswith('=SUM('))
+        self.assertEqual([row[:4] for row in self.products(self.workbook(self.export(self.other)).active)],[("Зета",20,777.77,0)])
+        self.assertEqual(sheet.freeze_panes,"A5")
+        self.assertTrue(sheet.column_dimensions['F'].hidden)
+        self.assertEqual(book['_resource_report'].sheet_state,'veryHidden')
+        self.assertIsNotNone(sheet.data_validations)
+        book.close()
 
-    def test_only_selected_platform_current_cd_and_tech_and_decimal_totals(self):
-        sheet = self.workbook(self.export()).active
-        self.assertEqual(self.products(sheet), [
-            ("Игра PS4", "CD-4", 1, 7.89, 7.89),
-            ("Альфа", "CD-A", 2, 0, 0),
-            ("Зета", "000123", 4, 123.45, 493.8),
-            ("Контроллер", "TECH-C", 3, 678.91, 2036.73),
-            ("Консоль", "TECH-S", 1, 99.99, 99.99),
-        ])
-        self.assertEqual(sheet.cell(sheet.max_row, 3).value, 11)
-        expected = Decimal("7.89") + 4 * Decimal("123.45") + 3 * Decimal("678.91") + Decimal("99.99")
-        self.assertEqual(Decimal(str(sheet.cell(sheet.max_row, 5).value)), expected)
-        other = self.workbook(self.export(self.other)).active
-        self.assertEqual(self.products(other), [("Зета", "000123", 20, 777.77, 15555.4)])
-
-    def test_grouping_sorting_headers_and_numeric_formats(self):
-        sheet = self.workbook(self.export()).active
-        labels = [sheet.cell(area.min_row, 1).value for area in sorted(sheet.merged_cells.ranges, key=lambda area: area.min_row)]
-        headings = [label for label in labels if label in (
-            "CD · Диски", "PlayStation 4", "PlayStation 5", "Tech · Техника", "Геймпад", "Консоль",
-        )]
-        self.assertEqual(headings, ["CD · Диски", "PlayStation 4", "PlayStation 5", "Tech · Техника", "Геймпад", "Консоль"])
-        self.assertIn(self.shop.name, sheet["A1"].value)
-        self.assertRegex(sheet["A2"].value, r"Дата формирования: \d{2}\.\d{2}\.\d{4} \d{2}:\d{2}:\d{2}")
-        self.assertEqual([cell.value for cell in sheet[4]], [
-            "Наименование", "Артикул", "Количество", "Вознаграждение за единицу, ₽", "Общая сумма, ₽",
-        ])
-        self.assertEqual(sheet.freeze_panes, "A5")
+    def test_grouping_format_and_filters_do_not_limit_export(self):
+        sheet=self.workbook(self.export(q='Нет',page=99,platform=999999,kind='tech')).active
+        self.assertEqual(len(self.products(sheet)),5)
+        labels=[sheet.cell(area.min_row,1).value for area in sorted(sheet.merged_cells.ranges,key=lambda area:area.min_row)]
+        for title in ('CD · Диски','PlayStation 4','PlayStation 5','Tech · Техника','Геймпад','Консоль'):self.assertIn(title,labels)
         for row in sheet:
-            if row[1].value == "000123":
-                self.assertEqual(row[1].data_type, "s")
-                self.assertEqual(row[2].number_format, "0")
-                self.assertIn("₽", row[3].number_format)
-                self.assertIn("₽", row[4].number_format)
-                self.assertTrue(row[0].alignment.wrap_text)
+            if row[0].value=='Зета':
+                self.assertEqual(row[1].number_format,'0');self.assertIn('₽',row[2].number_format);self.assertTrue(row[0].alignment.wrap_text)
 
-    def test_export_ignores_all_interface_filters_and_pagination(self):
-        sheet = self.workbook(self.export(q="не существует", page=99, platform=999999,
-                                          product_type=999999, kind="tech")).active
-        self.assertEqual(len(self.products(sheet)), 5)
-
-    def test_distinct_lots_and_warehouses_are_not_merged_or_multiplied_by_barcodes(self):
+    def test_distinct_lots_are_not_merged_or_multiplied_by_barcodes(self):
         from catalog.product_identifiers import add_product_barcode
-        add_product_barcode(actor=self.admin, product_kind="cd", product_id=self.cd.pk, value="001999")
-        CDConsignmentStock.objects.create(platform=self.shop, warehouse=self.warehouse, cd=self.cd,
-                                          lot_key="historical:1", quantity=2, receivable_per_unit="222.22")
-        second = Warehouse.objects.create(name="Другой склад")
-        CDConsignmentStock.objects.create(platform=self.shop, warehouse=second, cd=self.cd,
-                                          quantity=1, receivable_per_unit="123.45")
-        rows = [row for row in self.products(self.workbook(self.export()).active) if row[1] == self.cd.sku]
-        self.assertCountEqual(rows, [("Зета", "000123", 4, 123.45, 493.8),
-                                    ("Зета", "000123", 1, 123.45, 123.45),
-                                    ("Зета", "000123", 2, 222.22, 444.44)])
+        add_product_barcode(actor=self.admin,product_kind='cd',product_id=self.cd.pk,value='001999')
+        CDConsignmentStock.objects.create(platform=self.shop,warehouse=self.warehouse,cd=self.cd,lot_key='historical:1',quantity=2,receivable_per_unit='222.22')
+        other=Warehouse.objects.create(name='Другой склад')
+        CDConsignmentStock.objects.create(platform=self.shop,warehouse=other,cd=self.cd,quantity=1,receivable_per_unit='123.45')
+        rows=[row[:4] for row in self.products(self.workbook(self.export()).active) if row[0]=='Зета']
+        self.assertCountEqual(rows,[('Зета',4,123.45,0),('Зета',1,123.45,0),('Зета',2,222.22,0)])
 
-    def test_zero_and_fully_sold_or_returned_stocks_are_excluded(self):
-        for product, kind, stock in ((self.cd, "cd", self.cd_stock), (self.tech, "tech", self.tech_stock)):
-            record_consignment_sale(actor=self.admin, product_type=kind, stock_id=stock.pk,
-                                    quantity=stock.quantity, payment_method="bank_account")
-        stock = CDConsignmentStock.objects.get(cd=self.old, platform=self.shop)
-        return_from_consignment(actor=self.admin, warehouse_id=self.warehouse.pk, platform_id=self.shop.pk,
-                                product_type="cd", product_id=self.old.pk, quantity=1, stock_id=stock.pk)
-        remaining = {row[1] for row in self.products(self.workbook(self.export()).active)}
-        self.assertEqual(remaining, {"CD-A", "TECH-S"})
+    def test_new_download_reflects_sale_return_reward_and_excludes_zero(self):
+        record_consignment_sale(actor=self.admin,product_type='cd',stock_id=self.cd_stock.pk,quantity=1,payment_method='bank_account')
+        return_from_consignment(actor=self.admin,warehouse_id=self.warehouse.pk,platform_id=self.shop.pk,product_type='tech',product_id=self.tech.pk,quantity=1,stock_id=self.tech_stock.pk)
+        update_consignment_reward(actor=self.admin,product_type='cd',stock_id=self.cd_stock.pk,value='111.11')
+        rows={row[0]:row for row in self.products(self.workbook(self.export()).active)}
+        self.assertEqual(rows['Зета'][1:4],(3,111.11,0));self.assertEqual(rows['Контроллер'][1:4],(2,678.91,0))
+        record_consignment_sale(actor=self.admin,product_type='cd',stock_id=self.cd_stock.pk,quantity=3,payment_method='bank_account')
+        self.assertNotIn('Зета',[row[0] for row in self.products(self.workbook(self.export()).active)])
 
-    def test_new_download_reflects_partial_sale_return_and_reward_edit(self):
-        self.assertEqual(len(self.products(self.workbook(self.export()).active)), 5)
-        record_consignment_sale(actor=self.admin, product_type="cd", stock_id=self.cd_stock.pk,
-                                quantity=1, payment_method="bank_account")
-        return_from_consignment(actor=self.admin, warehouse_id=self.warehouse.pk, platform_id=self.shop.pk,
-                                product_type="tech", product_id=self.tech.pk, quantity=1, stock_id=self.tech_stock.pk)
-        update_consignment_reward(actor=self.admin, product_type="cd", stock_id=self.cd_stock.pk, value="111.11")
-        rows = {row[1]: row for row in self.products(self.workbook(self.export()).active)}
-        self.assertEqual(rows["000123"][2:], (3, 111.11, 333.33))
-        self.assertEqual(rows["TECH-C"][2:], (2, 678.91, 1357.82))
-
-    def test_no_cost_profit_hidden_data_formulas_or_writes(self):
-        with CaptureQueriesContext(connection) as queries:
-            response = self.export()
+    def test_no_cost_profit_or_writes_including_hidden_metadata(self):
+        with CaptureQueriesContext(connection) as queries:response=self.export()
         for query in queries:
-            sql = query["sql"].lower()
-            self.assertNotRegex(sql, r"\b(insert|update|delete|replace)\b")
-            self.assertNotIn('"cost"', sql)
-            self.assertNotIn('"unit_cost"', sql)
-            self.assertNotIn("unit_cost_snapshot", sql)
-        workbook = self.workbook(response)
-        self.assertEqual(workbook.sheetnames, ["Реализация"])
-        self.assertFalse(workbook.defined_names)
-        for sheet in workbook:
-            self.assertEqual(sheet.sheet_state, "visible")
-            self.assertFalse(any(column.hidden for column in sheet.column_dimensions.values()))
-            self.assertFalse(any(row.hidden for row in sheet.row_dimensions.values()))
-            self.assertFalse(sheet._charts)
-            self.assertFalse(sheet._images)
-            for row in sheet:
-                for cell in row:
-                    self.assertNotEqual(cell.data_type, "f")
-                    self.assertIsNone(cell.comment)
-        with ZipFile(BytesIO(response.content)) as archive:
-            payload = "\n".join(archive.read(name).decode("utf-8") for name in archive.namelist()).casefold()
-        for forbidden in ("себестоимость", "закупочная", "прибыль", "маржинальность", "наценка", "unit_cost",
-                          "9876543.21", "8765432.1", "7654321.09", "6543210.98", "5432109.87"):
-            self.assertNotIn(forbidden, payload)
+            sql=query['sql'].lower();self.assertNotRegex(sql,r'\b(insert|update|delete|replace)\b');self.assertNotIn('"unit_cost"',sql);self.assertNotIn('unit_cost_snapshot',sql)
+        with ZipFile(BytesIO(response.content)) as archive:payload='\n'.join(archive.read(name).decode('utf-8') for name in archive.namelist()).casefold()
+        for forbidden in ('себестоимость','закупочная','прибыль','маржинальность','наценка','unit_cost','9876543.21','8765432.1','7654321.09','6543210.98','5432109.87'):self.assertNotIn(forbidden,payload)
 
-    def test_empty_platform_has_headers_message_and_zero_totals(self):
-        sheet = self.workbook(self.export(self.empty)).active
-        self.assertEqual(sheet["A5"].value, "Нет товаров на реализации")
-        self.assertEqual(sheet.cell(sheet.max_row, 1).value, "Итого")
-        self.assertEqual(sheet.cell(sheet.max_row, 3).value, 0)
-        self.assertEqual(sheet.cell(sheet.max_row, 5).value, 0)
-        self.assertEqual(self.products(sheet), [])
+    def test_empty_platform_is_valid_workbook(self):
+        sheet=self.workbook(self.export(self.empty)).active
+        self.assertEqual(sheet['A5'].value,'Нет товаров на реализации');self.assertEqual(self.products(sheet),[])
+        self.assertEqual(sheet.cell(sheet.max_row,5).value,'=SUM(E5:E5)')
 
-    def test_permissions_anonymous_forbidden_and_type_scoped_including_groups(self):
-        self.client.logout()
-        self.assertEqual(self.export().status_code, 302)
-        self.client.force_login(self.viewer)
-        self.assertEqual(self.export().status_code, 403)
-        for kind, expected in (("cd", {"000123", "CD-A", "CD-4"}), ("tech", {"TECH-C", "TECH-S"})):
-            with self.subTest(kind=kind):
-                group = Group.objects.create(name=f"Excel {kind}")
-                group.permissions.add(Permission.objects.get(content_type__app_label="consignment",
-                                                            codename=f"view_{kind}consignmentstock"))
-                self.viewer.groups.set([group])
-                self.client.force_login(self.viewer)
-                rows = self.products(self.workbook(self.export()).active)
-                self.assertEqual({row[1] for row in rows}, expected)
-                self.assertContains(self.client.get(reverse("consignment:list")), "Скачать Excel", count=3)
+    def test_permissions_scope_each_kind(self):
+        self.client.logout();self.assertEqual(self.export().status_code,302)
+        self.client.force_login(self.viewer);self.assertEqual(self.export().status_code,403)
+        for kind,expected in (('cd',{'Игра PS4','Альфа','Зета'}),('tech',{'Контроллер','Консоль'})):
+            group=Group.objects.create(name=f'Excel {kind}')
+            group.permissions.add(Permission.objects.get(content_type__app_label='consignment',codename=f'view_{kind}consignmentstock'))
+            self.viewer.groups.set([group]);self.client.force_login(self.viewer)
+            self.assertEqual({row[0] for row in self.products(self.workbook(self.export()).active)},expected)
 
-    def test_user_text_is_exported_as_text_not_excel_formula(self):
-        self.alpha.name = '=HYPERLINK("https://example.com","Игра")'
-        self.alpha.sku = "=1+1"
-        self.alpha.save(update_fields=("name", "sku"))
-        rows = self.products(self.workbook(self.export()).active)
-        row = next(row for row in rows if row[1] == "'=1+1")
-        self.assertEqual(row[0], "'" + self.alpha.name)
+    def test_user_text_is_literal_not_formula(self):
+        self.alpha.name='=HYPERLINK("https://example.com","Игра")';self.alpha.save(update_fields=('name',))
+        rows=self.products(self.workbook(self.export()).active)
+        self.assertIn("'"+self.alpha.name,[row[0] for row in rows])

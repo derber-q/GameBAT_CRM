@@ -1,0 +1,26 @@
+.market-alert-counter { position: relative; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; box-sizing: border-box; width: 40px; height: 40px; margin-right: 6px; padding: 6px; border-radius: 8px; background: rgba(255, 255, 255, .08); color: #fff; text-decoration: none; vertical-align: middle; }
+.market-alert-counter:hover, #header .market-alert-counter:hover { background: rgba(255, 255, 255, .16); text-decoration: none; }
+.market-alert-counters { display: inline-flex; align-items: center; flex: 0 0 auto; gap: 12px; vertical-align: middle; }
+.market-alert-counter:focus-visible { outline: 2px solid #37a7ba; outline-offset: 3px; }
+.market-alert-logo { display: block; width: 28px; height: 28px; object-fit: contain; }
+.market-alert-badge { position: absolute; top: -4px; right: -5px; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; min-width: 20px; height: 20px; padding: 0 4px; border: 2px solid #3c4e66; border-radius: 999px; background: #64748b; color: #fff; font-size: 11px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.market-alert-counter.has-pending, #header .market-alert-counter.has-pending { background: #fff1c9; color: #674b00; }
+.market-alert-counter.has-pending:hover, #header .market-alert-counter.has-pending:hover { background: #ffe7a6; }
+.market-alert-counter.has-pending .market-alert-badge { background: #ac243f; border-color: #fff1c9; }
+.market-alert-panel { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 0 16px; font-size: 12px; }
+.market-alert-panel .error-text { font-weight: 650; color: #ac243f; }
+.market-alert-panel [hidden] { display: none; }
+.market-order-unacknowledged { background: #fff9e8; box-shadow: inset 4px 0 #bc8e23; }
+.market-new-order { background: #fff1c9; color: #674b00; }
+.market-attention-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.market-attention-actions form, .market-attention-card form { margin: 0; }
+.market-attention-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.market-attention-card { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 16px; }
+.market-attention-card strong { flex: 1 1 220px; }
+.sales-channel-switch { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.sales-channel-switch [aria-pressed="true"] { background: var(--gb-primary); color: var(--gb-surface); border-color: var(--gb-primary); }
+.sales-type-group[hidden] { display: none; }
+@media (max-width: 600px) {
+  .market-attention-card form { flex-basis: 100%; }
+  .market-attention-card form .button { width: 100%; }
+}

@@ -28,6 +28,7 @@ from .services import (advance_order_status, create_customer_procurement_order, 
                        receive_stock_order, reduce_receiving_order)
 from .trips import create_trip, change_trip_line, assign_order_to_trip
 from .tests import order_product_rows
+from .fulfillment_test_helpers import receive_with_test_rates as receive_stock_order
 
 
 class StockOrderTests(TestCase):
@@ -38,7 +39,7 @@ class StockOrderTests(TestCase):
         cls.other_warehouse = Warehouse.objects.create(name="Другой склад")
         cls.m, cls.f = [Supplier.objects.create(name=letter, letter=letter, priority=priority,
             highlight_color="#37A7BA", legal_entity=letter, phone_1="1") for letter, priority in (("M", 3), ("F", 2))]
-        cls.cd = CD.objects.create(name="Игра на склад", platform=Platform.objects.create(name="PS5"),
+        cls.cd = CD.objects.create(cusa_ppsa_code="PPSA-00001", name="Игра на склад", platform=Platform.objects.create(name="PS5"),
                                    sku="000123", weight_grams=100)
         cls.tech = Tech.objects.create(name="Консоль на склад", brand=Brand.objects.create(name="Sony"),
             product_type=ProductType.objects.create(name="Консоли"), sku="000456", weight_grams=1000)
@@ -288,7 +289,7 @@ class StockOrderTests(TestCase):
         item = stock.supply.cd_items.get()
         self.assertEqual(item.quantity, 3)
         self.assertEqual(item.supplier_id, self.m.pk)
-        self.assertEqual(item.purchase_unit_cost, Decimal("2050"))
+        self.assertEqual(item.purchase_unit_cost, Decimal("2450"))
         self.assertIsNone(CustomerProcurementOrder.objects.get(pk=customer.pk).supply_id)
         self.assertFalse(CashTransaction.objects.exists())
 

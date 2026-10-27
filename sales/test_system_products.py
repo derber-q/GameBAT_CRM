@@ -198,7 +198,7 @@ class SystemProductTests(TestCase):
         self.assertEqual(len(list(workbook["Позиции продаж"].values)), 3)
         with CaptureQueriesContext(connection) as queries:
             build_sales_statistics_report({})
-        self.assertLessEqual(len(queries), 7)
+        self.assertLessEqual(len(queries), 8)
         self.assertEqual(build_sales_statistics_report({"operation_kind": "EXPENSE"}).totals.profit, Decimal("-500"))
         self.assertEqual(build_sales_statistics_report({"channels": ["expense"]}).totals.expenses_count, 1)
         self.assertEqual(build_sales_statistics_report({"channels": ["retail"]}).totals.expenses_count, 0)

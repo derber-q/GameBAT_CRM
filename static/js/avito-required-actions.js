@@ -1,4 +1,24 @@
 (() => {
+  const section = document.querySelector('#required-actions');
+  let previousKeys;
+  if (section) {
+    window.GameBAT = {...window.GameBAT, avitoRequiredActions: {observe: async snapshot => {
+      if (!Array.isArray(snapshot.action_keys)) return;
+      const keys = JSON.stringify([...snapshot.action_keys].sort());
+      if (keys === previousKeys) return;
+      try {
+        const response = await fetch(window.location.href, {credentials: 'same-origin', cache: 'no-store'});
+        if (!response.ok) return;
+        const fresh = new DOMParser().parseFromString(await response.text(), 'text/html');
+        const list = fresh.querySelector('[data-required-actions-list]');
+        const heading = fresh.querySelector('#required-actions h2');
+        if (!list || !heading) return;
+        section.querySelector('[data-required-actions-list]').replaceChildren(...list.childNodes);
+        section.querySelector('h2').textContent = heading.textContent;
+        previousKeys = keys;
+      } catch (_) { /* При недоступности остаётся последний полученный список. */ }
+    }}};
+  }
   const panel = document.querySelector('[data-actions-status-url]');
   if (!panel) return;
   const phase = panel.querySelector('[data-actions-phase]');

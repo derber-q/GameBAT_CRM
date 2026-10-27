@@ -10,6 +10,7 @@ from warehouse.models import Warehouse
 class Supply(models.Model):
     class Status(models.TextChoices):
         PRICE_REVIEW_REQUIRED = "price_review", "Требуется проверка цен"
+        WAITING_TRIP_FINALIZATION = "trip_finalization", "Ждёт финализации рейса"
         ACCEPTED = "accepted", "Принята"
         CANCELLED = "cancelled", "Отменена"
 
@@ -80,7 +81,7 @@ class Supply(models.Model):
                         cancelled_by__isnull=True, cancellation_comment="",
                     )
                     | models.Q(
-                        status="price_review", cancelled_at__isnull=True,
+                        status__in=("price_review", "trip_finalization"), cancelled_at__isnull=True,
                         cancelled_by__isnull=True, cancellation_comment="",
                     )
                     | (
@@ -103,8 +104,16 @@ class Supply(models.Model):
     def __str__(self):
         return f"Поставка №{self.pk}"
 
+    def save(self, *args, **kwargs):
+        if self.pk and self.status == self.Status.ACCEPTED:
+            from orders.arrival import assert_document_finalized
+            assert_document_finalized(self)
+        return super().save(*args, **kwargs)
+
 
 class SupplyItemBase(models.Model):
+    trip_cost_row = models.ForeignKey('orders.TripCostRow', on_delete=models.PROTECT, null=True, blank=True, related_name='+', editable=False)
+    trip_cost_slot = models.PositiveSmallIntegerField(default=0, db_default=0, editable=False)
     supplier = models.ForeignKey(Supplier, on_delete=models.PROTECT, verbose_name="Поставщик")
     quantity = models.PositiveIntegerField("Количество")
     purchase_unit_cost = models.DecimalField("Закупочная цена единицы", max_digits=20, decimal_places=6)

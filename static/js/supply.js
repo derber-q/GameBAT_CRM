@@ -2,6 +2,8 @@
   "use strict";
   const form = document.getElementById("supply-form");
   if (!form) return;
+  const fixedComposition = form.dataset.fixedComposition === 'true';
+  const tripEditable = form.dataset.tripEditable === 'true';
   const suppliers = JSON.parse(document.getElementById("supplier-data").textContent);
   const initialLines = JSON.parse(document.getElementById("initial-supply-lines").textContent);
   const initialExpenses = JSON.parse(document.getElementById("initial-expense-lines").textContent);
@@ -74,6 +76,9 @@
   function addProductLine(value = {}) {
     const row = document.createElement("tr");
     const productCell = document.createElement("td");
+    const tripRow = document.createElement('input');
+    tripRow.type = 'hidden'; tripRow.name = 'trip_row'; tripRow.value = value.trip_row || '';
+    if (tripEditable) productCell.append(tripRow);
     const wrap = document.createElement("div");
     wrap.className = "autocomplete-wrap";
     const search = document.createElement("input");
@@ -283,6 +288,58 @@
       input.focus();
     }
 
+    function requestProductCodes(result, afterSave) {
+      hideWeightPrompt();
+      if (!result || form.dataset.editing === "true" || !result.requires_game_codes || result.cusa_ppsa_code) {
+        if (afterSave) afterSave();
+        return;
+      }
+      id.value = "";
+      weightPrompt.hidden = false;
+      row.classList.add("supply-line-needs-weight");
+      const label = document.createElement("label");
+      label.textContent = "Введите CUSA / PPSA диска (несколько — через запятую)";
+      const input = document.createElement("input");
+      input.type = "text";
+      input.placeholder = "Любой формат: 036923, PPSA-01234";
+      const save = document.createElement("button");
+      save.type = "button";
+      save.className = "button button-small";
+      save.textContent = "Сохранить и добавить";
+      const feedback = document.createElement("span");
+      feedback.className = "error-text";
+      if (result.can_set_game_codes === false) {
+        input.disabled = save.disabled = true;
+        feedback.textContent = "Нет права изменять CUSA / PPSA. Обратитесь к администратору.";
+      }
+      save.addEventListener("click", async () => {
+        save.disabled = true;
+        feedback.textContent = "";
+        try {
+          const response = await fetch(form.dataset.codesUrl, {
+            method: "POST",
+            body: new URLSearchParams({product_id: result.id, cusa_ppsa_code: input.value, csrfmiddlewaretoken: csrfToken}),
+            headers: {"Accept": "application/json", "X-Requested-With": "XMLHttpRequest"},
+          });
+          const data = await response.json().catch(() => ({}));
+          if (!response.ok || !data.ok) throw new Error(data.error || "Не удалось сохранить CUSA / PPSA.");
+          result.cusa_ppsa_code = data.cusa_ppsa_code;
+          type.value = result.type;
+          id.value = result.id;
+          hideWeightPrompt();
+          if (afterSave) afterSave();
+        } catch (error) {
+          feedback.textContent = error.message;
+          save.disabled = false;
+        }
+      });
+      input.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") { event.preventDefault(); save.click(); }
+      });
+      weightPrompt.append(label, input, save, feedback);
+      input.focus();
+    }
+
     const supplierCell = document.createElement("td");
     const supplierSelect = document.createElement("select");
     supplierSelect.name = "supplier_id";
@@ -299,15 +356,22 @@
     });
     supplierSelect.value = value.supplier_id || "";
     supplierCell.append(supplierSelect);
+    if (form.dataset.tripArrival === 'true') {
+      const supplierValue = document.createElement('input');
+      supplierValue.type = 'hidden'; supplierValue.name = 'supplier_id'; supplierValue.value = supplierSelect.value;
+      supplierSelect.disabled = true;
+      supplierCell.append(supplierValue);
+      search.readOnly = true;
+    }
 
     const quantityCell = document.createElement("td");
     const quantity = document.createElement("input");
     quantity.type = "number";
     quantity.name = "quantity";
-    quantity.min = "1";
+    quantity.min = form.dataset.tripArrival === 'true' ? '0' : '1';
     quantity.step = "1";
     quantity.required = true;
-    quantity.value = value.quantity || "";
+    quantity.value = value.quantity ?? "";
     quantityCell.append(quantity);
 
     const costCell = document.createElement("td");
@@ -318,11 +382,13 @@
     cost.step = "0.000001";
     cost.required = true;
     cost.value = value.purchase_unit_cost || "";
+    if (form.dataset.tripArrival === 'true') cost.readOnly = true;
     costCell.append(cost);
 
     row.append(productCell, supplierCell, quantityCell, costCell, removeButton(row));
     lines.append(row);
     const selectProduct = (result, metadata = {}) => {
+      if (tripEditable) tripRow.value = '';
       if (result) {
         row.dataset.supplyProductType = result.type;
         row.dataset.supplyProductId = String(result.id);
@@ -335,8 +401,9 @@
       row.selectBarcodeProduct?.(result);
       const focusQuantity = metadata.exactBarcode ? () => focusBarcodeQuantity(quantity) : null;
       if (result && metadata.exactBarcode && !quantity.value) quantity.value = "1";
-      requestProductWeight(result, focusQuantity);
-      if (result && Number(result.weight_grams) > 0 && focusQuantity) focusQuantity();
+      const requestCodes = () => requestProductCodes(result, focusQuantity);
+      requestProductWeight(result, requestCodes);
+      if (result && Number(result.weight_grams) > 0) requestCodes();
     };
     row.selectSupplyProduct = (result) => {
       search.value = result.label;
@@ -345,7 +412,7 @@
       if (!quantity.value) quantity.value = "1";
       selectProduct(result, { exactBarcode: true });
     };
-    window.GameBAT.attachAutocomplete({
+    if (!fixedComposition) window.GameBAT.attachAutocomplete({
       input: search,
       typeInput: type,
       idInput: id,
@@ -355,13 +422,17 @@
       searchContext: form.dataset.searchContext,
       onSelect: selectProduct,
     });
-    if (value.product_id && !value.weight_grams) {
-      requestProductWeight({
+    if (value.product_id && !fixedComposition) {
+      const initialProduct = {
+        ...value,
         id: value.product_id,
         type: value.product_type,
         weight_grams: value.weight_grams,
         can_set_weight: value.can_set_weight !== false,
-      });
+      };
+      const requestCodes = () => requestProductCodes(initialProduct);
+      requestProductWeight(initialProduct, requestCodes);
+      if (Number(initialProduct.weight_grams) > 0) requestCodes();
     }
     if (!value.label) search.focus();
     return row;
@@ -397,7 +468,7 @@
     }
   }
 
-  if (window.GameBAT.registerGlobalBarcodeHandler) {
+  if (!fixedComposition && window.GameBAT.registerGlobalBarcodeHandler) {
     window.GameBAT.registerGlobalBarcodeHandler(addByBarcode);
   }
 
@@ -452,7 +523,17 @@
     });
   }
   (initialLines.length ? initialLines : [{}]).forEach(addProductLine);
-  (initialExpenses.length ? initialExpenses : [{}]).forEach(addExpenseLine);
+  if (form.dataset.tripArrival === 'true') {
+    form.querySelectorAll('.add-supply-line, #add-expense').forEach(node => { node.hidden = true; });
+  }
+  (initialExpenses.length ? initialExpenses : fixedComposition ? [] : [{}]).forEach(addExpenseLine);
+  if (fixedComposition) {
+    form.querySelectorAll('.add-supply-line, #add-expense, .remove-row').forEach(node => { node.hidden = true; });
+    lines.querySelectorAll('input:not([type="hidden"])').forEach(node => { node.readOnly = true; });
+    lines.querySelectorAll('select').forEach(node => { node.disabled = true; });
+    const transport = document.getElementById('id_weight_transport_cost');
+    if (transport) transport.readOnly = true;
+  }
   if (warehouse) warehouse.addEventListener("change", refreshSupplyInventory);
   refreshSupplyInventory();
 })();

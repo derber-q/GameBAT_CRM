@@ -33,11 +33,11 @@ class SupplyRevisionServiceTests(TestCase):
             name="Поставщик B", letter="B", highlight_color="#AA7733",
             legal_entity="ООО B", phone_1="2",
         )
-        self.cd = CD.objects.create(
+        self.cd = CD.objects.create(cusa_ppsa_code="PPSA-00001",
             platform=self.platform, name="Игра A", sku="CD-A", barcode="101", cost=100,
             avito_price=1000,
         )
-        self.other_cd = CD.objects.create(
+        self.other_cd = CD.objects.create(cusa_ppsa_code="PPSA-00001",
             platform=self.platform, name="Игра B", sku="CD-B", barcode="102", cost=50,
         )
         CDWarehouseStock.objects.create(warehouse=self.warehouse, cd=self.cd, quantity=10)
@@ -211,7 +211,7 @@ class SupplyRevisionServiceTests(TestCase):
         )
 
     def test_warehouse_switch_moves_full_current_effect_and_clears_location(self):
-        fresh_cd = CD.objects.create(
+        fresh_cd = CD.objects.create(cusa_ppsa_code="PPSA-00001",
             platform=self.platform, name="Игра C", sku="CD-C", barcode="103", cost=0,
         )
         supply = self.accept(lines=[self.line(product=fresh_cd, quantity=2)])
@@ -273,7 +273,7 @@ class SupplyRevisionPermissionTests(TestCase):
         self.admin = User.objects.create_superuser("admin", password="StrongAdmin!123")
         self.worker = User.objects.create_user("worker", password="StrongWorker!123")
         platform = Platform.objects.create(name="PS5")
-        self.cd = CD.objects.create(platform=platform, name="Игра", sku="CD-1", cost=100)
+        self.cd = CD.objects.create(cusa_ppsa_code="PPSA-00001", platform=platform, name="Игра", sku="CD-1", cost=100)
         self.warehouse = Warehouse.objects.create(name="Склад")
         self.supplier = Supplier.objects.create(
             name="Поставщик", letter="A", highlight_color="#37A7BA",

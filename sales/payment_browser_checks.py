@@ -47,8 +47,9 @@ class PaymentBrowserChecks(StaticLiveServerTestCase):
                 page.on("pageerror", lambda error: errors.append(str(error)))
                 page.goto(self.live_server_url + reverse("sales:create"))
                 page.locator("#id_warehouse").select_option(str(warehouse.pk))
-                expect(page.locator("#id_payment_method option")).to_have_count(4)
-                for channel in ("avito", "yandex_market"):
+                expect(page.locator("#id_payment_method option")).to_have_count(5)
+                expect(page.locator('#id_payment_method option[value="partner_debt"]')).to_be_disabled()
+                for channel in ("avito",):
                     page.locator("#id_sale_type").select_option(channel)
                     expect(page.locator("#id_payment_method")).to_have_value("bank_transfer_postpay")
                     expect(page.locator("#id_cash_received_amount")).to_be_hidden()

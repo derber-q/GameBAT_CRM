@@ -2,6 +2,7 @@ from unittest.mock import Mock, patch
 
 from django.contrib.auth.models import Permission
 from django.test import TestCase
+from django.db import OperationalError
 from django.urls import reverse
 from django.utils import timezone
 
@@ -10,7 +11,7 @@ from catalog.models import CD, Tech, Platform, Brand, ProductType
 from warehouse.models import Warehouse, CDWarehouseStock, TechWarehouseStock
 from .client import AvitoAPIError
 from .models import AvitoListingConnection, AvitoProductProfile, AvitoRemoteListing, AvitoSyncJob
-from .required_actions import RequiredAction, get_avito_required_actions, safe_listing_url
+from .required_actions import RequiredAction, get_avito_required_actions, get_avito_required_action_counts, safe_listing_url
 from .services import refresh_remote_listings
 from .tasks import process_one_job
 
@@ -71,6 +72,7 @@ class RequiredActionsTests(TestCase):
                 self.stock(quantity)
                 self.status(status)
                 self.assertEqual(get_avito_required_actions(), [])
+                self.assertEqual(get_avito_required_action_counts(), {'count': 0, 'publish': 0, 'unpublish': 0})
 
     def test_sell_flag_preserves_existing_intent(self):
         self.stock(5)
@@ -83,12 +85,15 @@ class RequiredActionsTests(TestCase):
     def test_unlinked_missing_and_archived_product_are_excluded(self):
         self.connection.delete()
         self.assertEqual(get_avito_required_actions(), [])
+        self.assertEqual(get_avito_required_action_counts()['count'], 0)
         AvitoListingConnection.objects.create(profile=self.profile, remote_listing=self.listing)
         AvitoRemoteListing.objects.filter(pk=self.listing.pk).update(missing_since=timezone.now())
         self.assertEqual(get_avito_required_actions(), [])
+        self.assertEqual(get_avito_required_action_counts()['count'], 0)
         AvitoRemoteListing.objects.filter(pk=self.listing.pk).update(missing_since=None)
         CD.objects.filter(pk=self.cd.pk).update(is_archived=True)
         self.assertEqual(get_avito_required_actions(), [])
+        self.assertEqual(get_avito_required_action_counts()['count'], 0)
 
     def test_global_stock_uses_all_warehouses_not_consignment(self):
         CD.objects.filter(pk=self.cd.pk).update(quantity_on_consignment=9)
@@ -113,6 +118,55 @@ class RequiredActionsTests(TestCase):
         self.assertEqual(len(rows), 21)
         self.assertEqual(rows[0].action, RequiredAction.UNPUBLISH_MANUALLY)
         self.assertEqual(sum(row.action == RequiredAction.PUBLISH_MANUALLY for row in rows), 20)
+        with self.assertNumQueries(3):
+            counts = get_avito_required_action_counts()
+        self.assertEqual(counts, {'count': 21, 'publish': 20, 'unpublish': 1})
+        with self.assertNumQueries(0):
+            self.assertEqual(get_avito_required_action_counts(actions=rows), counts)
+
+    def test_counter_is_read_only_and_matches_actions_after_local_changes(self):
+        self.client.force_login(self.admin)
+        url = reverse('integrations:required_actions_count')
+        before = list(AvitoSyncJob.objects.values())
+        with patch('requests.sessions.Session.request', side_effect=AssertionError('Сеть запрещена')):
+            response = self.client.get(url)
+            self.assertEqual(response.json(), {'count': 1, 'publish': 0, 'unpublish': 1})
+            events = self.client.get(url, {'events': '1'}).json()
+            self.assertEqual(events['action_keys'], [f'{self.listing.pk}:unpublish'])
+            self.assertIn('observed_at', events)
+            self.assertIn('no-store', response['Cache-Control'])
+            page = self.client.get(reverse('integrations:avito'))
+            self.assertContains(page, 'data-avito-counter')
+            self.assertContains(page, reverse('integrations:avito') + '#required-actions')
+            self.assertContains(page, 'data-market-counter')
+            self.assertEqual(self.client.post(url).status_code, 405)
+            self.stock(3)
+            self.status(' OLD ')
+            self.assertEqual(self.client.get(url).json(), {'count': 1, 'publish': 1, 'unpublish': 0})
+            self.status('active')
+            self.assertEqual(self.client.get(url).json(), {'count': 0, 'publish': 0, 'unpublish': 0})
+        self.assertEqual(list(AvitoSyncJob.objects.values()), before)
+
+    def test_counter_requires_avito_permission_without_yandex_permission(self):
+        viewer = User.objects.create_user('avito-counter-viewer')
+        self.client.force_login(viewer)
+        url = reverse('integrations:required_actions_count')
+        self.assertEqual(self.client.get(url).status_code, 403)
+        self.assertNotContains(self.client.get(reverse('core:home')), 'data-avito-counter')
+        viewer.user_permissions.add(Permission.objects.get(codename='view_avito_integration'))
+        self.assertEqual(self.client.get(url).status_code, 200)
+        response = self.client.get(reverse('integrations:avito'))
+        self.assertContains(response, 'data-avito-counter')
+        self.assertContains(response, 'js/avito-notifications.js?v=3')
+        self.assertContains(response, 'css/market-notifications.css?v=4')
+        self.assertNotContains(response, 'data-market-counter')
+
+    def test_counter_database_error_does_not_report_false_zero(self):
+        self.client.force_login(self.admin)
+        with patch('integrations.views.get_avito_required_action_counts', side_effect=OperationalError('locked')):
+            response = self.client.get(reverse('integrations:required_actions_count'))
+        self.assertEqual(response.status_code, 503)
+        self.assertNotIn('count', response.json())
 
     def test_url_safety_and_snapshot_fallback(self):
         for url in ("javascript:alert(1)", "https://avito.ru.evil.test/x", "https://evil.test/x",

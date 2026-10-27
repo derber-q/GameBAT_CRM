@@ -14,20 +14,7 @@
 <form id="supply-finalization-form" method="post" data-auto-url="{% url 'supplies:finalization_auto' supply.pk %}">
   {% csrf_token %}
   <input type="hidden" name="revision_number" value="{{ supply.revision_number }}">
-  <section class="panel finalization-toolbar">
-    <div class="finalization-penalty finalization-penalty-success" data-finalization-penalty>
-      <span>Текущая неустойка</span><strong>{{ initial_penalty|floatformat:2 }} ₽</strong>
-    </div>
-    <div class="finalization-quick-actions">
-      <button class="button button-secondary" type="button" data-select-kind="cd">Выбрать все CD</button>
-      <button class="button button-secondary" type="button" data-select-kind="tech">Выбрать все Tech</button>
-      <button class="button button-secondary" type="button" data-select-kind="all">Выбрать все</button>
-      <button class="button button-secondary" type="button" data-select-kind="none">Снять выделение</button>
-      <button class="button" type="button" data-auto-distribute>Распределить текущую неустойку</button>
-    </div>
-    <p class="muted finalization-help">Ручное изменение фиксирует строку и исключает её из последующего автораспределения. Автораспределение делит сумму по количеству единиц на физических складах; реализация и товар в пути не участвуют.</p>
-    <p class="error-text finalization-error" data-finalization-error role="alert"></p>
-  </section>
+  {% include "supplies/_finalization_toolbar.html" %}
 
   <section class="panel inventory-section finalization-section">
     <div class="section-heading"><div><span class="category-tag">CD</span><h2>Диски</h2></div><span class="count">{{ cd_rows|length }} товаров</span></div>
@@ -44,5 +31,5 @@
     <button class="button" type="submit" data-apply-finalization disabled>Применить финализацию</button>
   </div>
 </form>
-<script src="{% static 'js/supply-finalization.js' %}?v=1"></script>
+<script src="{% static 'js/supply-finalization.js' %}?v=2"></script>
 {% endblock %}

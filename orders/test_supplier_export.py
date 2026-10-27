@@ -142,7 +142,9 @@ class OrderSupplierExportTests(TestCase):
         with CaptureQueriesContext(connection) as queries:
             response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
-        self.assertIn(f"zakaz_{self.first.pk}_suppliers.xlsx", response["Content-Disposition"])
+        from urllib.parse import quote
+        self.assertIn(f"zakaz_{self.first.pk}_", response['Content-Disposition'])
+        self.assertIn(quote(self.first.recipient) + '_suppliers.xlsx', response['Content-Disposition'])
         self.assertIn("no-store", response["Cache-Control"])
         self.assertLessEqual(len(queries), 8)
         self.assertFalse(any(q["sql"].lstrip().upper().startswith(("INSERT", "UPDATE", "DELETE")) for q in queries))

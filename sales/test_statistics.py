@@ -38,13 +38,15 @@ class SalesStatisticsTests(TestCase):
 
     def sale(self, *, sale_type=Sale.SaleType.AVITO, payment=Sale.PaymentMethod.CASH,
              quantity=1, warehouse=None, received=None, note=""):
-        return create_sale(
+        from .services import _create_sale
+        creator = _create_sale if sale_type == Sale.SaleType.YANDEX_MARKET else create_sale
+        return creator(
             actor=self.user, warehouse_id=(warehouse or self.warehouse).pk,
             price_type=Sale.PriceType.RETAIL, sale_type=sale_type, payment_method=payment,
             lines=[{"product_type": "cd", "product_id": self.product.pk, "quantity": quantity}],
             cash_received_amount=received,
             note=note,
-        )
+         partner_name='Тестовый заказчик' if sale_type == 'wholesale' else '')
 
     def report(self, **filters):
         return build_sales_statistics_report(filters)
@@ -152,7 +154,7 @@ class SalesStatisticsTests(TestCase):
         self.assertEqual(excel.status_code, 200)
         workbook = load_workbook(BytesIO(excel.content), read_only=True, data_only=True)
         self.assertEqual(workbook.sheetnames,
-                         ["Сводка", "Продажи", "Позиции продаж", "Товары", "Каналы", "Динамика"])
+                         ["Сводка", "Продажи", "Позиции продаж", "Товары", "Каналы", "Динамика", 'Все операции'])
         self.assertEqual(workbook["Продажи"].max_row, 2)
         self.assertEqual(workbook["Продажи"]["A2"].value, chosen.pk)
         viewer = User.objects.create_user("stats-viewer", password="TestPassword123!")
@@ -197,7 +199,7 @@ class SalesStatisticsTests(TestCase):
         with CaptureQueriesContext(connection) as captured:
             report = self.report()
         self.assertEqual(report.totals.sales_count, 10)
-        self.assertLessEqual(len(captured), 7)
+        self.assertLessEqual(len(captured), 8)
 
     def test_consignment_sale_captures_cost_when_recorded(self):
         platform = SalesPlatform.objects.create(

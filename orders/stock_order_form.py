@@ -6,11 +6,12 @@ from catalog.nomenclature_grouping import nomenclature_product_groups
 from catalog.supplier_exclusions import exclusion_keys
 from price.models import ProcurementPriceList
 from warehouse.models import CDWarehouseStock, TechWarehouseStock
+from .models import CustomerProcurementOrder, CustomerProcurementOrderItem, SupplierOrderBatch
 
 
 class StockOrderPriceListForm(forms.Form):
     price_list = forms.ModelChoiceField(
-        label="Версия импортного прайса", queryset=ProcurementPriceList.objects.all(),
+        label="Версия импортного прайса", queryset=ProcurementPriceList.objects.filter(is_trip_addition=False),
         empty_label=None,
     )
 
@@ -59,7 +60,20 @@ def stock_order_items(price_list):
     return allowed
 
 
-def stock_order_groups(items, form):
+def previous_trip_stock_quantities():
+    trip = SupplierOrderBatch.objects.filter(price_list__isnull=False).first()
+    if trip is None:
+        return None, {}
+    rows = CustomerProcurementOrderItem.objects.filter(
+        order__trip=trip, order__purpose=CustomerProcurementOrder.Purpose.STOCK,
+    ).values('product_kind', 'cd_id', 'tech_id').annotate(
+        total=Sum('prepayment_quantity') + Sum('postpayment_quantity'),
+    )
+    return trip, {(row['product_kind'], row[f"{row['product_kind']}_id"]): row['total'] for row in rows}
+
+
+def stock_order_groups(items, form, *, previous_trip_quantities=None):
+    previous_trip_quantities = previous_trip_quantities or {}
     totals = {}
     for kind, model in (("cd", CDWarehouseStock), ("tech", TechWarehouseStock)):
         ids = [item.product_id for item in items if item.product_kind == kind]
@@ -71,5 +85,6 @@ def stock_order_groups(items, form):
     )
     return [{"name": name, "rows": [{
         "item": item, "stock": totals.get((item.product_kind, item.product_id), 0),
+        "previous_trip_quantity": previous_trip_quantities.get((item.product_kind, item.product_id), 0),
         "current_cost": item.product.cost, "quantity": form[f"quantity_{item.pk}"],
     } for item in group]} for _kind, name, group in groups]

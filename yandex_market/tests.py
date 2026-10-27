@@ -420,7 +420,10 @@ class MarketTests(TestCase):
             response = self.client.get(reverse("yandex_market:label_file", args=[document.pk]))
             self.assertEqual(response["Content-Type"], "application/pdf")
             self.assertIn("no-store", response["Cache-Control"])
-            response.close()
+            # Закрываем файл без request_finished: сигнал закрывает файловую SQLite
+            # внутри общей транзакции TestCase и ломает следующие тесты класса.
+            with patch('django.http.response.signals.request_finished.send'):
+                response.close()
 
     def test_async_mass_labels_wait_without_regenerating_report(self):
         document = LabelDocument.objects.create(integration=self.integration, order_ids=[123, 124], created_by=self.user)
@@ -442,7 +445,8 @@ class MarketTests(TestCase):
             response = self.client.get(reverse("yandex_market:media", args=[media.public_id]))
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response["Content-Type"], "image/jpeg")
-            response.close()
+            with patch('django.http.response.signals.request_finished.send'):
+                response.close()
 
     def test_unchanged_state_is_not_sent_twice(self):
         self.enable()

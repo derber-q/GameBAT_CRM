@@ -1,5 +1,7 @@
 # Карта кода для сопровождения
 
+Партнёры: `partners/models.py`, `customers.py`, `excel.py`, `partner_views.py`. Расчёты продажи: `sales/partner_payments.py`, подтверждение — `sales/partner_views.py`, `static/js/partner-settlements.js`. Единая финансовая лента отчёта: `sales/partner_statistics.py`; выручка и прибыль остаются в прежнем `statistics_service.py`. Правила совместимости и тесты: [партнёры](partners.md).
+
 Новые точки расширения каталога и закупок от 20.10.2026: [catalog_procurement_controls.md](catalog_procurement_controls.md). Проверки: `catalog.test_supplier_newness`, `price.test_supplier_newness_rounding` и `catalog/test_product_options_js.cjs`. Реальный Chromium запускается отдельно: `.venv\Scripts\python.exe manage.py test catalog.features_browser_checks --settings=catalog.newness_browser_settings`; используется отдельная тестовая БД, без запуска интеграционного worker.
 
 ## Где менять поведение
@@ -19,6 +21,7 @@
 | Статистика | `sales/statistics_service.py`, `statistics_forms.py`, `statistics_excel.py` |
 | Деньги | `cash/services.py`, `models.py`, `creditors/services.py`, `orders/services.py` |
 | Прайсы | `price/services.py`, `excel.py`, `views.py`; импорт в продажу — `sales/views.py` |
+| Закупочная цена рейса | `orders/trip_prices.py`, `trip_price_views.py`, `order_editing.py`; диалог — `static/js/trip-prices.js`; контракт — [trip_supplier_prices.md](trip_supplier_prices.md) |
 | Avito | `integrations/client.py`, `services.py`, `queue.py`, `tasks.py`, `manual_sync.py`, `verification.py`, `required_actions.py` |
 | Avito Check | `integrations/avito_check.py`, `reef_api.py`, `reef_settings.py`, `pricing/avito_check_views.py`; результат и ключ — `integrations/models.py` |
 | Google Sheets | `integrations/google_sheets.py`, `google_tasks.py`, блок в `api_keys.html`, общий integration worker |
@@ -61,6 +64,10 @@ AJAX-сохранение цен находится в исторически н
 
 ## Покрытие проверками
 
+Внутреннее подтверждение заказов Маркета: `sales/notifications.py`, `notification_views.py`, модель `MarketOrderAttention` и миграция `sales.0023`. Запись появляется только внутри первой успешной транзакции автоимпорта Sale. Ручной `create_sale` отклоняет тип/цену Маркета; `create_market_sale` получает сохранённый заказ и настройки интеграции. Состояние звука не подменяет серверное подтверждение. Клиент опрашивает сервер каждые 15 секунд; `market-notification-state.js` согласует вкладки через IndexedDB, `market-notifications.js` управляет очередью и интерфейсом. Общее подключение находится в трёх partial `sales/_notification_*` для CRM и Django Admin. Контракты и ограничения: [описание](market_staff_alerts.md).
+
+`sales/test_notifications.py` проверяет идемпотентность, конкурентное подтверждение, права/CSRF и отсутствие изменений учёта; `test_channels.py` — каналы, `test_market_notification_state_js.cjs` — независимые циклы. `sales.notification_browser_checks` использует отдельную тестовую БД, реальные вкладки/IndexedDB и управляемый проигрыватель для проверки времени. Внешние API в тестах не вызываются.
+
 `accounts/tests.py`, `core/tests.py` — доступ и базовые страницы; `catalog/test_*.py` — карточки, штрихкоды, миграции и поиск; `warehouse/test_storage_locations.py` — хранение. `supplies/test_revision.py`, `test_cancellation.py`, `test_finalization.py` — пересчёт оценки; `sales/test_listing.py`, `test_cancellation.py`, `test_statistics.py` — списки, деньги, историческая прибыль. `consignment/test_row_actions.py` проверяет повторные и конкурентные запросы, `test_opening_balances.py` — ввод партий без складского списания. `integrations/tests.py`, `test_required_actions.py` подменяют внешний API.
 
 CJS-проверки выполняют реальные скрипты в моделируемом окружении. Они не удостоверяют визуальную раскладку в браузере. Полный список команд — в `operations.md`, результаты текущей проверки — в `verification.md`.
@@ -75,3 +82,11 @@ CJS-проверки выполняют реальные скрипты в мо�
 - Параметры 289/489 для геймпадов Sony были разовой правкой данных; новых автоматических правил в модели нет.
 
 Эта документационная задача фиксирует наблюдаемое состояние и не меняет перечисленные бизнес-сценарии.
+
+
+Доработки реализации, повторных строк продажи, кодов PS4/PS5 и дополнительных товаров рейса: [правила, интерфейс и проверки](crm_complex_20261025.md).
+
+
+## Общее прибытие и финализация рейса
+
+С 26.10.2026 для новых документов рейса курсы и фактическая доставка фиксируются один раз. До общей финализации продажи нельзя завершить, а приходы принять. [Действующий порядок, модели и эксплуатация](trip_arrival_costs.md); [отчёт и карта проверок](trip_arrival_report_20261026.md). Старые документы не пересчитываются автоматически.

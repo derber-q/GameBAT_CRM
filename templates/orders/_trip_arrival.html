@@ -1,0 +1,22 @@
+{% if can_view_supplier_prices %}
+<section class="panel" id="trip-arrival">
+  <div class="section-heading"><h2>Фактическое прибытие и доставка</h2>{% if arrival.finalized %}<span class="badge">Рейс финализирован</span>{% elif arrival.arrived %}<span class="badge">Рейс приехал</span>{% endif %}</div>
+  {% if arrival.arrived %}
+    <div class="summary-grid"><p>USDT/AED <strong>{{ arrival.usdt_aed }}</strong></p><p>USDT/RUB <strong>{{ arrival.usdt_rub }}</strong></p><p>Фактическая доставка <strong>{{ arrival.actual_delivery|floatformat:2 }} ₽</strong></p><p>Закупка <strong>{{ arrival.purchase_total|floatformat:2 }} ₽</strong></p><p>Общая себестоимость <strong>{{ arrival.control_total|floatformat:2 }} ₽</strong></p></div>
+    <p>Обработано заказов: {{ arrival_readiness.processed }} · Ожидают обработки: {{ arrival_readiness.pending }} · Продаж: {{ arrival_readiness.sales }} · Приходов: {{ arrival_readiness.supplies }}</p>
+    {% if not arrival.finalized %}<p class="help-text">Суммы предварительные. Сверка фактических количеств перераспределяет всю доставку. Цены покупателей сохраняются.</p>
+      {% if arrival_readiness.errors %}<ul>{% for error in arrival_readiness.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
+      {% if arrival_readiness.ready and arrival_can_finalize %}<a class="button" href="{% url 'orders:arrival_finalization' batch.pk %}">Итоговая финализация рейса</a>{% endif %}
+      {% if arrival_can_unset and arrival_can_manage %}<form method="post" action="{% url 'orders:trip_arrival' batch.pk %}">{% csrf_token %}<input type="hidden" name="revision" value="{{ arrival.revision }}"><button class="button button-secondary" name="action" value="unset">Снять отметку «Рейс приехал»</button></form>{% endif %}
+    {% else %}<p class="help-text">Итоговые затраты зафиксированы. Продажи и приходы завершайте отдельно. Финализация не создаёт складских или денежных движений.</p>{% endif %}
+  {% elif arrival_can_manage %}
+    <p class="help-text">Укажите одну общую фактическую доставку и курсы рейса. Закупка RUB = AED ÷ USDT/AED × USDT/RUB. Доставка распределяется по сохранённым предварительным тарифам.</p>
+    <form method="post" action="{% url 'orders:trip_arrival' batch.pk %}" class="stacked-form" data-trip-arrival-form>{% csrf_token %}<input type="hidden" name="revision" value="{{ batch.revision }}">
+      <div class="responsive-form-grid">{% for field in arrival_form %}<div class="field"><label for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}</div>{% endfor %}</div>
+      {% if arrival_weights %}<h3>Заполните отсутствующий вес</h3>{% for row in arrival_weights %}<div class="field"><label for="{{ row.field_name }}">{{ row.product.name }}, г</label><input id="{{ row.field_name }}" name="{{ row.field_name }}" type="number" min="1" step="1" required></div>{% endfor %}{% endif %}
+      {% if arrival_preview %}<div class="alert alert-info">Закупка: {{ arrival_preview.purchase_total }} ₽ · Распределённая доставка: {{ arrival_preview.actual_delivery }} ₽ · Общая себестоимость: <strong>{{ arrival_preview.control_total }} ₽</strong></div>{% endif %}
+      <div class="heading-actions"><button class="button button-secondary" name="action" value="preview">Предварительный расчёт</button><button class="button" name="action" value="confirm">Рейс приехал</button></div>
+    </form>
+  {% else %}<p class="muted">Прибытие рейса ещё не зафиксировано.</p>{% endif %}
+</section>
+{% endif %}

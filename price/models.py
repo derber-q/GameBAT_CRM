@@ -53,6 +53,7 @@ class PriceDocumentSettings(models.Model):
 
 
 class ProcurementPriceList(models.Model):
+    is_trip_addition = models.BooleanField("Расчёт дополнительной партии рейса", default=False, editable=False)
     supplier_offers_complete = models.BooleanField(
         "Сохранены все предложения поставщиков", default=False, db_default=False, editable=False,
     )

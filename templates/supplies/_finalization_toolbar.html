@@ -1,0 +1,14 @@
+  <section class="panel finalization-toolbar">
+    <div class="finalization-penalty finalization-penalty-success" data-finalization-penalty>
+      <span>Текущая неустойка</span><strong>{{ initial_penalty|floatformat:2 }} ₽</strong>
+    </div>
+    <div class="finalization-quick-actions">
+      <button class="button button-secondary" type="button" data-select-kind="cd">Выбрать все CD</button>
+      <button class="button button-secondary" type="button" data-select-kind="tech">Выбрать все Tech</button>
+      <button class="button button-secondary" type="button" data-select-kind="all">Выбрать все</button>
+      <button class="button button-secondary" type="button" data-select-kind="none">Снять выделение</button>
+      <button class="button" type="button" data-auto-distribute>Распределить текущую неустойку</button>
+    </div>
+    <p class="muted finalization-help">{{ distribution_help|default:"Ручное изменение фиксирует строку и исключает её из последующего автораспределения. Автораспределение делит сумму по количеству единиц на физических складах; реализация и товар в пути не участвуют." }}</p>
+    <p class="error-text finalization-error" data-finalization-error role="alert"></p>
+  </section>

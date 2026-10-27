@@ -1,7 +1,7 @@
 from decimal import Decimal
 
 from django.core.management.base import BaseCommand, CommandError
-from django.db.models import Sum
+from django.db.models import Sum, Q
 
 from cash.models import CashRegister, CashTransaction, Safe
 
@@ -13,21 +13,21 @@ class Command(BaseCommand):
         errors = []
         for register in CashRegister.objects.all():
             incoming = register.transactions.filter(
-                operation_type__in=(
+                Q(operation_type__in=(
                     CashTransaction.OperationType.DEPOSIT,
                     CashTransaction.OperationType.SALE_PAYMENT,
                     CashTransaction.OperationType.SAFE_TO_CASH,
                     CashTransaction.OperationType.CUSTOMER_ORDER_PREPAYMENT,
                     CashTransaction.OperationType.CUSTOMER_ORDER_POSTPAYMENT,
-                )
+                )) | Q(operation_type=CashTransaction.OperationType.CREDITOR_REPAYMENT, safe__isnull=True)
             ).aggregate(total=Sum("amount"))["total"] or Decimal("0")
             outgoing = register.transactions.filter(
-                operation_type__in=(
+                Q(operation_type__in=(
                     CashTransaction.OperationType.COLLECTION,
                     CashTransaction.OperationType.SALE_REFUND,
                     CashTransaction.OperationType.CASH_TO_SAFE,
                     CashTransaction.OperationType.CUSTOMER_ORDER_REFUND,
-                )
+                )) | Q(operation_type=CashTransaction.OperationType.CREDITOR_ADVANCE, safe__isnull=True)
             ).aggregate(total=Sum("amount"))["total"] or Decimal("0")
             expected = incoming - outgoing
             if register.balance != expected:
@@ -39,12 +39,14 @@ class Command(BaseCommand):
                 operation_type__in=(
                     CashTransaction.OperationType.SAFE_DEPOSIT,
                     CashTransaction.OperationType.CASH_TO_SAFE,
+                    CashTransaction.OperationType.CREDITOR_REPAYMENT,
                 )
             ).aggregate(total=Sum("amount"))["total"] or Decimal("0")
             outgoing = safe.transactions.filter(
                 operation_type__in=(
                     CashTransaction.OperationType.SAFE_COLLECTION,
                     CashTransaction.OperationType.SAFE_TO_CASH,
+                    CashTransaction.OperationType.CREDITOR_ADVANCE,
                 )
             ).aggregate(total=Sum("amount"))["total"] or Decimal("0")
             expected = incoming - outgoing

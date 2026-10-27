@@ -21,10 +21,11 @@ class CreditorEditForm(forms.ModelForm):
 class DebtAdjustmentForm(SingleWarehouseInitialMixin, forms.Form):
     warehouse = forms.ModelChoiceField(label="Склад", queryset=Warehouse.objects.all())
     money_source_type = forms.ChoiceField(
-        label="Денежное хранилище", choices=CreditorTransaction.MoneySourceType.choices,
+        label="Источник расчёта", choices=CreditorTransaction.MoneySourceType.choices,
     )
     new_debt = forms.DecimalField(
-        label="Новое значение задолженности", min_value=0, max_digits=20, decimal_places=2,
+        label="Новое значение задолженности", max_digits=20, decimal_places=2,
+        help_text="Плюс — контрагент должен GameBAT. Минус — GameBAT должен партнёру. Для старого счёта без партнёра доступен только плюс.",
     )
     comment = forms.CharField(
         label="Комментарий", required=False, widget=forms.Textarea(attrs={"rows": 3}),

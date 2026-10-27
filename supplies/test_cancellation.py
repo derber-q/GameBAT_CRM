@@ -19,7 +19,7 @@ class SupplyCancellationTests(TestCase):
     def setUp(self):
         self.actor = User.objects.create_superuser("admin", password="StrongAdmin!123")
         platform = Platform.objects.create(name="PS5")
-        self.cd = CD.objects.create(
+        self.cd = CD.objects.create(cusa_ppsa_code="PPSA-00001",
             platform=platform, name="Игра", sku="CD-1", barcode="1", cost=100,
         )
         brand = Brand.objects.create(name="Sony")

@@ -1,9 +1,11 @@
 import uuid
+from decimal import Decimal
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from django.db import models
+from django.utils import timezone
 
 from catalog.models import CD, Tech
 from partners.models import SalesPlatform
@@ -15,6 +17,9 @@ def temporary_sale_id():
 
 
 class Sale(models.Model):
+    direct_delivery = models.BooleanField('Прямая отгрузка по заказу рейса', default=False, db_default=False, editable=False)
+    procurement_prepaid_amount = models.DecimalField('Ранее оплачено по закупочному заказу', max_digits=20, decimal_places=2, default=0, db_default=0, editable=False)
+    consignment_report_id = models.UUIDField("Отчёт площадки", null=True, blank=True, unique=True, editable=False)
     class OperationKind(models.TextChoices):
         NORMAL = "normal", "Обычная продажа"
         DIGITAL_PRODUCT = "DIGITAL_PRODUCT", "Цифровой товар"
@@ -42,6 +47,7 @@ class Sale(models.Model):
         CASH_POSTPAY = "cash_postpay", "Наличные — постоплата"
         BANK_ACCOUNT = "bank_account", "Банковский перевод"
         BANK_TRANSFER_POSTPAY = "bank_transfer_postpay", "Банковский перевод — постоплата"
+        PARTNER_DEBT = "partner_debt", "В долг"
 
         @property
         def is_cash_payment(self):
@@ -91,6 +97,10 @@ class Sale(models.Model):
         "resource_storefront.WholesaleContact", null=True, blank=True, on_delete=models.PROTECT,
         related_name="sales", verbose_name="Оптовый контакт",
     )
+    partner = models.ForeignKey("partners.Partner", on_delete=models.PROTECT, null=True, blank=True, related_name="sales", verbose_name="Заказчик")
+    partner_name_snapshot = models.CharField("Заказчик на момент продажи", max_length=255, blank=True, db_default='')
+    debt_repayment_amount = models.DecimalField("Погашение долга партнёра", max_digits=20, decimal_places=2, default=0, db_default=0, editable=False)
+    debt_offset_amount = models.DecimalField("Взаимозачёт долга GameBAT", max_digits=20, decimal_places=2, default=0, db_default=0, editable=False)
     buyer_name_snapshot = models.CharField("Контактное имя на момент заказа", max_length=160, blank=True)
     buyer_phone_snapshot = models.CharField("Основной телефон на момент заказа", max_length=40, blank=True)
     buyer_address_snapshot = models.TextField("Адрес на момент заказа", blank=True)
@@ -146,6 +156,8 @@ class Sale(models.Model):
             ("export_sales_statistics", "Может экспортировать статистику продаж"),
         ]
         constraints = [
+            models.CheckConstraint(condition=~models.Q(direct_delivery=True) | models.Q(sale_type='wholesale', operation_kind='normal'), name='sale_direct_delivery_wholesale'),
+            models.CheckConstraint(condition=models.Q(procurement_prepaid_amount__gte=0), name='sale_procurement_prepaid_nonnegative'),
             models.CheckConstraint(condition=(~models.Q(operation_kind="EXPENSE") | (models.Q(total_amount=0, extra_cash_amount=0) & (models.Q(cash_received_amount__isnull=True) | models.Q(cash_received_amount=0)))), name="expense_sale_no_revenue"),
             models.CheckConstraint(condition=~models.Q(payment_method="undefined") | models.Q(payment_status="unpaid"), name="sale_undefined_payment_unpaid"),
             models.CheckConstraint(condition=models.Q(total_amount__gte=0), name="sale_total_nonnegative"),
@@ -164,6 +176,11 @@ class Sale(models.Model):
                 condition=(
                     models.Q(cash_received_amount__isnull=True)
                     | models.Q(cash_received_amount__gte=models.F("total_amount"))
+                    | models.Q(payment_method="partner_debt")
+                    | (models.Q(sale_type="wholesale", partner__isnull=False, payment_status="paid",
+                               operation_kind__in=('normal', 'DIGITAL_PRODUCT'), cash_received_amount__gte=0,
+                               extra_cash_amount=0, debt_repayment_amount=0)
+                       & models.Q(cash_received_amount__lte=models.F("total_amount") - models.F("debt_offset_amount")))
                 ),
                 name="sale_cash_received_not_below_total",
             ),
@@ -171,6 +188,21 @@ class Sale(models.Model):
                 condition=models.Q(extra_cash_amount__gte=0),
                 name="sale_extra_cash_nonnegative",
             ),
+            models.CheckConstraint(condition=models.Q(debt_offset_amount__gte=0, debt_repayment_amount__gte=0)
+                & ~(models.Q(debt_offset_amount__gt=0) & models.Q(debt_repayment_amount__gt=0)), name="sale_debt_amounts_valid"),
+            models.CheckConstraint(condition=models.Q(debt_offset_amount=0, debt_repayment_amount=0)
+                | models.Q(sale_type="wholesale", partner__isnull=False, payment_status="paid", operation_kind__in=('normal', 'DIGITAL_PRODUCT')), name="sale_debt_requires_paid_partner"),
+            models.CheckConstraint(condition=models.Q(debt_offset_amount=0, debt_repayment_amount=0)
+                | models.Q(cash_received_amount=models.F('total_amount') + models.F('debt_repayment_amount')
+                    + models.F('extra_cash_amount') - models.F('debt_offset_amount'))
+                | (models.Q(debt_repayment_amount=0, extra_cash_amount=0, cash_received_amount__gte=0)
+                   & models.Q(cash_received_amount__lte=models.F('total_amount') - models.F('debt_offset_amount'))),
+                name='sale_partner_payment_reconciles'),
+            models.CheckConstraint(condition=~models.Q(payment_method="partner_debt") | models.Q(
+                sale_type="wholesale", partner__isnull=False, payment_status="paid", total_amount__gt=0,
+                cash_received_amount__isnull=False, cash_received_amount=0, extra_cash_amount=0,
+                debt_offset_amount=0, debt_repayment_amount=0, operation_kind__in=('normal', 'DIGITAL_PRODUCT')),
+                name='sale_partner_debt_valid'),
             models.CheckConstraint(
                 condition=(
                     ~models.Q(payment_method="undefined")
@@ -194,6 +226,24 @@ class Sale(models.Model):
         ]
 
     @property
+    def is_partner_debt(self):
+        return self.payment_method == self.PaymentMethod.PARTNER_DEBT
+
+    @property
+    def debt_charge_amount(self):
+        """Новый долг из сохранённых сумм продажи, без пересчёта по текущему балансу партнёра."""
+        if self.is_partner_debt:
+            return self.total_amount
+        if self.partner_id and self.sale_type == self.SaleType.WHOLESALE and self.cash_received_amount is not None:
+            return max(self.total_amount - self.cash_received_amount - self.debt_offset_amount, Decimal('0.00'))
+        return Decimal('0.00')
+
+    def get_payment_status_display(self):
+        if not self.is_partner_debt and self.payment_status == self.PaymentStatus.PAID and self.debt_charge_amount:
+            return 'Частично оплачено, остаток в долг'
+        return 'В долг' if self.is_partner_debt else self.PaymentStatus(self.payment_status).label
+
+    @property
     def is_cash_payment(self):
         return self.PaymentMethod(self.payment_method).is_cash_payment
 
@@ -204,6 +254,14 @@ class Sale(models.Model):
     @property
     def is_postpayment(self):
         return self.PaymentMethod(self.payment_method).is_postpayment
+
+    @property
+    def can_select_payment_partner(self):
+        return (
+            self.sale_type == self.SaleType.WHOLESALE and not self.partner_id
+            and self.is_postpayment and self.payment_status == self.PaymentStatus.UNPAID
+            and not self.is_cancelled and not self.consignment_report_id
+        )
 
     @property
     def is_completed(self):
@@ -261,10 +319,15 @@ class Sale(models.Model):
 
     def save(self, *args, **kwargs):
         """Разрешает только одно служебное преобразование TMP-id в постоянный номер продажи."""
+        if self.pk and self.is_completed:
+            from orders.arrival import assert_document_finalized
+            assert_document_finalized(self)
         if self.operation_kind == self.OperationKind.DIGITAL_PRODUCT and not str(self.note or "").strip():
             raise ValidationError("Для продажи цифрового товара необходимо заполнить примечание.")
         if self.pk:
-            stored = type(self).objects.filter(pk=self.pk).values("visible_id", "completed_at").first()
+            stored = type(self).objects.filter(pk=self.pk).values("visible_id", "completed_at", "direct_delivery", "procurement_prepaid_amount").first()
+            if stored and (stored['direct_delivery'] != self.direct_delivery or stored['procurement_prepaid_amount'] != self.procurement_prepaid_amount):
+                raise ValidationError('Источник продажи и ранее внесённую оплату изменять нельзя.')
             stored_id = stored["visible_id"] if stored else None
             if stored_id and not stored_id.startswith("TMP-") and stored_id != self.visible_id:
                 raise ValidationError("Номер созданной продажи изменять нельзя.")
@@ -274,6 +337,10 @@ class Sale(models.Model):
 
 
 class SaleItemBase(models.Model):
+    is_direct_delivery = models.BooleanField('Товар прямой поставки', default=False, db_default=False, editable=False)
+    trip_cost_row = models.ForeignKey('orders.TripCostRow', on_delete=models.PROTECT, null=True, blank=True, related_name='+', editable=False)
+    trip_cost_slot = models.PositiveSmallIntegerField(default=0, db_default=0, editable=False)
+    note = models.TextField("Примечание к строке", blank=True, default="")
     quantity = models.PositiveIntegerField("Количество")
     unit_price = models.DecimalField("Цена единицы", max_digits=20, decimal_places=2)
     unit_discount = models.DecimalField(
@@ -315,8 +382,13 @@ class SaleItemBase(models.Model):
             stored = type(self).objects.filter(pk=self.pk).values(
                 "unit_cost_snapshot", "avito_commission_enabled", "avito_commission_amount",
                 "sale__completed_at",
+                "is_direct_delivery", "trip_cost_row_id", "trip_cost_slot",
             ).first()
-            if stored and stored["unit_cost_snapshot"] != self.unit_cost_snapshot:
+            if stored and any(stored[name]!=getattr(self,name) for name in ('is_direct_delivery','trip_cost_row_id','trip_cost_slot')):
+                raise ValidationError('Источник строки продажи изменять нельзя.')
+            if stored and stored["unit_cost_snapshot"] != self.unit_cost_snapshot and not (
+                    getattr(self, '_pending_trip_cost_write', False) and self.trip_cost_row_id
+                    and stored['sale__completed_at'] is None and not self.trip_cost_row.arrival.finalized):
                 raise ValidationError("Историческую себестоимость продажи изменять нельзя.")
             commission_changed = stored and (
                 stored["avito_commission_enabled"] != self.avito_commission_enabled
@@ -335,7 +407,6 @@ class SaleCDItem(SaleItemBase):
         verbose_name = "позиция CD в продаже"
         verbose_name_plural = "позиции CD в продажах"
         constraints = [
-            models.UniqueConstraint(fields=("sale", "cd"), name="unique_sale_cd_item"),
             models.CheckConstraint(condition=models.Q(quantity__gt=0), name="sale_cd_quantity_positive"),
             models.CheckConstraint(condition=models.Q(unit_price__gte=0), name="sale_cd_price_nonnegative"),
             models.CheckConstraint(
@@ -361,7 +432,6 @@ class SaleTechItem(SaleItemBase):
         verbose_name = "позиция техники в продаже"
         verbose_name_plural = "позиции техники в продажах"
         constraints = [
-            models.UniqueConstraint(fields=("sale", "tech"), name="unique_sale_tech_item"),
             models.CheckConstraint(condition=models.Q(quantity__gt=0), name="sale_tech_quantity_positive"),
             models.CheckConstraint(condition=models.Q(unit_price__gte=0), name="sale_tech_price_nonnegative"),
             models.CheckConstraint(
@@ -527,3 +597,22 @@ class MarketPrintJob(models.Model):
     class Meta:
         constraints = [models.UniqueConstraint(fields=['order'], condition=models.Q(ready_after_print=True),
                       name='one_market_automatic_print_per_order')]
+
+
+class MarketOrderAttention(models.Model):
+    """Внутренняя отметка сотрудника; присутствует только у новых импортированных продаж."""
+    order = models.OneToOneField('yandex_market.OrderMetadata', on_delete=models.PROTECT,
+        related_name='staff_attention', verbose_name='Заказ Маркета')
+    notification_started_at = models.DateTimeField('Начало оповещений', default=timezone.now, editable=False)
+    acknowledged_at = models.DateTimeField('Принят сотрудником', null=True, blank=True, editable=False)
+    acknowledged_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        null=True, blank=True, related_name='acknowledged_market_orders', editable=False)
+
+    class Meta:
+        verbose_name = 'внутреннее подтверждение заказа Маркета'
+        verbose_name_plural = 'внутренние подтверждения заказов Маркета'
+        indexes = [models.Index(fields=['acknowledged_at', 'notification_started_at'], name='market_attention_pending')]
+        constraints = [models.CheckConstraint(condition=(
+            models.Q(acknowledged_at__isnull=True, acknowledged_by__isnull=True)
+            | models.Q(acknowledged_at__isnull=False, acknowledged_by__isnull=False)
+        ), name='market_attention_ack_complete')]

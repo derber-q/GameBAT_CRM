@@ -244,7 +244,7 @@ class TripTests(TestCase):
         self.assertContains(response, "Скачать Excel", count=2)
         self.assertContains(response, "Получит всего")
 
-    def test_excel_only_selected_supplier_and_includes_zero_rows(self):
+    def test_supplier_excel_excludes_zero_rows_and_keeps_empty_workbook_valid(self):
         trip = self.trip()
         source = trip.lines.get(cd=self.cd)
         self.change(trip, source, 0, target_supplier_id=self.c.pk, price_supplier_id=self.a.pk)
@@ -254,15 +254,41 @@ class TripTests(TestCase):
         self.assertTrue(response["Content-Disposition"].endswith('.xlsx"'))
         self.assertEqual(response["Content-Disposition"], f'attachment; filename="trip_{trip.pk}_A.xlsx"')
         sheet = load_workbook(BytesIO(response.content)).active
-        self.assertEqual(tuple(cell.value for cell in sheet[1]), ("Наименование", "Артикул", "Цена, AED", "Количество"))
-        self.assertEqual(sheet["A2"].value, "CD · Платформа: PS5")
-        self.assertEqual(tuple(cell.value for cell in sheet[3]), ("Игра", "000123", 100, 0))
-        self.assertEqual(sheet["B3"].data_type, "s")
-        self.assertTrue(sheet.column_dimensions["B"].hidden)
-        self.assertEqual(sheet["C3"].number_format, "#,##0")
-        self.assertEqual(sheet.max_row, 3)
-        self.assertEqual({str(area) for area in sheet.merged_cells.ranges}, {"A2:D2"})
+        self.assertEqual(tuple(cell.value for cell in sheet[1]), ("Наименование", "CUSA / PPSA", "Артикул", "Цена, AED", "Количество"))
+        self.assertTrue(sheet.column_dimensions["C"].hidden)
+        self.assertEqual(sheet.max_row, 1)
+        self.assertEqual(sheet.auto_filter.ref, "A1:E1")
+        self.assertFalse(sheet.merged_cells.ranges)
+        self.assertEqual(trip.lines.get(pk=source.pk).quantity, 0)
+        self.assertContains(self.client.get(reverse('orders:trip_detail', args=(trip.pk,))),
+                            f'data-trip-line="{source.pk}"')
         self.assertFalse(any('INSERT ' in q['sql'] or 'UPDATE ' in q['sql'] for q in queries))
+
+    def test_supplier_excel_keeps_only_positive_lines_for_every_supplier_with_or_without_prices(self):
+        trip = self.trip()
+        self.change(trip, trip.lines.get(tech=self.tech), 0,
+                    target_supplier_id=self.a.pk, price_supplier_id=self.b.pk)
+        self.change(trip, trip.lines.get(cd=self.cd), 0,
+                    target_supplier_id=self.c.pk, price_supplier_id=self.a.pk)
+        from .trip_excel import supplier_order_xlsx
+        before = list(trip.lines.values())
+        for supplier in (self.a, self.b, self.c):
+            lines = list(trip.lines.filter(supplier=supplier).select_related(
+                'cd__platform', 'tech__brand', 'tech__product_type'))
+            for show_prices in (True, False):
+                with self.subTest(supplier=supplier.letter, show_prices=show_prices):
+                    book = load_workbook(BytesIO(supplier_order_xlsx(trip, supplier, lines, show_prices=show_prices)))
+                    sheet = book.active
+                    data = [row for row in sheet.values if isinstance(row[-1], int)]
+                    expected = [line for line in lines if line.quantity > 0]
+                    self.assertCountEqual([(row[0], row[-1]) for row in data],
+                        [(line.product_name_snapshot, line.quantity) for line in expected])
+                    if show_prices:
+                        self.assertCountEqual([(row[0], row[3]) for row in data],
+                            [(line.product_name_snapshot, line.supplier_price_aed_snapshot) for line in expected])
+                    self.assertTrue(sheet.column_dimensions['C'].hidden)
+                    book.close()
+        self.assertEqual(list(trip.lines.values()), before)
 
     def test_permission_checks_apply_to_services_and_direct_urls(self):
         trip = self.trip()
@@ -279,9 +305,9 @@ class TripTests(TestCase):
         page = self.client.get(reverse("orders:trip_detail", args=(trip.pk,)))
         self.assertNotContains(page, 'id="trip-editor-data"')
         workbook = load_workbook(BytesIO(self.client.get(reverse("orders:trip_export", args=(trip.pk, self.a.pk))).content))
-        self.assertEqual(workbook.active.max_column, 3)
-        self.assertTrue(workbook.active.column_dimensions["B"].hidden)
-        self.assertEqual(tuple(cell.value for cell in workbook.active[1]), ("Наименование", "Артикул", "Количество"))
+        self.assertEqual(workbook.active.max_column, 4)
+        self.assertTrue(workbook.active.column_dimensions["C"].hidden)
+        self.assertEqual(tuple(cell.value for cell in workbook.active[1]), ("Наименование", "CUSA / PPSA", "Артикул", "Количество"))
         self.assertEqual(self.client.post(reverse("orders:trip_line_update", args=(trip.pk, trip.lines.get(cd=self.cd).pk))).status_code, 403)
 
     def test_trip_creation_form_and_backend_methods(self):
@@ -316,7 +342,10 @@ class TripTests(TestCase):
                                rows=[{"item_id": item.pk, "prepayment_quantity": 0, "postpayment_quantity": 0}])
         item.refresh_from_db()
         self.assertEqual(item.line_total, 0)
-        self.assertEqual(trip.lines.get().quantity, 2)
+        self.assertEqual(trip.lines.get().quantity, 0)
+        self.assertEqual(item.trip_allocations.get().quantity, 0)
+        from .trips import _assert_balances
+        _assert_balances(trip)
 
 
 class MToFRuleTests(TestCase):
@@ -412,11 +441,11 @@ class MToFRuleTests(TestCase):
         response = self.client.get(reverse("orders:trip_export", args=(trip.pk, self.b.pk)))
         book = load_workbook(BytesIO(response.content))
         sheet = book.active
-        self.assertEqual(sheet.max_column, 4)
+        self.assertEqual(sheet.max_column, 5)
         self.assertEqual(response["Content-Disposition"], f'attachment; filename="trip_{trip.pk}_F.xlsx"')
-        products = {row[1]: row for row in sheet.iter_rows(values_only=True) if row[1] in (self.cd.sku, self.tech.sku)}
-        self.assertEqual(products[self.cd.sku], (self.cd.name, self.cd.sku, 100, 10))
-        self.assertEqual(products[self.tech.sku][3], 3)
+        products = {row[2]: row for row in sheet.iter_rows(values_only=True) if row[2] in (self.cd.sku, self.tech.sku)}
+        self.assertEqual(products[self.cd.sku], (self.cd.name, None, self.cd.sku, 100, 10))
+        self.assertEqual(products[self.tech.sku][4], 3)
         self.assertEqual(book.sheetnames, ["Заказ поставщику"])
         self.assertEqual(sheet.sheet_state, "visible")
         self.assertFalse(book.defined_names)

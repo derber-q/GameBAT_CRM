@@ -15,14 +15,28 @@ from django.views.decorators.http import require_GET, require_POST, require_http
 from core.decorators import permission_required_all
 from partners.models import Supplier
 from catalog.supplier_exclusions import exclusion_keys
+from catalog.product_ordering import normalized_order_name, platform_order_key
 from .models import CustomerProcurementOrder, SupplierOrderBatch
+from .trip_invoices import require_page_editable
 from .forms import TripAssignmentForm
 from .trips import (MANAGE_PERMISSIONS, can_manage_trips, change_trip_line, create_trip, trip_queryset,
                     is_m_order_in_f, return_line_to_m, available_trips, assign_order_to_trip,
                     trip_supplier_chains, supplier_priority_state)
 from .trip_excel import supplier_order_xlsx, trip_order_xlsx
+from .trip_prices import line_price_lock_reason, trip_financials
+from .order_editing import downstream_lock_reason
 
 VIEW_PERMISSIONS = ("orders.generate_supplier_orders", "partners.view_supplier_details")
+
+
+def _trip_line_order_key(line):
+    if line.product_kind == 'cd':
+        group = line.cd.platform.name
+        line.product_group = f'Диски · {group}'
+        return (1, platform_order_key(group), normalized_order_name(line.product_name_snapshot), line.pk)
+    group = line.tech.product_type.name
+    line.product_group = f'Техника · {group}'
+    return (0, normalized_order_name(group), normalized_order_name(line.product_name_snapshot), line.pk)
 
 
 @require_POST
@@ -68,17 +82,37 @@ def order_trip_assign(request, pk):
 @permission_required_all(*VIEW_PERMISSIONS)
 def trip_detail(request, pk):
     batch = get_object_or_404(trip_queryset(), pk=pk, price_list__isnull=False)
-    can_edit = can_manage_trips(request.user) and all(order.status == CustomerProcurementOrder.Status.CREATED for order in batch.trip_orders.all())
-    grouped, editor = defaultdict(list), {}
-    suppliers = list(Supplier.objects.all()) if can_edit else []
+    from .arrival_models import TripArrival
+    batch._arrival_locked = TripArrival.objects.filter(trip=batch,arrived_at__isnull=False).exists()
+    from .fulfillment import operation_actions
+    operation_actions(request.user, batch.trip_orders.all())
+    manager = can_manage_trips(request.user)
+    can_assign = manager and all(order.status == CustomerProcurementOrder.Status.CREATED
+        and not downstream_lock_reason(order) for order in batch.trip_orders.all())
+    grouped, editor, price_editor = defaultdict(list), {}, {}
+    accepted_suppliers = set(batch.invoice_flags.filter(accepted=True).values_list('supplier_id', flat=True))
+    suppliers = list(Supplier.objects.all()) if manager else []
     lines = list(batch.lines.all())
-    excluded = exclusion_keys((line.product_kind, line.product_id) for line in lines) if can_edit else set()
-    chains = trip_supplier_chains(lines, excluded=excluded) if can_edit else {}
+    excluded = exclusion_keys((line.product_kind, line.product_id) for line in lines) if manager else set()
+    chains = trip_supplier_chains(lines, excluded=excluded) if manager else {}
     priorities = {supplier.pk: supplier.priority for supplier in suppliers}
     for line in lines:
-        line.can_return_to_m = is_m_order_in_f(line) and (line.product_kind, line.product_id, line.price_supplier_id) not in excluded
+        line.supplier.invoice_accepted = line.supplier_id in accepted_suppliers
+        line.invoice_accepted = line.supplier.invoice_accepted
+        active = [row for row in line.allocations.all() if row.quantity]
+        line.price_lock_reason = line_price_lock_reason(line)
+        line.can_edit_price = manager and not line.price_lock_reason and not line.invoice_accepted
+        line.can_edit_quantity = manager and not line.price_lock_reason and not line.invoice_accepted and all(
+            row.order_item.order.status == CustomerProcurementOrder.Status.CREATED for row in active)
+        line.can_return_to_m = (is_m_order_in_f(line) and line.price_supplier_id not in accepted_suppliers
+            and (line.product_kind, line.product_id, line.price_supplier_id) not in excluded)
         grouped[line.supplier].append(line)
-        if can_edit:
+        if line.can_edit_price:
+            price_editor[str(line.pk)] = {'name': line.product_name_snapshot, 'supplier': line.supplier.name,
+                'price': str(line.supplier_price_aed_snapshot), 'quantity': line.quantity,
+                'preview_url': reverse('orders:trip_price_preview', args=(batch.pk, line.pk)),
+                'save_url': reverse('orders:trip_price_update', args=(batch.pk, line.pk))}
+        if line.can_edit_quantity:
             targets = sorted((supplier for supplier in suppliers if supplier.pk != line.supplier_id
                               and (line.product_kind, line.product_id, supplier.pk) not in excluded),
                              key=lambda supplier: (-supplier.priority, supplier.name.casefold(), supplier.pk))
@@ -93,14 +127,28 @@ def trip_detail(request, pk):
                 **supplier_priority_state(line.supplier_id, {pk: priorities[pk] for pk in chains[line.price_list_item_id]}),
                 "name": line.product_name_snapshot, "quantity": line.quantity,
                 "url": reverse("orders:trip_line_update", args=(batch.pk, line.pk)),
-                "targets": [{"id": supplier.pk, "name": supplier.name, "priority": supplier.priority} for supplier in targets],
+                "targets": [{"id": supplier.pk, "name": supplier.name, "priority": supplier.priority,
+                    "disabled": supplier.pk in accepted_suppliers} for supplier in targets],
                 "prices": [{"id": offer.supplier_id, "name": offer.supplier.name, "price": str(offer.price_aed)}
                            for offer in line.price_list_item.supplier_offers.all()
                            if (line.product_kind, line.product_id, offer.supplier_id) not in excluded],
                 "price_supplier_id": line.price_supplier_id, "allocations": allocations,
             }
+    for supplier_lines in grouped.values():
+        supplier_lines.sort(key=_trip_line_order_key)
+    financial, financial_error = None, ''
+    if request.user.has_perm('price.view_supplier_prices'):
+        try:
+            financial = trip_financials(batch)
+        except ValidationError as exc:
+            financial_error = ' '.join(exc.messages)
+    from .arrival_views import panel_context
     return render(request, "orders/trip_detail.html", {
-        "batch": batch, "supplier_groups": grouped.items(), "editor": editor, "can_edit": can_edit,
+        **panel_context(request,batch),
+        "batch": batch, "supplier_groups": grouped.items(), "editor": editor, "can_edit": bool(editor),
+        'can_add_goods': manager and request.user.has_perm('orders.create_order') and not batch._arrival_locked,
+        'can_assign_orders': can_assign, 'price_editor': price_editor, 'can_manage_invoices': manager,
+        'financial': financial, 'financial_error': financial_error,
         "can_view_supplier_prices": request.user.is_superuser or request.user.has_perm("price.view_supplier_prices"),
     })
 
@@ -110,13 +158,17 @@ def trip_detail(request, pk):
 def trip_line_update(request, pk, line_pk):
     try:
         distribution = json.loads(request.POST.get("distribution", "null"))
-        if request.POST.get("action") == "return_to_m":
-            trip = return_line_to_m(actor=request.user, batch_id=pk, line_id=line_pk, revision=request.POST.get("revision"))
-        else:
-            trip = change_trip_line(actor=request.user, batch_id=pk, line_id=line_pk,
-                                revision=request.POST.get("revision"), quantity=request.POST.get("quantity"),
-                                action=request.POST.get("action"), target_supplier_id=request.POST.get("target_supplier"),
-                                price_supplier_id=request.POST.get("price_supplier"), distribution=distribution)
+        with transaction.atomic():
+            returning = request.POST.get('action') == 'return_to_m'
+            require_page_editable(batch_id=pk, line_id=line_pk, returning_to_m=returning,
+                target_supplier_id=request.POST.get('target_supplier') if request.POST.get('action') == 'transfer' else None)
+            if returning:
+                trip = return_line_to_m(actor=request.user, batch_id=pk, line_id=line_pk, revision=request.POST.get("revision"))
+            else:
+                trip = change_trip_line(actor=request.user, batch_id=pk, line_id=line_pk,
+                                    revision=request.POST.get("revision"), quantity=request.POST.get("quantity"),
+                                    action=request.POST.get("action"), target_supplier_id=request.POST.get("target_supplier"),
+                                    price_supplier_id=request.POST.get("price_supplier"), distribution=distribution)
     except (ValidationError, ValueError, OperationalError) as exc:
         message = " ".join(exc.messages) if isinstance(exc, ValidationError) else "Не удалось сохранить. Обновите страницу и повторите."
         return JsonResponse({"success": False, "message": message}, status=409)

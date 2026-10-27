@@ -8,23 +8,30 @@ from django.db import transaction
 from cash.models import CashRegister, CashTransaction, Safe
 from warehouse.models import Warehouse
 from .models import Creditor, CreditorTransaction
+from core.db_retry import retry_database_lock
 
 logger = logging.getLogger("gamebat.business")
 CENT = Decimal("0.01")
 
 
-def _debt(value):
+def _debt(value, *, signed=False):
     try:
         result = Decimal(str(value)).quantize(CENT, rounding=ROUND_HALF_UP)
     except (InvalidOperation, TypeError, ValueError) as exc:
         raise ValidationError("Укажите корректную сумму задолженности.") from exc
-    if result < 0:
+    if not result.is_finite() or abs(result) >= Decimal('1e18'):
+        raise ValidationError('Укажите корректную сумму задолженности.')
+    if result < 0 and not signed:
         raise ValidationError("Задолженность не может быть отрицательной.")
     return result
 
 
+@retry_database_lock
 @transaction.atomic
 def adjust_creditor_debt(*, actor, creditor_id, warehouse_id, money_source_type, new_debt, comment=""):
+    if not actor.has_perm('creditors.change_debt'):
+        from django.core.exceptions import PermissionDenied
+        raise PermissionDenied('Нет права изменения задолженности.')
     try:
         creditor = Creditor.objects.select_for_update().get(pk=creditor_id)
     except Creditor.DoesNotExist as exc:
@@ -34,7 +41,8 @@ def adjust_creditor_debt(*, actor, creditor_id, warehouse_id, money_source_type,
     except Warehouse.DoesNotExist as exc:
         raise ValidationError("Выберите существующий склад.") from exc
 
-    new_debt = _debt(new_debt)
+    partner = getattr(creditor, 'partner', None)
+    new_debt = _debt(new_debt, signed=partner is not None)
     old_debt = creditor.current_debt
     delta = (new_debt - old_debt).quantize(CENT)
     if delta == 0:
@@ -57,15 +65,20 @@ def adjust_creditor_debt(*, actor, creditor_id, warehouse_id, money_source_type,
             raise ValidationError("Для выбранного склада не создан сейф.") from exc
         safe = storage
         insufficient_message = "Недостаточно средств в выбранном сейфе."
+    elif money_source_type in (CreditorTransaction.MoneySourceType.BANK, CreditorTransaction.MoneySourceType.OFFSET):
+        storage, safe = None, None
+        if not str(comment or '').strip():
+            raise ValidationError('Для банковской или безденежной операции укажите комментарий.')
     else:
         raise ValidationError("Выберите кассу или сейф.")
 
     increasing = delta > 0
-    if increasing and storage.balance < amount:
+    if storage is not None and increasing and storage.balance < amount:
         raise ValidationError(insufficient_message)
-    storage.balance = storage.balance - amount if increasing else storage.balance + amount
-    storage.full_clean()
-    storage.save(update_fields=("balance",))
+    if storage is not None:
+        storage.balance = storage.balance - amount if increasing else storage.balance + amount
+        storage.full_clean()
+        storage.save(update_fields=("balance",))
 
     creditor.current_debt = new_debt
     creditor.full_clean()
@@ -79,11 +92,12 @@ def adjust_creditor_debt(*, actor, creditor_id, warehouse_id, money_source_type,
         cash_register=register, safe=safe, operation_type=operation_type, amount=amount,
         comment=f"Кредитор «{creditor.name}». {action}. {str(comment or '').strip()}".strip(),
         created_by=actor,
-    )
+    ) if storage is not None else None
     creditor_transaction = CreditorTransaction.objects.create(
         creditor=creditor, old_debt=old_debt, new_debt=new_debt, delta=delta,
         warehouse=warehouse, money_source_type=money_source_type, amount=amount,
         cash_transaction=cash_transaction, actor=actor, comment=str(comment or "").strip(),
+        partner_name_snapshot=partner.name if partner else '',
     )
     logger.info(
         "Операция кредитора проведена: user_id=%s creditor_id=%s warehouse_id=%s "

@@ -52,7 +52,7 @@ class AvitoCommissionTests(TestCase):
             price_type=Sale.PriceType.RETAIL, sale_type=sale_type,
             payment_method=payment_method, lines=lines or [self.line()],
             cash_received_amount=received, note=note,
-        )
+         partner_name='Тестовый заказчик' if sale_type == 'wholesale' else '')
 
     def test_formula_uses_half_up_rounding_and_one_ruble_minimum(self):
         self.assertEqual(

@@ -21,6 +21,8 @@ from .models import CustomerProcurementOrder, SupplierOrderBatch, SupplierTripAl
 from .order_excel import order_xlsx
 from .order_supplier_excel import build_order_supplier_rows, order_suppliers_xlsx
 from .trips import can_manage_trips
+from .trip_prices import order_financials
+from .order_editing import downstream_lock_reason
 from .services import (
     advance_order_status,
     create_customer_procurement_order,
@@ -59,12 +61,18 @@ def _order_queryset():
         "items__selected_supplier", "items__cd", "items__tech",
         "items__trip_allocations__line__supplier",
         "status_events__actor", "adjustments__actor", "adjustments__changes", "cash_transactions",
+        "operations",
     )
 
 
 @require_GET
 @permission_required_any("orders.view_orders")
 def order_list(request):
+    from .fulfillment import operation_actions
+    orders = _order_queryset()
+    if not request.user.has_perm('price.view_supplier_prices'):
+        orders = orders.filter(purpose=CustomerProcurementOrder.Purpose.CUSTOMER)
+    orders = operation_actions(request.user, list(orders))
     can_generate_batches = (
         request.user.is_superuser
         or (
@@ -73,8 +81,8 @@ def order_list(request):
         )
     )
     return render(request, "orders/list.html", {
-        "orders": (_order_queryset() if request.user.has_perm("price.view_supplier_prices")
-                   else _order_queryset().filter(purpose=CustomerProcurementOrder.Purpose.CUSTOMER)),
+        "orders": orders,
+        "unassigned_orders": [order for order in orders if order.trip_id is None],
         "batches": (
             SupplierOrderBatch.objects.select_related("created_by").prefetch_related("source_orders")[:20]
             if can_generate_batches else []
@@ -104,6 +112,8 @@ def order_upload(request):
                 "comment": form.cleaned_data["comment"],
                 "lines": lines,
                 "purpose": purpose,
+                'partner_id': form.cleaned_data['partner_id'],
+                'partner_name': form.cleaned_data['partner_name'],
             }
             return redirect("orders:preview")
     return render(request, "orders/upload.html", {
@@ -123,7 +133,8 @@ def order_export(request, pk):
         ).order_by("pk"))
     response = HttpResponse(order_xlsx(order=order, items=items),
                             content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-    response["Content-Disposition"] = content_disposition_header(True, f"zakaz_{pk}.xlsx")
+    from partners.customers import customer_filename
+    response["Content-Disposition"] = content_disposition_header(True, f"zakaz_{pk}_{customer_filename(order.partner_name_snapshot or order.recipient)}.xlsx")
     return response
 
 
@@ -151,7 +162,8 @@ def order_suppliers_export(request, pk):
         order=order, rows=rows,
         show_supplier_details=request.user.is_superuser or request.user.has_perm("partners.view_supplier_details"),
     ), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-    response["Content-Disposition"] = content_disposition_header(True, f"zakaz_{pk}_suppliers.xlsx")
+    from partners.customers import customer_filename
+    response["Content-Disposition"] = content_disposition_header(True, f"zakaz_{pk}_{customer_filename(order.partner_name_snapshot or order.recipient)}_suppliers.xlsx")
     response["X-Content-Type-Options"] = "nosniff"
     return response
 
@@ -203,33 +215,50 @@ def order_detail(request, pk):
     order = get_object_or_404(_order_queryset(), pk=pk)
     _require_stock_prices(request.user, order.purpose)
     can_view_supplier = request.user.is_superuser or request.user.has_perm("price.view_supplier_prices")
+    locked = downstream_lock_reason(order)
+    from .fulfillment import available, require_permissions
+    can_create_operation = available(order)
+    if can_create_operation:
+        try:
+            require_permissions(request.user, order)
+        except PermissionDenied:
+            can_create_operation = False
+    financial, financial_error = None, ''
+    if can_view_supplier:
+        try:
+            financial = order_financials(order)
+        except ValidationError as exc:
+            financial_error = ' '.join(exc.messages)
     return render(request, "orders/detail.html", {
         "order": order,
+        'can_create_operation': can_create_operation,
+        'operation_history': order.operations.select_related('sale', 'supply', 'created_by'),
+        'financial': financial, 'financial_error': financial_error, 'downstream_lock': locked,
         "can_view_supplier": can_view_supplier,
         "can_view_supplier_details": (
             request.user.is_superuser or request.user.has_perm("partners.view_supplier_details")
         ),
         "can_view_cash": request.user.is_superuser or request.user.has_perm("cash.view_cash_history"),
-        "can_assign_trip": can_manage_trips(request.user) and order.status == order.Status.CREATED and (
+        "can_assign_trip": not locked and can_manage_trips(request.user) and order.status == order.Status.CREATED and (
             not order.trip_id or not order.trip.trip_orders.exclude(status=order.Status.CREATED).exists()
         ),
-        "can_edit_created": not order.trip_id and order.status == order.Status.CREATED and (
+        "can_edit_created": not locked and not order.trip_id and order.status == order.Status.CREATED and (
             request.user.is_superuser or request.user.has_perm("orders.edit_created_order")
         ),
-        "can_confirm": order.status == order.Status.CREATED and (
+        "can_confirm": not locked and order.status == order.Status.CREATED and (
             request.user.is_superuser
             or (
                 request.user.has_perm("orders.confirm_order")
                 and (order.is_stock_order or order.prepayment_total == 0 or request.user.has_perm("cash.deposit_cash"))
             )
         ),
-        "can_start_receiving": order.status == order.Status.CONFIRMED and (
+        "can_start_receiving": not locked and order.status == order.Status.CONFIRMED and (
             request.user.is_superuser or request.user.has_perm("orders.start_receiving")
         ),
-        "can_adjust": order.status == order.Status.RECEIVING and (
+        "can_adjust": not locked and order.status == order.Status.RECEIVING and (
             request.user.is_superuser or request.user.has_perm("orders.edit_receiving_order")
         ),
-        "can_complete": order.status == order.Status.RECEIVING and (
+        "can_complete": not locked and order.status == order.Status.RECEIVING and (
             request.user.is_superuser
             or (
                 request.user.has_perm("orders.complete_order")
@@ -258,13 +287,16 @@ def order_edit(request, pk):
         "postpayment_quantity": current[source.pk].postpayment_quantity if source.pk in current else 0,
     } for source in source_items]
     form = ProcurementOrderHeaderForm(
-        request.POST or None, initial={"recipient": order.recipient, "comment": order.comment}
+        request.POST or None, allow_archived_initial=True, initial={"recipient": order.recipient, "comment": order.comment,
+            'customer': str(order.partner_id) if order.partner_id else 'custom' if order.partner_name_snapshot else '',
+            'custom_partner_name': order.partner_name_snapshot if not order.partner_id else ''}
     )
     if request.method == "POST" and form.is_valid():
         try:
             edit_created_order(
                 actor=request.user, order_id=order.pk,
                 recipient=form.cleaned_data["recipient"], comment=form.cleaned_data["comment"],
+                partner_id=form.cleaned_data['partner_id'], partner_name=form.cleaned_data['partner_name'],
                 lines=_parse_item_lines(request.POST, id_field="price_list_item_id"),
             )
         except ValidationError as exc:

@@ -11,6 +11,7 @@ from django.utils import timezone
 
 from catalog.audit import field_change, record_product_changes, stock_change
 from catalog.models import CD, ProductChangeEvent, Tech
+from catalog.game_codes import validate_supply_game_codes
 from consignment.models import ConsignmentMovement, ConsignmentMovementItem
 from partners.models import Supplier
 from warehouse.models import (
@@ -122,25 +123,8 @@ def allocate_weight_transport_cost(*, lines, products, total_transport_cost):
     total_weight = sum(line_weights)
     if total_weight <= 0:
         raise ValidationError("Общий вес поставки должен быть больше нуля.")
-    total_cents = int((total_transport_cost * 100).to_integral_value())
-    exact_cents = [
-        Decimal(total_cents) * Decimal(line_weight) / Decimal(total_weight)
-        for line_weight in line_weights
-    ]
-    allocated_cents = [
-        int(value.to_integral_value(rounding=ROUND_DOWN)) for value in exact_cents
-    ]
-    residual = total_cents - sum(allocated_cents)
-    order = sorted(
-        range(len(lines)),
-        key=lambda index: (exact_cents[index] - Decimal(allocated_cents[index]), -index),
-        reverse=True,
-    )
-    for index in order[:residual]:
-        allocated_cents[index] += 1
-    allocations = [Decimal(cents) / Decimal(100) for cents in allocated_cents]
-    if sum(allocations, Decimal("0")) != total_transport_cost:
-        raise ValidationError("Не удалось точно распределить транспортные расходы.")
+    from core.allocation import allocate_amount
+    allocations = allocate_amount(total_transport_cost, line_weights)
     return total_weight, line_weights, allocations
 
 
@@ -158,6 +142,9 @@ def accept_supply(*, accepted_by, warehouse_id, lines, expenses=(), weight_trans
     только товар на физических складах. Все изменяемые товары блокируются до
     конца транзакции.
     """
+    if _pending_supply is not None:
+        from orders.fulfillment import validate_supply_snapshot
+        validate_supply_snapshot(_pending_supply, lines, expenses, weight_transport_cost)
     prepared_lines = _normalise_lines(lines)
     prepared_expenses = _normalise_expenses(expenses)
     weight_transport_cost = _normalise_weight_transport_cost(weight_transport_cost)
@@ -182,6 +169,8 @@ def accept_supply(*, accepted_by, warehouse_id, lines, expenses=(), weight_trans
                 raise ValidationError("Выберите существующий товар из списка.")
             if len(suppliers) != len(supplier_ids):
                 raise ValidationError("Выберите существующего поставщика.")
+            if not defer_balance:
+                validate_supply_game_codes(products.values())
 
             missing_weight = [
                 product.name for product in products.values()
@@ -364,6 +353,8 @@ def edit_pending_supply(*, actor, supply_id, expected_revision_number, warehouse
     if not actor.is_superuser and not actor.has_perm("supplies.add_supply"):
         raise PermissionDenied("Недостаточно прав для редактирования ожидающего прихода.")
     supply = Supply.objects.select_for_update().select_related("warehouse", "accepted_by").get(pk=supply_id)
+    if hasattr(supply, 'trip_operation') and supply.trip_operation.calculation.get('arrival_id'):
+        raise ValidationError('Закупочные строки прихода зафиксированы финализацией рейса; здесь подтверждаются только цены.')
     if supply.status != Supply.Status.PRICE_REVIEW_REQUIRED:
         raise ValidationError("Этот приход уже принят или отменён. Обновите страницу.")
     try:
@@ -390,15 +381,17 @@ def edit_pending_supply(*, actor, supply_id, expected_revision_number, warehouse
 
 
 @transaction.atomic
-def confirm_supply_price_review(*, actor, supply_id, price_changes=None, expected_revision_number=None):
+def confirm_supply_price_review(*, actor, supply_id, price_changes=None, expected_revision_number=None, independent_expenses=None):
     """Атомарно сохраняет цены и только затем ставит ожидающий приход на баланс."""
+    from orders.arrival import lock_document_trip
+    lock_document_trip('supply',supply_id)
     try:
         supply = Supply.objects.select_for_update().select_related("warehouse").get(pk=supply_id)
     except Supply.DoesNotExist as exc:
         raise ValidationError("Приход не найден.") from exc
     if supply.status == Supply.Status.ACCEPTED:
         return supply, False
-    if supply.status != Supply.Status.PRICE_REVIEW_REQUIRED:
+    if supply.status not in (Supply.Status.PRICE_REVIEW_REQUIRED,Supply.Status.WAITING_TRIP_FINALIZATION):
         raise ValidationError("Этот приход нельзя поставить на баланс.")
     if expected_revision_number is not None:
         try:
@@ -407,6 +400,10 @@ def confirm_supply_price_review(*, actor, supply_id, price_changes=None, expecte
             raise ValidationError("Обновите страницу проверки прихода.") from exc
         if current_revision != supply.revision_number:
             raise ValidationError("Состав прихода изменён. Проверьте обновлённые количества и цены.")
+    if supply.status == Supply.Status.WAITING_TRIP_FINALIZATION:
+        raise ValidationError('Откройте проверку цен прихода и подтвердите цены по средней себестоимости склада.')
+    elif independent_expenses is not None:
+        raise ValidationError('Независимые расходы обычного прихода изменяются через его штатную форму.')
 
     calculations = list(
         supply.cost_calculations.select_for_update().select_related("cd", "tech").order_by("id")
@@ -422,6 +419,7 @@ def confirm_supply_price_review(*, actor, supply_id, price_changes=None, expecte
         })
     if len(products) != len(calculations):
         raise ValidationError("Один из товаров прихода больше не доступен.")
+    validate_supply_game_codes(products.values())
 
     from pricing.services import update_product_prices
     price_changes = price_changes or {}
@@ -432,7 +430,7 @@ def confirm_supply_price_review(*, actor, supply_id, price_changes=None, expecte
         if current_quantity != calculation.old_owned_quantity or product.cost != calculation.old_unit_cost:
             raise ValidationError(
                 f"Остаток или себестоимость товара «{product.name}» изменились после расчёта прихода. "
-                "Отмените приход и создайте его заново по актуальным данным."
+                "Обновите страницу проверки цен для пересчёта по актуальным данным."
             )
         changes = price_changes.get(key, {})
         if changes:
@@ -676,7 +674,7 @@ def _calculation_values(*, supply, product_type, product, old_quantity, old_cost
 def _unreceived_supply_ids():
     """Расчёты ожидающих и отменённых до приёмки приходов не входят в историю склада."""
     return Supply.objects.filter(
-        Q(status=Supply.Status.PRICE_REVIEW_REQUIRED)
+        Q(status__in=(Supply.Status.PRICE_REVIEW_REQUIRED, Supply.Status.WAITING_TRIP_FINALIZATION))
         | Q(status=Supply.Status.CANCELLED, revisions__diff_summary__unreceived_cancelled=True)
     ).values("pk")
 
@@ -800,6 +798,8 @@ def revise_supply(
     ).get(pk=supply_id)
     if supply.status != Supply.Status.ACCEPTED or supply.is_cancelled:
         raise ValidationError("Редактировать можно только действующий принятый приход.")
+    from orders.fulfillment import validate_supply_snapshot
+    validate_supply_snapshot(supply, lines, expenses, weight_transport_cost)
     if supply.revision_number != expected_revision_number:
         raise ValidationError("Приход был изменён другим пользователем. Обновите страницу.")
     try:
@@ -1170,10 +1170,12 @@ def cancel_supply(*, actor, supply_id, comment):
     comment = str(comment or "").strip()
     if not comment:
         raise ValidationError("Укажите причину отмены прихода.")
+    from orders.arrival import lock_document_trip
+    lock_document_trip('supply',supply_id)
     supply = Supply.objects.select_for_update().select_related("warehouse").get(pk=supply_id)
     if supply.is_cancelled:
         return SupplyCancellationResult(supply=supply, cancelled=False, costs={})
-    if supply.status == Supply.Status.PRICE_REVIEW_REQUIRED:
+    if supply.status in (Supply.Status.PRICE_REVIEW_REQUIRED, Supply.Status.WAITING_TRIP_FINALIZATION):
         _snapshot_supply_revision(
             supply=supply, actor=actor, reason=comment,
             diff_summary={"unreceived_cancelled": True, "balance_changed": False},

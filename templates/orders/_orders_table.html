@@ -1,0 +1,18 @@
+<div class="table-scroll"><table><thead><tr>
+  {% if can_create_trip and select_orders %}<th></th>{% endif %}
+  <th>ID</th><th>Дата</th><th>Получатель</th><th>Прайс / рейс</th><th>Статус</th><th class="numeric">Итого</th><th>Автор</th>{% if can_create_trip or can_export %}<th>Действия</th>{% endif %}
+</tr></thead><tbody>
+{% for order in table_orders %}
+<tr{% if order.fulfillment_processing %} class="order-operation-processing"{% elif order.fulfillment_completed %} class="order-operation-completed"{% endif %}>
+  {% if can_create_trip and select_orders %}<td><input type="checkbox" name="order_id" value="{{ order.pk }}" aria-label="Включить заказ {{ order.pk }}" {% if order.status != 'created' or order.trip_id %}disabled{% endif %}></td>{% endif %}
+  <td><a class="mono" href="{% url 'orders:detail' order.pk %}">#{{ order.pk }}</a></td>
+  <td>{{ order.created_at|date:"d.m.Y H:i" }}</td>
+  <td>{{ order.recipient }}{% if order.is_stock_order %}<br><span class="badge">На склад</span>{% endif %}</td>
+  <td>Прайс №{{ order.price_list_id }}{% if order.trip_id and can_generate_batches %}<br><a href="{% url 'orders:trip_detail' order.trip_id %}">{{ order.trip }}</a>{% endif %}</td>
+  <td><span class="badge">{{ order.fulfillment_label }}</span></td>
+  <td class="numeric strong">{{ order.grand_total }}</td>
+  <td>{{ order.created_by.full_name|default:order.created_by.username }}</td>
+  {% if can_create_trip or can_export %}<td><div class="heading-actions">{% include 'orders/_operation_actions.html' %}{% if can_export %}<a class="button button-secondary" href="{% url 'orders:export' order.pk %}">Скачать Excel</a>{% endif %}{% if can_create_trip and order.status == 'created' %}<a class="button button-secondary" href="{% url 'orders:assign_trip' order.pk %}">{% if order.trip_id %}Перенести в другой рейс{% else %}Добавить в рейс{% endif %}</a>{% endif %}</div></td>{% endif %}
+</tr>
+{% empty %}<tr><td class="empty-cell" colspan="{% if can_create_trip and select_orders %}9{% elif can_create_trip or can_export %}8{% else %}7{% endif %}">{% if select_orders %}Заказов без рейса пока нет.{% else %}Заказов пока нет.{% endif %}</td></tr>{% endfor %}
+</tbody></table></div>

@@ -1,0 +1,17 @@
+{% extends 'base.html' %}
+{% block title %}Новые заказы Яндекса · ReSOURCE{% endblock %}
+{% block body_class %}responsive-crm-page{% endblock %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">Внимание сотрудника</p><h1>Неподтверждённые заказы Яндекса</h1><p class="muted">«Заказ принят» — внутренняя отметка. Статусы доставки и оплаты она не меняет.</p></div><a class="button button-secondary" href="{% url 'sales:incomplete' %}">Незавершённые продажи</a></div>
+<ol class="market-attention-list" data-market-attention-list>
+  {% for row in attention_rows %}
+  <li class="panel market-attention-card market-order-unacknowledged" data-market-attention="{{ row.pk }}">
+    <strong data-market-order-label>Заказ Яндекса №{{ row.order.order_id }}</strong>
+    {% if perms.sales.view_sale_detail %}<a href="{% url 'sales:detail' row.order.sale_id %}">Открыть продажу</a>{% endif %}
+    {% if can_acknowledge %}<form method="post" action="{% url 'sales:market_acknowledge' row.pk %}" data-market-ack>{% csrf_token %}<button class="button" type="submit">Заказ принят</button></form>{% endif %}
+  </li>
+  {% endfor %}
+</ol>
+<p class="help-text" role="status" data-market-pending-empty {% if attention_rows %}hidden{% endif %}>Все заказы подтверждены сотрудниками.</p>
+<p class="error-text" role="status" data-market-ack-error></p>
+{% endblock %}

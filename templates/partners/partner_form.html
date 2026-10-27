@@ -1,0 +1,14 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block extra_head %}<script src="{% static 'js/partner-platform.js' %}?v=1" defer></script>{% endblock %}
+{% block title %}Партнёр · ReSOURCE{% endblock %}
+{% block content %}
+<div class="page-heading"><h1>{% if partner %}Редактировать партнёра{% else %}Новый партнёр{% endif %}</h1><a class="button button-secondary" href="{% url 'partners:partner_list' %}">К списку</a></div>
+<form method="post" class="panel form-panel stacked-form">{% csrf_token %}{{ form.non_field_errors }}
+{% for field in form %}{% if field.is_hidden %}{{ field }}{% else %}<div class="field">{% if field.field.widget.input_type == 'checkbox' %}<label for="{{ field.id_for_label }}">{{ field }} {{ field.label }}</label>{% else %}<label for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% endif %}{% if field.help_text %}<small>{{ field.help_text }}</small>{% endif %}{{ field.errors }}</div>{% endif %}{% endfor %}
+{% if can_create_platform %}<fieldset data-new-platform {% if not creating_platform %}hidden disabled{% endif %}>
+<legend>Новая площадка реализации</legend><div class="stacked-form">{{ platform_form.non_field_errors }}
+{% for field in platform_form %}<div class="field"><label for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{{ field.errors }}</div>{% endfor %}
+</div></fieldset>{% endif %}
+<button class="button" type="submit">Сохранить</button></form>
+{% endblock %}

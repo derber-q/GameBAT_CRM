@@ -203,7 +203,7 @@ class SupplierNewnessRoundingTests(TestCase):
         self.cd.save()
         for product in (self.cd, self.cd2):
             CDWarehouseStock.objects.create(warehouse=warehouse, cd=product, quantity=5)
-        workbook = load_workbook(BytesIO(generate_wholesale_price_xlsx(warehouse_id=warehouse.pk, actor=self.user)))
+        workbook = load_workbook(BytesIO(generate_wholesale_price_xlsx(warehouse_id=warehouse.pk, actor=self.user, partner_name='Тестовый заказчик')))
         sheet = workbook[MAIN_SHEET]
         second = find_sheet_row(sheet, '🌟 ' + self.cd2.name)
         first = find_sheet_row(sheet, self.cd.name)

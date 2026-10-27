@@ -152,7 +152,7 @@ class ProcurementPricingTests(TestCase):
         worker.user_permissions.add(*Permission.objects.filter(codename__in=("view_price_page", "change_procurement_delivery")))
         self.client.force_login(worker)
         response = self.client.get(reverse("price:procurement_detail", args=(self.price_list.pk,)))
-        self.assertContains(response, "procurement-pricing.js?v=20261020-1")
+        self.assertContains(response, "procurement-pricing.js?v=20261027-suppliers-3")
         self.assertContains(response, 'class="compact-input danger-text" name="markup_', count=2)
         self.assertContains(response, 'data-base="1000.00"')
         self.assertContains(response, f'name="prepayment_{self.items[0].pk}" value="1035.00"')

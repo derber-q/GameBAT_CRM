@@ -1,4 +1,5 @@
 <div class="sale-market-controls" data-market-order="{{ market.order.pk }}">
+  {% if not suppress_staff_ack %}{% include 'sales/_market_attention.html' %}{% endif %}
   {% if market.order.last_error %}<p class="alert alert-error">{{ market.order.last_error }}</p>{% endif %}
   {% if market.latest_request.state == 'pending' or market.latest_request.state == 'running' %}<small role="status">Запрос в Маркет обрабатывается. Обновите страницу после выполнения.</small>{% elif market.latest_request.state == 'error' %}<p class="alert alert-error">Не удалось выполнить запрос: {{ market.latest_request.last_error }}</p>{% endif %}
   {% if market.order.fake %}<p class="help-text">Тестовый заказ</p>{% endif %}

@@ -25,6 +25,9 @@
     });
     const initialNode = form.dataset.initialItemsId ? document.getElementById(form.dataset.initialItemsId) : null;
     const initial = initialNode ? JSON.parse(initialNode.textContent) : [];
+    const fixedComposition = form.dataset.fixedComposition === 'true';
+    const tripEditable = form.dataset.tripEditable === 'true';
+    const tripArrival = form.dataset.tripArrival === 'true';
     const warehouseInput = form.dataset.warehouseSelectId ? document.getElementById(form.dataset.warehouseSelectId) : null;
     const priceTypeInput = form.dataset.priceSelectId ? document.getElementById(form.dataset.priceSelectId) : null;
     const paymentInput = form.dataset.paymentSelectId ? document.getElementById(form.dataset.paymentSelectId) : null;
@@ -83,10 +86,26 @@
       return operationMode() !== "EXPENSE" && (saleTypeInput ? saleTypeInput.value : form.dataset.fixedSaleType) === "avito";
     }
 
+    function syncPriceType(preferWholesale = false) {
+      if (!priceTypeInput || !saleTypeInput) return;
+      const wholesale = saleTypeInput.value === "wholesale";
+      const option = priceTypeInput.querySelector('option[value="wholesale"]');
+      if (option) {
+        option.disabled = !wholesale;
+        option.hidden = !wholesale;
+      }
+      if (wholesale && preferWholesale) priceTypeInput.value = "wholesale";
+      else if (!wholesale && priceTypeInput.value === "wholesale") {
+        priceTypeInput.value = "retail";
+      }
+    }
+
     function labelSaleRow(row) {
-      if (form.dataset.searchContext !== "sale") return;
+      if (form.dataset.searchContext !== "sale" && !tripEditable) return;
       const fields = [
-        ["product", "Товар / штрихкод"], ["price", "Базовая цена"],
+        ["product", "Товар / штрихкод"],
+        ...(tripEditable ? [["game_codes", "CUSA / PPSA"]] : []),
+        ["price", "Базовая цена"],
         ["discount", "Скидка / доплата, ед."], ["quantity", "Количество"],
         ["cost", "Себестоимость"], ["total", "Сумма строки"],
         ["commission", "Комиссия Avito"],
@@ -312,7 +331,9 @@
       const noteHelp = form.querySelector("[data-system-note-help]");
       if (noteHelp) noteHelp.hidden = !digital;
       const operationHelp = form.querySelector("[data-sale-operation-help]");
-      if (operationHelp) operationHelp.textContent = operationMode() === "EXPENSE"
+      if (operationHelp) operationHelp.textContent = (fixedComposition || tripEditable)
+        ? "Прямая отгрузка по заказу рейса. Складские остатки не изменятся."
+        : operationMode() === "EXPENSE"
         ? "Расход уменьшит прибыль в статистике после завершения операции. Деньги из кассы не списываются."
         : "Обычная оплата сразу завершает продажу; постоплата ожидает доставки и оплаты.";
       const hasAdjustment = [...body.querySelectorAll('input[name="unit_discount"], input[name="custom_unit_discount"]')].some(input => (cents(input.value || "0") ?? 0n) !== 0n);
@@ -328,6 +349,7 @@
       const selectedQuantities = new Map();
       if (showSaleInventory) {
         body.querySelectorAll("tr").forEach((row) => {
+          if (row.dataset.tripSource === 'trip') return;
           const type = row.querySelector('input[name="product_type"]')?.value;
           const id = row.querySelector('input[name="product_id"]')?.value;
           if (!type || !id) return;
@@ -369,11 +391,11 @@
           const errorOutput = row.querySelector("[data-stock-error]");
           const type = row.querySelector('input[name="product_type"]')?.value;
           const id = row.querySelector('input[name="product_id"]')?.value;
-          const loaded = row.dataset.inventoryLoaded === "true";
+          const loaded = row.dataset.inventoryLoaded === "true" && row.dataset.tripSource !== 'trip';
           const stock = loaded ? Number(row.dataset.warehouseStock || 0) : null;
           const selected = type && id ? (selectedQuantities.get(`${type}:${id}`) || 0) : 0;
           const overStock = stock !== null && selected > stock;
-          if (stockOutput) stockOutput.textContent = stock === null ? "—" : String(stock);
+          if (stockOutput) stockOutput.textContent = row.dataset.tripSource === 'trip' ? 'Прямая поставка' : stock === null ? "—" : String(stock);
           if (availableOutput) availableOutput.textContent = stock === null ? "—" : String(Math.max(0, stock - selected));
           if (locationOutput) {
             locationOutput.textContent = stock === null
@@ -410,7 +432,7 @@
     async function refreshInventory() {
       if (!showSaleInventory) return;
       const requestNumber = ++inventoryRequestNumber;
-      const rows = [...body.querySelectorAll("tr")];
+      const rows = [...body.querySelectorAll("tr")].filter(row => row.dataset.tripSource !== 'trip');
       const selectedWarehouse = warehouseInput ? warehouseInput.value : form.dataset.warehouseId;
       if (!selectedWarehouse) {
         rows.forEach((row) => applyInventory(row, null));
@@ -458,7 +480,9 @@
       receivedContainer.hidden = !visible;
       if (receivedInput) receivedInput.disabled = !visible;
       const hint = form.querySelector("[data-payment-workflow]");
-      if (hint) hint.textContent = immediate
+      if (hint) hint.textContent = paymentInput.value === 'partner_debt'
+        ? "Продажа будет завершена, её стоимость увеличит долг партнёра. В кассу поступит 0 ₽."
+        : immediate
         ? "Продажа будет сразу завершена."
         : "Продажа создаётся неоплаченной. Полученную сумму укажите при подтверждении оплаты. Завершение — после доставки и оплаты.";
     }
@@ -469,6 +493,7 @@
       if (!allowMode("normal")) return;
       const row = document.createElement("tr");
       const productCell = document.createElement("td");
+      if (tripArrival) row.dataset.tripSource = value.origin === 'trip' ? 'trip' : 'warehouse';
       const wrap = document.createElement("div");
       wrap.className = "autocomplete-wrap";
       const search = document.createElement("input");
@@ -488,7 +513,25 @@
       id.value = value.product_id || "";
       const suggestions = document.createElement("div");
       suggestions.className = "suggestions";
-      wrap.append(search, type, id, suggestions);
+      const itemId = document.createElement("input");
+      itemId.type = "hidden";
+      itemId.name = "item_id";
+      itemId.value = value.item_id || "";
+      const tripRow = document.createElement('input');
+      tripRow.type = 'hidden'; tripRow.name = 'trip_row'; tripRow.value = value.trip_row || '';
+      const lineNote = document.createElement("input");
+      lineNote.type = "text";
+      lineNote.name = "line_note";
+      lineNote.placeholder = "Примечание к строке";
+      lineNote.value = value.line_note || "";
+      wrap.append(search, type, id, itemId, suggestions, lineNote);
+      if (tripEditable) wrap.append(tripRow);
+      const sourceBadge = document.createElement('small');
+      sourceBadge.className = 'muted';
+      if (tripArrival) {
+        sourceBadge.textContent = value.origin === 'trip' ? 'Из рейса · без списания склада' : 'Со склада';
+        wrap.append(sourceBadge);
+      }
       productCell.append(wrap);
       const fullName = document.createElement("span");
       fullName.className = "sale-product-full-name";
@@ -507,10 +550,10 @@
       const quantity = document.createElement("input");
       quantity.type = "number";
       quantity.name = "quantity";
-      quantity.min = "1";
+      quantity.min = tripArrival && value.origin === 'trip' ? '0' : '1';
       quantity.step = "1";
       quantity.required = true;
-      quantity.value = value.quantity || "";
+      quantity.value = value.quantity ?? "";
       quantityCell.append(quantity);
       const stockError = document.createElement("span");
       stockError.className = "error-text sale-line-stock-error";
@@ -518,6 +561,7 @@
       quantityCell.append(stockError);
       const costCell = document.createElement("td");
       costCell.className = "numeric readonly-money";
+      if ((fixedComposition || tripEditable) && value.unit_cost !== undefined) costCell.textContent = `${formatMoney(cents(value.unit_cost) ?? 0n)} ₽`;
       const lineTotalCell = document.createElement("td");
       lineTotalCell.className = "numeric readonly-money";
       lineTotalCell.dataset.lineTotal = "true";
@@ -547,13 +591,21 @@
         recalculate();
       });
       removeCell.append(remove);
-      row.append(productCell, priceCell, discountCell, quantityCell, costCell, lineTotalCell, commissionCell);
+      const codesCell = document.createElement("td");
+      codesCell.dataset.gameCodes = "true";
+      codesCell.textContent = value.cusa_ppsa_code || "—";
+      row.append(productCell);
+      if (tripEditable) {
+        row.append(codesCell);
+        search.addEventListener("input", () => { codesCell.textContent = "—"; });
+      }
+      row.append(priceCell, discountCell, quantityCell, costCell, lineTotalCell, commissionCell);
       if (showSaleInventory) row.append(stockCell, availableCell, locationCell);
       row.append(removeCell);
       labelSaleRow(row);
       body.append(row);
       quantity.addEventListener("input", recalculate);
-      window.GameBAT.attachAutocomplete({
+      if (!fixedComposition) window.GameBAT.attachAutocomplete({
         input: search,
         typeInput: type,
         idInput: id,
@@ -565,6 +617,10 @@
         priceTypeInput,
         fixedPriceType: form.dataset.fixedPriceType,
         onSelect: (result, metadata = {}) => {
+          if (tripEditable && result?.type === 'system') {
+            type.value = ''; id.value = ''; search.value = '';
+            window.alert('Добавьте товар из номенклатуры.'); return;
+          }
           if (result?.type === "system") {
             if (!allowMode(result.system_kind || result.id, row)) { type.value = ""; id.value = ""; search.value = ""; return; }
             row.remove();
@@ -575,6 +631,15 @@
           }
           if (result && !allowMode("normal", row)) { type.value = ""; id.value = ""; search.value = ""; return; }
           fullName.textContent = result?.label || "";
+          codesCell.textContent = result?.cusa_ppsa_code || "—";
+          itemId.value = "";
+          tripRow.value = '';
+          if (tripArrival) {
+            row.dataset.tripSource = 'warehouse';
+            sourceBadge.textContent = 'Со склада';
+            quantity.min = '1';
+          }
+          if (tripEditable) costCell.textContent = result?.cost ? `${formatMoney(cents(result.cost) ?? 0n)} ₽` : '—';
           delete row.dataset.fixedUnitPrice;
           row.dataset.prices = result?.prices ? JSON.stringify(result.prices) : "{}";
           if (
@@ -620,18 +685,6 @@
         const row = addCustomLine({system_kind: mode});
         return row.querySelector('input[name="custom_quantity"]');
       }
-      const existingRow = [...body.querySelectorAll("tr")].find((row) => (
-        row.querySelector('input[name="product_type"]')?.value === String(result.type)
-        && row.querySelector('input[name="product_id"]')?.value === String(result.id)
-      ));
-      if (existingRow) {
-        const quantity = existingRow.querySelector('input[name="quantity"]');
-        if (quantity) {
-          quantity.value = String(Math.max(0, Number(quantity.value) || 0) + 1);
-          quantity.dispatchEvent(new Event("input", { bubbles: true }));
-        }
-        return quantity;
-      }
       const blankRow = [...body.querySelectorAll("tr")].find((row) => {
         const productId = row.querySelector('input[name="product_id"]');
         const productSearch = row.querySelector("[data-product-search]");
@@ -654,6 +707,7 @@
         product_id: result.id,
         quantity: 1,
         prices: result.prices,
+        unit_cost: result.cost,
         warehouse_stock: result.warehouse_stock,
         storage_locations: result.storage_locations,
       });
@@ -699,7 +753,7 @@
           throw new Error("Этот штрихкод указан у нескольких товаров. Выберите товар через обычный поиск.");
         }
         const result = exactMatches[0];
-        if (result.type !== "system" && Number(result.available) <= 0) throw new Error("Этого товара нет на выбранном складе.");
+        if (!tripEditable && result.type !== "system" && Number(result.available) <= 0) throw new Error("Этого товара нет на выбранном складе.");
         const quantity = putBarcodeResultIntoSale(result);
         barcodeInput.value = "";
         barcodeFeedback.textContent = `Добавлено: ${result.label}`;
@@ -721,12 +775,16 @@
         addByBarcode();
       });
     }
-    if (barcodeInput && barcodeFeedback && window.GameBAT.registerGlobalBarcodeHandler) {
+    if (!fixedComposition && barcodeInput && barcodeFeedback && window.GameBAT.registerGlobalBarcodeHandler) {
       window.GameBAT.registerGlobalBarcodeHandler(addByBarcode);
     }
-    if (priceTypeInput) priceTypeInput.addEventListener("change", recalculate);
+    if (priceTypeInput) priceTypeInput.addEventListener("change", () => {
+      syncPriceType();
+      recalculate();
+    });
     if (saleTypeInput) saleTypeInput.addEventListener("change", () => {
-      if (paymentInput && ["avito", "yandex_market"].includes(saleTypeInput.value)) {
+      syncPriceType(true);
+      if (paymentInput && saleTypeInput.value === "avito") {
         paymentInput.value = "bank_transfer_postpay";
       }
       syncCashReceivedVisibility();
@@ -766,7 +824,9 @@
           return sum + (price !== null ? price * quantity : 0n);
         }, 0n);
         const received = cents(receivedInput.value);
-        if (received !== null && received < currentTotal) {
+        const partnerChoice = form.querySelector('[name="customer"]')?.value;
+        const allowsOffset = saleTypeInput?.value === 'wholesale' && partnerChoice && partnerChoice !== 'custom';
+        if (received !== null && received < currentTotal && !allowsOffset) {
           event.preventDefault();
           window.alert("Полученная сумма не может быть меньше стоимости продажи.");
         }
@@ -780,7 +840,15 @@
         noteInput.focus();
       }
     });
+    syncPriceType();
     (initial.length ? initial : [{}]).forEach(addLine);
+    if (tripEditable) {
+      form.querySelectorAll('.add-custom-line, .add-consignment-line').forEach(node => { node.hidden = true; });
+    }
+    if (fixedComposition) {
+      form.querySelectorAll('.add-stock-line, .add-custom-line, .add-consignment-line, .remove-row, .barcode-sale-entry').forEach(node => { node.hidden = true; });
+      body.querySelectorAll('[data-product-search], input[name="quantity"]').forEach(node => { node.readOnly = true; });
+    }
     syncCashReceivedVisibility();
     syncCommissionVisibility();
     recalculate();

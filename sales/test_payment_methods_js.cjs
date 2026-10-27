@@ -6,7 +6,7 @@ const env = environment('sale', [{ product_type: 'cd', product_id: 1, label: 'И
 const change = (field, value) => { field.value = value; field.dispatchEvent({type: 'change'}); };
 assert.equal(env.receivedContainer.hidden, false);
 assert.match(env.paymentHint.textContent, /сразу завершена/);
-for (const channel of ['avito', 'yandex_market']) {
+for (const channel of ['avito']) {
   change(env.saleType, channel);
   assert.equal(env.payment.value, 'bank_transfer_postpay');
   assert.equal(env.receivedContainer.hidden, true);
@@ -28,4 +28,8 @@ env.received.value = '9999.99';
 assert.throws(() => env.form.dispatchEvent({type: 'submit', preventDefault() {}}), /не может быть меньше/);
 env.received.value = '10500.01';
 env.form.dispatchEvent({type: 'submit', preventDefault() {throw new Error('Лишний запрет');}});
+change(env.payment, 'partner_debt');
+assert.equal(env.received.disabled, true);
+assert.equal(env.receivedContainer.hidden, true);
+assert.match(env.paymentHint.textContent, /увеличит долг партнёра/);
 console.log('Способы оплаты: маркетплейсы, ручной выбор, постоплата и суммы банковского перевода — OK.');

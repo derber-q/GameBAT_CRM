@@ -1,5 +1,16 @@
 (() => {
   'use strict';
+  const extensionStatus = document.querySelector('[data-manual-extension-status]');
+  if (extensionStatus) {
+    const showExtensionStatus = () => {
+      extensionStatus.textContent = document.documentElement.dataset.resourceAvitoConnected === '1'
+        ? 'Расширение подключено. Нажмите «Ручной поиск», чтобы открыть Avito с панелью цены.'
+        : 'Панель Avito не подключена. Если расширение уже установлено, обновите эту страницу и заново нажмите «Ручной поиск» обычной левой кнопкой мыши.';
+    };
+    showExtensionStatus();
+    new MutationObserver(showExtensionStatus).observe(document.documentElement,
+      {attributes: true, attributeFilter: ['data-resource-avito-connected']});
+  }
   document.querySelectorAll('[data-found-price-form]').forEach(form => {
     const input = form.querySelector('[name="price"]');
     const button = form.querySelector('button');

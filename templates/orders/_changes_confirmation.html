@@ -1,0 +1,9 @@
+{% if operation_confirmation %}
+<section class="panel" role="region" aria-labelledby="operation-changes-title">
+  <h2 id="operation-changes-title">Подтвердить изменения заказа?</h2>
+  <p>Документ ещё не создан. Проверьте отличия от исходного заказа:</p>
+  <ul>{% for change in operation_confirmation.changes %}<li>{{ change }}</li>{% endfor %}</ul>
+  <p class="help-text">Нажмите «Подтвердить изменения и создать», если список верен. Можно продолжить редактирование формы — изменённый состав потребуется подтвердить заново.</p>
+  <input type="hidden" name="operation_confirmation" value="{{ operation_confirmation.token }}">
+</section>
+{% endif %}

@@ -1,0 +1,43 @@
+/* Компактная таблица рейса: поставщик и назначение остаются в заголовке группы. */
+.trip-finalization-table { min-width: 0; table-layout: fixed; width: 100%; font-size: 12px; }
+.trip-finalization-table .trip-col-auto { width: 3%; }
+.trip-finalization-table .trip-col-product { width: 30%; }
+.trip-finalization-table .trip-col-quantity { width: 8%; }
+.trip-finalization-table .trip-col-aed { width: 6%; }
+.trip-finalization-table .trip-col-purchase { width: 8%; }
+.trip-finalization-table .trip-col-delivery { width: 7%; }
+.trip-finalization-table .trip-col-before { width: 8%; }
+.trip-finalization-table .trip-col-after { width: 10%; }
+.trip-finalization-table .trip-col-difference { width: 10%; }
+.trip-finalization-table .trip-col-price { width: 10%; }
+.trip-finalization-table th, .trip-finalization-table td { padding: 6px 5px; }
+.trip-finalization-table thead th { font-size: 10px; letter-spacing: 0; white-space: normal; vertical-align: top; }
+.trip-finalization-table th small { display: block; font-size: 9px; font-weight: 500; text-transform: none; }
+.trip-finalization-table .trip-finalization-group th { white-space: normal; }
+.trip-finalization-product { overflow-wrap: anywhere; }
+.trip-finalization-product small { display: block; font-size: 10px; margin-top: 2px; }
+.trip-finalization-quantity { white-space: nowrap; }
+.trip-finalization-table input[type="number"] { min-width: 0; width: 100%; min-height: 32px; padding: 5px; text-align: right; font-size: 12px; }
+.trip-finalization-table .finalization-source { min-height: 0; margin-top: 2px; font-size: 9px; }
+.trip-finalization-table .finalization-source:empty { display: none; }
+.trip-finalization-adjustments span { display: block; font-variant-numeric: tabular-nums; }
+.trip-finalization-adjustments .finalization-row-penalty { font-size: 11px; margin-top: 2px; }
+
+@media (max-width: 1100px) {
+  .trip-finalization-section { padding: 10px; }
+  .trip-finalization-table { font-size: 11px; }
+  .trip-finalization-table th, .trip-finalization-table td { padding: 5px 3px; }
+  .trip-finalization-table input[type="number"] { padding: 4px 2px; font-size: 11px; }
+}
+
+@media (max-width: 760px) {
+  .trip-finalization-table colgroup, .trip-finalization-table thead { display: none; }
+  .trip-finalization-table, .trip-finalization-table tbody { display: block; }
+  .trip-finalization-group { display: block; }
+  .trip-finalization-group th { display: block; }
+  .trip-finalization-table .finalization-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-bottom: 1px solid var(--gb-border); padding: 5px 0; }
+  .trip-finalization-table .finalization-row td { border: 0; min-width: 0; }
+  .trip-finalization-table .finalization-row td::before { content: attr(data-label); display: block; color: var(--gb-text-muted); font-size: 9px; text-align: inherit; }
+  .trip-finalization-table .finalization-row td:first-child { grid-column: 1; }
+  .trip-finalization-table .trip-finalization-product { grid-column: 2 / -1; font-size: 12px; }
+}

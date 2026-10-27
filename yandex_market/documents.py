@@ -1,6 +1,8 @@
 """Официальные PDF Маркета и отдельные публичные изображения товаров."""
 import ipaddress
 import socket
+import hashlib
+import json
 from io import BytesIO
 from urllib.parse import urlparse
 from urllib.request import Request, build_opener
@@ -14,6 +16,13 @@ from django.db.models import Q
 from .client import MarketError, NoRedirect
 from .content import public_https
 from .models import LabelDocument, Media, OrderMetadata
+
+
+def label_cache_signature(order):
+    """Коробки и состав определяют пригодность сохранённого ярлыка."""
+    data = {'items': [{key: item[key] for key in ('id', 'offerId', 'count') if key in item}
+                      for item in order.items], 'boxes': order.boxes, 'delivery': order.delivery}
+    return hashlib.sha256(json.dumps(data, sort_keys=True, default=str).encode()).hexdigest()
 
 
 @transaction.atomic
@@ -33,12 +42,13 @@ def request_labels(*, integration, orders, actor, format_name='A7', box_id=None,
     if len(orders) == 1:
         order = OrderMetadata.objects.select_for_update().get(pk=orders[0].pk)
         values['order'] = order
+        values['cache_signature'] = label_cache_signature(order)
         if box_id or shipment_id:
             if not box_id or not shipment_id or not str(box_id).isdecimal() or not str(shipment_id).isdecimal():
                 raise ValidationError('Укажите идентификаторы коробки и отправления.')
             values.update(box_id=int(box_id), shipment_id=int(shipment_id))
         if reuse:
-            document = order.labels.filter(format=format_name, box_id=values.get('box_id'),
+            document = order.labels.filter(format=format_name, cache_signature=values['cache_signature'], box_id=values.get('box_id'),
                 shipment_id=values.get('shipment_id')).filter(
                     Q(state__in=['pending', 'processing']) | (Q(state='done') & ~Q(file=''))
                 ).order_by('-pk').first()
@@ -91,6 +101,8 @@ def save_image(connection, upload, *, position=None):
 
 def process_label(document_id, client):
     document = LabelDocument.objects.select_related("order").get(pk=document_id)
+    if document.state == 'expired':
+        return
     if document.state == "done" and document.file:
         return
     if document.order_id:

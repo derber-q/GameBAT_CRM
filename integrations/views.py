@@ -6,12 +6,14 @@ from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
 from django.db import transaction
+from django.db.utils import OperationalError, ProgrammingError
 from django.db.models import F, Q
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
+from django.views.decorators.cache import never_cache
 from django.views.decorators.debug import sensitive_post_parameters
 
 from catalog.models import CD, Tech
@@ -35,7 +37,7 @@ from .reef_settings import check_connection as check_reef_connection, save_key a
 from .google_sheets import NOMENCLATURE_SHEET_NAME, get_google_sheets_integration, save_google_sheets_settings
 from .google_tasks import enqueue_google_sheets_sync
 from .queue import enqueue_periodic, enqueue_profile_sync_after_commit
-from .required_actions import get_avito_required_actions
+from .required_actions import get_avito_required_actions, get_avito_required_action_counts
 from .services import (
     bind_listing,
     check_avito_connection,
@@ -168,8 +170,10 @@ def avito_dashboard(request):
         manual_jobs.filter(pk=int(requested_run)).first()
         if requested_run.isdigit() else manual_jobs.order_by("-created_at", "-pk").first()
     )
+    actions = get_avito_required_actions()
+    request._avito_action_counts = get_avito_required_action_counts(actions=actions)
     context = {
-        "required_actions": get_avito_required_actions(),
+        "required_actions": actions,
         "actions_refresh_job": AvitoSyncJob.objects.filter(job_type=AvitoSyncJob.JobType.STATUS_REFRESH).first(),
         "credential": credential,
         "linked_count": AvitoListingConnection.objects.count(),
@@ -186,6 +190,19 @@ def avito_dashboard(request):
         ).order_by("-created_at", "-pk").first(),
     }
     return render(request, "integrations/avito_dashboard.html", context)
+
+
+@require_GET
+@never_cache
+@permission_required_any("integrations.view_avito_integration")
+def required_actions_count(request):
+    try:
+        if request.GET.get('events') == '1':
+            return JsonResponse({**get_avito_required_action_counts(include_keys=True),
+                'observed_at': timezone.now().isoformat()})
+        return JsonResponse(get_avito_required_action_counts())
+    except (OperationalError, ProgrammingError):
+        return JsonResponse({'error': 'Данные необходимых действий временно недоступны.'}, status=503)
 
 
 @require_POST

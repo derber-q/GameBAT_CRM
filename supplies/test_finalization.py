@@ -34,9 +34,9 @@ class SupplyFinalizationTests(TestCase):
         platform = Platform.objects.create(name="PS5")
         brand = Brand.objects.create(name="Sony")
         product_type = ProductType.objects.create(name="Аксессуар")
-        cls.a = CD.objects.create(platform=platform, name="A", sku="A", cost=0, weight_grams=120)
-        cls.b = CD.objects.create(platform=platform, name="B", sku="B", cost=0, weight_grams=120)
-        cls.c = CD.objects.create(platform=platform, name="C", sku="C", cost=0, weight_grams=120)
+        cls.a = CD.objects.create(cusa_ppsa_code="PPSA-00001", platform=platform, name="A", sku="A", cost=0, weight_grams=120)
+        cls.b = CD.objects.create(cusa_ppsa_code="PPSA-00001", platform=platform, name="B", sku="B", cost=0, weight_grams=120)
+        cls.c = CD.objects.create(cusa_ppsa_code="PPSA-00001", platform=platform, name="C", sku="C", cost=0, weight_grams=120)
         cls.d = Tech.objects.create(
             brand=brand, product_type=product_type, name="D", sku="D", cost=0, weight_grams=500,
         )

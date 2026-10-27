@@ -6,6 +6,10 @@ from .models import Sale
 from .services import can_mark_paid, next_order_status
 from .market_controls import with_market_controls, market_context
 
+WHOLESALE_TYPES = ('wholesale', 'wholesale_pickup', 'wholesale_delivery')
+CHANNELS = ((Sale.SaleType.YANDEX_MARKET, 'Яндекс Маркет'), (Sale.SaleType.WHOLESALE, 'Опт'),
+            (Sale.SaleType.AVITO, 'Авито'), (Sale.SaleType.RETAIL, 'Розница'))
+
 
 def sales_queryset():
     return with_market_controls(Sale.objects.select_related(
@@ -14,7 +18,7 @@ def sales_queryset():
 
 
 def _items_preview(sale):
-    if sale.sale_type == Sale.SaleType.WHOLESALE:
+    if sale.sale_type in WHOLESALE_TYPES:
         return [], False
     groups = [sorted(sale._related_items(name), key=lambda item: item.pk) for name in (
         'cd_items', 'tech_items', 'custom_items', 'consignment_items',
@@ -38,6 +42,7 @@ def status_context(sale, user, editable=True):
         'next_order_label': Sale.OrderStatus(order).label if order else '',
         'can_mark_paid': payment, 'items_preview': items, 'has_more_items': has_more_items,
         'market': market,
+        'is_wholesale': sale.sale_type in WHOLESALE_TYPES,
     }
 
 
@@ -52,15 +57,25 @@ def list_groups(request, state):
         terminal = dict(order_status=Sale.OrderStatus.DELIVERED, payment_status=Sale.PaymentStatus.PAID)
         queryset = queryset.filter(**terminal) if state == 'completed' else queryset.exclude(**terminal)
     groups = []
-    for kind, label in Sale.SaleType.choices:
+    kinds = Sale.SaleType.choices if state == 'cancelled' else [*CHANNELS]
+    if state == 'incomplete':
+        labels = dict(CHANNELS)
+        kinds = [(kind, labels[kind]) for kind in (Sale.SaleType.WHOLESALE, Sale.SaleType.AVITO,
+            Sale.SaleType.YANDEX_MARKET, Sale.SaleType.RETAIL)]
+    if state == 'completed':
+        kinds.append((Sale.SaleType.CONSIGNMENT, 'Реализация'))
+    for kind, label in kinds:
         page_key = f'page_{kind}'
-        page = Paginator(queryset.filter(sale_type=kind), 50).get_page(request.GET.get(page_key))
+        sale_types = WHOLESALE_TYPES if kind == Sale.SaleType.WHOLESALE else (kind,)
+        page = Paginator(queryset.filter(sale_type__in=sale_types), 50).get_page(request.GET.get(page_key))
+        if state != 'cancelled' and not page.paginator.count:
+            continue
         def page_url(number):
             params = request.GET.copy()
             params[page_key] = number
             return '?' + params.urlencode()
         groups.append({
-            'kind': kind, 'label': label, 'sale_types': (kind,), 'page': page,
+            'kind': kind, 'label': label, 'sale_types': sale_types, 'page': page,
             'column_count': (9 if kind == Sale.SaleType.WHOLESALE else 8) + {
                 'completed': 1, 'cancelled': 2,
             }.get(state, 0),

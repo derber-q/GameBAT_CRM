@@ -4,6 +4,7 @@ from catalog.models import Brand, GameSeries, Platform, ProductType
 from warehouse.models import Warehouse
 
 from .models import Sale
+from partners.models import Partner
 
 
 CHANNEL_CHOICES = (
@@ -31,6 +32,8 @@ PRODUCT_SORT_CHOICES = (
 
 
 class SaleStatisticsFilterForm(forms.Form):
+    partner = forms.ModelChoiceField(label='Партнёр', queryset=Partner.objects.all(), required=False, empty_label='Все партнёры')
+    arbitrary_partner_name = forms.CharField(label='Произвольный заказчик (точное название)', required=False, max_length=255)
     operation_kind = forms.ChoiceField(label="Вид операции", required=False, choices=(("", "Все операции"), *Sale.OperationKind.choices))
     date_from = forms.DateField(label="Дата с", required=False, widget=forms.DateInput(attrs={"type": "date"}))
     date_to = forms.DateField(label="Дата по", required=False, widget=forms.DateInput(attrs={"type": "date"}))
@@ -55,6 +58,8 @@ class SaleStatisticsFilterForm(forms.Form):
 
     def clean(self):
         data = super().clean()
+        if data.get('partner') and data.get('arbitrary_partner_name'):
+            raise forms.ValidationError('Выберите партнёра из справочника или произвольное название.')
         date_from, date_to = data.get("date_from"), data.get("date_to")
         if date_from and date_to and date_from > date_to:
             raise forms.ValidationError("Дата начала не может быть позже даты окончания.")

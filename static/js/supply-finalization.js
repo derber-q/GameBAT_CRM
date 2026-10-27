@@ -68,7 +68,7 @@
       box.classList.toggle("finalization-penalty-success", valid && total === 0n);
       box.classList.toggle("finalization-penalty-warning", !valid || total !== 0n);
     });
-    applyButton.disabled = !valid || total !== 0n || !changed;
+    applyButton.disabled = !valid || total !== 0n || (!changed && form.dataset.allowUnchanged !== "true");
     return {valid, total};
   };
 

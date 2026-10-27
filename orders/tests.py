@@ -87,7 +87,9 @@ class ProcurementOrderTests(TestCase):
         with CaptureQueriesContext(connection) as queries:
             response = self.client.get(reverse("orders:export", args=(order.pk,)))
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response["Content-Disposition"], f'attachment; filename="zakaz_{order.pk}.xlsx"')
+        from urllib.parse import quote
+        self.assertIn(f'zakaz_{order.pk}_', response['Content-Disposition'])
+        self.assertIn(quote(order.recipient), response['Content-Disposition'])
         self.assertIn("no-store", response["Cache-Control"])
         self.assertFalse(any(q["sql"].lstrip().upper().startswith(("INSERT", "UPDATE", "DELETE")) for q in queries))
         self.assertEqual(sum('FROM "orders_customerprocurementorderitem"' in q["sql"] for q in queries), 1)
@@ -138,7 +140,9 @@ class ProcurementOrderTests(TestCase):
         self.client.force_login(self.user)
         book = load_workbook(BytesIO(self.client.get(reverse("orders:export", args=(order.pk,))).content))
         sheet = book.active
-        self.assertEqual([values[2] for _row, values in order_product_rows(sheet)], [0, 0])
+        self.assertEqual([values for _row, values in order_product_rows(sheet)], [
+            ("Игра", "Не отгружено", 0, None, 0),
+        ])
         self.assertEqual(sheet.cell(sheet.max_row, 5).value, 0)
         book.close()
 

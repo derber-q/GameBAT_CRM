@@ -7,20 +7,22 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
 from django.db.models import Sum
 from django.http import JsonResponse
+from django.middleware.csrf import get_token
 from django.shortcuts import redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
+from django.views.decorators.cache import never_cache
 
 from catalog.audit import record_product_changes
 from catalog.models import CD, Tech, ProductChangeEvent
-from catalog.product_search import filter_products_by_text
 from core.decorators import permission_required_all, permission_required_any
 from integrations.avito_check import display_result, manual_search_url, queue, run_check
 from integrations.models import AvitoManualPrice, AvitoPriceCheckResult, ReefApiCredential
 from integrations.reef_api import ReefApiError
 from .services import update_product_prices
+from .avito_check_catalog import listed_products, manual_product_data
 from .warnings import product_price_warnings, wholesale_margin
 
 
@@ -56,11 +58,7 @@ def page(request):
     can_change_avito = request.user.is_superuser or request.user.has_perm("pricing.change_retail_price")
     can_change_wholesale = request.user.is_superuser or request.user.has_perm("pricing.change_wholesale_price")
     rows = []
-    products = CD.objects.filter(avito_profile__connection__isnull=False).select_related(
-        "avito_profile__manual_price", "platform", "game_series",
-    ).annotate(physical_stock=Sum("warehouse_stocks__quantity")).filter(physical_stock__gt=0).order_by("name", "pk")
-    if query:
-        products = filter_products_by_text(products, query, product_kind="cd")
+    products = listed_products(query=query, sort=sort)
     for product in products:
         found = getattr(product.avito_profile, "manual_price", None)
         rows.append({"kind": "cd", "type": "cd", "product": product, "found": found,
@@ -69,16 +67,28 @@ def page(request):
                      "can_change_avito": can_change_avito and not product.is_archived,
                      "can_change_wholesale": can_change_wholesale and not product.is_archived,
                      "manual_url": manual_search_url(product, "cd")})
-    rows.sort(key=lambda row: (row["product"].name.casefold(), row["kind"], row["product"].pk))
-    if sort != "name":
-        dated = [row for row in rows if row["found"] is not None]
-        undated = [row for row in rows if row["found"] is None]
-        dated.sort(key=lambda row: row["found"].recorded_at, reverse=sort == "newest")
-        rows = dated + undated
     return render(request, "pricing/avito_check_list.html", {
         "rows": rows, "query": query, "sort": sort, "total": len(rows),
         "can_record": can_change_avito,
     })
+
+
+@require_GET
+@never_cache
+@permission_required_all('pricing.view_pricing', 'pricing.change_retail_price')
+def manual_context(request):
+    product_id = request.GET.get('product_id')
+    if product_id is not None:
+        if not product_id.isascii() or not product_id.isdecimal() or len(product_id) > 18:
+            return JsonResponse({'ok': False, 'message': 'Некорректный товар.'}, status=400)
+        products = listed_products(product_id=int(product_id))
+        if not products:
+            return JsonResponse({'ok': False, 'message': 'Товар выбыл из Avito Check: нет остатка или привязки.'}, status=404)
+        data = {'product': manual_product_data(products[0])}
+    else:
+        products = listed_products(query=request.GET.get('q', '').strip(), sort=request.GET.get('sort', 'name'))
+        data = {'items': [manual_product_data(product) for product in products]}
+    return JsonResponse({'ok': True, 'csrf_token': get_token(request), **data})
 
 
 @require_POST
@@ -91,9 +101,18 @@ def save_found_price(request):
         value = _parse_price(request.POST.get("price", "").strip().replace(",", "."))
         if model is None or value is None or value <= 0:
             raise ValidationError("Укажите найденную цену больше нуля.")
+        if request.POST.get('manual_queue') == '1' and 'expected_recorded_at' not in request.POST:
+            raise ValidationError('Обновите панель перед сохранением цены.')
         with transaction.atomic():
-            product = model.objects.select_related("avito_profile").get(pk=pk, avito_profile__connection__isnull=False)
+            products = model.objects.select_related("avito_profile").filter(avito_profile__connection__isnull=False)
+            if request.POST.get('manual_queue') == '1':
+                products = products.annotate(physical_stock=Sum('warehouse_stocks__quantity')).filter(physical_stock__gt=0)
+            product = products.get(pk=pk)
             previous = AvitoManualPrice.objects.select_for_update().filter(profile=product.avito_profile).first()
+            if 'expected_recorded_at' in request.POST:
+                current_version = previous.recorded_at.isoformat() if previous else ''
+                if request.POST['expected_recorded_at'] != current_version:
+                    return JsonResponse({'ok': False, 'message': 'Минимальная цена уже изменена. Обновите панель и проверьте её снова.'}, status=409)
             old_price = str(previous.price) if previous else ""
             recorded_at = timezone.now()
             found, _ = AvitoManualPrice.objects.update_or_create(profile=product.avito_profile, defaults={

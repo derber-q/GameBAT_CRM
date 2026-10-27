@@ -309,6 +309,7 @@ class LabelDocument(models.Model):
     shipment_id = models.PositiveBigIntegerField(null=True, blank=True)
     box_id = models.PositiveBigIntegerField(null=True, blank=True)
     format = models.CharField(max_length=50, default="A7")
+    cache_signature = models.CharField(max_length=64, default="", db_default="", blank=True, editable=False)
     state = models.CharField(max_length=30, default="pending")
     file = models.FileField(upload_to="yandex/labels/%Y/%m/", blank=True)
     last_error = models.TextField(blank=True)

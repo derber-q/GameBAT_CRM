@@ -7,7 +7,7 @@ from django.template.loader import render_to_string
 from django.views.decorators.http import require_POST, require_GET
 from django.views.decorators.cache import never_cache
 from django.utils import timezone
-from django.utils.http import content_disposition_header
+from django.utils.http import content_disposition_header, url_has_allowed_host_and_scheme
 
 from catalog.models import CD, Tech
 from catalog.product_filters import product_filter_context, filter_product_querysets
@@ -201,6 +201,10 @@ def platform_export(request, pk):
 @require_POST
 @permission_required_any("consignment.change_consignment_reward")
 def reward_update(request, product_kind, pk):
+    if product_kind not in ('cd', 'tech'):
+        raise Http404
+    stock = get_object_or_404(stock_queryset(product_kind), pk=pk)
+    ajax = 'application/json' in request.headers.get('Accept', '')
     try:
         update_consignment_reward(
             actor=request.user,
@@ -209,10 +213,22 @@ def reward_update(request, product_kind, pk):
             value=request.POST.get("receivable_per_unit"),
         )
     except ValidationError as exc:
+        if ajax:
+            return JsonResponse({'success':False, 'message':' '.join(exc.messages)}, status=400)
         messages.error(request, " ".join(exc.messages))
+    except OperationalError:
+        if ajax:
+            return JsonResponse({'success': False, 'message': 'База занята. Повторите сохранение вознаграждения.'}, status=503)
+        messages.error(request, 'База занята. Повторите сохранение вознаграждения.')
     else:
+        if ajax:
+            return _row_response(request, product_kind, pk, True, 'Вознаграждение сохранено.')
         messages.success(request, "Вознаграждение сохранено.")
-    return redirect("consignment:list")
+    return_to = request.POST.get('return_to', '')
+    if return_to.startswith('/crm/consignment/') and url_has_allowed_host_and_scheme(
+        return_to, allowed_hosts={request.get_host()}, require_https=request.is_secure()):
+        return redirect(return_to)
+    return redirect('consignment:platform', pk=stock.platform_id)
 
 
 @permission_required_any("consignment.transfer_stock")
@@ -260,6 +276,7 @@ def _row_response(request, kind, pk, success, message, status=200):
     product = (stock.cd if kind == 'cd' else stock.tech) if stock else None
     visible = bool(stock and stock.quantity > 0 and not product.is_archived)
     context = {
+        'reward_return_to': request.POST.get('return_to', '').split('#', 1)[0],
         'row': _stock_row(stock, kind, request.user) if visible else None,
         'can_record_sale': _can_record_sale(request.user),
         'can_return': request.user.is_superuser or request.user.has_perm('consignment.return_stock'),

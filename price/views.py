@@ -33,8 +33,11 @@ from .forms import (
     ProcurementSurchargesForm,
     SupplierPriceUploadForm,
     WarehousePriceForm,
+    WholesaleWarehousePriceForm,
 )
 from .models import PriceDocumentSettings, ProcurementPriceList, ProcurementPriceListItem
+from .procurement_suppliers import can_change_supplier, prepare_supplier_choices
+from .procurement_ordering import ordered_procurement_items
 from .services import (
     MissingProcurementWeights, MissingProcurementSurcharges, NegativeProcurementMarkup, create_procurement_price_list,
     get_missing_procurement_weights, get_missing_procurement_surcharges, update_procurement_pricing,
@@ -65,6 +68,7 @@ def price_page(request):
     return render(request, "price/index.html", {
         "settings_form": PriceDocumentSettingsForm(instance=settings),
         "warehouse_form": WarehousePriceForm(),
+        'wholesale_form': WholesaleWarehousePriceForm(),
         "can_change_settings": request.user.is_superuser or request.user.has_perm("price.change_document_settings"),
         "can_generate_retail": request.user.is_superuser or request.user.has_perm("price.generate_retail_price"),
         "can_generate_wholesale": request.user.is_superuser or request.user.has_perm("price.generate_wholesale_price"),
@@ -91,7 +95,7 @@ def import_prices(request):
         "supplier_upload_form": SupplierPriceUploadForm(),
         "procurement_form": ProcurementPriceCreateForm(),
         "suppliers": suppliers,
-        "price_lists": ProcurementPriceList.objects.select_related("created_by").prefetch_related("items")[:30],
+        "price_lists": ProcurementPriceList.objects.filter(is_trip_addition=False).select_related("created_by").prefetch_related("items")[:30],
         "can_download_supplier": can_download_supplier,
         "can_download_supplier_prices": can_download_supplier and can_view_supplier,
         "can_upload_supplier": request.user.is_superuser or request.user.has_perm("price.upload_supplier_price"),
@@ -152,14 +156,18 @@ def retail_export(request):
 @require_POST
 @permission_required_any("price.generate_wholesale_price")
 def wholesale_export(request):
-    form = WarehousePriceForm(request.POST)
+    from partners.customers import customer_filename, resolve_customer
+    form = WholesaleWarehousePriceForm(request.POST)
     if not form.is_valid():
-        messages.error(request, "Выберите склад для оптового прайса.")
+        messages.error(request, "Проверьте склад и сведения о заказчике оптового прайса.")
         return redirect("price:index")
     content = generate_wholesale_price_xlsx(
-        warehouse_id=form.cleaned_data["warehouse"].pk, actor=request.user
+        warehouse_id=form.cleaned_data["warehouse"].pk, actor=request.user,
+        partner_id=form.cleaned_data['partner_id'], partner_name=form.cleaned_data['partner_name'],
     )
-    return _xlsx_response(content, _price_filename("Опт"))
+    _, name = resolve_customer(partner_id=form.cleaned_data['partner_id'], partner_name=form.cleaned_data['partner_name'])
+    prefix = f'Опт {customer_filename(name)}' if name else 'Опт'
+    return _xlsx_response(content, _price_filename(prefix))
 
 
 @require_GET
@@ -276,17 +284,23 @@ def procurement_detail(request, pk):
         ProcurementPriceList.objects.select_related("created_by").prefetch_related(
             # JOIN внутри выборки строк не создаёт длинную цепочку OR на SQLite.
             Prefetch("items", queryset=ProcurementPriceListItem.objects.select_related(
-                "selected_supplier", "cd", "tech",
-            )),
+                "selected_supplier", "cd__platform", "tech__brand", "tech__product_type",
+            ).prefetch_related('supplier_offers__supplier')),
         ), pk=pk,
     )
     can_view_supplier_prices = (
         request.user.is_superuser or request.user.has_perm("price.view_supplier_prices")
     )
+    items = ordered_procurement_items(price_list.items.all())
+    if can_view_supplier_prices:
+        prepare_supplier_choices(items, price_list)
+    locked = price_list.customer_orders.exists()
     return render(request, "price/procurement_detail.html", {
         "price_list": price_list,
-        "can_change_markup": request.user.is_superuser or request.user.has_perm("price.change_procurement_markup"),
-        "can_change_delivery": request.user.is_superuser or request.user.has_perm("price.change_procurement_delivery"),
+        "items": items, "price_list_locked": locked,
+        "can_change_markup": not locked and (request.user.is_superuser or request.user.has_perm("price.change_procurement_markup")),
+        "can_change_delivery": not locked and (request.user.is_superuser or request.user.has_perm("price.change_procurement_delivery")),
+        "can_change_supplier": not locked and can_change_supplier(request.user),
         "can_export": request.user.is_superuser or request.user.has_perm("price.export_procurement_price_list"),
         "can_view_supplier_prices": can_view_supplier_prices,
         "can_view_supplier_details": (
@@ -324,6 +338,8 @@ def procurement_update(request, pk):
                 if f"surcharge_{item_id}" in request.POST:
                     rows[item_id]["postpayment_surcharge"] = request.POST[f"surcharge_{item_id}"]
                     rows[item_id]["surcharge_mode"] = request.POST.get(f"surcharge_mode_{item_id}", "fixed")
+                if f"supplier_{item_id}" in request.POST:
+                    rows[item_id]['supplier_id'] = request.POST[f'supplier_{item_id}']
         update_procurement_pricing(
             actor=request.user, price_list_id=pk, rows=rows,
             can_change_markup=request.user.is_superuser or request.user.has_perm("price.change_procurement_markup"),

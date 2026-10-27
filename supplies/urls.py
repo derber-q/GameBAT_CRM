@@ -7,6 +7,7 @@ urlpatterns = [
     path("new/", views.supply_create, name="create"),
     path("autocomplete/", views.product_autocomplete, name="autocomplete"),
     path("product-weight/", views.supply_product_weight, name="product_weight"),
+    path('product-codes/', views.supply_product_codes, name='product_codes'),
     path("product-barcode/", views.supply_product_barcode, name="product_barcode"),
     path("<int:pk>/cancel/", views.supply_cancel, name="cancel"),
     path("<int:pk>/edit/", views.supply_edit, name="edit"),

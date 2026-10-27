@@ -60,6 +60,12 @@ class LineRow:
     markup: Decimal | None
     consignment_platform_name: str = ""
 
+    @property
+    def unit_profit(self):
+        if self.profit is None or not self.quantity:
+            return None
+        return (self.profit / self.quantity).quantize(CENT, rounding=ROUND_HALF_UP)
+
 
 @dataclass
 class SaleRow:
@@ -83,6 +89,10 @@ class SaleRow:
 
 @dataclass
 class Aggregate:
+    actual_money: Decimal = ZERO
+    debt_repayment: Decimal = ZERO
+    debt_offset: Decimal = ZERO
+    debt_change: Decimal = ZERO
     sales_count: int = 0
     expenses_count: int = 0
     units: int = 0
@@ -139,6 +149,7 @@ class StatisticsReport:
     totals: Aggregate
     undated_completed_count: int
     chart: dict
+    operations: list = field(default_factory=list)
 
 
 def _matching_sale_ids(filters):
@@ -190,6 +201,10 @@ def _base_queryset(filters):
         queryset = queryset.filter(pk__in=filters["sale_ids"])
     if filters.get("warehouse"):
         queryset = queryset.filter(warehouse=filters["warehouse"])
+    if filters.get('partner'):
+        queryset = queryset.filter(partner=filters['partner'])
+    if filters.get('arbitrary_partner_name'):
+        queryset = queryset.filter(partner__isnull=True, partner_name_snapshot=filters['arbitrary_partner_name'])
     if filters.get("payment_methods"):
         queryset = queryset.filter(payment_method__in=filters["payment_methods"])
     if filters.get("operation_kind"):
@@ -465,8 +480,15 @@ def build_sales_statistics_report(filters):
     totals = _aggregate(sales)
     products = _sort_products(_product_rows(sales), filters.get("product_sort") or "-units")
     channels, time_series = _group_rows(sales, filters.get("grouping") or "day")
+    from .partner_statistics import financial_operations
+    operations = financial_operations(filters, sales)
+    totals.actual_money = sum((row.actual_money for row in operations), ZERO)
+    totals.debt_repayment = sum((row.repayment for row in operations), ZERO)
+    totals.debt_offset = sum((row.offset for row in operations), ZERO)
+    totals.debt_change = sum((row.debt_change for row in operations), ZERO)
     return StatisticsReport(
         filters=filters, sales=_sort_sales(sales, filters.get("sale_sort") or "-date"),
         products=products, channels=channels, time_series=time_series, totals=totals,
         undated_completed_count=undated, chart=_chart_data(time_series),
+        operations=operations,
     )

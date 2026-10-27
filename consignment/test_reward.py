@@ -71,7 +71,7 @@ class ConsignmentRewardTests(TestCase):
         self.client.force_login(worker)
         self.assertContains(self.client.get(reverse("consignment:list")), "Изменить вознаграждение")
         self.assertRedirects(
-            self.client.post(url, {"receivable_per_unit": "700"}), reverse("consignment:list")
+            self.client.post(url, {"receivable_per_unit": "700"}), reverse("consignment:platform", args=(self.shop_a.pk,))
         )
         self.stock_a.refresh_from_db()
         self.assertEqual(self.stock_a.receivable_per_unit, Decimal("700.00"))

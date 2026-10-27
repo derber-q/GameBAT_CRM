@@ -14,6 +14,7 @@ from openpyxl import load_workbook
 from accounts.models import User
 from catalog.models import CD
 from pricing.models import SupplierCDPrice
+from warehouse.models import Warehouse
 from .models import SupplierOrderBatch
 from .test_excel_grouping import create_export_fixture
 from .trip_excel import trip_order_xlsx
@@ -81,6 +82,31 @@ class TripFullExportTests(TestCase):
             ("Игра", "000123", 120, 5, self.c.name),
         ])
         self.assertEqual(sum(row[2] * row[3] for row in self.data_rows(book.active)), 1720)
+        book.close()
+
+    def test_footer_totals_saved_aed_prices_times_quantities(self):
+        self.transfer(7,self.c)
+        expected=sum((line.supplier_price_aed_snapshot*line.quantity for line in self.trip.lines.all()),Decimal('0'))
+        book=self.workbook();sheet=book.active;footer=sheet.max_row
+        self.assertEqual(sheet.cell(footer,1).value,'Итого, AED')
+        self.assertEqual(Decimal(str(sheet.cell(footer,3).value)),expected)
+        self.assertTrue(sheet.cell(footer,3).font.bold)
+        self.assertEqual(sheet.auto_filter.ref,f'A1:E{footer-1}')
+        self.assertIn(str(footer),str(sheet.print_area))
+        book.close()
+
+    def test_footer_preserves_fractional_aed_and_zero_quantity_has_no_cost(self):
+        def row(price,quantity):
+            return SimpleNamespace(product_kind='cd',product_id=self.cd.pk,product=self.cd,
+                product_name_snapshot=self.cd.name,article_snapshot=self.cd.sku,
+                supplier_price_aed_snapshot=Decimal(price),quantity=quantity,
+                supplier_id=self.a.pk,supplier=self.a)
+        book=load_workbook(BytesIO(trip_order_xlsx([row('1.123456',3),row('2.5',2),row('999',0)])))
+        self.assertEqual(Decimal(str(book.active.cell(book.active.max_row,3).value)),Decimal('8.370368'))
+        book.close()
+        book=load_workbook(BytesIO(trip_order_xlsx([])))
+        self.assertEqual(book.active['A2'].value,'Итого, AED')
+        self.assertEqual(book.active['C2'].value,0)
         book.close()
 
     def test_zero_source_does_not_duplicate_transferred_quantity_and_zero_product_is_kept(self):
@@ -176,7 +202,8 @@ class TripFullExportTests(TestCase):
         self.assertEqual(self.client.post(self.url).status_code, 405)
 
     def test_confirmed_trip_can_be_downloaded_without_reopening_orders(self):
-        advance_order_status(actor=self.user, order_id=self.first.pk, next_status="confirmed", warehouse_id=1)
+        warehouse = Warehouse.objects.create(name='Склад оплаты заказа для экспорта')
+        advance_order_status(actor=self.user, order_id=self.first.pk, next_status="confirmed", warehouse_id=warehouse.pk)
         book = self.workbook()
         self.assertEqual(sum(row[3] for row in self.data_rows(book.active)), 15)
         book.close()

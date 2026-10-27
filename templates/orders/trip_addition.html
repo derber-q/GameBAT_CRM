@@ -1,0 +1,30 @@
+{% extends "base.html" %}{% load static l10n %}
+{% block title %}Дополнительные товары · {{ batch }}{% endblock %}
+{% block extra_head %}<script src="{% static 'js/trip-additions.js' %}?v=1" defer></script>{% endblock %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">{{ batch }}</p><h1>Дополнительные товары</h1><p>Шаг {{ step }} из 4 · Состав → Заказчики → Распределение → Проверка</p></div><a class="button button-secondary" href="{% url 'orders:trip_detail' batch.pk %}">К рейсу</a></div>
+<section class="panel"><p>Курс рейса AED/RUB: {{ batch.price_list.exchange_rate_aed_rub }}. Доставка рассчитывается по сохранённым тарифам только для добавляемых товаров.</p>
+{% if error %}<p class="errorlist" role="alert">{{ error }}</p>{% endif %}
+<form method="post" class="stacked-form" data-trip-addition-form data-search-url="{% url 'orders:trip_addition_search' batch.pk %}" data-calculation-url="{% url 'orders:trip_addition_calculation' batch.pk %}">{% csrf_token %}
+{% if step == 1 %}
+{{ line_formset.management_form }}{{ line_formset.non_form_errors }}
+<p>Выберите существующие товары и поставщиков. Цена для заказчика единая, вводится вручную.</p>
+<div class="table-scroll"><table><thead><tr><th>Товар</th><th>Поставщик</th><th>Закупка, AED</th><th>Цена заказчику, ₽</th><th>На склад</th><th>Заказчикам</th><th>Убрать</th></tr></thead><tbody data-addition-lines>
+{% for line in line_formset %}<tr><td>{{ line.product }}{{ line.label }}<div class="suggestions" data-addition-suggestions></div>{{ line.product.errors }}{{ line.non_field_errors }}</td><td>{{ line.supplier }}{{ line.supplier.errors }}</td><td>{{ line.aed }}{{ line.aed.errors }}<small class="muted" style="display:block;min-height:7em;min-width:220px;white-space:pre-line" data-addition-cost></small></td><td>{{ line.customer_price }}{{ line.customer_price.errors }}</td><td>{{ line.stock_qty }}{{ line.stock_qty.errors }}</td><td>{{ line.customer_qty }}{{ line.customer_qty.errors }}</td><td>{{ line.DELETE }}</td></tr>{% endfor %}
+</tbody></table></div><button class="button button-secondary" type="button" data-addition-add>Добавить строку</button>
+<template data-addition-template><tr><td>{{ line_formset.empty_form.product }}{{ line_formset.empty_form.label }}<div class="suggestions" data-addition-suggestions></div></td><td>{{ line_formset.empty_form.supplier }}</td><td>{{ line_formset.empty_form.aed }}<small class="muted" style="display:block;min-height:7em;min-width:220px;white-space:pre-line" data-addition-cost></small></td><td>{{ line_formset.empty_form.customer_price }}</td><td>{{ line_formset.empty_form.stock_qty }}</td><td>{{ line_formset.empty_form.customer_qty }}</td><td>{{ line_formset.empty_form.DELETE }}</td></tr></template>
+{% elif step == 2 %}{{ partner_form.as_p }}
+{% elif step == 3 %}
+<p>Распределите только количество для заказчиков. Складское количество уже сохранено на первом шаге.</p>{{ allocation_form.non_field_errors }}
+<div class="table-scroll"><table><thead><tr><th>Товар</th><th>Распределить</th>{% for partner in partners %}<th>{{ partner.name }}</th>{% endfor %}</tr></thead><tbody>
+{% for row in rows %}{% if row.customer_qty %}<tr><td>{{ row.name }}</td><td>{{ row.customer_qty }}</td>{% for field in row.allocation_fields %}<td>{{ field }}{{ field.errors }}</td>{% endfor %}</tr>{% endif %}{% endfor %}
+</tbody></table></div>
+{% else %}
+<h2>Проверка новой закупки</h2><div class="table-scroll"><table><thead><tr><th>Товар / поставщик</th><th>На склад / заказчикам</th><th>Закупка, AED</th><th>Себестоимость за шт., ₽</th><th>Цена заказчика, ₽</th><th>Доставка всего, ₽</th><th>Ожидаемая прибыль, ₽</th></tr></thead><tbody>
+{% for row in rows %}<tr><td>{{ row.name }}<br>{{ row.supplier }}</td><td>{{ row.stock_qty }} / {{ row.customer_qty }}</td><td>{{ row.aed }} × {{ row.quantity }} = {{ row.purchase_total }}</td><td>{{ row.cost }}</td><td>{{ row.customer_price }}</td><td>{{ row.delivery_total }}</td><td>{{ row.expected_profit }}</td></tr>{% endfor %}
+</tbody></table></div><dl class="summary"><dt>Закупка, AED</dt><dd>{{ totals.purchase_total }}</dd><dt>Доставка, ₽</dt><dd>{{ totals.delivery_total }}</dd><dt>Себестоимость, ₽</dt><dd>{{ totals.cost_total }}</dd><dt>От заказчиков, ₽</dt><dd>{{ totals.customer_total }}</dd><dt>Ожидаемая прибыль, ₽</dt><dd>{{ totals.expected_profit }}</dd></dl>
+<h2>Новые заказы</h2>{% for order in order_preview %}<section class="summary-card"><h3>{{ order.name }}</h3><ul>{% for item in order.items %}<li>{{ item.name }} — {{ item.quantity }} шт.</li>{% endfor %}</ul></section>{% endfor %}
+<p>Будут созданы отдельные новые заказы на склад и каждому заказчику с ненулевым количеством. Существующие заказы сохраняют свои цены и состав.</p>
+{% endif %}
+<div class="heading-actions">{% if step > 1 %}<a class="button button-secondary" href="{{ back_url }}">Назад</a>{% endif %}<button class="button" type="submit">{% if step == 4 %}Создать заказы и добавить в рейс{% else %}Продолжить{% endif %}</button></div>
+</form></section>{% endblock %}

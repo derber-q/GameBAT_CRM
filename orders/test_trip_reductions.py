@@ -46,7 +46,7 @@ class TripReductionTests(TestCase):
     def editor(self, trip, line):
         response = self.client.get(reverse("orders:trip_detail", args=[trip.pk]))
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "js/order-trips.js?v=3")
+        self.assertContains(response, "js/order-trips.js?v=4")
         return response.context["editor"][str(line.pk)]
 
     def snapshot(self):
@@ -90,7 +90,62 @@ class TripReductionTests(TestCase):
         self.assertEqual(trip.lines.get(cd=self.cd, supplier=self.b).quantity, 4)
         self.assertTrue(self.editor(trip, trip.lines.get(cd=self.cd, supplier=self.b))["priority_ambiguous"])
 
-    def test_only_supplier_in_saved_chain_is_last_despite_global_lower_priorities(self):
+    def test_m_without_own_offer_accepts_transfer_at_a_price(self):
+        self.cd_source.supplier_offers.exclude(supplier=self.a).delete()
+        trip = self.trip()
+        line = trip.lines.get(cd=self.cd, supplier=self.a)
+        before = self.snapshot()
+        config = self.editor(trip, line)
+        self.assertFalse(config['is_last_supplier'])
+        self.assertEqual(config['targets'][0]['id'], self.c.pk)
+        self.assertEqual([offer['id'] for offer in config['prices']], [self.a.pk])
+        self.change(trip, line, 0, target_supplier_id=self.c.pk, price_supplier_id=self.a.pk)
+        line.refresh_from_db()
+        target = trip.lines.get(cd=self.cd, supplier=self.c)
+        self.assertEqual((line.quantity, target.quantity, target.price_supplier_id, target.supplier_price_aed_snapshot),
+            (0, 10, self.a.pk, self.cd_source.supplier_price_aed))
+        self.assertEqual(self.snapshot(), before)
+        self.assertTrue(self.editor(trip, target)['is_last_supplier'])
+        _assert_balances(trip)
+
+    def test_excluded_m_is_not_added_as_fallback(self):
+        from catalog.supplier_exclusions import set_supplier_exclusions
+        self.cd_source.supplier_offers.exclude(supplier=self.a).delete()
+        trip = self.trip()
+        set_supplier_exclusions(product=self.cd, supplier_ids=[self.c.pk], actor=self.user)
+        line = trip.lines.get(cd=self.cd, supplier=self.a)
+        config = self.editor(trip, line)
+        self.assertTrue(config['is_last_supplier'])
+        self.assertNotIn(self.c.pk, [target['id'] for target in config['targets']])
+        with self.assertRaises(ValidationError):
+            self.change(trip, line, 0, target_supplier_id=self.c.pk, price_supplier_id=self.a.pk)
+        self.assertEqual(trip.lines.get(cd=self.cd, supplier=self.a).quantity, 10)
+
+    def test_restore_accidentally_zeroed_item_and_transfer_preserves_customer_prices(self):
+        self.cd_source.supplier_offers.exclude(supplier=self.a).delete()
+        order = self.order('Восстановление', 0, 1)
+        trip = self.trip([order])
+        initial_changes = trip.changes.count()
+        line = trip.lines.get(cd=self.cd, supplier=self.a)
+        item = order.items.get()
+        prices = (item.prepayment_unit_price, item.postpayment_unit_price, item.supplier_price_aed_snapshot)
+        self.change(trip, line, 0, action='adjust')
+        allocation = line.allocations.get()
+        self.change(trip, line, 1, action='adjust',
+            distribution=[{'allocation_id': allocation.pk, 'final_quantity': 1}])
+        self.change(trip, line, 0, target_supplier_id=self.c.pk, price_supplier_id=self.a.pk)
+        item.refresh_from_db()
+        target = trip.lines.get(cd=self.cd, supplier=self.c)
+        self.assertEqual((item.prepayment_quantity, item.postpayment_quantity, target.quantity), (0, 1, 1))
+        self.assertEqual((item.prepayment_unit_price, item.postpayment_unit_price, item.supplier_price_aed_snapshot), prices)
+        self.assertEqual(target.supplier_price_aed_snapshot, prices[2])
+        self.assertEqual(trip.changes.count(), initial_changes + 3)
+        self.assertFalse(CashTransaction.objects.exists())
+        _assert_balances(trip)
+
+    def test_only_supplier_without_m_fallback_is_last(self):
+        self.c.letter = 'C'
+        self.c.save(update_fields=('letter',))
         self.cd_source.supplier_offers.exclude(supplier=self.a).delete()
         trip = self.trip()
         line = trip.lines.get(cd=self.cd)
@@ -240,7 +295,7 @@ class TripReductionTests(TestCase):
         self.change(trip, line, 6, action="adjust", distribution=self.distribution(line, **{str(order.pk): 6}))
         self.assertEqual((order.items.get().prepayment_quantity, order.items.get().postpayment_quantity), (2, 4))
 
-    def test_zero_remains_in_excel_and_later_procurement_statuses_work(self):
+    def test_zero_is_hidden_in_supplier_excel_kept_for_customer_and_later_statuses_work(self):
         order = self.order("Нулевая закупка", 2, 8)
         trip = self.trip([order])
         line = self.last_line(trip)
@@ -248,8 +303,16 @@ class TripReductionTests(TestCase):
         response = self.client.get(reverse("orders:trip_export", args=[trip.pk, self.c.pk]))
         self.assertEqual(response.status_code, 200)
         sheet = load_workbook(BytesIO(response.content), data_only=True).active
-        row = next(row for row in sheet.values if len(row) > 1 and row[1] == self.cd.sku)
-        self.assertEqual((row[2], row[3]), (100, 0))
+        self.assertEqual(sheet.max_row, 1)
+        self.assertFalse(any(row[0] == self.cd.name for row in sheet.values))
+        response = self.client.get(reverse("orders:export", args=[order.pk]))
+        self.assertEqual(response.status_code, 200)
+        book = load_workbook(BytesIO(response.content), data_only=True)
+        customer_rows = [row for row in book.active.values if row[0] == self.cd.name]
+        self.assertEqual(customer_rows, [(self.cd.name, "Не отгружено", 0, None, 0)])
+        self.assertEqual(book.active.cell(book.active.max_row, 3).value, 0)
+        self.assertEqual(book.active.cell(book.active.max_row, 5).value, 0)
+        book.close()
         for status in ("confirmed", "receiving", "completed"):
             advance_order_status(actor=self.user, order_id=order.pk, next_status=status)
         order.refresh_from_db()

@@ -1,9 +1,9 @@
 {% load l10n %}
 {% with sale=row.sale %}
-<tr data-sale-row="{{ sale.pk }}" data-version="{{ row.version }}" data-status-url="{% url 'sales:inline_status' sale.pk %}" data-sale-id="{{ sale.visible_id }}" data-payment-method="{{ sale.payment_method }}" data-total="{{ sale.total_amount|unlocalize }}">
-  <td>{% if perms.sales.view_sale_detail or user.is_superuser %}<a class="mono" href="{% url 'sales:detail' sale.pk %}">{{ sale.visible_id }}</a>{% else %}<span class="mono">{{ sale.visible_id }}</span>{% endif %}{% if sale.operation_kind != "normal" %}<br><span class="badge">{{ sale.get_operation_kind_display }}</span>{% endif %}<br><small>{{ sale.created_at|date:"d.m.Y H:i" }}</small>{% if sale.is_cancelled %}<br><span class="sale-status sale-status-cancelled">Отменена</span>{% endif %}</td>
-  <td class="sale-note" title="{{ sale.note }}">{{ sale.note|default:"—"|truncatechars:80 }}</td>
-  {% if sale.sale_type == 'wholesale' %}
+<tr data-consignment-report="{{ sale.consignment_report_id|default_if_none:'' }}" data-sale-row="{{ sale.pk }}" data-partner-id="{{ sale.partner_id|default_if_none:'' }}" data-can-select-payment-partner="{{ sale.can_select_payment_partner|yesno:'1,0' }}" data-note="{{ sale.note }}" data-version="{{ row.version }}" data-status-url="{% url 'sales:inline_status' sale.pk %}" data-sale-id="{{ sale.visible_id }}" data-payment-method="{{ sale.payment_method }}" data-total="{{ sale.total_amount|unlocalize }}"{% if row.market.attention %} data-market-attention="{{ row.market.attention.pk }}"{% endif %}{% if row.market.needs_acknowledgement %} class="market-order-unacknowledged"{% endif %}>
+  <td>{% if perms.sales.view_sale_detail or user.is_superuser %}<a class="mono" href="{% url 'sales:detail' sale.pk %}">{{ sale.visible_id }}</a>{% else %}<span class="mono">{{ sale.visible_id }}</span>{% endif %}{% if sale.operation_kind != "normal" %}<br><span class="badge">{{ sale.get_operation_kind_display }}</span>{% endif %}<br><small>{{ sale.created_at|date:"d.m.Y H:i" }}</small>{% if sale.is_cancelled %}<br><span class="sale-status sale-status-cancelled">Отменена</span>{% endif %}{% include 'sales/_market_attention.html' with market=row.market %}</td>
+  <td class="sale-note" title="{{ sale.note }}">{% if sale.partner_name_snapshot %}<strong>{{ sale.partner_name_snapshot }}</strong><br>{% endif %}{{ sale.note|default:"—"|truncatechars:80 }}</td>
+  {% if row.is_wholesale %}
     <td>{{ sale.warehouse.name }}{% if sale.consignment_platform %}<br><small class="muted">{{ sale.consignment_platform.name }}</small>{% endif %}</td>
     <td>{{ sale.position_count }} / {{ sale.total_units }}</td>
   {% else %}
@@ -15,7 +15,7 @@
   <td>{{ sale.get_payment_method_display }}</td>
   <td>
     {% if row.market %}
-      {% include 'sales/_market_controls.html' with market=row.market market_return_to='list' %}
+      {% include 'sales/_market_controls.html' with market=row.market market_return_to='list' suppress_staff_ack=True %}
     {% elif row.next_order %}
       <select class="sale-status sale-status-{{ sale.order_status }}" data-status-field="order" data-current="{{ sale.order_status }}" aria-label="Статус заказа {{ sale.visible_id }}">
         <option value="{{ sale.order_status }}">{{ sale.get_order_status_display }}</option>

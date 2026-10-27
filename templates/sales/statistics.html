@@ -10,6 +10,8 @@
   <button class="section-heading section-toggle" type="button" data-collapse-toggle aria-expanded="false" aria-controls="stats-report-filters"><span class="section-title"><span class="collapse-indicator" aria-hidden="true">▼</span><span class="section-name">Фильтры отчёта</span></span></button><div id="stats-report-filters" class="collapsible-content" hidden>
   {% if form.non_field_errors %}<div class="alert alert-error">{{ form.non_field_errors }}</div>{% endif %}
   <div class="stats-filter-grid">
+    <div class="field"><label>{{ form.partner.label }}</label>{{ form.partner }}{{ form.partner.errors }}</div>
+    <div class="field"><label>{{ form.arbitrary_partner_name.label }}</label>{{ form.arbitrary_partner_name }}</div>
     <div class="field"><label for="{{ form.date_from.id_for_label }}">Дата с</label>{{ form.date_from }}{{ form.date_from.errors }}</div>
     <div class="field"><label for="{{ form.date_to.id_for_label }}">Дата по</label>{{ form.date_to }}{{ form.date_to.errors }}</div>
     <div class="field"><label for="{{ form.warehouse.id_for_label }}">Склад</label>{{ form.warehouse }}{{ form.warehouse.errors }}</div>
@@ -49,6 +51,10 @@
   {% if report.undated_completed_count %}<div class="alert alert-warning">Завершённых продаж без достоверной даты: {{ report.undated_completed_count }}. Они не включены в отчёт по периоду.</div>{% endif %}
   {% if report.totals.missing_lines %}<div class="alert alert-warning">Себестоимость недоступна для {{ report.totals.missing_lines }} позиций в {{ report.totals.missing_sales }} продажах. Прибыль, маржа и наценка этих продаж и общей выборки не рассчитываются: текущая себестоимость товара не подставляется.</div>{% endif %}
   <section class="stats-kpis" aria-label="Сводные показатели">
+    <div class="panel"><span>Деньги по продажам и самостоятельным операциям</span><strong>{{ report.totals.actual_money|floatformat:2 }} ₽</strong></div>
+    <div class="panel"><span>Погашено долгов</span><strong>{{ report.totals.debt_repayment|floatformat:2 }} ₽</strong></div>
+    <div class="panel"><span>Взаимозачёт</span><strong>{{ report.totals.debt_offset|floatformat:2 }} ₽</strong></div>
+    <div class="panel"><span>Изменение задолженности</span><strong>{{ report.totals.debt_change|floatformat:2 }} ₽</strong></div>
     {% if report.totals.expenses_count %}<div class="panel"><span>Операций расхода</span><strong>{{ report.totals.expenses_count }}</strong></div>{% endif %}
     <div class="panel"><span>Фактическая выручка</span><strong>{{ report.totals.actual_revenue|floatformat:2 }} ₽</strong></div>
     <div class="panel"><span>Стоимость товаров</span><strong>{{ report.totals.goods_total|floatformat:2 }} ₽</strong></div>
@@ -77,27 +83,33 @@
 
   <section class="panel stats-section"><button class="section-heading section-toggle" type="button" data-collapse-toggle aria-expanded="false" aria-controls="stats-channels"><span class="section-title"><span class="collapse-indicator" aria-hidden="true">▼</span><span class="section-name">Сравнение каналов продаж</span></span></button><div id="stats-channels" class="collapsible-content" hidden><div class="table-scroll"><table><thead><tr><th>Канал</th><th>Продаж / расходов</th><th>Единиц</th><th>Стоимость товаров</th><th>Переплаты</th><th>Выручка</th><th>Комиссия Avito</th><th>Себестоимость</th><th>Прибыль</th><th>Маржа %</th><th>Наценка %</th><th>Средний чек</th></tr></thead><tbody>{% for row in report.channels %}<tr><td>{{ row.label }}</td><td>{{ row.totals.sales_count }}{% if row.totals.expenses_count %} / {{ row.totals.expenses_count }}{% endif %}</td><td>{{ row.totals.units }}</td><td>{{ row.totals.goods_total|floatformat:2 }}</td><td>{{ row.totals.overpayment|floatformat:2 }}</td><td>{{ row.totals.actual_revenue|floatformat:2 }}</td><td>{{ row.totals.commission|floatformat:2 }}</td><td>{% if row.totals.cost is None %}—{% else %}{{ row.totals.cost|floatformat:2 }}{% endif %}</td><td>{% if row.totals.profit is None %}—{% else %}{{ row.totals.profit|floatformat:2 }}{% endif %}</td><td>{{ row.totals.margin|default_if_none:"—" }}</td><td>{{ row.totals.markup|default_if_none:"—" }}</td><td>{{ row.totals.average_check|default_if_none:"—" }}</td></tr>{% empty %}<tr><td colspan="12">Нет данных.</td></tr>{% endfor %}</tbody></table></div></div></section>
 
-  <section class="panel stats-section stats-sales-section"><div class="section-heading"><div><h2>Продажи</h2><p class="muted">Отметьте одну или несколько продаж и снова сформируйте отчёт. Раскрытие строки показывает расчёт по каждой позиции.</p></div><span class="count">{{ report.sales|length }}</span></div>
+  {% include 'sales/_partner_operations.html' %}
+  <section class="panel stats-section stats-sales-section"><div class="section-heading stats-sales-heading"><div><h2>Продажи</h2><p class="muted">Отметьте продажи для отбора в отчёт. Кнопка «Состав» раскрывает расчёт по каждой позиции.</p></div><span class="count">{{ report.sales|length }}</span></div>
     <div class="stats-sales-list">
       {% for row in sale_page %}
         <article class="stats-sale-card">
           <div class="stats-sale-head">
             <label class="stats-sale-select" title="Выбрать продажу {{ row.sale.pk }}"><input type="checkbox" name="sale_id" value="{{ row.sale.pk }}" form="statistics-filter-form" aria-label="Выбрать продажу {{ row.sale.pk }}" {% if row.sale.pk in form.cleaned_data.sale_ids %}checked{% endif %}></label>
             <div class="stats-sale-identity">{% if can_view_sale_detail %}<a href="{% url 'sales:detail' row.sale.pk %}">{{ row.sale.visible_id }}</a>{% else %}{{ row.sale.visible_id }}{% endif %}<small>{{ row.sale.completed_at|date:"d.m.Y H:i" }}</small></div>
+            <button type="button" class="button button-secondary button-small" data-stats-expand="stats-sale-{{ row.sale.pk }}" aria-expanded="false" aria-controls="stats-sale-{{ row.sale.pk }}">Состав</button>
+          </div>
+          <div class="stats-sale-metadata">
             <div class="stats-sale-meta"><span>Склад</span><strong>{{ row.sale.warehouse.name }}</strong></div>
             <div class="stats-sale-meta"><span>Вид операции</span><strong>{{ row.sale.get_operation_kind_display }}</strong></div>
             <div class="stats-sale-meta"><span>Канал</span><strong>{{ row.channel_label }}</strong></div>
+            <div class="stats-sale-meta"><span>Партнёр</span><strong>{{ row.sale.partner_name_snapshot|default:'—' }}</strong></div>
             <div class="stats-sale-meta"><span>Оплата</span><strong>{{ row.sale.get_payment_method_display }}</strong></div>
-            <button type="button" class="button button-secondary button-small" data-stats-expand="stats-sale-{{ row.sale.pk }}" aria-expanded="false" aria-controls="stats-sale-{{ row.sale.pk }}">Состав</button>
           </div>
-          <div class="stats-sale-note"><span>&#1055;&#1088;&#1080;&#1084;&#1077;&#1095;&#1072;&#1085;&#1080;&#1077;</span><strong>{{ row.sale.note|default:"-"|linebreaksbr }}</strong></div>
+          {% if row.sale.note %}<div class="stats-sale-note"><span>Примечание</span><strong>{{ row.sale.note|linebreaksbr }}</strong></div>{% endif %}
+          <div class="stats-sale-highlights">
+            <div class="stats-metric"><span>Выручка</span><strong>{{ row.actual_revenue|floatformat:2 }} ₽</strong></div>
+            <div class="stats-metric"><span>Себестоимость</span><strong>{% if row.cost is None %}—{% else %}{{ row.cost|floatformat:2 }} ₽{% endif %}</strong></div>
+            <div class="stats-metric stats-profit"><span>Прибыль</span><strong class="{% if row.profit < 0 %}stats-negative{% endif %}">{% if row.profit is None %}—{% else %}{{ row.profit|floatformat:2 }} ₽{% endif %}</strong></div>
+          </div>
           <div class="stats-sale-metrics">
             <div class="stats-metric"><span>Стоимость товаров</span><strong>{{ row.goods_total|floatformat:2 }} ₽</strong></div>
             <div class="stats-metric"><span>Переплата</span><strong>{{ row.overpayment|floatformat:2 }} ₽</strong></div>
-            <div class="stats-metric"><span>Выручка</span><strong>{{ row.actual_revenue|floatformat:2 }} ₽</strong></div>
             <div class="stats-metric"><span>Комиссия Avito</span><strong>{{ row.commission|floatformat:2 }} ₽</strong></div>
-            <div class="stats-metric"><span>Себестоимость</span><strong>{% if row.cost is None %}—{% else %}{{ row.cost|floatformat:2 }} ₽{% endif %}</strong></div>
-            <div class="stats-metric"><span>Прибыль</span><strong class="{% if row.profit < 0 %}stats-negative{% endif %}">{% if row.profit is None %}—{% else %}{{ row.profit|floatformat:2 }} ₽{% endif %}</strong></div>
             <div class="stats-metric"><span>Маржа %</span><strong>{{ row.margin|default_if_none:"—" }}</strong></div>
             <div class="stats-metric"><span>Наценка %</span><strong>{{ row.markup|default_if_none:"—" }}</strong></div>
             <div class="stats-metric"><span>Единиц / позиций</span><strong>{{ row.units }} / {{ row.positions }}</strong></div>
@@ -117,6 +129,7 @@
                   <div class="stats-metric"><span>Себестоимость / ед.</span><strong>{% if line.unit_cost is None %}Недоступна{% else %}{{ line.unit_cost|floatformat:2 }} ₽{% endif %}</strong></div>
                   <div class="stats-metric"><span>Себестоимость</span><strong>{% if line.cost is None %}—{% else %}{{ line.cost|floatformat:2 }} ₽{% endif %}</strong></div>
                   <div class="stats-metric"><span>Прибыль</span><strong class="{% if line.profit < 0 %}stats-negative{% endif %}">{% if line.profit is None %}—{% else %}{{ line.profit|floatformat:2 }} ₽{% endif %}</strong></div>
+                  <div class="stats-metric"><span>Прибыль за 1 шт.</span><strong class="{% if line.unit_profit < 0 %}stats-negative{% endif %}">{% if line.unit_profit is None %}—{% else %}{{ line.unit_profit|floatformat:2 }} ₽{% endif %}</strong></div>
                   <div class="stats-metric"><span>Маржа %</span><strong>{{ line.margin|default_if_none:"—" }}</strong></div>
                   <div class="stats-metric"><span>Наценка %</span><strong>{{ line.markup|default_if_none:"—" }}</strong></div>
                 </div>

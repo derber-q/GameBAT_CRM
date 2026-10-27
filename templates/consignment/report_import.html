@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Отчёт реализации · {{ platform.name }}{% endblock %}
+{% block content %}
+<div class="page-heading"><h1>Отчёт реализации · {{ platform.name }}</h1><a class="button button-secondary" href="{% url 'consignment:platform' platform.pk %}">К площадке</a></div>
+<section class="panel"><form method="post" enctype="multipart/form-data" class="stacked-form">{% csrf_token %}{{ form.as_p }}
+{% if report %}<input type="hidden" name="confirm_report" value="1"><p>Проверьте расчёт CRM. Продажа пока не создана, товар и задолженность не изменены.</p>
+<div class="table-wrap"><table><thead><tr><th>Товар</th><th>Реализовано</th><th>Остаток: Excel → сейчас</th><th>Цена: Excel → сейчас</th><th>Сумма CRM</th></tr></thead><tbody>
+{% for row in report.rows %}{% if row.sold %}<tr{% if row.changed %} class="warning-row"{% endif %}><td>{{ row.name }}{% if row.changed %}<span class="error-text">Данные изменились после выгрузки</span>{% endif %}</td><td>{{ row.sold }}</td><td>{{ row.quantity }} → {{ row.current_quantity }}</td><td>{{ row.price }} → {{ row.current_price }}</td><td>{{ row.amount }}</td></tr>{% endif %}{% endfor %}
+</tbody></table></div><button class="button" type="submit">Открыть обычную форму продажи</button>{% else %}<button class="button" type="submit">Проверить отчёт</button>{% endif %}
+</form></section>
+{% endblock %}

@@ -1,0 +1,8 @@
+{% extends 'base.html' %}
+{% block title %}Партнёры · ReSOURCE{% endblock %}
+{% block content %}
+<div class="page-heading"><h1>Партнёры</h1>{% if perms.partners.add_partner and perms.partners.view_partner_contacts %}<a class="button" href="{% url 'partners:partner_create' %}">Добавить партнёра</a>{% endif %}</div>
+<section class="panel table-panel"><table><thead><tr><th>Партнёр</th>{% if show_contacts %}<th>Контактное лицо</th><th>Телефоны</th><th>Telegram</th>{% endif %}<th>Площадка реализации</th><th>Статус</th></tr></thead><tbody>
+{% for partner in partners %}<tr><td><a href="{% url 'partners:partner_detail' partner.pk %}">{{ partner.name }}</a></td>{% if show_contacts %}<td>{{ partner.contact_person|default:'—' }}</td><td>{{ partner.phone_1 }}<br>{{ partner.phone_2 }}</td><td>{% include 'partners/_partner_telegram.html' %}</td>{% endif %}<td>{{ partner.platform|default:'—' }}</td><td>{% if partner.is_archived %}В архиве{% else %}Действующий{% endif %}</td></tr>{% empty %}<tr><td>Партнёров пока нет.</td></tr>{% endfor %}
+</tbody></table></section>
+{% endblock %}

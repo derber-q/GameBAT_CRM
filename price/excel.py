@@ -271,7 +271,9 @@ def generate_retail_price_xlsx(*, warehouse_id, actor):
     return _bytes(workbook), skipped
 
 
-def generate_wholesale_price_xlsx(*, warehouse_id, actor):
+def generate_wholesale_price_xlsx(*, warehouse_id, actor, partner_id=None, partner_name=''):
+    from partners.excel import customer_metadata
+    customer_values, customer_name = customer_metadata(warehouse_id=warehouse_id, partner_id=partner_id, partner_name=partner_name)
     try:
         warehouse = Warehouse.objects.get(pk=warehouse_id)
     except Warehouse.DoesNotExist as exc:
@@ -325,6 +327,7 @@ def generate_wholesale_price_xlsx(*, warehouse_id, actor):
             sheet.cell(row, column).fill = PatternFill('solid', fgColor='E2F0D9')
     _meta_sheet(workbook, document_type="resource_wholesale", values={
         "warehouse_id": warehouse.pk, "generated_at": timezone.now().isoformat(), "main_sheet": MAIN_SHEET,
+        **customer_values,
     }, rows=metadata)
     logger.info(
         "Оптовый прайс сформирован: user_id=%s warehouse_id=%s rows=%s",
@@ -778,9 +781,11 @@ def _quantity(value, *, excel_row):
     return int(number)
 
 
-def import_wholesale_price_to_sale(upload):
+def import_wholesale_price_to_sale(upload, *, with_customer=False):
     workbook, sheet, values, technical_rows = _load_uploaded_workbook(upload, "resource_wholesale")
     try:
+        from partners.excel import read_customer_metadata
+        customer = read_customer_metadata(values)
         _require_headers(sheet, ("Товар", "Оптовая цена", "Доступно для заказа", "Количество к заказу"))
         warehouse = Warehouse.objects.get(pk=int(values.get("warehouse_id", "")))
         lines = []
@@ -821,7 +826,7 @@ def import_wholesale_price_to_sale(upload):
             })
         if not lines:
             raise ValidationError("В файле не выбрано ни одной товарной позиции.")
-        return warehouse, lines
+        return (warehouse, lines, customer) if with_customer else (warehouse, lines)
     except (Warehouse.DoesNotExist, TypeError, ValueError) as exc:
         raise ValidationError("Склад из документа не найден.") from exc
     finally:

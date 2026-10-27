@@ -1,0 +1,8 @@
+{% if order.can_create_operation %}
+<a class="button button-small" href="{% url 'orders:operation_prepare' order.pk %}">{% if order.is_stock_order %}Создать приход{% else %}Создать продажу{% endif %}</a>
+{% elif order.current_operation.sale_id and perms.sales.view_sale_detail %}
+<a class="button button-secondary button-small" href="{% url 'sales:detail' order.current_operation.sale_id %}">Открыть продажу</a>
+{% elif order.current_operation.supply_id %}
+{% if perms.supplies.view_supply %}<a class="button button-secondary button-small" href="{% url 'supplies:detail' order.current_operation.supply_id %}">Открыть приход</a>{% elif perms.supplies.add_supply %}<a class="button button-secondary button-small" href="{% url 'orders:detail' order.pk %}">Открыть заказ</a>{% endif %}
+{% endif %}
+{% if order.can_review_arrival %}<a class="button button-secondary button-small" href="{% url 'orders:arrival_receipt' order.pk %}">Сверить поступление</a>{% endif %}

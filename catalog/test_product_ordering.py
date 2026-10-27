@@ -89,7 +89,7 @@ class ProductOrderingTests(TestCase):
                 self.assertEqual(positions, sorted(positions))
 
     def test_export_keeps_the_same_flat_order_and_group_headers(self):
-        content = generate_wholesale_price_xlsx(warehouse_id=self.warehouse.pk, actor=self.user)
+        content = generate_wholesale_price_xlsx(warehouse_id=self.warehouse.pk, actor=self.user, partner_name='Тестовый заказчик')
         sheet = load_workbook(BytesIO(content))[MAIN_SHEET]
         values = [row[0] for row in sheet.iter_rows(min_row=HEADER_ROW + 1, values_only=True)]
         expected = [p.name for p in self.ordered + self.cds]
@@ -98,6 +98,43 @@ class ProductOrderingTests(TestCase):
         self.assertIn("Tech · Nintendo · Портативная консоль", values)
         self.assertIn("Tech · Портативные консоли · Anbernic", values)
         self.assertIn("Tech · Прочие товары", values)
+
+    def test_procurement_editor_uses_pricing_order_without_game_series(self):
+        from partners.models import Supplier
+        from price.models import ProcurementPriceList, ProcurementPriceListItem
+        from .models import GameSeries
+
+        platform = next(product.platform for product in self.cds if product.platform.name == 'PS5')
+        series_a = GameSeries.objects.create(name='Серия A')
+        series_z = GameSeries.objects.create(name='Серия Z')
+        alpha = CD.objects.create(platform=platform, name='Alpha', game_series=series_z)
+        beta = CD.objects.create(platform=platform, name='Beta', game_series=series_a)
+        zebra = CD.objects.create(platform=platform, name='Zebra', game_series=series_z)
+        switch = CD.objects.create(platform=Platform.objects.create(name='Nintendo Switch'), name='A Switch')
+        switch2 = CD.objects.create(platform=Platform.objects.create(name='Nintendo Switch 2'), name='Z Switch 2')
+        ns2 = next(product for product in self.cds if product.platform.name == 'NS2')
+        ps5 = next(product for product in self.cds if product.platform.name == 'PS5')
+        expected = [('tech', p.pk) for p in self.ordered] + [
+            ('cd', p.pk) for p in (switch2, switch, ns2, alpha, beta, ps5, zebra)
+        ]
+        supplier = Supplier.objects.create(name='Поставщик порядка', letter='P', highlight_color='#37A7BA',
+            legal_entity='P', phone_1='1')
+        price = ProcurementPriceList.objects.create(created_by=self.user, exchange_rate_aed_rub=1)
+        products = [('tech', p) for p in self.ordered] + [('cd', p) for p in self.cds + [alpha, beta, zebra, switch, switch2]]
+        ProcurementPriceListItem.objects.bulk_create([
+            ProcurementPriceListItem(price_list=price, product_kind=kind, **{kind: product},
+                product_name_snapshot=product.name, article_snapshot=product.sku, selected_supplier=supplier,
+                supplier_price_aed=100, exchange_rate_aed_rub=1, base_price_rub=100, delivery_rub=5,
+                prepayment_price_rub=110, postpayment_price_rub=170)
+            for kind, product in reversed(products)
+        ])
+        before = list(price.items.order_by('pk').values())
+        response = self.client.get(reverse('price:procurement_detail', args=[price.pk]))
+        self.assertEqual(response.status_code, 200)
+        items = response.context['items']
+        self.assertEqual([(item.product_kind, item.product_id) for item in items], expected)
+        self.assertEqual(len(items), len(products))
+        self.assertEqual(list(price.items.order_by('pk').values()), before)
 
     def test_sony_gamepads_keep_model_and_color_order_on_every_page(self):
         template = self.ordered[3]

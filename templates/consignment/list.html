@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% load l10n static %}
 {% block title %}{% if selected_platform %}{{ selected_platform.name }} · {% endif %}Реализация · ReSOURCE{% endblock %}
-{% block extra_head %}<link rel="stylesheet" href="{% static 'css/consignment-actions.css' %}?v=1"><script src="{% static 'js/consignment-actions.js' %}?v=2" defer></script>{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{% static 'css/consignment-actions.css' %}?v=1"><script src="{% static 'js/consignment-actions.js' %}?v=3" defer></script>{% endblock %}
 {% block content %}
 <div class="page-heading">
   <div>
@@ -10,6 +10,7 @@
     <p class="muted">Остатки и суммы, которые GameBAT получает после продажи товара.</p>
   </div>
   <div class="heading-actions">
+    {% if perms.partners.add_salesplatform %}<a class="button button-secondary" href="{% url 'consignment:platform_create' %}">Создать площадку</a>{% endif %}
     {% if selected_platform %}<a class="button button-secondary" href="{% url 'consignment:list' %}">Все площадки</a>{% endif %}
     {% if perms.consignment.transfer_stock or user.is_superuser %}<a class="button" href="{% url 'consignment:transfer' %}">Передать товары</a>{% endif %}
   </div>
@@ -22,7 +23,7 @@
 {% for presentation in platforms %}
   {% include "consignment/_platform_panel.html" with presentation=presentation %}
 {% empty %}
-  <section class="empty-state"><span class="empty-code">0</span><h2>Площадки не созданы</h2><p>Добавьте площадки реализации через административную панель.</p></section>
+  <section class="empty-state"><span class="empty-code">0</span><h2>Площадки не созданы</h2><p>{% if perms.partners.add_salesplatform %}Нажмите «Создать площадку», чтобы добавить первую площадку реализации.{% else %}Обратитесь к сотруднику с правом создания площадок реализации.{% endif %}</p></section>
 {% endfor %}
 {% if can_return or can_record_sale %}
 <dialog id="consignment-action-dialog" class="confirmation-dialog" aria-labelledby="consignment-action-title">

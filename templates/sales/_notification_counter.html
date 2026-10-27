@@ -1,0 +1,15 @@
+{% load static %}
+{% if nav.market_notifications or nav.avito_notifications %}<span class="market-alert-counters" role="group" aria-label="Оповещения площадок">
+{% if nav.market_notifications %}
+<a class="market-alert-counter{% if market_pending_count %} has-pending{% endif %}" href="{% url 'sales:market_pending' %}" data-market-counter aria-label="Яндекс Маркет: непринятых заказов — {{ market_pending_count }}" title="Яндекс Маркет: непринятых заказов — {{ market_pending_count }}">
+  <img class="market-alert-logo" src="{% static 'img/yandex-market.png' %}" width="28" height="28" alt="" aria-hidden="true">
+  <span class="market-alert-badge" data-market-pending-count aria-hidden="true">{{ market_pending_count }}</span>
+</a>
+{% endif %}
+{% if nav.avito_notifications %}
+<a class="market-alert-counter avito-alert-counter{% if avito_action_counts.count %} has-pending{% endif %}" href="{% url 'integrations:avito' %}#required-actions" data-avito-counter data-count-url="{% url 'integrations:required_actions_count' %}" aria-label="Avito: необходимых действий — {{ avito_action_counts.count|default_if_none:'—' }}" title="Avito: опубликовать — {{ avito_action_counts.publish|default_if_none:'—' }}, снять — {{ avito_action_counts.unpublish|default_if_none:'—' }}. По последним данным CRM.">
+  <img class="market-alert-logo" src="{% static 'img/avito.ico' %}" width="28" height="28" alt="" aria-hidden="true">
+  <span class="market-alert-badge" data-avito-action-count aria-hidden="true">{{ avito_action_counts.count|default_if_none:'—' }}</span>
+</a>
+{% endif %}
+</span>{% endif %}

@@ -16,6 +16,7 @@ from .forms import SaleCreateForm, WholesalePriceImportForm
 from .models import Sale
 from catalog.models import CD, Tech
 from .listing import list_groups, sales_queryset, status_context
+from .partner_payments import payment_partner_choices
 from .storage_locations import sale_storage_locations
 from .market_controls import with_market_controls, market_context
 from .invoice_excel import render_sale_invoice_xlsx
@@ -36,6 +37,7 @@ def _detail_financials(item, *, commission_applicable=True):
         if item.unit_cost_snapshot is not None else None
     )
     return {
+        "line_note": getattr(item, 'note', ''),
         "avito_commission_enabled": bool(
             commission_applicable and item.avito_commission_enabled
         ),
@@ -58,6 +60,10 @@ def _parse_lines(post):
     types = post.getlist("product_type")
     ids = post.getlist("product_id")
     quantities = post.getlist("quantity")
+    item_ids = post.getlist("item_id") or [None] * len(types)
+    line_notes = post.getlist("line_note") or [""] * len(types)
+    if len(item_ids) != len(types) or len(line_notes) != len(types):
+        raise ValidationError("Заполните все поля товарных позиций.")
     discounts = post.getlist("unit_discount")
     commissions = post.getlist("avito_commission_enabled")
     if not (len(types) == len(ids) == len(quantities)):
@@ -72,7 +78,8 @@ def _parse_lines(post):
         commissions = ["0"] * len(types)
     lines = [
         {"product_type": types[index], "product_id": ids[index], "quantity": quantities[index],
-         "unit_discount": discounts[index], "avito_commission_enabled": commissions[index]}
+         "unit_discount": discounts[index], "avito_commission_enabled": commissions[index],
+         "item_id": item_ids[index], "line_note": line_notes[index]}
         for index in range(len(types))
         if any((types[index], ids[index], quantities[index]))
     ]
@@ -160,6 +167,7 @@ def sale_list(request):
 def _sale_list_page(request, state, title):
     return render(request, 'sales/list.html', {
         'state': state, 'page_title': title, 'groups': list_groups(request, state),
+        'payment_partners': payment_partner_choices() if state == 'incomplete' and request.user.has_perm('sales.mark_sale_paid') else [],
     })
 
 
@@ -211,7 +219,14 @@ def sale_inline_status(request, pk):
             else:
                 if request.POST.get('value') != Sale.PaymentStatus.PAID:
                     raise ValidationError('Этот переход статуса оплаты недопустим.')
-                mark_sale_paid(actor=request.user, sale_id=pk, cash_received_amount=request.POST.get('cash_received_amount'))
+                from consignment.report_views import needs_report_partner
+                if needs_report_partner(sale, request.POST.get('cash_received_amount')):
+                    from django.urls import reverse
+                    request.session[f'report_payment_{pk}'] = {'received': request.POST.get('cash_received_amount')}
+                    return JsonResponse({'success': False, 'partner_url': reverse('consignment:report_partner_payment', args=(pk,))})
+                mark_sale_paid(actor=request.user, sale_id=pk, cash_received_amount=request.POST.get('cash_received_amount'),
+                    settlement_confirmation=request.POST.get('settlement_confirmation', ''), note=request.POST.get('settlement_note'),
+                    settlement_partner_id=request.POST.get('settlement_partner_id'))
     except Sale.DoesNotExist:
         return JsonResponse({'success': False, 'message': 'Продажа не найдена.'}, status=404)
     except ValidationError as exc:
@@ -223,20 +238,43 @@ def sale_inline_status(request, pk):
 
 @permission_required_any("sales.create_sale")
 def sale_create(request):
+    if request.GET.get('trip_draft') or request.POST.get('trip_draft'):
+        from orders.fulfillment_views import sale_create as trip_sale_create
+        return trip_sale_create(request)
+    from consignment.reports import DRAFT_KEY, create_report_sale
+    report = request.session.get(DRAFT_KEY) if request.GET.get('consignment_report') or request.POST.get('consignment_report') else None
+    if request.method == 'POST' and request.POST.get('consignment_report') and not report:
+        try:
+            report_id = uuid.UUID(request.POST.get('creation_key', ''))
+        except (ValueError, TypeError):
+            report_id = None
+        existing = Sale.objects.filter(consignment_report_id=report_id, created_by=request.user).first() if report_id else None
+        if existing:
+            return _sale_destination(request, existing)
+        messages.error(request, 'Черновик отчёта отсутствует. Загрузите отчёт площадки заново.')
+        return redirect('consignment:list')
     draft = request.session.get(WHOLESALE_DRAFT_SESSION_KEY)
+    if report:
+        draft = {**report, 'partner_name': report.get('partner_name', ''), 'lines': [
+            {'consignment': True, 'product_type': 'consignment', 'product_kind': row['kind'],
+             'stock_id': row['stock_id'], 'quantity': row['sold']} for row in report['rows'] if row['sold']]}
     initial = {}
     if draft:
         initial = {
             "warehouse": draft["warehouse_id"],
             "price_type": Sale.PriceType.WHOLESALE,
             "sale_type": Sale.SaleType.WHOLESALE,
+            "payment_method": Sale.PaymentMethod.CASH_POSTPAY if report else Sale.PaymentMethod.CASH,
+            'customer': str(draft.get('partner_id') or ('custom' if draft.get('partner_name') else '')),
+            'custom_partner_name': draft.get('partner_name', ''),
         }
     form = SaleCreateForm(
-        request.POST or None, initial=initial, imported_wholesale=bool(draft)
+        request.POST or None, initial=initial, imported_wholesale=bool(draft), imported_report=bool(report)
     )
     if request.method == "POST" and form.is_valid():
         try:
-            sale = create_sale(
+            creator = (lambda **kwargs: create_report_sale(draft=report, **kwargs)) if report else create_sale
+            sale = creator(
                 actor=request.user,
                 warehouse_id=form.cleaned_data["warehouse"].pk,
                 price_type=form.cleaned_data["price_type"],
@@ -246,20 +284,27 @@ def sale_create(request):
                 cash_received_amount=form.cleaned_data["cash_received_amount"],
                 note=form.cleaned_data["note"],
                 creation_key=request.POST.get("creation_key") or None,
+                partner_id=form.cleaned_data['partner_id'] if form.cleaned_data['sale_type'] == Sale.SaleType.WHOLESALE else None,
+                partner_name=form.cleaned_data['partner_name'] if form.cleaned_data['sale_type'] == Sale.SaleType.WHOLESALE else '',
+                settlement_confirmation=request.POST.get('settlement_confirmation', ''),
             )
         except ValidationError as exc:
             form.add_error(None, exc)
+        except OperationalError:
+            form.add_error(None, 'База занята другим изменением. Проверьте продажи и повторите сохранение этой формы.')
         else:
             request.session.pop(WHOLESALE_DRAFT_SESSION_KEY, None)
+            if report: request.session.pop(DRAFT_KEY, None)
             messages.success(request, f"Продажа {sale.visible_id} создана.")
             return _sale_destination(request, sale)
     return render(request, "sales/create.html", {
-        "creation_key": request.POST.get("creation_key") or str(uuid.uuid4()),
+        "creation_key": report['report_id'] if report else request.POST.get("creation_key") or str(uuid.uuid4()),
         "form": form,
         "can_view_sales": request.user.is_superuser or request.user.has_perm("sales.view_sales"),
         "can_import_wholesale": request.user.is_superuser or request.user.has_perm("sales.import_wholesale_price"),
         "initial_items": _posted_initial_items(request.POST) if request.method == "POST" else draft["lines"] if draft else [],
         "imported_wholesale": bool(draft),
+        "consignment_report": report,
         "consignment_options": _consignment_options(),
     })
 
@@ -269,14 +314,28 @@ def sale_wholesale_import(request):
     form = WholesalePriceImportForm(request.POST or None, request.FILES or None)
     if request.method == "POST" and form.is_valid():
         try:
-            warehouse, lines = import_wholesale_price_to_sale(form.cleaned_data["file"])
+            if form.cleaned_data['file']:
+                request.session.pop('wholesale_customer_pending', None)
+                request.session.pop(WHOLESALE_DRAFT_SESSION_KEY, None)
+                warehouse, lines, customer = import_wholesale_price_to_sale(form.cleaned_data["file"], with_customer=True)
+                pending = {'warehouse_id': warehouse.pk, 'lines': lines}
+            else:
+                pending = request.session.get('wholesale_customer_pending')
+                customer = None
+                if not pending:
+                    raise ValidationError('Загрузите заполненный оптовый прайс.')
+            if customer is None:
+                if not form.cleaned_data.get('customer'):
+                    request.session['wholesale_customer_pending'] = pending
+                    raise ValidationError('В прайсе не указан заказчик. Выберите заказчика ниже и продолжите без повторной загрузки файла.')
+                customer = {'partner_id': form.cleaned_data['partner_id'], 'partner_name': form.cleaned_data['partner_name']}
         except ValidationError as exc:
-            form.add_error("file", exc)
+            form.add_error(None, exc)
         else:
             request.session[WHOLESALE_DRAFT_SESSION_KEY] = {
-                "warehouse_id": warehouse.pk,
-                "lines": lines,
+                **pending, **customer,
             }
+            request.session.pop('wholesale_customer_pending', None)
             messages.success(request, "Оптовый прайс проверен. Проверьте обычную форму продажи.")
             return redirect("sales:create")
     return render(request, "sales/import_wholesale.html", {"form": form})
@@ -299,7 +358,8 @@ def sale_detail(request, pk):
     storage_locations = sale_storage_locations(sale)
     rows = [
         {"type": "CD", "name": item.product_name_snapshot, "sku": item.article_snapshot,
-         "show_storage_location": show_storage_locations,
+         "show_storage_location": show_storage_locations and not item.is_direct_delivery,
+         "source_label": ("Из рейса" if item.is_direct_delivery else "Со склада") if sale.direct_delivery else "",
          **storage_locations.get(("cd", item.cd_id), {}),
          "quantity": item.quantity, "unit_price": item.unit_price, "unit_discount": item.unit_discount,
          "price_adjustment_display": item.price_adjustment_display,
@@ -308,7 +368,8 @@ def sale_detail(request, pk):
         for item in sale.cd_items.all() if not legacy_consignment_mirror
     ] + [
         {"type": "Tech", "name": item.product_name_snapshot, "sku": item.article_snapshot,
-         "show_storage_location": show_storage_locations,
+         "show_storage_location": show_storage_locations and not item.is_direct_delivery,
+         "source_label": ("Из рейса" if item.is_direct_delivery else "Со склада") if sale.direct_delivery else "",
          **storage_locations.get(("tech", item.tech_id), {}),
          "quantity": item.quantity, "unit_price": item.unit_price, "unit_discount": item.unit_discount,
          "price_adjustment_display": item.price_adjustment_display,
@@ -351,6 +412,7 @@ def sale_detail(request, pk):
             request.user.is_superuser or request.user.has_perm("sales.cancel_sale")
         ),
         "can_edit_note": request.user.is_superuser or request.user.has_perm("sales.change_sale"),
+        'payment_partners': payment_partner_choices() if sale.can_select_payment_partner and request.user.has_perm('sales.mark_sale_paid') else [],
         "can_view_financials": can_view_financials,
         "avito_commission_total": sum(
             (row["avito_commission_amount"] for row in rows), 0
@@ -390,13 +452,16 @@ def sale_invoice(request, pk):
     content = render_sale_invoice_xlsx(sale=sale, rows=rows)
     filename = "".join(char if char.isalnum() or char in "-_." else "_" for char in sale.visible_id)
     response = HttpResponse(content, content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-    response["Content-Disposition"] = content_disposition_header(True, f"nakladnaya_{filename}.xlsx")
+    from partners.customers import customer_filename
+    suffix = f'_{customer_filename(sale.partner_name_snapshot)}' if sale.partner_name_snapshot else ''
+    response["Content-Disposition"] = content_disposition_header(True, f"nakladnaya_{filename}{suffix}.xlsx")
     response["X-Content-Type-Options"] = "nosniff"
     return response
 
 
 @permission_required_any("sales.edit_unpaid_postpay_sale")
 def sale_edit(request, pk):
+    from partners.customers import CustomerSelectionForm
     sale = get_object_or_404(
         Sale.objects.prefetch_related("cd_items", "tech_items", "custom_items", "consignment_items"), pk=pk,
     )
@@ -404,13 +469,13 @@ def sale_edit(request, pk):
         messages.error(request, "Состав этой продажи изменять нельзя.")
         return _sale_destination(request, sale)
     initial_items = [
-        {"product_type": "cd", "product_id": item.cd_id, "quantity": item.quantity,
+        {"item_id": item.pk, "line_note": item.note, "product_type": "cd", "product_id": item.cd_id, "quantity": item.quantity,
          "label": f"CD — {item.product_name_snapshot}", "unit_price": f"{item.unit_price:.2f}",
          "unit_discount": f"{item.unit_discount:.2f}",
          "avito_commission_enabled": item.avito_commission_enabled}
         for item in sale.cd_items.all()
     ] + [
-        {"product_type": "tech", "product_id": item.tech_id, "quantity": item.quantity,
+        {"item_id": item.pk, "line_note": item.note, "product_type": "tech", "product_id": item.tech_id, "quantity": item.quantity,
          "label": f"Tech — {item.product_name_snapshot}", "unit_price": f"{item.unit_price:.2f}",
          "unit_discount": f"{item.unit_discount:.2f}",
          "avito_commission_enabled": item.avito_commission_enabled}
@@ -427,11 +492,16 @@ def sale_edit(request, pk):
          "unit_price": f"{item.unit_price:.2f}"}
         for item in sale.consignment_items.all()
     ]
-    if request.method == "POST":
+    customer_form = CustomerSelectionForm(request.POST or None, allow_archived_initial=True, initial={
+        'customer': str(sale.partner_id) if sale.partner_id else 'custom' if sale.partner_name_snapshot else '',
+        'custom_partner_name': sale.partner_name_snapshot if not sale.partner_id else ''})
+    if request.method == "POST" and customer_form.is_valid():
         try:
             edit_postpay_sale_items(
                 actor=request.user, sale_id=sale.pk, lines=_parse_lines(request.POST),
                 note=request.POST.get("note"),
+                partner_id=customer_form.cleaned_data['partner_id'],
+                partner_name=customer_form.cleaned_data['partner_name'] if sale.sale_type == Sale.SaleType.WHOLESALE else None,
             )
         except ValidationError as exc:
             messages.error(request, " ".join(exc.messages))
@@ -440,6 +510,7 @@ def sale_edit(request, pk):
             return _sale_destination(request, sale)
     return render(request, "sales/edit.html", {
         "sale": sale, "initial_items": initial_items, "consignment_options": _consignment_options(),
+        'customer_form': customer_form,
     })
 
 
@@ -472,13 +543,23 @@ def sale_payment_method(request, pk):
 @require_POST
 @permission_required_any("sales.mark_sale_paid")
 def sale_mark_paid(request, pk):
+    from consignment.report_views import needs_report_partner
+    sale = get_object_or_404(Sale, pk=pk)
+    if needs_report_partner(sale, request.POST.get('cash_received_amount')):
+        request.session[f'report_payment_{pk}'] = {'received': request.POST.get('cash_received_amount')}
+        return redirect('consignment:report_partner_payment', pk=pk)
     try:
         mark_sale_paid(
             actor=request.user, sale_id=pk,
             cash_received_amount=request.POST.get("cash_received_amount"),
+            settlement_confirmation=request.POST.get('settlement_confirmation', ''),
+            note=request.POST.get('settlement_note'),
+            settlement_partner_id=request.POST.get('settlement_partner_id'),
         )
     except (ValidationError, Sale.DoesNotExist) as exc:
         messages.error(request, " ".join(exc.messages) if isinstance(exc, ValidationError) else "Продажа не найдена.")
+    except OperationalError:
+        messages.error(request, 'База занята другим изменением. Проверьте оплату и повторите действие.')
     else:
         messages.success(request, "Оплата подтверждена.")
     sale = Sale.objects.filter(pk=pk).first()

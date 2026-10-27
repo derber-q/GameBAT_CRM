@@ -19,6 +19,7 @@ from .models import (
     SupplierOrderBatch,
     SupplierOrderBatchLine,
 )
+from .order_editing import require_untransferred_order
 
 logger = logging.getLogger("gamebat.business")
 ZERO = Decimal("0.00")
@@ -94,7 +95,11 @@ def _save_totals(order, items):
 
 @transaction.atomic
 def create_customer_procurement_order(*, actor, price_list_id, recipient, comment, lines,
-                                      purpose=CustomerProcurementOrder.Purpose.CUSTOMER):
+                                     purpose=CustomerProcurementOrder.Purpose.CUSTOMER, partner_id=None, partner_name=''):
+    from partners.customers import resolve_customer
+    partner, customer_name = resolve_customer(partner_id=partner_id, partner_name=partner_name)
+    if purpose == CustomerProcurementOrder.Purpose.STOCK and customer_name:
+        raise ValidationError('Заказ на склад не привязывается к заказчику.')
     if purpose not in CustomerProcurementOrder.Purpose.values:
         raise ValidationError("Неизвестное назначение заказа.")
     if purpose == CustomerProcurementOrder.Purpose.STOCK and not actor.has_perm("price.view_supplier_prices"):
@@ -124,6 +129,7 @@ def create_customer_procurement_order(*, actor, price_list_id, recipient, commen
     order = CustomerProcurementOrder.objects.create(
         recipient=recipient, comment=str(comment or "").strip(), price_list=price_list, created_by=actor,
         purpose=purpose,
+        partner=partner, partner_name_snapshot=customer_name or (recipient if purpose == CustomerProcurementOrder.Purpose.CUSTOMER else ''),
     )
     items = [
         _new_item(order, source_items[item_id], *quantities)
@@ -139,12 +145,21 @@ def create_customer_procurement_order(*, actor, price_list_id, recipient, commen
 
 
 @transaction.atomic
-def edit_created_order(*, actor, order_id, recipient, comment, lines):
+def edit_created_order(*, actor, order_id, recipient, comment, lines, partner_id=None, partner_name=None):
     prepared = _normalise_lines(lines)
     try:
         order = CustomerProcurementOrder.objects.select_for_update().get(pk=order_id)
     except CustomerProcurementOrder.DoesNotExist as exc:
         raise ValidationError("Заказ не найден.") from exc
+    require_untransferred_order(order)
+    if (partner_name is not None or partner_id is not None) and not (
+            partner_id is not None and str(partner_id) == str(order.partner_id) and not partner_name):
+        from partners.customers import resolve_customer
+        partner, name = resolve_customer(partner_id=partner_id, partner_name=partner_name or '')
+        if order.is_stock_order and name:
+            raise ValidationError('Заказ на склад не привязывается к заказчику.')
+        order.partner = partner
+        order.partner_name_snapshot = name or (recipient if not order.is_stock_order else '')
     if order.status != CustomerProcurementOrder.Status.CREATED:
         raise ValidationError("Изменять состав можно только в статусе «Создан».")
     if order.trip_id:
@@ -187,7 +202,7 @@ def edit_created_order(*, actor, order_id, recipient, comment, lines):
             item.save()
     order.recipient = recipient
     order.comment = str(comment or "").strip()
-    order.save(update_fields=("recipient", "comment", "updated_at"))
+    order.save(update_fields=("recipient", "comment", "updated_at", "partner", "partner_name_snapshot"))
     _save_totals(order, list(order.items.all()))
     logger.info("Созданный заказ изменён: user_id=%s order_id=%s", actor.pk, order.pk)
     return order
@@ -231,8 +246,11 @@ def advance_order_status(*, actor, order_id, next_status, warehouse_id=None):
         order = CustomerProcurementOrder.objects.select_for_update().get(pk=order_id)
     except CustomerProcurementOrder.DoesNotExist as exc:
         raise ValidationError("Заказ не найден.") from exc
+    if order.trip_id and order.total_units and next_status == order.Status.COMPLETED:
+        raise ValidationError('Заказ рейса выполняется через связанную продажу или приход. Сначала создайте операцию с указанием курсов.')
     if order.is_stock_order and next_status == order.Status.COMPLETED:
         return receive_stock_order(actor=actor, order_id=order.pk, warehouse_id=warehouse_id)
+    require_untransferred_order(order)
     transitions = {
         CustomerProcurementOrder.Status.CREATED: CustomerProcurementOrder.Status.CONFIRMED,
         CustomerProcurementOrder.Status.CONFIRMED: CustomerProcurementOrder.Status.RECEIVING,
@@ -288,10 +306,17 @@ def reduce_receiving_order(*, actor, order_id, comment, rows, allow_refund=True)
     comment = str(comment or "").strip()
     if not comment:
         raise ValidationError("Комментарий к корректировке обязателен.")
+    # Порядок блокировок совпадает с редактированием рейса: сначала рейс, затем заказ.
+    trip_id = CustomerProcurementOrder.objects.filter(pk=order_id).values_list('trip_id', flat=True).first()
+    batch = SupplierOrderBatch.objects.select_for_update().get(pk=trip_id) if trip_id else None
+    if batch:
+        from .trips import _assert_balances
+        _assert_balances(batch)
     try:
         order = CustomerProcurementOrder.objects.select_for_update().get(pk=order_id)
     except CustomerProcurementOrder.DoesNotExist as exc:
         raise ValidationError("Заказ не найден.") from exc
+    require_untransferred_order(order)
     if order.status != CustomerProcurementOrder.Status.RECEIVING:
         raise ValidationError("Корректировка доступна только в статусе «Принимается».")
     existing = {
@@ -315,6 +340,24 @@ def reduce_receiving_order(*, actor, order_id, comment, rows, allow_refund=True)
     changes = []
     for item_id, item in existing.items():
         new_pre, new_post = parsed[item_id]
+        if batch:
+            # При частичной приёмке сохраняем первые партии; уменьшаем последние,
+            # не оставляя лишние доли рейса с прежним количеством заказа.
+            allocations = list(item.trip_allocations.select_for_update().filter(line__batch=batch).order_by('-line_id', '-pk'))
+            for field, desired in (('prepayment_quantity', new_pre), ('postpayment_quantity', new_post)):
+                remaining = getattr(item, field) - desired
+                for allocation in allocations:
+                    removed = min(remaining, getattr(allocation, field))
+                    if not removed:
+                        continue
+                    line = SupplierOrderBatchLine.objects.select_for_update().get(pk=allocation.line_id)
+                    setattr(allocation, field, getattr(allocation, field) - removed)
+                    allocation.save(update_fields=(field,))
+                    line.quantity -= removed
+                    line.save(update_fields=('quantity',))
+                    remaining -= removed
+                if remaining:
+                    raise ValidationError('Распределение рейса не покрывает корректируемое количество.')
         if new_pre > item.prepayment_quantity or new_post > item.postpayment_quantity:
             raise ValidationError(f"Нельзя увеличить количество товара «{item.product_name_snapshot}».")
         for field, old_value, new_value in (
@@ -361,6 +404,11 @@ def reduce_receiving_order(*, actor, order_id, comment, rows, allow_refund=True)
             item.prepayment_quantity = new_pre
             item.postpayment_quantity = new_post
             item.save(update_fields=("prepayment_quantity", "postpayment_quantity"))
+    if batch:
+        from .trips import _assert_balances, _record_trip_change
+        _assert_balances(batch)
+        _record_trip_change(batch, actor, f'Частичная приёмка заказа №{order.pk}: обновлено распределение рейса.',
+                            {'action': 'receiving_reduction', 'order_id': order.pk, 'adjustment_id': adjustment.pk})
     if refund > 0:
         register.balance -= refund
         register.full_clean()
@@ -385,6 +433,7 @@ def reduce_receiving_order(*, actor, order_id, comment, rows, allow_refund=True)
 def receive_stock_order(*, actor, order_id, warehouse_id):
     """Создать один приход по доставленному заказу, сохранив исходную стоимость."""
     from supplies.services import accept_supply
+    from .trip_prices import allocation_unit_cost
 
     if not (actor.has_perm("orders.complete_order") and actor.has_perm("supplies.add_supply")
             and actor.has_perm("price.view_supplier_prices")):
@@ -395,6 +444,8 @@ def receive_stock_order(*, actor, order_id, warehouse_id):
         raise ValidationError("Заказ не найден.") from exc
     if not order.is_stock_order:
         raise ValidationError("Приход оформляется только для заказа на склад.")
+    if order.trip_id:
+        raise ValidationError('Подтвердите прибытие рейса и создайте отдельный приход из его заказа для общей финализации.')
     if order.supply_id:
         return order
     if order.status != order.Status.RECEIVING:
@@ -412,7 +463,7 @@ def receive_stock_order(*, actor, order_id, warehouse_id):
                 lines.append({
                     "product_type": item.product_kind, "product_id": item.product_id,
                     "supplier_id": allocation.line.supplier_id, "quantity": amount,
-                    "purchase_unit_cost": item.prepayment_unit_price,
+                    "purchase_unit_cost": allocation_unit_cost(item, allocation.line, for_supply=True),
                 })
                 remaining -= amount
         if remaining and order.trip_id:

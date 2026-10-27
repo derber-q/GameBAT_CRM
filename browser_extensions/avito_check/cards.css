@@ -1,0 +1,67 @@
+/* Подключается браузером как CSS расширения, независимо от правил inline-стилей Avito. */
+html[data-resource-avito-picking] [data-marker="item"] { cursor: copy !important; }
+html[data-resource-avito-picking] [data-marker="item"][data-resource-price-selected] {
+  outline: 2px solid #237e90;
+  outline-offset: 3px;
+}
+html[data-resource-avito-picking] [data-resource-old-wrapper],
+html[data-resource-avito-picking] [data-resource-old-price],
+html[data-resource-avito-picking] [data-resource-old-price] * {
+  color: #111 !important;
+  background: transparent !important;
+  text-decoration: none !important;
+}
+html[data-resource-avito-picking] [data-resource-final-price] {
+  display: inline-block !important;
+  font-size: 24px !important;
+  font-weight: 800 !important;
+  line-height: 1.35 !important;
+  color: #111 !important;
+  text-decoration: none !important;
+}
+/* Текст Avito сохраняется для чтения. Визуально показывается только сумма без соседних бонусов. */
+html[data-resource-avito-picking] [data-resource-old-price][data-resource-price-text],
+html[data-resource-avito-picking] [data-resource-old-price][data-resource-price-text] * {
+  font-size: 0 !important;
+}
+html[data-resource-avito-picking] [data-resource-old-price][data-resource-price-text] {
+  display: inline-block !important;
+}
+html[data-resource-avito-picking] [data-resource-old-price][data-resource-price-text]::after {
+  content: attr(data-resource-price-text) !important;
+  display: inline-block !important;
+  color: #111 !important;
+  background: transparent !important;
+  font-size: 24px !important;
+  font-weight: 800 !important;
+  line-height: 1.35 !important;
+  text-decoration: none !important;
+}
+html[data-resource-avito-picking] [data-resource-old-line],
+html[data-resource-avito-picking] [data-resource-old-wrapper]::before,
+html[data-resource-avito-picking] [data-resource-old-wrapper]::after {
+  display: none !important;
+}
+html[data-resource-avito-picking] [data-resource-discount-price],
+html[data-resource-avito-picking] [data-resource-discount-price] *,
+html[data-resource-avito-picking] [data-resource-discount-price]::before,
+html[data-resource-avito-picking] [data-resource-discount-price]::after {
+  display: none !important;
+  visibility: hidden !important;
+}
+/* Неизвестная цена и пустой/некорректный минимум остаются без подсветки. */
+html[data-resource-avito-picking] [data-resource-price-comparison="lower"] {
+  background: #68ed83 !important;
+  border-radius: 4px !important;
+  padding: 2px 5px !important;
+}
+html[data-resource-avito-picking] [data-resource-price-comparison="higher"] {
+  background: #ff8792 !important;
+  border-radius: 4px !important;
+  padding: 2px 5px !important;
+}
+html[data-resource-avito-picking] [data-resource-price-comparison="equal"] {
+  background: #ffe34d !important;
+  border-radius: 4px !important;
+  padding: 2px 5px !important;
+}

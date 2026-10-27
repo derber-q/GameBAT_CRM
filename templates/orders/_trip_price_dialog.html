@@ -1,0 +1,18 @@
+{% load l10n %}
+<dialog id="trip-price-dialog" class="confirmation-dialog trip-price-dialog" aria-labelledby="trip-price-title">
+<form id="trip-price-form" data-revision="{{ batch.revision|unlocalize }}">{% csrf_token %}
+  <h2 id="trip-price-title">Изменить цену AED</h2>
+  <p data-trip-price-product></p><p class="muted" data-trip-price-supplier></p>
+  <p class="help-text">Цена применяется ко всем единицам этой строки, включая покупателей и склад. Согласованные цены покупателей сохраняются.</p>
+  <dl class="details"><dt>Прежняя цена, AED/шт.</dt><dd data-trip-price-old></dd><dt>Количество</dt><dd data-trip-price-quantity></dd></dl>
+  <div class="field"><label for="trip-price-input">Новая цена, AED/шт.</label><input id="trip-price-input" name="price_aed" type="text" inputmode="decimal" maxlength="22" autocomplete="off" required></div>
+  <div class="field"><label for="trip-price-reason">Причина изменения (необязательно)</label><input id="trip-price-reason" name="reason" maxlength="2000" placeholder="Например, новый инвойс поставщика"></div>
+  <p data-trip-price-loading role="status" hidden>Рассчитываем по сохранённым курсам…</p>
+  <div data-trip-price-preview hidden>
+    <dl class="summary"><dt>Разница AED/шт.</dt><dd data-trip-price-unit-delta></dd><dt>Изменение закупочных затрат, ₽</dt><dd data-trip-price-cost-delta></dd><dt>Изменение прибыли покупателей, ₽</dt><dd data-trip-price-profit-delta></dd><dt>Изменение закупки на склад, ₽</dt><dd data-trip-price-stock-delta></dd></dl>
+    <div class="table-scroll"><table><thead><tr><th>Заказ</th><th>Шт.</th><th>Зафиксированный курс</th><th>Закупка с доставкой, ₽/шт.</th><th>Изменение затрат, ₽</th></tr></thead><tbody data-trip-price-allocations></tbody></table></div>
+    <div data-trip-price-orders></div>
+  </div>
+  <p class="errorlist" role="alert" data-trip-price-error></p>
+  <div class="dialog-actions"><button type="button" class="button button-secondary" data-trip-price-cancel>Отмена</button><button type="submit" class="button" data-trip-price-save disabled>Подтвердить цену</button></div>
+</form></dialog>

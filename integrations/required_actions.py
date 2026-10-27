@@ -39,6 +39,57 @@ def is_remote_archived(status):
     return normalize_remote_status(status) == RemotePublicationState.ARCHIVED
 
 
+def _required_action(status, stock, sell_on_avito):
+    if is_remote_published(status) and (stock == 0 or not sell_on_avito):
+        return RequiredAction.UNPUBLISH_MANUALLY
+    if stock > 0 and sell_on_avito and is_remote_archived(status):
+        return RequiredAction.PUBLISH_MANUALLY
+    return None
+
+
+def _stock_totals(product_keys):
+    keys = set(product_keys)
+    totals = {}
+    for kind, model in (("cd", CDWarehouseStock), ("tech", TechWarehouseStock)):
+        ids = [pk for product_kind, pk in keys if product_kind == kind]
+        totals.update({(kind, row[f"{kind}_id"]): row["total"] for row in
+                       model.objects.filter(**{f"{kind}_id__in": ids})
+                       .values(f"{kind}_id").annotate(total=Sum("quantity"))})
+    return totals
+
+
+def get_avito_required_action_counts(*, actions=None, include_keys=False):
+    counts = {'count': 0, 'publish': 0, 'unpublish': 0}
+    action_keys = []
+    if actions is None:
+        connections = list(AvitoListingConnection.objects.values(
+            'profile__cd_id', 'profile__tech_id', 'profile__sell_on_avito',
+            'profile__cd__is_archived', 'profile__tech__is_archived',
+            'remote_listing_id', 'remote_listing__status', 'remote_listing__missing_since',
+        ))
+        keys = [('cd', row['profile__cd_id']) if row['profile__cd_id'] is not None
+                else ('tech', row['profile__tech_id']) for row in connections]
+        totals = _stock_totals(keys)
+        actions = []
+        for row, (kind, product_id) in zip(connections, keys):
+            if row['remote_listing__missing_since'] or row[f'profile__{kind}__is_archived']:
+                continue
+            stock = int(totals.get((kind, product_id), 0))
+            action = _required_action(row['remote_listing__status'], stock, row['profile__sell_on_avito'])
+            if action is not None:
+                actions.append(action)
+                action_keys.append(f"{row['remote_listing_id']}:{action.value}")
+    else:
+        action_keys = [f'{row.listing.pk}:{row.action.value}' for row in actions]
+        actions = [row.action for row in actions]
+    for action in actions:
+        counts[action.value] += 1
+        counts['count'] += 1
+    if include_keys:
+        counts['action_keys'] = sorted(action_keys)
+    return counts
+
+
 def safe_listing_url(listing):
     snapshot = listing.snapshot if isinstance(listing.snapshot, dict) else {}
     for value in (listing.url, snapshot.get("url")):
@@ -74,23 +125,15 @@ def get_avito_required_actions():
     connections = list(AvitoListingConnection.objects.select_related(
         "remote_listing", "profile__cd", "profile__tech",
     ))
-    totals = {}
-    for kind, model in (("cd", CDWarehouseStock), ("tech", TechWarehouseStock)):
-        ids = [c.profile.product_id for c in connections if c.profile.product_kind == kind]
-        totals.update({(kind, row[f"{kind}_id"]): row["total"] for row in
-                       model.objects.filter(**{f"{kind}_id__in": ids})
-                       .values(f"{kind}_id").annotate(total=Sum("quantity"))})
+    totals = _stock_totals((c.profile.product_kind, c.profile.product_id) for c in connections)
     actions = []
     for connection in connections:
         profile, listing = connection.profile, connection.remote_listing
         if profile.product.is_archived or listing.missing_since:
             continue  # No reliable remote state; do not guess an action.
         stock = global_stock(profile, stock_totals=totals)
-        if is_remote_published(listing.status) and (stock == 0 or not profile.sell_on_avito):
-            action = RequiredAction.UNPUBLISH_MANUALLY
-        elif stock > 0 and profile.sell_on_avito and is_remote_archived(listing.status):
-            action = RequiredAction.PUBLISH_MANUALLY
-        else:
+        action = _required_action(listing.status, stock, profile.sell_on_avito)
+        if action is None:
             continue
         actions.append(RequiredActionRow(
             listing, profile.product, profile.product_kind, stock,

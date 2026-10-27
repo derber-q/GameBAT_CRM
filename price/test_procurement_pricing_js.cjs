@@ -24,10 +24,24 @@ function environment(specifications = [{}]) {
       'price-source': field('markup'),
       'price-error': {textContent: ''},
       'effective-markup': {textContent: ''},
-      'prepayment-rounding': {textContent: ''},
-      'postpayment-rounding': {textContent: ''},
+      'total-cost-display': {textContent: ''},
     };
-    return {fields, dataset: {base: spec.base ?? '1000.00', itemId: String(index + 1), surchargeMode: spec.mode ?? 'tiered'},
+    const offers = (spec.offers ?? []).map(offer => ({
+      dataset: {supplierId: String(offer.id), priceAed: offer.price},
+      classList: {values: new Set(), toggle(name, active) {active ? this.values.add(name) : this.values.delete(name);}},
+      setAttribute(name, value) {this[name] = value;},
+    }));
+    if (spec.offers) {
+      const supplier = field(String(spec.selectedSupplier ?? spec.offers[0].id));
+      supplier.dataset = {initialId: supplier.value};
+      supplier.options = spec.offers.map(offer => ({value: String(offer.id), dataset: {base: offer.base}}));
+      Object.defineProperty(supplier, 'selectedOptions', {get() {return this.options.filter(option => option.value === this.value);}});
+      supplier.choose = function(value) {this.value = String(value); this.events.change();};
+      fields['supplier-select'] = supplier;
+    }
+    return {fields, dataset: {base: spec.base ?? '1000.00', itemId: String(index + 1), surchargeMode: spec.mode ?? 'tiered', productKind: spec.kind ?? 'cd'},
+      offers,
+      querySelectorAll() {return offers;},
       querySelector(selector) { return fields[selector.slice(6, -1)]; }};
   });
   const payload = field();
@@ -45,7 +59,7 @@ function environment(specifications = [{}]) {
     querySelector(selector) { return selector === '[data-pricing-rows]' ? payload : confirmed; },
     querySelectorAll(selector) {
       if (selector === '[data-markup]') return rows.map(row => row.fields.markup);
-      return selector.endsWith(' input') ? inputs : rows;
+      return selector.includes(' input') ? inputs : rows;
     },
     addEventListener(name, callback) { this.events[name] = callback; },
     requestSubmit() { this.events.submit({preventDefault() {}}); },
@@ -226,8 +240,79 @@ for (let repeat = 0; repeat < 2; repeat += 1) {
   assert.equal(independent.prepayment.value, '3010.00');
   assert.equal(independent.postpayment.value, '3130.00');
   assert.equal(independent['effective-markup'].textContent, '210.00');
-  assert.equal(independent['prepayment-rounding'].textContent, '9.00');
-  assert.equal(independent['postpayment-rounding'].textContent, '3.00');
   assert.equal(independent['postpayment-surcharge'].value, '126.00');
 }
 console.log('Независимое округление и сохранение исходной наценки и доплаты: OK');
+
+const supplierEnv = environment([{offers: [{id: 1, base: '1000.00'}, {id: 2, base: '1500.15'}, {id: 3, base: '1e3'}]}]);
+const supplierRow = supplierEnv.rows[0];
+const supplierFields = supplierRow.fields;
+supplierFields['supplier-select'].choose(2);
+assert.equal(supplierRow.dataset.base, '1500.15');
+assert.equal(supplierFields['total-cost-display'].textContent, '1535.15');
+assert.equal(supplierFields.markup.value, '100.00');
+assert.equal(supplierFields.delivery.value, '35.00');
+assert.equal(supplierFields.prepayment.value, '1640.00');
+assert.equal(supplierFields.postpayment.value, '1700.00');
+supplierFields.delivery.enter('45.25');
+assert.equal(supplierFields['total-cost-display'].textContent, '1545.40');
+supplierFields.delivery.enter('1.001');
+assert.equal(supplierFields['total-cost-display'].textContent, '—');
+supplierFields.delivery.enter('35.00');
+assert.equal(supplierFields['total-cost-display'].textContent, '1535.15');
+assert.equal(supplierFields['price-source'].value, 'markup');
+assert.equal(supplierRow.offers[1].classList.values.has('is-selected'), true);
+assert.equal(supplierRow.offers[0]['aria-current'], 'false');
+supplierFields.prepayment.enter('1801');
+assert.equal(supplierFields['total-cost-display'].textContent, '1535.15');
+assert.equal(supplierFields.markup.value, '265.85');
+supplierFields['supplier-select'].choose(1);
+assert.equal(supplierFields['total-cost-display'].textContent, '1035.00');
+assert.equal(supplierFields.markup.value, '265.85');
+assert.equal(supplierFields.prepayment.value, '1310.00');
+assert.equal(supplierFields.postpayment.value, '1370.00');
+assert.equal(supplierFields['price-source'].value, 'markup');
+supplierEnv.confirmed.value = 'true';
+supplierEnv.form.events.change();
+assert.equal(supplierEnv.confirmed.disabled, true);
+supplierEnv.form.events.submit();
+const supplierPayload = JSON.parse(supplierEnv.payload.value)['1'];
+assert.equal(supplierPayload.supplier_id, '1');
+assert.equal(supplierPayload.supplier_initial_id, '1');
+assert.equal(supplierFields['supplier-select'].disabled, true);
+
+const invalidSupplier = environment([{offers: [{id: 1, base: '1000.00'}, {id: 2, base: '1e3'}]}]).rows[0];
+invalidSupplier.fields['supplier-select'].choose(2);
+assert.match(invalidSupplier.fields['supplier-select'].validationMessage, /цену поставщика/);
+assert.equal(invalidSupplier.dataset.base, '1000.00');
+const exactSupplier = environment([{base: '9999999999999900.01', delivery: '0.01', markup: '0.01',
+  offers: [{id: 1, base: '9999999999999900.01'}, {id: 2, base: '9999999999999900.03'}]}]).rows[0];
+exactSupplier.fields['supplier-select'].choose(2);
+assert.equal(exactSupplier.fields['total-cost-display'].textContent, '9999999999999900.04');
+assert.equal(exactSupplier.fields.prepayment.value, '9999999999999910.00');
+assert.equal(exactSupplier.fields.markup.value, '0.01');
+console.log('Смена поставщика: точные копейки, сохранение наценки, подсветка, пересчёт и отправка выбора: OK');
+const offerPrices = [
+  {id: 1, price: '9.000000', base: '900.00'},
+  {id: 2, price: '14.000000', base: '1400.00'},
+  {id: 3, price: '14.000001', base: '1400.00'},
+  {id: 4, price: '13.999999', base: '1400.00'},
+];
+const cdOffers = environment([{offers: offerPrices}]).rows[0];
+const expensiveFlags = row => row.offers.map(offer => offer.classList.values.has('is-expensive'));
+assert.deepEqual(expensiveFlags(cdOffers), [false, true, true, false]);
+cdOffers.fields['supplier-select'].choose(2);
+assert.deepEqual(expensiveFlags(cdOffers), [false, false, false, false]);
+cdOffers.fields['supplier-select'].choose(1);
+assert.deepEqual(expensiveFlags(cdOffers), [false, true, true, false]);
+cdOffers.fields['supplier-select'].choose(3);
+assert.deepEqual(expensiveFlags(cdOffers), [false, false, false, false]);
+assert(cdOffers.offers[2].classList.values.has('is-selected'));
+assert.deepEqual(expensiveFlags(environment([{kind: 'tech', offers: offerPrices}]).rows[0]), [false, false, false, false]);
+const preciseOffers = environment([{offers: [
+  {id: 1, price: '99999999999990.000001', base: '900.00'},
+  {id: 2, price: '99999999999995.000001', base: '1400.00'},
+  {id: 3, price: '99999999999995.000002', base: '1400.00'},
+]}]).rows[0];
+assert.deepEqual(expensiveFlags(preciseOffers), [false, true, true]);
+console.log('CD: красная подсветка проигравших при разнице >=5 AED, смена победителя, точность 6 знаков и исключение техники: OK');

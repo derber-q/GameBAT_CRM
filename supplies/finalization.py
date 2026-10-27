@@ -6,6 +6,7 @@ from functools import reduce
 from math import gcd
 
 from django.core.exceptions import ValidationError
+from django.core.validators import DecimalValidator
 from django.db import transaction
 
 from catalog.audit import field_change, record_product_changes
@@ -64,7 +65,11 @@ def _money(value, label):
         raise ValidationError(f"Поле «{label}» содержит некорректное число.") from exc
     if not amount.is_finite():
         raise ValidationError(f"Поле «{label}» содержит некорректное число.")
-    rounded = amount.quantize(CENT)
+    try:
+        rounded = amount.quantize(CENT)
+    except InvalidOperation as exc:
+        raise ValidationError(f'Поле «{label}» превышает допустимую сумму.') from exc
+    DecimalValidator(max_digits=20,decimal_places=2)(rounded)
     if rounded != amount:
         raise ValidationError(f"Поле «{label}» должно быть указано с точностью до копейки.")
     return rounded
@@ -136,6 +141,9 @@ def _lock_global_quantity_records(keys):
 
 def get_supply_finalization_context(*, supply, lock=False):
     """Возвращает товары актуальной редакции со складским количеством и cost."""
+    from orders.models import TripOrderOperation
+    if TripOrderOperation.objects.filter(supply=supply,calculation__has_key='arrival_id').exists():
+        raise ValidationError('Затраты этого прихода согласуются только общей финализацией рейса.')
     if supply.status not in (Supply.Status.ACCEPTED, Supply.Status.PRICE_REVIEW_REQUIRED) or supply.is_cancelled:
         raise ValidationError("Финализировать можно только действующий принятый приход.")
     keys = _supply_product_keys(supply)

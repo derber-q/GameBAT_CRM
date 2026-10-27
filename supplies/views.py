@@ -12,8 +12,10 @@ from django.views.decorators.http import require_POST
 from catalog.models import CD, Tech
 from catalog.product_fields import PRICING_FIELDS
 from catalog.product_identifiers import add_product_barcode, set_product_weight
+from catalog.game_codes import requires_game_codes, set_game_codes
 from catalog.product_search import search_product_querysets
 from core.decorators import permission_required_any
+from integrations.avito_check import manual_search_url
 from partners.models import Supplier
 from pricing.warnings import price_warning, MARKUP_FOR_PRICE, wholesale_margin
 from warehouse.form_defaults import single_warehouse_id
@@ -114,6 +116,9 @@ def _submitted_supply_lines(post, user=None):
             "quantity": value(quantities),
             "purchase_unit_cost": value(costs),
             "weight_grams": product.weight_grams if product else None,
+            "cusa_ppsa_code": getattr(product, "cusa_ppsa_code", ""),
+            "requires_game_codes": bool(product and requires_game_codes(product)),
+            "can_set_game_codes": bool(user and user.has_perm("catalog.change_cd_cusa_ppsa_code")),
             "can_set_weight": bool(user and (
                 user.is_superuser or user.has_perm(
                     "catalog.change_cd_weight" if product_type == "cd" else "catalog.change_tech_weight"
@@ -162,6 +167,9 @@ def _current_supply_lines(supply, user):
                 "quantity": item.quantity,
                 "purchase_unit_cost": str(item.purchase_unit_cost),
                 "weight_grams": item.product.weight_grams,
+                "cusa_ppsa_code": getattr(item.product, "cusa_ppsa_code", ""),
+                "requires_game_codes": requires_game_codes(item.product),
+                "can_set_game_codes": user.has_perm("catalog.change_cd_cusa_ppsa_code"),
                 "can_set_weight": user.is_superuser or user.has_perm(
                     "catalog.change_cd_weight" if product_type == "cd" else "catalog.change_tech_weight"
                 ),
@@ -171,6 +179,9 @@ def _current_supply_lines(supply, user):
 
 @permission_required("supplies.add_supply", raise_exception=True)
 def supply_create(request):
+    if request.GET.get('trip_draft') or request.POST.get('trip_draft'):
+        from orders.fulfillment_views import supply_create as trip_supply_create
+        return trip_supply_create(request)
     suppliers = _supplier_options(request.user)
     if request.method == "POST":
         try:
@@ -213,6 +224,8 @@ def supply_edit(request, pk):
     supply = get_object_or_404(
         Supply.objects.select_related("warehouse", "accepted_by"), pk=pk
     )
+    if supply.status == Supply.Status.WAITING_TRIP_FINALIZATION:
+        return redirect('orders:arrival_receipt',pk=supply.trip_operation.order_id)
     pending = supply.status == Supply.Status.PRICE_REVIEW_REQUIRED
     required = "supplies.add_supply" if pending else "supplies.edit_accepted_supply"
     if not request.user.is_superuser and not request.user.has_perm(required):
@@ -277,6 +290,8 @@ def supply_detail(request, pk):
         Supply.objects.select_related("accepted_by", "warehouse", "cancelled_by"), pk=pk
     )
     full_supplier_access = request.user.is_superuser or request.user.has_perm("partners.view_supplier_details")
+    from orders.arrival_models import TripArrival
+    trip_arrival = TripArrival.objects.filter(trip__trip_orders__operations__supply=supply).first()
     rows = []
     for item in supply.cd_items.all():
         rows.append({
@@ -304,6 +319,7 @@ def supply_detail(request, pk):
         })
     return render(request, "supplies/detail.html", {
         "supply": supply,
+        "trip_arrival": trip_arrival,
         "rows": rows,
         "expenses": supply.expenses.all(),
         "position_count": len(rows),
@@ -311,14 +327,14 @@ def supply_detail(request, pk):
         "can_cancel": not supply.is_cancelled and (
             request.user.is_superuser or request.user.has_perm("supplies.cancel_supply")
         ),
-        "can_edit": not supply.is_cancelled and (
+        "can_edit": not supply.is_cancelled and not (trip_arrival and supply.status != Supply.Status.ACCEPTED) and (
             request.user.is_superuser or request.user.has_perm(
-                "supplies.add_supply" if supply.status == Supply.Status.PRICE_REVIEW_REQUIRED
+                "supplies.add_supply" if supply.status in (Supply.Status.PRICE_REVIEW_REQUIRED,Supply.Status.WAITING_TRIP_FINALIZATION)
                 else "supplies.edit_accepted_supply"
             )
         ),
         "needs_price_review": supply.status == Supply.Status.PRICE_REVIEW_REQUIRED,
-        "can_finalize": not supply.is_cancelled and supply_has_complete_cost_calculations(supply) and (
+        "can_finalize": not trip_arrival and not supply.is_cancelled and supply_has_complete_cost_calculations(supply) and (
             request.user.is_superuser or request.user.has_perm("supplies.finalize_supply")
         ),
         "revisions": supply.revisions.select_related("created_by", "warehouse"),
@@ -337,9 +353,20 @@ PRICE_PERMISSIONS = {
 
 @permission_required("supplies.add_supply", raise_exception=True)
 def supply_price_review(request, pk):
+    from orders.models import TripOrderOperation
+    from orders.arrival_finalization import prepare_supply_price_review
+    trip_operation = TripOrderOperation.objects.filter(supply_id=pk,active=True,
+        calculation__has_key='arrival_id').first()
+    if trip_operation and request.method == 'GET':
+        try:
+            prepare_supply_price_review(actor=request.user,supply_id=pk)
+        except ValidationError as exc:
+            messages.error(request,' '.join(exc.messages))
+            return redirect('supplies:detail',pk=pk)
     supply = get_object_or_404(
         Supply.objects.select_related("warehouse", "accepted_by").prefetch_related(
-            "cost_calculations__cd", "cost_calculations__tech",
+            "cost_calculations__cd__platform", "cost_calculations__cd__avito_profile",
+            "cost_calculations__tech",
         ), pk=pk,
     )
     if supply.status != Supply.Status.PRICE_REVIEW_REQUIRED:
@@ -357,6 +384,7 @@ def supply_price_review(request, pk):
         }
         rows.append({
             "calculation": calculation, "product": product, "values": values,
+            "avito_search_url": manual_search_url(product, calculation.product_kind),
             "wholesale_margin": wholesale_margin(values["wholesale_price"], calculation.resulting_unit_cost),
             "warnings": warnings,
             "editable": {field: request.user.is_superuser or request.user.has_perm(permission)
@@ -387,7 +415,8 @@ def supply_price_review(request, pk):
         else:
             messages.success(request, "Цены сохранены, поставка поставлена на физический склад.")
             return redirect("supplies:detail", pk=confirmed_supply.pk)
-    return render(request, "supplies/price_review.html", {"supply": supply, "rows": rows})
+    return render(request, "supplies/price_review.html", {"supply": supply, "rows": rows,
+        "trip_price_review": bool(trip_operation)})
 
 
 @permission_required("supplies.finalize_supply", raise_exception=True)
@@ -519,6 +548,7 @@ def product_autocomplete(request):
     query = request.GET.get("q", "").strip()
     context = request.GET.get("context", "").strip()
     context_permissions = {
+        "trip_sale": ("sales.create_sale",),
         "supply": ("supplies.add_supply", "supplies.edit_accepted_supply"),
         "sale": ("sales.create_sale", "sales.edit_unpaid_postpay_sale"),
         "consignment": ("consignment.transfer_stock",),
@@ -528,9 +558,12 @@ def product_autocomplete(request):
         request.user.is_superuser or any(request.user.has_perm(p) for p in context_permissions[context])
     ):
         raise PermissionDenied
+    if context == 'trip_sale' and not request.user.has_perm('price.view_supplier_prices'):
+        raise PermissionDenied
     include_cost = context in {"", "consignment"} and (
         request.user.is_superuser or request.user.has_perm("consignment.transfer_stock")
     )
+    include_cost = include_cost or context == 'trip_sale'
     include_wholesale = context == "consignment" and include_cost
     try:
         warehouse_id = int(request.GET.get("warehouse")) if request.GET.get("warehouse") else None
@@ -647,6 +680,8 @@ def product_autocomplete(request):
         "available_warehouse_ids": cd_warehouse_ids.get(item.pk, []),
         "sku": item.sku,
         "cusa_ppsa_code": item.cusa_ppsa_code,
+        "requires_game_codes": requires_game_codes(item),
+        "can_set_game_codes": request.user.has_perm('catalog.change_cd_cusa_ppsa_code'),
         "weight_grams": item.weight_grams,
         "can_set_weight": request.user.is_superuser or request.user.has_perm("catalog.change_cd_weight"),
         "cost": f"{item.cost:.2f}" if include_cost else None,
@@ -655,7 +690,7 @@ def product_autocomplete(request):
             "retail": f"{item.avito_price:.2f}" if item.avito_price is not None else None,
             "wholesale": f"{item.wholesale_price:.2f}" if item.wholesale_price is not None else None,
             "yandex_market": f"{item.yandex_market_price:.2f}" if item.yandex_market_price is not None else None,
-        } if context == "sale" else None,
+        } if context in {"sale", "trip_sale"} else None,
     } for item in cds]
     results.extend({
         "type": "tech", "id": item.pk,
@@ -676,7 +711,7 @@ def product_autocomplete(request):
             "retail": f"{item.avito_price:.2f}" if item.avito_price is not None else None,
             "wholesale": f"{item.wholesale_price:.2f}" if item.wholesale_price is not None else None,
             "yandex_market": f"{item.yandex_market_price:.2f}" if item.yandex_market_price is not None else None,
-        } if context == "sale" else None,
+        } if context in {"sale", "trip_sale"} else None,
     } for item in tech)
     if context == "sale" and not exact_refresh:
         from catalog.models import SystemProduct
@@ -690,6 +725,17 @@ def product_autocomplete(request):
                     "warehouse_stock": None, "storage_locations": "", "prices": None,
                 })
     return JsonResponse({"results": results[:100] if exact_refresh else results[:20]})
+
+
+@require_POST
+@permission_required_any("supplies.add_supply", "supplies.edit_accepted_supply")
+def supply_product_codes(request):
+    try:
+        product = set_game_codes(actor=request.user, product_id=request.POST.get('product_id'),
+            value=request.POST.get('cusa_ppsa_code'))
+    except ValidationError as exc:
+        return JsonResponse({'ok':False,'error':' '.join(exc.messages)}, status=400)
+    return JsonResponse({'ok':True,'cusa_ppsa_code':product.cusa_ppsa_code})
 
 
 @require_POST

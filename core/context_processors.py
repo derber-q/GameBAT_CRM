@@ -16,6 +16,22 @@ def crm_header(request):
         pass
     user = request.user
     authenticated = user.is_authenticated
+    market_notifications = authenticated and user.has_perm('sales.view_sales')
+    market_pending_count = 0
+    if market_notifications:
+        try:
+            from sales.models import MarketOrderAttention
+            market_pending_count = MarketOrderAttention.objects.filter(acknowledged_at__isnull=True).count()
+        except (OperationalError, ProgrammingError):
+            pass
+    avito_notifications = authenticated and user.has_perm('integrations.view_avito_integration')
+    avito_action_counts = {'count': None, 'publish': None, 'unpublish': None}
+    if avito_notifications:
+        try:
+            from integrations.required_actions import get_avito_required_action_counts
+            avito_action_counts = getattr(request, '_avito_action_counts', None) or get_avito_required_action_counts()
+        except (OperationalError, ProgrammingError):
+            pass
     warehouse_global_access = authenticated and (
         user.is_superuser
         or user.has_perm("warehouse.view_global_stock")
@@ -41,8 +57,12 @@ def crm_header(request):
         "nav_warehouses": warehouses,
         "single_warehouse_id": warehouses[0]["id"] if len(warehouses) == 1 else None,
         "nav_sales_platforms": sales_platforms,
+        'market_pending_count': market_pending_count,
+        'avito_action_counts': avito_action_counts,
         "nav": {
-            "warehouse": warehouse_global_access or warehouse_details_access,
+            'market_notifications': market_notifications,
+            'avito_notifications': avito_notifications,
+            "warehouse": warehouse_global_access or warehouse_details_access or transfers_access,
             "warehouse_global": warehouse_global_access,
             "warehouse_details": warehouse_details_access,
             "transfers": transfers_access,
@@ -50,6 +70,7 @@ def crm_header(request):
             "creditors": authenticated and (
                 user.is_superuser or user.has_perm("creditors.view_creditors")
             ),
+            'partners': authenticated and user.has_perm('partners.view_partner'),
             "nomenclature": authenticated and (
                 user.is_superuser or user.has_perm("catalog.view_nomenclature")
             ),

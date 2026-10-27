@@ -14,6 +14,7 @@ urlpatterns = [
     path("google-sheets/sync/", views.google_sheets_sync, name="google_sheets_sync"),
     path("avito/", views.avito_dashboard, name="avito"),
     path("avito/actions/refresh/", views.required_actions_refresh, name="required_actions_refresh"),
+    path("avito/actions/count/", views.required_actions_count, name="required_actions_count"),
     path("avito/actions/<int:pk>/status/", views.required_actions_status, name="required_actions_status"),
     path("avito/sync/", views.manual_sync, name="manual_sync"),
     path("avito/sync/<int:pk>/status/", views.manual_sync_status, name="manual_sync_status"),

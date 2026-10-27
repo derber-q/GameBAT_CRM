@@ -12,6 +12,12 @@ document.addEventListener("DOMContentLoaded", () => {
     const absolute = value < 0n ? -value : value;
     return `${value < 0n ? "-" : ""}${absolute / 100n}.${String(absolute % 100n).padStart(2, "0")}`;
   };
+  const parseSupplierPrice = (value) => {
+    const text = String(value).trim();
+    if (!/^\d+(?:\.\d{1,6})?$/.test(text)) return null;
+    const [whole, fraction = ''] = text.split('.');
+    return BigInt(whole) * 1000000n + BigInt(fraction.padEnd(6, '0'));
+  };
   const postpaymentFor = (value, surcharge = null) => value + (surcharge ?? (value < 200000n ? 6000n : (value < 300000n ? 8000n : 10000n)));
   const roundCustomerPrice = (value) => ((value + 999n) / 1000n) * 1000n;
   const prepaymentFor = (value, surcharge = null) => {
@@ -54,6 +60,8 @@ document.addEventListener("DOMContentLoaded", () => {
       };
       const base = parseMoney(row.dataset.base);
       const shipping = parseMoney(delivery.value);
+      const totalCost = row.querySelector('[data-total-cost-display]');
+      if (totalCost) totalCost.textContent = base !== null && shipping !== null ? formatMoney(base + shipping) : '—';
       const fixedSurcharge = row.dataset.surchargeMode === "tiered" ? null : parseMoney(surcharge.value);
       if (base === null) return fail(changed, "Не удалось прочитать базовую цену. Обновите страницу.");
       if (shipping === null) return fail(delivery, "Укажите доставку от 0 с точностью до копеек.");
@@ -88,24 +96,55 @@ document.addEventListener("DOMContentLoaded", () => {
       if (changed !== surcharge) surcharge.value = formatMoney(originalPost - prepaid);
       const effective = row.querySelector('[data-effective-markup]');
       if (effective) effective.textContent = formatMoney(roundedPrepaid - base - shipping);
-      const roundingPre = row.querySelector('[data-prepayment-rounding]');
-      const roundingPost = row.querySelector('[data-postpayment-rounding]');
-      if (roundingPre) roundingPre.textContent = formatMoney(roundedPrepaid - prepaid);
-      if (roundingPost) roundingPost.textContent = formatMoney(postpaid - originalPost);
       highlight();
     };
     fields.forEach((field) => field.addEventListener("input", () => {
       if (!field.readOnly) recalculate(field);
     }));
+    const supplier = row.querySelector('[data-supplier-select]');
+    const highlightSupplierOffers = () => {
+      const offers = Array.from(row.querySelectorAll('[data-supplier-offer]'));
+      const selectedOffer = offers.find((offer) => supplier
+        ? offer.dataset.supplierId === supplier.value : offer.getAttribute('aria-current') === 'true');
+      const selectedPrice = parseSupplierPrice(selectedOffer?.dataset.priceAed);
+      offers.forEach((offer) => {
+        const price = parseSupplierPrice(offer.dataset.priceAed);
+        offer.classList.toggle('is-expensive', row.dataset.productKind === 'cd' && offer !== selectedOffer
+          && price !== null && selectedPrice !== null && price - selectedPrice >= 5000000n);
+      });
+    };
+    highlightSupplierOffers();
+    supplier?.addEventListener('change', () => {
+      if (supplier.disabled) return;
+      supplier.setCustomValidity('');
+      const option = supplier.selectedOptions[0];
+      const base = option ? parseMoney(option.dataset.base) : null;
+      if (base === null) {
+        supplier.setCustomValidity('Не удалось прочитать цену поставщика. Обновите страницу.');
+        if (error) error.textContent = supplier.validationMessage;
+        return;
+      }
+      // База каждого сохранённого предложения рассчитана сервером в копейках.
+      row.dataset.base = formatMoney(base);
+      row.querySelectorAll('[data-supplier-offer]').forEach((offer) => {
+        const selected = offer.dataset.supplierId === supplier.value;
+        offer.classList.toggle('is-selected', selected);
+        offer.setAttribute('aria-current', String(selected));
+      });
+      highlightSupplierOffers();
+      recalculate(markup);
+    });
   });
   document.querySelectorAll(".procurement-pricing-form").forEach((form) => {
     const payload = form.querySelector("[data-pricing-rows]");
     if (!payload) return;
     const confirmed = form.querySelector("[data-negative-confirmed]");
     const dialog = document.querySelector("[data-negative-dialog]");
-    form.addEventListener("input", () => {
+    const resetConfirmation = () => {
       if (confirmed) { confirmed.value = ""; confirmed.disabled = true; }
-    });
+    };
+    form.addEventListener('input', resetConfirmation);
+    form.addEventListener('change', resetConfirmation);
     if (dialog && confirmed) {
       dialog.querySelector("[data-negative-cancel]").addEventListener("click", () => dialog.close());
       dialog.querySelector("[data-negative-accept]").addEventListener("click", () => {
@@ -142,11 +181,16 @@ document.addEventListener("DOMContentLoaded", () => {
           postpayment_surcharge: row.querySelector("[data-postpayment-surcharge]").value,
           surcharge_mode: row.dataset.surchargeMode,
         };
+        const supplier = row.querySelector('[data-supplier-select]');
+        if (supplier) {
+          rows[row.dataset.itemId].supplier_id = supplier.value;
+          rows[row.dataset.itemId].supplier_initial_id = supplier.dataset.initialId;
+        }
       });
       // Один параметр формы позволяет сохранять большие прайсы без лимита числа полей.
       payload.value = JSON.stringify(rows);
       payload.disabled = false;
-      form.querySelectorAll("[data-procurement-row] input").forEach((field) => { field.disabled = true; });
+      form.querySelectorAll("[data-procurement-row] input, [data-procurement-row] select").forEach((field) => { field.disabled = true; });
     });
   });
 });

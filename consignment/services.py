@@ -559,8 +559,11 @@ def record_consignment_sale(*, actor, product_type, stock_id, quantity, payment_
     except stock_model.DoesNotExist as exc:
         raise ValidationError("Остаток товара на реализации не найден.") from exc
     now = timezone.now()
+    from partners.models import Partner
+    partner = Partner.objects.filter(platform=stock.platform).first()
     sale = Sale.objects.create(
         warehouse=stock.warehouse, consignment_platform=stock.platform,
+        partner=partner, partner_name_snapshot=partner.name if partner else '',
         price_type=Sale.PriceType.CONSIGNMENT, sale_type=Sale.SaleType.CONSIGNMENT,
         payment_method=payment_method, order_status=Sale.OrderStatus.DELIVERED,
         payment_status=Sale.PaymentStatus.PAID, completed_at=now, paid_at=now, paid_by=actor, total_amount=0,

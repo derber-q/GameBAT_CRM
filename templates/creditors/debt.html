@@ -1,7 +1,7 @@
 {% extends "base.html" %}
-{% block title %}Изменить долг · {{ creditor.name }} · ReSOURCE{% endblock %}
+{% block title %}Изменить долг · {{ creditor.display_name }} · ReSOURCE{% endblock %}
 {% block content %}
-<div class="page-heading"><div><p class="eyebrow">Связанная финансовая операция</p><h1>{{ creditor.name }}</h1><p class="muted">Текущая задолженность: <b>{{ creditor.current_debt }} ₽</b></p></div><a class="button button-secondary" href="{% url 'creditors:detail' creditor.pk %}">Отмена</a></div>
+<div class="page-heading"><div><p class="eyebrow">Связанная финансовая операция</p><h1>{{ creditor.display_name }}</h1><p class="muted">Текущая задолженность: <b>{{ creditor.current_debt }} ₽</b></p></div><a class="button button-secondary" href="{% url 'creditors:detail' creditor.pk %}">Отмена</a></div>
 <section class="alert alert-info"><strong>Изменение проводится через одно хранилище</strong><span>Увеличение долга списывает разницу, уменьшение возвращает её в выбранную кассу или сейф.</span></section>
 <section class="panel form-panel"><form method="post" class="stacked-form">{% csrf_token %}
   {% if form.non_field_errors %}<div class="alert alert-error">{{ form.non_field_errors }}</div>{% endif %}

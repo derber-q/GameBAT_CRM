@@ -84,8 +84,9 @@ class CatalogFeaturesBrowserChecks(StaticLiveServerTestCase):
                 page.locator('[data-markup]').fill('201.01')
                 expect(page.locator('[data-prepayment]')).to_have_value('3010.00')
                 expect(page.locator('[data-postpayment]')).to_have_value('3130.00')
-                expect(page.locator('[data-prepayment-rounding]')).to_have_text('8.99')
-                expect(page.locator('[data-postpayment-rounding]')).to_have_text('2.99')
+                expect(page.locator('[data-effective-markup]')).to_have_text('210.00')
+                expect(page.locator('[data-prepayment-rounding]')).to_have_count(0)
+                expect(page.locator('[data-postpayment-rounding]')).to_have_count(0)
                 page.screenshot(path=str(output / f'pricing-{width}.png'), full_page=True)
                 self.assertLessEqual(page.evaluate('document.documentElement.scrollWidth'), width)
                 for _repeat in range(2):

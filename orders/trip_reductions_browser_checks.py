@@ -22,6 +22,50 @@ from .trips import change_trip_line, create_trip, _assert_balances
 
 class TripReductionsBrowserChecks(StaticLiveServerTestCase):
     @patch.dict(os.environ, {"DJANGO_ALLOW_ASYNC_UNSAFE": "true"})
+    def test_a_without_m_offer_opens_transfer_instead_of_zeroing_customer(self):
+        user = User.objects.create_superuser('a-to-m-browser')
+        self.client.force_login(user)
+        suppliers = {letter: Supplier.objects.create(name=letter, letter=letter, priority=index,
+            legal_entity=letter, phone_1='1', highlight_color='#37A7BA')
+            for index, letter in enumerate(('A', 'F', 'M'), start=1)}
+        product = CD.objects.create(name='PS4 Street Fighter 5', platform=Platform.objects.create(name='PS4'))
+        SupplierCDPrice.objects.create(supplier=suppliers['A'], cd=product, price=40)
+        price = create_procurement_price_list(actor=user, exchange_rate_usdt_aed=4, exchange_rate_usdt_rub=80,
+            delivery_general_usdt_per_kg=0, delivery_devices_usdt_per_kg=0,
+            delivery_storage_usdt_per_kg=0, delivery_cd_rub=0)
+        source = price.items.get(cd=product)
+        order = create_customer_procurement_order(actor=user, price_list_id=price.pk, recipient='Заказчик', comment='',
+            lines=[{'price_list_item_id': source.pk, 'prepayment_quantity': 0, 'postpayment_quantity': 1}])
+        trip = create_trip(actor=user, order_ids=[order.pk], creation_key=uuid4())
+        line = trip.lines.get(cd=product, supplier=suppliers['A'])
+        output = Path(settings.BASE_DIR) / 'outputs/street_fighter_transfer_20261023/browser'
+        output.mkdir(parents=True, exist_ok=True)
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch()
+            context = browser.new_context(viewport={'width': 1440, 'height': 1000})
+            context.add_cookies([{'name': settings.SESSION_COOKIE_NAME,
+                'value': self.client.cookies[settings.SESSION_COOKIE_NAME].value, 'url': self.live_server_url}])
+            context.route('**/crm/api/exchange-rates/', lambda route: route.fulfill(json={'rates': {}, 'available': False}))
+            page = context.new_page()
+            page.goto(self.live_server_url + reverse('orders:trip_detail', args=[trip.pk]))
+            row = page.locator(f'[data-trip-line="{line.pk}"]')
+            row.locator('[name="quantity"]').fill('0')
+            row.get_by_role('button', name='Изменить', exact=True).click()
+            expect(page.locator('#trip-change-dialog')).to_be_visible()
+            expect(page.locator('#trip-action')).to_have_value('transfer')
+            expect(page.locator('#trip-target-supplier')).to_have_value(str(suppliers['M'].pk))
+            expect(page.locator('#trip-price-supplier')).to_have_value(str(suppliers['A'].pk))
+            page.locator('#trip-change-dialog').screenshot(path=str(output / 'a-to-m.png'))
+            with page.expect_navigation(wait_until='domcontentloaded'):
+                page.locator('#trip-change-save').click()
+            line.refresh_from_db()
+            target = trip.lines.get(cd=product, supplier=suppliers['M'])
+            self.assertEqual((line.quantity, target.quantity, target.price_supplier_id,
+                target.supplier_price_aed_snapshot, order.items.get().quantity), (0, 1, suppliers['A'].pk, 40, 1))
+            _assert_balances(trip)
+            browser.close()
+
+    @patch.dict(os.environ, {"DJANGO_ALLOW_ASYNC_UNSAFE": "true"})
     def test_last_supplier_automatic_manual_and_non_last_choice_on_two_widths(self):
         user = User.objects.create_superuser("reduction-browser", password="IsolatedTest123!")
         self.client.force_login(user)
