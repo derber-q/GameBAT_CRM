@@ -158,7 +158,8 @@ class RequiredActionsTests(TestCase):
         response = self.client.get(reverse('integrations:avito'))
         self.assertContains(response, 'data-avito-counter')
         self.assertContains(response, 'js/avito-notifications.js?v=3')
-        self.assertContains(response, 'css/market-notifications.css?v=4')
+        self.assertContains(response, 'css/market-notifications.css?v=5')
+        self.assertContains(response, 'js/notification-sound-controls.js?v=1')
         self.assertNotContains(response, 'data-market-counter')
 
     def test_counter_database_error_does_not_report_false_zero(self):
