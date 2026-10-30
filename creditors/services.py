@@ -28,10 +28,12 @@ def _debt(value, *, signed=False):
 
 @retry_database_lock
 @transaction.atomic
-def adjust_creditor_debt(*, actor, creditor_id, warehouse_id, money_source_type, new_debt, comment=""):
+def adjust_creditor_debt(*, actor, creditor_id, warehouse_id, money_source_type, new_debt=None, debt_delta=None, comment=""):
     if not actor.has_perm('creditors.change_debt'):
         from django.core.exceptions import PermissionDenied
         raise PermissionDenied('Нет права изменения задолженности.')
+    if (new_debt is None) == (debt_delta is None):
+        raise ValidationError('Укажите итоговую задолженность или сумму изменения.')
     try:
         creditor = Creditor.objects.select_for_update().get(pk=creditor_id)
     except Creditor.DoesNotExist as exc:
@@ -42,8 +44,12 @@ def adjust_creditor_debt(*, actor, creditor_id, warehouse_id, money_source_type,
         raise ValidationError("Выберите существующий склад.") from exc
 
     partner = getattr(creditor, 'partner', None)
-    new_debt = _debt(new_debt, signed=partner is not None)
     old_debt = creditor.current_debt
+    # При относительном изменении используем баланс под блокировкой, а не
+    # значение страницы: другая операция могла изменить долг после её открытия.
+    if debt_delta is not None:
+        new_debt = old_debt + _debt(debt_delta, signed=True)
+    new_debt = _debt(new_debt, signed=partner is not None)
     delta = (new_debt - old_debt).quantize(CENT)
     if delta == 0:
         raise ValidationError("Новое значение задолженности совпадает с текущим.")

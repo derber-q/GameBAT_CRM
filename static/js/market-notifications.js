@@ -3,7 +3,6 @@
   const root = document.getElementById('market-order-alerts');
   const api = window.GameBAT?.marketAlertState;
   if (!root || !api) return;
-  const button = root.querySelector('[data-market-sound-enable]');
   const audioStatus = root.querySelector('[data-market-audio-status]');
   const feedStatus = root.querySelector('[data-market-feed-status]');
   const csrfForm = root.querySelector('[data-market-csrf]');
@@ -12,25 +11,31 @@
   const audio = new Audio(root.dataset.soundUrl);
   audio.preload = 'auto';
   audio.volume = 1;
+  audio.dataset.notificationChannel = 'market';
   let channel;
   try {channel = new BroadcastChannel('gamebat-market-alerts');} catch (_) {channel = null;}
   let orders = [], offset = 0, period = 600000, fresh = false, lastFeed = 0;
-  let enabled = false, blocked = false, pumping = false, active = null;
+  let enabled = false, blocked = false, enabling = false, pumping = false, active = null;
   let generation = 0, flight = null, feedController = null, warning = '';
   const broadcast = (type) => channel?.postMessage({type});
   const serverNow = () => Date.now() + offset;
   const pending = id => orders.some(row => String(row.id) === String(id));
+  const reportSound = window.GameBAT.notificationSound.register('market', enableSound);
+
+  function publishSoundState() {
+    reportSound(blocked ? 'blocked' : enabling ? 'enabling' : enabled ? 'on' : 'off', audioStatus.textContent);
+  }
 
   function soundMessage(message, error = false) {
     audioStatus.textContent = message;
     audioStatus.classList.toggle('error-text', error);
+    publishSoundState();
   }
   function soundError(error) {
     blocked = true;
     soundMessage(error?.name === 'NotAllowedError'
       ? 'Браузер заблокировал звук. Нажмите «Включить звуковые уведомления».'
       : 'Звук не воспроизводится. Проверьте звук браузера и повторите включение.', true);
-    button.textContent = 'Включить звуковые уведомления';
   }
   function stopActive() {
     if (active) active.cancelled = true;
@@ -151,11 +156,9 @@
       if (!await state.started(lease)) throw new Error('Звуковой исполнитель сменился.');
       if (test) {
         await state.enable(); enabled = true; blocked = false;
-        button.textContent = 'Проверить звук';
-        soundMessage('Звук включён. Проверьте громкость компьютера.');
+        soundMessage('Звук включён для уведомлений Яндекс Маркета.');
         broadcast('enabled');
       } else {
-        button.textContent = 'Проверить звук';
         soundMessage(`Сигнал: заказ Яндекса №${orders.find(row => String(row.id) === String(lease.orderId))?.order_id || ''}`);
       }
       await Promise.race([ended, new Promise((resolve, reject) => {
@@ -189,18 +192,19 @@
     } catch (error) {soundError(error);}
     finally {pumping = false;}
   }
-  button.addEventListener('click', async () => {
-    if (active) return;
-    button.disabled = true;
+  async function enableSound() {
+    if (active || enabling) return;
+    enabling = true;
+    publishSoundState();
     try {
       const lease = await state.claim([], serverNow(), owner, period, true);
-      if (!lease) {soundMessage('Сигнал уже выполняется в другой вкладке. Повторите проверку после него.'); return;}
+      if (!lease) {soundMessage('Сигнал уже выполняется в другой вкладке. Повторите включение после него.'); return;}
       await play(lease, true);
       void refresh();
       void pump();
     } catch (error) {soundError(error);}
-    finally {button.disabled = false;}
-  });
+    finally {enabling = false; publishSoundState();}
+  }
   document.addEventListener('submit', async event => {
     const form = event.target.closest('[data-market-ack]');
     if (!form) return;
@@ -223,7 +227,7 @@
   });
   channel?.addEventListener('message', event => {
     if (event.data?.type === 'acknowledged') void refresh();
-    else if (event.data?.type === 'enabled') {enabled = true; void pump();}
+    else if (event.data?.type === 'enabled') {enabled = true; publishSoundState(); void pump();}
     else if (event.data?.type === 'speaker-free') void pump();
   });
   function resume() {void refresh();}
@@ -235,12 +239,13 @@
   });
   state.enabled().then(value => {
     enabled = value;
-    if (enabled) {button.textContent = 'Проверить звук'; soundMessage('Звук включали ранее; при блокировке браузера потребуется повторное включение.');}
+    if (enabled) soundMessage('Звук Яндекс Маркета включён; при блокировке браузера потребуется повторное включение.');
+    else publishSoundState();
     void pump();
   }).catch(error => {soundError(error);});
   setInterval(() => {
     void refresh();
-    if (!enabled) state.enabled().then(value => {enabled = value; void pump();}).catch(() => {});
+    if (!enabled) state.enabled().then(value => {enabled = value; publishSoundState(); void pump();}).catch(() => {});
   }, 15000);
   setInterval(() => {void pump();}, 1000);
   window.GameBAT = {...window.GameBAT, refreshMarketNotifications: refresh};

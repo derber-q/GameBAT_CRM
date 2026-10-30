@@ -1,0 +1,2 @@
+.trips-table tr.trip-completed > td { background-color: #e5e7eb; }
+.trips-table tr.trip-completed .badge { background-color: #d1d5db; border-color: #9ca3af; color: #374151; }

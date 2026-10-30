@@ -1,0 +1,10 @@
+{% extends 'base.html' %}
+{% block title %}Добавить заказы · {{ batch }} · ReSOURCE{% endblock %}
+{% block body_class %}responsive-crm-page{% endblock %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">{{ batch }}</p><h1>Добавить заказы</h1><p class="muted">{% if batch.price_list_id %}Доступны заказы из прайса №{{ batch.price_list_id }}.{% else %}Выберите заказы из одной версии прайса. Первый заказ закрепит её за рейсом.{% endif %}</p></div><a class="button button-secondary" href="{% url 'orders:trip_detail' batch.pk %}">К рейсу</a></div>
+<section class="panel"><form method="post" class="stacked-form">{% csrf_token %}{{ form.revision }}{{ form.non_field_errors }}{{ form.revision.errors }}
+<fieldset><legend>{{ form.orders.label }}</legend>{{ form.orders.errors }}{{ form.orders }}</fieldset>
+<div class="form-actions"><button class="button" type="submit">Добавить в рейс</button></div>
+</form></section>
+{% endblock %}

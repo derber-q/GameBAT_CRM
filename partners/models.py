@@ -78,6 +78,11 @@ class Partner(models.Model):
         return self.name
 
     @property
+    def display_name(self):
+        contact = str(self.contact_person or '').strip()
+        return f'{self.name} ({contact})' if contact else self.name
+
+    @property
     def telegram_chat_url(self):
         from .telegram import telegram_chat_url
         return telegram_chat_url(self.telegram)

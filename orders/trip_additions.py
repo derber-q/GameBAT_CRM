@@ -25,13 +25,25 @@ def _fingerprint(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, default=str).encode()).hexdigest()
 
 
-def prepare_addition(*, batch, lines, partner_ids=(), allocations=None, require_partners=True):
+def addition_price_list(batch, calculation_price_list_id=None):
+    if not batch.is_trip:
+        raise ValidationError('Дополнительные товары доступны только для рейса.')
+    if batch.price_list_id:
+        if calculation_price_list_id is not None and str(calculation_price_list_id) != str(batch.price_list_id):
+            raise ValidationError('Прайс рейса уже определён. Повторно откройте форму дополнительных товаров.')
+        return batch.price_list
+    try:
+        return ProcurementPriceList.objects.get(pk=int(calculation_price_list_id), is_trip_addition=False)
+    except (ValueError, TypeError, ProcurementPriceList.DoesNotExist) as exc:
+        raise ValidationError('Выберите закупочный прайс с курсами и тарифами для расчёта этой партии.') from exc
+
+
+def prepare_addition(*, batch, lines, partner_ids=(), allocations=None, require_partners=True,
+                     calculation_price_list_id=None):
     from .arrival_models import TripArrival
     if TripArrival.objects.filter(trip=batch,arrived_at__isnull=False).exists():
         raise ValidationError('После прибытия нельзя добавлять закупочные позиции в этот рейс. Создайте отдельный заказ.')
-    if not batch.price_list_id:
-        raise ValidationError('У рейса нет сохранённого прайса.')
-    price_list = batch.price_list
+    price_list = addition_price_list(batch, calculation_price_list_id)
     rate = price_list.exchange_rate_aed_rub
     if rate is None or not rate.is_finite() or rate <= 0:
         raise ValidationError('У рейса отсутствует сохранённый курс AED/RUB. Текущий курс не подставляется.')
@@ -85,14 +97,16 @@ def prepare_addition(*, batch, lines, partner_ids=(), allocations=None, require_
             if sum(row['distribution'].values()) != row['customer_qty']:
                 raise ValidationError(f"{row['name']}: распределено {sum(row['distribution'].values())}, нужно {row['customer_qty']} шт.")
     snapshots = [{k: (v.pk if k in ('product', 'supplier') else v) for k, v in row.items()} for row in rows]
-    fingerprint = _fingerprint({'rows': snapshots, 'partners': ids, 'rates': {field: getattr(price_list, field) for field in FIXED_FIELDS}})
+    fingerprint = _fingerprint({'rows': snapshots, 'partners': ids, 'price_list_id': price_list.pk,
+        'rates': {field: getattr(price_list, field) for field in FIXED_FIELDS}})
     totals = {key: sum((row[key] for row in rows), Decimal('0')) for key in
               ('purchase_total', 'delivery_total', 'cost_total', 'customer_total', 'expected_profit')}
     return rows, partners, totals, fingerprint
 
 
 @transaction.atomic
-def commit_addition(*, actor, batch_id, key, lines, partner_ids, allocations, preview_fingerprint, revision):
+def commit_addition(*, actor, batch_id, key, lines, partner_ids, allocations, preview_fingerprint, revision,
+                    calculation_price_list_id=None):
     _require_manage(actor)
     if not actor.has_perm('orders.create_order'):
         raise PermissionDenied('Нет права создавать заказы.')
@@ -102,7 +116,7 @@ def commit_addition(*, actor, batch_id, key, lines, partner_ids, allocations, pr
         raise ValidationError('Откройте новую форму дополнительных товаров.') from exc
     batch = SupplierOrderBatch.objects.select_for_update().select_related('price_list').get(pk=batch_id)
     request_fingerprint = _fingerprint({'lines': lines, 'partners': partner_ids, 'allocations': allocations,
-                                        'preview': preview_fingerprint, 'revision': revision})
+        'preview': preview_fingerprint, 'revision': revision, 'calculation_price_list_id': calculation_price_list_id})
     existing = TripAdditionReceipt.objects.filter(pk=key).first()
     if existing:
         if existing.actor_id != actor.pk or existing.batch_id != batch.pk or existing.fingerprint != request_fingerprint:
@@ -111,13 +125,15 @@ def commit_addition(*, actor, batch_id, key, lines, partner_ids, allocations, pr
     if batch.revision != revision:
         raise ValidationError('Рейс изменился. Вернитесь к итоговой проверке дополнительных товаров.')
     _assert_balances(batch)
-    rows, partners, totals, fingerprint = prepare_addition(batch=batch, lines=lines, partner_ids=partner_ids, allocations=allocations)
+    rows, partners, totals, fingerprint = prepare_addition(batch=batch, lines=lines, partner_ids=partner_ids,
+        allocations=allocations, calculation_price_list_id=calculation_price_list_id)
     if fingerprint != preview_fingerprint:
         raise ValidationError('Вес, тарифы или товары изменились. Проверьте новый итоговый расчёт.')
     receipt = TripAdditionReceipt.objects.create(key=key, batch=batch, actor=actor, fingerprint=request_fingerprint)
+    calculation_price = addition_price_list(batch, calculation_price_list_id)
     # Отдельная версия хранит исключительно новую партию; исходный прайс не меняется.
     price_list = ProcurementPriceList.objects.create(created_by=actor, supplier_offers_complete=True, is_trip_addition=True,
-                            **{field: getattr(batch.price_list, field) for field in FIXED_FIELDS})
+                            **{field: getattr(calculation_price, field) for field in FIXED_FIELDS})
     sources = []
     for row in rows:
         source = ProcurementPriceListItem.objects.create(price_list=price_list, product_kind=row['kind'],
@@ -155,5 +171,6 @@ def commit_addition(*, actor, batch_id, key, lines, partner_ids, allocations, pr
     receipt.orders.set(orders)
     _assert_balances(batch)
     _record_trip_change(batch, actor, 'Добавлены дополнительные товары отдельными заказами',
-                        {'action': 'additional_goods', 'order_ids': [order.pk for order in orders], 'request_key': str(key)})
+                        {'action': 'additional_goods', 'order_ids': [order.pk for order in orders], 'request_key': str(key),
+                         'calculation_price_list_id': calculation_price.pk})
     return orders

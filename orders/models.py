@@ -302,7 +302,14 @@ class OrderAdjustmentChange(models.Model):
         verbose_name_plural = "изменения в корректировке заказа"
 
 
+class SupplierOrderBatchQuerySet(models.QuerySet):
+    def trips(self):
+        # Старые подборки не имеют ни общего прайса, ни ключа создания рейса.
+        return self.filter(models.Q(price_list__isnull=False) | models.Q(creation_key__isnull=False))
+
+
 class SupplierOrderBatch(models.Model):
+    objects = SupplierOrderBatchQuerySet.as_manager()
     price_list = models.ForeignKey(ProcurementPriceList, on_delete=models.PROTECT, null=True, blank=True,
                                   related_name="trips", verbose_name="Общий прайс", editable=False)
     name = models.CharField("Название рейса", max_length=255, blank=True, default="", db_default="")
@@ -324,7 +331,21 @@ class SupplierOrderBatch(models.Model):
         permissions = [("generate_supplier_orders", "Заказы: формирование заказов поставщикам")]
 
     def __str__(self):
-        return (f"Рейс №{self.pk}" + (f" · {self.name}" if self.name else "")) if self.price_list_id else f"Подборка поставщикам №{self.pk}"
+        return (f"Рейс №{self.pk}" + (f" · {self.name}" if self.name else "")) if self.is_trip else f"Подборка поставщикам №{self.pk}"
+
+    @property
+    def is_trip(self):
+        return self.price_list_id is not None or self.creation_key is not None
+
+    @property
+    def is_completed(self):
+        # Статус заказа следует за фактическим выполнением продажи/прихода и их отменой.
+        orders = list(self.trip_orders.all() if self.is_trip else self.source_orders.all())
+        return bool(orders) and all(order.status == CustomerProcurementOrder.Status.COMPLETED for order in orders)
+
+    @property
+    def completion_label(self):
+        return 'Завершён' if self.is_completed else 'В работе'
 
 
 class SupplierTripInvoice(models.Model):

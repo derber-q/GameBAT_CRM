@@ -35,12 +35,13 @@ class CustomerSelectionForm(forms.Form):
     def __init__(self, *args, allow_archived_initial=False, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields['customer'].choices = [('', 'Выберите заказчика'), ('custom', 'Произвольный партнёр')] + [
-            (str(pk), name) for pk, name in Partner.objects.filter(is_archived=False).values_list('pk', 'name')]
+            (str(partner.pk), partner.display_name) for partner in
+            Partner.objects.filter(is_archived=False).only('pk', 'name', 'contact_person')]
         initial = self.initial.get('customer')
         if allow_archived_initial and initial and str(initial).isdecimal():
             archived = Partner.objects.filter(pk=initial, is_archived=True).first()
             if archived:
-                self.fields['customer'].choices += [(str(archived.pk), f'{archived.name} (в архиве)')]
+                self.fields['customer'].choices += [(str(archived.pk), f'{archived.display_name} (в архиве)')]
 
     def clean(self):
         data = super().clean()
@@ -52,3 +53,13 @@ class CustomerSelectionForm(forms.Form):
         data['partner_id'] = int(choice) if choice and choice != 'custom' else None
         data['partner_name'] = name if choice == 'custom' else ''
         return data
+
+
+class PartnerChoiceField(forms.ModelChoiceField):
+    def label_from_instance(self, partner):
+        return partner.display_name
+
+
+class PartnerMultipleChoiceField(forms.ModelMultipleChoiceField):
+    def label_from_instance(self, partner):
+        return partner.display_name

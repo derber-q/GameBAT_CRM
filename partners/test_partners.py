@@ -69,6 +69,49 @@ class PartnerTests(TestCase):
         self.assertEqual(Partner.objects.count(), 1)
         self.stock.refresh_from_db(); self.assertEqual(self.stock.quantity, 10)
 
+    def test_contact_name_labels_use_partner_ids_and_preserve_document_name(self):
+        from .customers import CustomerSelectionForm, resolve_customer
+        from sales.statistics_forms import SaleStatisticsFilterForm
+        from sales.partner_payments import payment_partner_choices
+        from orders.trip_addition_views import AdditionPartnersForm
+
+        label = 'Игромир (Иван)'
+        self.assertEqual(self.partner.display_name, label)
+        self.assertEqual(str(self.partner), 'Игромир')
+        self.assertEqual(self.partner.creditor.display_name, label)
+        self.assertEqual(resolve_customer(partner_id=self.partner.pk)[1], 'Игромир')
+        self.assertIn((str(self.partner.pk), label), CustomerSelectionForm().fields['customer'].choices)
+        for form, field in [(SaleStatisticsFilterForm(), 'partner'), (AdditionPartnersForm(), 'partners')]:
+            self.assertIn((str(self.partner.pk), label), [(str(value), text) for value, text in form.fields[field].choices])
+        self.assertEqual(list(payment_partner_choices())[0].display_name, label)
+        sale = self.sale(payment_method='cash_postpay')
+        self.assertEqual(sale.partner_name_snapshot, 'Игромир')
+
+        self.client.force_login(self.actor)
+        for endpoint in ['creditors:list', 'sales:create', 'sales:incomplete', 'resource_storefront:contacts']:
+            with self.subTest(endpoint=endpoint):
+                self.assertContains(self.client.get(reverse(endpoint)), label)
+        self.partner.is_archived = True
+        self.partner.save()
+        self.assertNotIn(str(self.partner.pk), dict(CustomerSelectionForm().fields['customer'].choices))
+        archived = CustomerSelectionForm(allow_archived_initial=True, initial={'customer': str(self.partner.pk)})
+        self.assertEqual(dict(archived.fields['customer'].choices)[str(self.partner.pk)], label + ' (в архиве)')
+
+    def test_identifying_name_is_escaped_and_does_not_expose_other_contacts(self):
+        from .customers import CustomerSelectionForm
+
+        self.assertEqual(Partner(name='Без контакта', contact_person='  ').display_name, 'Без контакта')
+        self.partner.contact_person = '<Иван & Пётр>'
+        self.partner.save()
+        self.assertIn('Игромир (&lt;Иван &amp; Пётр&gt;)', str(CustomerSelectionForm()['customer']))
+        viewer = User.objects.create_user('creditor-name-viewer')
+        viewer.user_permissions.add(Permission.objects.get(codename='view_creditors', content_type__app_label='creditors'))
+        self.client.force_login(viewer)
+        response = self.client.get(reverse('creditors:list'))
+        self.assertContains(response, 'Игромир (&lt;Иван &amp; Пётр&gt;)')
+        self.assertNotContains(response, self.partner.phone_1)
+        self.assertNotContains(response, self.partner.phone_2)
+
     def test_wholesale_requires_explicit_customer_and_custom_has_no_account(self):
         with self.assertRaisesMessage(ValidationError, 'заказчика'): self.sale(partner_id=None)
         sale = self.sale(partner_id=None, partner_name='Вручную')

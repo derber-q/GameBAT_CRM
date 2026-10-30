@@ -1,4 +1,4 @@
-"""Рейсы по сохранённому прайсу: распределение поставщиков и клиентских количеств."""
+"""Создание рейсов, привязка прайса и распределение поставщиков/заказчиков."""
 from uuid import UUID
 
 from django.core.exceptions import PermissionDenied, ValidationError
@@ -72,23 +72,31 @@ def _line_for(batch, source, supplier_id, price_supplier_id, price, *, price_upd
 
 
 @transaction.atomic
-def create_trip(*, actor, order_ids, creation_key, name=""):
+def create_trip(*, actor, order_ids, creation_key, name="", allow_empty=False):
     _require_manage(actor)
     try:
         ids = {int(value) for value in order_ids}
         key = UUID(str(creation_key))
     except (TypeError, ValueError, AttributeError) as exc:
         raise ValidationError("Выберите заказы и повторите создание рейса со страницы списка.") from exc
-    if not ids:
+    if not ids and not allow_empty:
         raise ValidationError("Выберите хотя бы один созданный заказ.")
     name = str(name or "").strip()
     if len(name) > 255:
         raise ValidationError("Название рейса не должно превышать 255 символов.")
     existing = SupplierOrderBatch.objects.filter(creation_key=key).first()
     if existing:
-        if set(existing.source_orders.values_list("pk", flat=True)) != ids or existing.name != name:
+        original_empty = allow_empty and not ids and existing.changes.filter(revision=0, details__empty=True).exists()
+        if allow_empty and not ids and not original_empty:
+            raise ValidationError('Этот запрос уже создал другой рейс. Обновите страницу.')
+        if (not original_empty and set(existing.source_orders.values_list("pk", flat=True)) != ids) or existing.name != name:
             raise ValidationError("Этот запрос уже создал другой рейс. Обновите страницу.")
         return existing
+    if not ids:
+        batch = SupplierOrderBatch.objects.create(created_by=actor, creation_key=key, name=name)
+        SupplierTripChange.objects.create(batch=batch, actor=actor, revision=0,
+            description="Создан пустой рейс", details={"order_ids": [], "empty": True})
+        return batch
     orders = list(CustomerProcurementOrder.objects.select_for_update().filter(pk__in=ids).order_by("pk"))
     if len(orders) != len(ids):
         raise ValidationError("Один из выбранных заказов не найден.")
@@ -130,6 +138,10 @@ def create_trip(*, actor, order_ids, creation_key, name=""):
     return batch
 
 
+def create_empty_trip(*, actor, creation_key, name=""):
+    return create_trip(actor=actor, order_ids=(), creation_key=creation_key, name=name, allow_empty=True)
+
+
 def _assert_balances(batch):
     quantities = {}
     for line in batch.lines.prefetch_related("allocations").all():
@@ -147,7 +159,12 @@ def _assert_balances(batch):
 
 
 def available_trips(*, price_list_id, exclude_id=None):
-    return SupplierOrderBatch.objects.filter(price_list_id=price_list_id).exclude(pk=exclude_id).exclude(
+    from django.db.models import Q
+    from .arrival_models import TripArrival
+    return SupplierOrderBatch.objects.trips().filter(
+        Q(price_list_id=price_list_id) | Q(price_list__isnull=True),
+    ).exclude(pk=exclude_id).exclude(pk__in=TripArrival.objects.filter(
+        arrived_at__isnull=False).values('trip_id')).exclude(
         trip_orders__status__in=(CustomerProcurementOrder.Status.CONFIRMED,
                                 CustomerProcurementOrder.Status.RECEIVING,
                                 CustomerProcurementOrder.Status.COMPLETED),
@@ -188,8 +205,8 @@ def assign_order_to_trip(*, actor, order_id, target_batch_id, target_revision,
     if target_id == source_id:
         raise ValidationError("Выберите другой рейс.")
     ids = {target_id} | ({source_id} if source_id else set())
-    batches = {batch.pk: batch for batch in SupplierOrderBatch.objects.select_for_update().filter(
-        pk__in=ids, price_list__isnull=False,
+    batches = {batch.pk: batch for batch in SupplierOrderBatch.objects.trips().select_for_update().filter(
+        pk__in=ids,
     ).order_by("pk")}
     if set(batches) != ids:
         raise ValidationError("Рейс не найден.")
@@ -203,12 +220,16 @@ def assign_order_to_trip(*, actor, order_id, target_batch_id, target_revision,
         raise ValidationError("Заказ уже перемещён другим запросом. Обновите страницу.")
     target = batches[target_id]
     source = batches.get(source_id)
+    additional = order.price_list.is_trip_addition
+    if additional and source is None:
+        raise ValidationError('Дополнительный заказ должен принадлежать исходному рейсу.')
+    main_price_id = source.price_list_id if additional else order.price_list_id
     for batch, revision in ((target, target_revision), (source, source_revision)):
         if batch is None:
             continue
         if batch.revision != _quantity(revision, "Версия рейса"):
             raise ValidationError("Рейс уже изменён другим запросом. Обновите страницу.")
-        if batch.price_list_id != order.price_list_id:
+        if batch.price_list_id is not None and batch.price_list_id != main_price_id:
             raise ValidationError("Заказ и рейс должны быть из одной версии прайса.")
         _require_editable_trip(batch)
 
@@ -217,6 +238,10 @@ def assign_order_to_trip(*, actor, order_id, target_batch_id, target_revision,
     ).order_by("pk"))
     if not source and not any(item.quantity for item in items):
         raise ValidationError("В заказе нет товаров.")
+    bound_price = target.price_list_id is None and not additional
+    if bound_price:
+        target.price_list_id = order.price_list_id
+        target.save(update_fields=('price_list',))
     transfers = []
     if source:
         allocations = list(SupplierTripAllocation.objects.select_for_update().select_related(
@@ -275,6 +300,8 @@ def assign_order_to_trip(*, actor, order_id, target_batch_id, target_revision,
     target.source_orders.add(order)
     details = {"action": "move_order" if source else "add_order", "order_id": order.pk,
                "source_batch_id": source_id, "target_batch_id": target_id, "lines": transfers}
+    if bound_price:
+        details['bound_price_list_id'] = target.price_list_id
     _assert_balances(target)
     if source:
         _assert_balances(source)
@@ -282,6 +309,28 @@ def assign_order_to_trip(*, actor, order_id, target_batch_id, target_revision,
     _record_trip_change(target, actor, f"Заказ №{order.pk} " + (
         f"перенесён из рейса №{source.pk}" if source else "добавлен в рейс"), details)
     return target
+
+
+@transaction.atomic
+def add_orders_to_trip(*, actor, batch_id, order_ids, revision):
+    """Добавить выбранные свободные заказы одной атомарной операцией."""
+    _require_manage(actor)
+    try:
+        ids = sorted({int(pk) for pk in order_ids})
+    except (TypeError, ValueError) as exc:
+        raise ValidationError('Выберите существующие заказы.') from exc
+    if not ids:
+        raise ValidationError('Выберите хотя бы один заказ.')
+    try:
+        batch = SupplierOrderBatch.objects.trips().select_for_update().get(pk=batch_id)
+    except SupplierOrderBatch.DoesNotExist as exc:
+        raise ValidationError('Рейс не найден.') from exc
+    if batch.revision != _quantity(revision, 'Версия рейса'):
+        raise ValidationError('Рейс уже изменён другим запросом. Обновите страницу.')
+    for pk in ids:
+        batch = assign_order_to_trip(actor=actor, order_id=pk, target_batch_id=batch.pk,
+            target_revision=batch.revision)
+    return batch
 
 
 @transaction.atomic
@@ -375,7 +424,7 @@ def change_trip_line(*, actor, batch_id, line_id, revision, quantity, action,
                      _allow_priority_transfer=False, _exclusions=None):
     _require_manage(actor)
     try:
-        batch = SupplierOrderBatch.objects.select_for_update().get(pk=batch_id, price_list__isnull=False)
+        batch = SupplierOrderBatch.objects.trips().select_for_update().get(pk=batch_id)
         expected_revision = _quantity(revision, "Версия рейса")
         line = SupplierOrderBatchLine.objects.select_for_update().select_related("price_list_item__cd", "price_list_item__tech").get(pk=line_id, batch=batch)
     except (SupplierOrderBatch.DoesNotExist, SupplierOrderBatchLine.DoesNotExist, ValueError, TypeError) as exc:
@@ -521,7 +570,7 @@ def apply_m_to_f_rule(*, actor, batch_id):
     """Однократно применить правило к созданному рейсу; повтор без строк M ничего не меняет."""
     _require_manage(actor)
     try:
-        batch = SupplierOrderBatch.objects.select_for_update().get(pk=batch_id, price_list__isnull=False)
+        batch = SupplierOrderBatch.objects.trips().select_for_update().get(pk=batch_id)
     except SupplierOrderBatch.DoesNotExist as exc:
         raise ValidationError("Рейс не найден.") from exc
     suppliers = {supplier.letter: supplier for supplier in Supplier.objects.filter(letter__in=("M", "F"))}

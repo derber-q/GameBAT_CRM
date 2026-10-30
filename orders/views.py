@@ -84,7 +84,10 @@ def order_list(request):
         "orders": orders,
         "unassigned_orders": [order for order in orders if order.trip_id is None],
         "batches": (
-            SupplierOrderBatch.objects.select_related("created_by").prefetch_related("source_orders")[:20]
+            SupplierOrderBatch.objects.select_related("created_by").prefetch_related(
+                Prefetch('source_orders', queryset=CustomerProcurementOrder.objects.only('pk', 'status')),
+                Prefetch('trip_orders', queryset=CustomerProcurementOrder.objects.only('pk', 'trip_id', 'status')),
+            )[:20]
             if can_generate_batches else []
         ),
         "can_create": request.user.is_superuser or request.user.has_perm("orders.create_order"),

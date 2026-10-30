@@ -61,7 +61,7 @@ def stock_order_items(price_list):
 
 
 def previous_trip_stock_quantities():
-    trip = SupplierOrderBatch.objects.filter(price_list__isnull=False).first()
+    trip = SupplierOrderBatch.objects.trips().first()
     if trip is None:
         return None, {}
     rows = CustomerProcurementOrderItem.objects.filter(

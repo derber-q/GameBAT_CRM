@@ -31,7 +31,7 @@ def resolve_payment_partner(sale, partner_id):
 
 def payment_partner_choices():
     from partners.models import Partner
-    return Partner.objects.filter(is_archived=False).order_by('name', 'pk').values('id', 'name')
+    return Partner.objects.filter(is_archived=False).order_by('name', 'pk').only('pk', 'name', 'contact_person')
 
 
 def money(value):

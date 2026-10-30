@@ -1,0 +1,89 @@
+/* Общая шапка переопределяет прежний перенос меню в стилях отдельных страниц. */
+body .topbar.crm-topbar {
+  flex-wrap: nowrap;
+  height: 58px;
+  min-height: 58px;
+  max-width: 100vw;
+  position: sticky;
+  width: 100%;
+}
+.crm-topbar [hidden] { display: none !important; }
+.crm-topbar .brand { min-height: 0; min-width: 64px; padding: 5px 8px; }
+.crm-topbar .brand-logo { height: 48px; width: 48px; }
+body .crm-topbar .main-nav {
+  flex: 1 1 0;
+  flex-wrap: nowrap;
+  min-width: 0;
+  max-width: none;
+  order: 0;
+  overflow: visible;
+}
+.crm-topbar .main-nav > a, .crm-topbar .main-nav > .nav-dropdown { flex: 0 0 auto; white-space: nowrap; }
+.crm-topbar .main-nav > a, .crm-topbar .main-nav > .nav-dropdown > a { min-height: 58px; padding: 0 10px; }
+body .crm-topbar .session-tools { flex: 0 0 auto; flex-wrap: nowrap; gap: 12px; margin-left: 0; min-height: 0; padding: 0 12px; }
+.crm-topbar .market-alert-counters { gap: 10px; }
+.crm-topbar .market-alert-counter { margin: 0; height: 36px; width: 36px; padding: 4px; }
+.crm-topbar .market-alert-badge { height: 18px; min-width: 18px; font-size: 10px; }
+.header-utilities { align-items: center; display: flex; gap: 12px; }
+.crm-topbar .notification-sound-toggle { flex: 0 0 32px; }
+body .crm-topbar .header-status { gap: 10px; }
+body .crm-topbar .rates { display: flex; }
+body .crm-topbar .clock { display: flex; border-right: 0; font-variant-numeric: tabular-nums; padding-right: 0; }
+.crm-topbar button:focus-visible, .crm-topbar .username:focus-visible { outline: 2px solid var(--gb-primary-light); outline-offset: -3px; }
+.nav-overflow { display: flex; flex: 0 0 auto; position: relative; }
+.nav-more-button { align-items: center; background: transparent; border: 0; border-bottom: 3px solid transparent; color: rgba(255,255,255,.85); cursor: pointer; display: flex; font-size: 13px; font-weight: 600; gap: 7px; padding: 0 12px; white-space: nowrap; }
+.nav-more-button:hover, .nav-more-button[aria-expanded="true"] { background: var(--gb-nav-bg-secondary); color: white; }
+.nav-more-button.has-active-section { border-bottom-color: var(--gb-primary-light); color: white; }
+.nav-more-button span { font-size: 10px; }
+.nav-overflow-list, .header-profile-menu { background: var(--gb-nav-bg-secondary); border: 1px solid rgba(255,255,255,.12); border-radius: 0 0 8px 8px; box-shadow: 0 10px 24px rgba(38,57,78,.24); max-height: calc(100dvh - 70px); overflow-y: auto; position: absolute; top: 100%; width: 280px; z-index: 111; }
+.nav-overflow-list { left: 0; }
+.nav-section-toggle { display: none; }
+.crm-topbar :is(.nav-overflow-list, .drawer-navigation) > .nav-dropdown { display: grid; grid-template-columns: minmax(0, 1fr) 44px; }
+.crm-topbar :is(.nav-overflow-list, .drawer-navigation) > a,
+.crm-topbar :is(.nav-overflow-list, .drawer-navigation) > .nav-dropdown > a { align-items: center; border-bottom: 1px solid rgba(255,255,255,.09); color: white; display: flex; font-size: 14px; font-weight: 600; min-height: 46px; padding: 10px 16px; white-space: normal; }
+.crm-topbar :is(.nav-overflow-list, .drawer-navigation) .nav-dropdown-trigger::after { display: none; }
+.crm-topbar :is(.nav-overflow-list, .drawer-navigation) .nav-section-toggle { background: rgba(255,255,255,.04); border: 0; border-bottom: 1px solid rgba(255,255,255,.09); color: white; cursor: pointer; display: block; font-size: 17px; }
+.nav-section-toggle[aria-expanded="true"] span { display: inline-block; transform: rotate(180deg); }
+.crm-topbar :is(.nav-overflow-list, .drawer-navigation) .nav-dropdown-menu { border: 0; box-shadow: none; display: none; grid-column: 1 / -1; min-width: 0; position: static; }
+.crm-topbar :is(.nav-overflow-list, .drawer-navigation) .nav-section-open > .nav-dropdown-menu { display: block; }
+.crm-topbar :is(.nav-overflow-list, .drawer-navigation) .nav-dropdown-menu a { align-items: center; background: rgba(0,0,0,.08); border-bottom: 1px solid rgba(255,255,255,.06); color: rgba(255,255,255,.83); display: flex; font-size: 13px; min-height: 44px; padding: 10px 24px; white-space: normal; }
+.crm-topbar :is(.nav-overflow-list, .drawer-navigation) a:hover { background-color: rgba(255,255,255,.09); color: white; }
+.crm-topbar :is(.nav-overflow-list, .drawer-navigation) a.active { box-shadow: inset 3px 0 var(--gb-primary-light); color: white; }
+.drawer-navigation .nav-sale { background: var(--gb-sale-nav-bg); }
+.header-profile { position: relative; }
+.profile-toggle { background: #526780; border: 1px solid rgba(255,255,255,.25); border-radius: 50%; color: white; cursor: pointer; font-weight: 700; height: 34px; width: 34px; }
+.profile-toggle:hover, .profile-toggle[aria-expanded="true"] { background: #627c98; }
+.header-profile-menu { right: 0; top: calc(100% + 12px); width: 230px; }
+.profile-name { border-bottom: 1px solid rgba(255,255,255,.12); color: white; display: block; font-size: 14px; overflow-wrap: anywhere; padding: 14px 16px; }
+.header-profile-menu .username, .header-profile-menu .link-button { color: rgba(255,255,255,.85); display: block; font-size: 13px; padding: 12px 16px; text-align: left; width: 100%; }
+.header-profile-menu .username:hover, .header-profile-menu .link-button:hover { background: rgba(255,255,255,.09); color: white; }
+.mobile-section-label, .mobile-nav-toggle { display: none; }
+/* Привязка к vw нужна и на старых страницах с широкой таблицей: их layout viewport
+   в мобильном Chromium может оказаться шире видимой области телефона. */
+.navigation-drawer { background: var(--gb-nav-bg); border: 0; color: white; height: 100dvh; inset: 0 auto auto max(0px, calc(100vw - 340px)); margin: 0; max-height: 100dvh; max-width: 100vw; padding: 0; position: fixed; width: 340px; }
+.navigation-drawer::backdrop { background: rgba(15,25,40,.5); }
+.navigation-drawer-heading { align-items: center; background: var(--gb-nav-bg-secondary); display: flex; font-size: 16px; justify-content: space-between; padding: 6px 10px 6px 16px; position: sticky; top: 0; z-index: 1; }
+.navigation-drawer-heading button { background: transparent; border: 0; color: white; cursor: pointer; font-size: 28px; height: 44px; width: 44px; }
+.drawer-utilities { border-top: 1px solid rgba(255,255,255,.15); margin-top: 10px; padding: 16px; }
+.navigation-drawer-open { overflow: hidden; }
+@media (max-width: 760px) {
+  body .topbar.crm-topbar { height: 56px; min-height: 56px; }
+  .crm-topbar .brand { min-width: 52px; padding: 4px; }
+  .crm-topbar .brand-logo { height: 48px; width: 44px; }
+  body .crm-topbar .main-nav { display: none; }
+  .mobile-section-label { align-self: center; display: block; flex: 1 1 auto; font-size: 15px; font-weight: 650; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  body .crm-topbar .session-tools { background: transparent; gap: 14px; padding: 0 8px 0 12px; }
+  .crm-topbar .market-alert-counters { gap: 10px; }
+  .crm-topbar .market-alert-counter { height: 32px; width: 32px; }
+  .crm-topbar .market-alert-logo { height: 24px; width: 24px; }
+  .mobile-nav-toggle { background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.2); border-radius: 5px; color: white; cursor: pointer; display: block; font-size: 24px; height: 40px; line-height: 1; width: 40px; }
+  .drawer-utilities .header-utilities { display: grid; gap: 16px; grid-template-columns: 1fr auto; }
+  body .crm-topbar .drawer-utilities .header-status { align-items: stretch; flex-direction: column; gap: 12px; }
+  body .crm-topbar .drawer-utilities .rates { max-width: 170px; }
+  body .crm-topbar .drawer-utilities .clock { border: 0; flex-direction: row; gap: 10px; padding: 0; text-align: left; }
+  .drawer-utilities .admin-shortcut { align-self: start; }
+  .drawer-utilities .header-profile { grid-column: 1 / -1; }
+  .drawer-utilities .profile-toggle { display: none; }
+  .crm-topbar .drawer-utilities .header-profile-menu { border: 1px solid rgba(255,255,255,.12); border-radius: 6px; box-shadow: none; display: block !important; max-height: none; position: static; width: 100%; }
+  body .crm-topbar .drawer-utilities .username { display: block; }
+}

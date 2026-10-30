@@ -1,11 +1,29 @@
 {% extends "base.html" %}
+{% load static %}
 {% block title %}Изменить долг · {{ creditor.display_name }} · ReSOURCE{% endblock %}
+{% block extra_head %}
+<link rel="stylesheet" href="{% static 'css/creditor-debt.css' %}?v=20261027-1">
+<script src="{% static 'js/creditor-debt.js' %}?v=20261027-1" defer></script>
+{% endblock %}
+{% block body_class %}responsive-crm-page{% endblock %}
 {% block content %}
 <div class="page-heading"><div><p class="eyebrow">Связанная финансовая операция</p><h1>{{ creditor.display_name }}</h1><p class="muted">Текущая задолженность: <b>{{ creditor.current_debt }} ₽</b></p></div><a class="button button-secondary" href="{% url 'creditors:detail' creditor.pk %}">Отмена</a></div>
-<section class="alert alert-info"><strong>Изменение проводится через одно хранилище</strong><span>Увеличение долга списывает разницу, уменьшение возвращает её в выбранную кассу или сейф.</span></section>
-<section class="panel form-panel"><form method="post" class="stacked-form">{% csrf_token %}
+<section class="alert alert-info"><strong>Изменение проводится через одно хранилище.</strong> <span>Увеличение долга списывает разницу, уменьшение возвращает её в выбранную кассу или сейф.</span></section>
+{{ creditor.current_debt|json_script:"current-creditor-debt" }}
+<section class="panel form-panel"><form method="post" class="stacked-form" data-creditor-debt-form>{% csrf_token %}
   {% if form.non_field_errors %}<div class="alert alert-error">{{ form.non_field_errors }}</div>{% endif %}
-  {% for field in form %}<div class="field {% if field.errors %}field-error{% endif %}"><label for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% for error in field.errors %}<span class="error-text">{{ error }}</span>{% endfor %}</div>{% endfor %}
+  {% include 'creditors/_debt_field.html' with field=form.warehouse %}
+  {% include 'creditors/_debt_field.html' with field=form.money_source_type %}
+  <fieldset class="debt-options"><legend>{{ form.amount_mode.label }}</legend>{{ form.amount_mode }}{{ form.amount_mode.errors }}</fieldset>
+  <div data-debt-mode-fields="total">
+    {% include 'creditors/_debt_field.html' with field=form.new_debt %}
+  </div>
+  <div data-debt-mode-fields="change">
+    <fieldset class="debt-options debt-direction"><legend>{{ form.change_direction.label }}</legend>{{ form.change_direction }}{{ form.change_direction.errors }}</fieldset>
+    {% include 'creditors/_debt_field.html' with field=form.change_amount %}
+  </div>
+  <p class="debt-preview" data-debt-preview role="status" aria-live="polite" hidden></p>
+  {% include 'creditors/_debt_field.html' with field=form.comment %}
   <div class="form-actions"><button class="button" type="submit">Провести операцию</button></div>
 </form></section>
 {% endblock %}

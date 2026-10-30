@@ -34,8 +34,10 @@ a:hover { color: var(--gb-primary-hover); }
 button, input, select, textarea { color: inherit; font: inherit; }
 
 .topbar { align-items: stretch; background: var(--gb-nav-bg); box-shadow: 0 2px 8px rgba(38, 57, 78, .18); color: var(--gb-surface); display: flex; min-height: 66px; position: sticky; top: 0; z-index: 100; }
-.brand { align-items: center; color: var(--gb-surface); display: flex; font-size: 16px; gap: 10px; letter-spacing: .2px; min-width: 165px; padding: 0 18px; }
+.brand { align-items: center; color: var(--gb-surface); display: flex; flex: 0 0 auto; justify-content: center; min-width: 76px; padding: 5px 10px; }
 .brand:hover { color: var(--gb-surface); }
+.brand:focus-visible { outline: 2px solid var(--gb-focus); outline-offset: -4px; }
+.brand-logo { display: block; height: 56px; object-fit: contain; width: 56px; }
 .brand b { color: var(--gb-primary-light); }
 .brand-mark { align-items: center; background: var(--gb-primary); border: 2px solid rgba(255,255,255,.45); border-radius: 8px; color: var(--gb-surface); display: inline-flex; font-size: 11px; font-weight: 800; height: 32px; justify-content: center; letter-spacing: -.5px; width: 32px; }
 .brand-mark-large { border-radius: 12px; font-size: 18px; height: 50px; width: 50px; }
@@ -53,11 +55,16 @@ button, input, select, textarea { color: inherit; font: inherit; }
 .nav-dropdown-menu { background: var(--gb-nav-bg-secondary); border: 1px solid rgba(255,255,255,.12); box-shadow: 0 10px 24px rgba(38,57,78,.24); display: none; left: 0; min-width: 230px; position: absolute; top: 100%; z-index: 110; }
 .nav-dropdown-menu a { border-bottom: 1px solid rgba(255,255,255,.08); min-height: 42px; padding: 10px 15px; }
 .nav-dropdown:hover .nav-dropdown-menu, .nav-dropdown:focus-within .nav-dropdown-menu { display: block; }
-.rates { align-items: center; display: flex; gap: 13px; margin-left: auto; padding: 0 16px; white-space: nowrap; }
-.rates span { color: rgba(255,255,255,.58); display: flex; flex-direction: column; font-size: 10px; letter-spacing: .5px; }
-.rates b { color: var(--gb-surface); font-size: 12px; letter-spacing: 0; margin-top: 2px; }
-.session-tools { align-items: center; background: var(--gb-nav-bg-secondary); display: flex; gap: 12px; padding: 0 18px; white-space: nowrap; }
+.rates { display: flex; flex-direction: column; gap: 3px; white-space: nowrap; }
+.rates span { align-items: baseline; color: rgba(255,255,255,.58); display: flex; justify-content: space-between; gap: 8px; font-size: 10px; letter-spacing: .5px; line-height: 1.35; }
+.rates b { color: var(--gb-surface); font-size: 12px; font-variant-numeric: tabular-nums; letter-spacing: 0; }
+.session-tools { align-items: center; background: var(--gb-nav-bg-secondary); display: flex; gap: 12px; margin-left: auto; padding: 0 18px; white-space: nowrap; }
 .session-tools form { margin: 0; }
+.header-status { align-items: center; display: flex; flex: 0 0 auto; gap: 12px; }
+.admin-shortcut { align-items: center; border: 1px solid rgba(255,255,255,.28); border-radius: 5px; color: var(--gb-surface); display: inline-flex; flex: 0 0 32px; height: 32px; justify-content: center; width: 32px; }
+.admin-shortcut:hover { background: rgba(255,255,255,.12); color: var(--gb-surface); }
+.admin-shortcut:focus-visible { box-shadow: 0 0 0 3px var(--gb-focus); outline: 0; }
+.admin-shortcut span { font-family: "Segoe UI Symbol", sans-serif; font-size: 22px; line-height: 1; }
 .clock { border-right: 1px solid rgba(255,255,255,.15); display: flex; flex-direction: column; font-size: 11px; line-height: 1.35; padding-right: 12px; text-align: right; }
 .clock span { color: rgba(255,255,255,.7); }
 .username { color: var(--gb-surface); font-weight: 600; }
@@ -548,10 +555,6 @@ body.sale-entry-page, body.responsive-crm-page { min-width: 0; }
 .finalization-history-card > header span:not(.badge) { color: var(--gb-text-muted); font-size: 12px; }
 .finalization-history-card > p { margin: 0; padding: 10px 14px; }
 .finalization-history-card table { min-width: 1050px; }
-
-@media (max-width: 1500px) {
-  .rates { display: none; }
-}
 
 @media (max-width: 1280px) {
   .main-nav a { padding: 0 9px; }

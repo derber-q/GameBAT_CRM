@@ -2,6 +2,8 @@ import logging
 
 from django.contrib import messages
 from django.core.exceptions import ValidationError
+from django.db.models import Case, IntegerField, Value, When
+from django.db.models.functions import Coalesce
 from django.shortcuts import get_object_or_404, redirect, render
 
 from core.decorators import permission_required_any
@@ -15,9 +17,15 @@ logger = logging.getLogger("gamebat.business")
 @permission_required_any("creditors.view_creditors")
 def creditor_list(request):
     return render(request, "creditors/list.html", {
-        "creditors": Creditor.objects.select_related('partner'),
+        "creditors": Creditor.objects.select_related('partner').annotate(
+            debt_group=Case(
+                When(current_debt__gt=0, then=Value(0)),
+                When(current_debt__lt=0, then=Value(1)),
+                default=Value(2), output_field=IntegerField(),
+            ),
+            list_name=Coalesce('partner__name', 'name'),
+        ).order_by('debt_group', 'list_name', 'pk'),
         "can_add": request.user.is_superuser or request.user.has_perm("creditors.add_creditor"),
-        "can_change": request.user.is_superuser or request.user.has_perm("creditors.change_creditor"),
         "can_change_debt": request.user.is_superuser or request.user.has_perm("creditors.change_debt"),
     })
 
@@ -70,11 +78,14 @@ def creditor_debt(request, pk):
     form = DebtAdjustmentForm(request.POST or None, initial={"new_debt": creditor.current_debt})
     if request.method == "POST" and form.is_valid():
         try:
+            amount = {"debt_delta": form.cleaned_data["debt_delta"]} if form.cleaned_data["amount_mode"] == "change" else {
+                "new_debt": form.cleaned_data["new_debt"],
+            }
             adjust_creditor_debt(
                 actor=request.user, creditor_id=creditor.pk,
                 warehouse_id=form.cleaned_data["warehouse"].pk,
                 money_source_type=form.cleaned_data["money_source_type"],
-                new_debt=form.cleaned_data["new_debt"], comment=form.cleaned_data["comment"],
+                **amount, comment=form.cleaned_data["comment"],
             )
         except ValidationError as exc:
             form.add_error(None, exc)

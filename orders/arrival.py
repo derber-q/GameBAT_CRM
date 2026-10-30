@@ -80,7 +80,7 @@ def arrival_preview(*, actor, batch_id, **parameters):
     require_arrival_permissions(actor)
     values = _parameters(parameters)
     trip = SupplierOrderBatch.objects.get(pk=batch_id)
-    if not trip.price_list_id:
+    if not trip.is_trip:
         raise ValidationError('Фактическое прибытие доступно для рейса заказов.')
     if (TripOrderOperation.objects.filter(order__trip=trip,active=True).exists()
             or trip.trip_orders.filter(supply__isnull=False).exists()

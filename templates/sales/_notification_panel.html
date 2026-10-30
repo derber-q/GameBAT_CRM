@@ -1,15 +1,13 @@
 {% load static %}
 {% if nav.market_notifications %}
-<aside class="market-alert-panel" id="market-order-alerts" data-feed-url="{% url 'sales:market_notifications' %}" data-sound-url="{% static 'audio/yandex-new-order.mp3' %}" data-pending-url="{% url 'sales:market_pending' %}">
+<aside class="market-alert-panel notification-state" id="market-order-alerts" data-feed-url="{% url 'sales:market_notifications' %}" data-sound-url="{% static 'audio/yandex-new-order.mp3' %}" data-pending-url="{% url 'sales:market_pending' %}">
   <form data-market-csrf hidden>{% csrf_token %}</form>
-  <button class="button button-secondary button-small" type="button" data-market-sound-enable>Включить звуковые уведомления</button>
-  <span role="status" aria-live="polite" data-market-audio-status>Звук ещё не включён на этой странице.</span>
+  <span class="notification-audio-status" role="status" aria-live="polite" data-market-audio-status>Звук ещё не включён на этой странице.</span>
   <span role="status" aria-live="polite" data-market-feed-status></span>
 </aside>
 {% endif %}
 {% if nav.avito_notifications %}
-<aside class="market-alert-panel" data-avito-sound data-sound-url="{% static 'audio/yandex-new-order.mp3' %}">
-  <button class="button button-secondary button-small" type="button" data-avito-sound-enable>Включить звук Avito</button>
-  <span role="status" aria-live="polite" data-avito-sound-status>Сигнал при появлении новых необходимых действий Avito.</span>
+<aside class="market-alert-panel notification-state" data-avito-sound data-sound-url="{% static 'audio/yandex-new-order.mp3' %}">
+  <span class="notification-audio-status" role="status" aria-live="polite" data-avito-sound-status>Сигнал при появлении новых необходимых действий Avito.</span>
 </aside>
 {% endif %}

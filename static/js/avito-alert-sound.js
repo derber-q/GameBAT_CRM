@@ -2,15 +2,18 @@
   'use strict';
   const root = document.querySelector('[data-avito-sound]');
   if (!root) return;
-  const button = root.querySelector('[data-avito-sound-enable]');
   const status = root.querySelector('[data-avito-sound-status]');
   let audio, fallbackState;
   const enabledKey = 'resource.avito.sound.v1', stateKey = 'resource.avito.actions.v1';
-  let blocked = false, latest = null;
+  let enabled = false, enabling = false, blocked = false, latest = null;
+  const reportSound = window.GameBAT.notificationSound.register('avito', enableSound);
+  function publishSoundState() {
+    reportSound(blocked ? 'blocked' : enabling ? 'enabling' : enabled ? 'on' : 'off', status.textContent);
+  }
   function read(key) {const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) : null;}
   function save(value) {localStorage.setItem(stateKey, JSON.stringify(value));}
   async function play() {
-    if (!audio) {audio = new Audio(root.dataset.soundUrl); audio.volume = 1;}
+    if (!audio) {audio = new Audio(root.dataset.soundUrl); audio.volume = 1; audio.dataset.notificationChannel = 'avito';}
     let timer;
     try {
       audio.currentTime = 0;
@@ -24,9 +27,9 @@
   }
   function failed() {
     blocked = true;
-    button.textContent = 'Включить звук Avito';
-    status.textContent = 'Разрешите звук: нажмите «Включить звук Avito» и проверьте громкость браузера.';
+    status.textContent = 'Разрешите звук Avito: нажмите значок звука и проверьте громкость браузера.';
     status.classList.add('error-text');
+    publishSoundState();
   }
   async function locked(callback) {
     if (navigator.locks) return navigator.locks.request('resource-avito-sound', callback);
@@ -62,13 +65,17 @@
         if (added && read(enabledKey) && !blocked) {
           await play();
           status.textContent = 'Avito: появились новые необходимые действия.';
+          enabled = true;
+          publishSoundState();
         }
         save(current);
       });
     } catch (_) {failed();}
   }
-  button.addEventListener('click', async () => {
-    button.disabled = true;
+  async function enableSound() {
+    if (enabling) return;
+    enabling = true;
+    publishSoundState();
     try {
       // Запуск именно из нажатия разрешает звук в браузере.
       await play();
@@ -78,12 +85,20 @@
         if (latest && (!previous || latest.at >= previous.at)) save(latest);
       });
       blocked = false;
-      button.textContent = 'Проверить звук Avito';
+      enabled = true;
       status.classList.remove('error-text');
       status.textContent = 'Звук Avito включён. Новые действия будут озвучены автоматически.';
     } catch (_) {failed();}
-    finally {button.disabled = false;}
+    finally {enabling = false; publishSoundState();}
+  }
+  try {
+    enabled = Boolean(read(enabledKey));
+    if (enabled) status.textContent = 'Звук Avito включён.';
+    publishSoundState();
+  } catch (_) {failed();}
+  window.addEventListener('storage', event => {
+    if (event.key !== enabledKey) return;
+    try {enabled = Boolean(read(enabledKey)); publishSoundState();} catch (_) {failed();}
   });
-  try {if (read(enabledKey)) button.textContent = 'Проверить звук Avito';} catch (_) {failed();}
   window.GameBAT = {...window.GameBAT, avitoAlertSound: {observe}};
 })();

@@ -1,4 +1,5 @@
 import json
+from uuid import uuid4
 from collections import defaultdict
 
 from django.contrib import messages
@@ -18,15 +19,47 @@ from catalog.supplier_exclusions import exclusion_keys
 from catalog.product_ordering import normalized_order_name, platform_order_key
 from .models import CustomerProcurementOrder, SupplierOrderBatch
 from .trip_invoices import require_page_editable
-from .forms import TripAssignmentForm
+from .forms import TripAssignmentForm, EmptyTripForm, TripAddOrdersForm
 from .trips import (MANAGE_PERMISSIONS, can_manage_trips, change_trip_line, create_trip, trip_queryset,
                     is_m_order_in_f, return_line_to_m, available_trips, assign_order_to_trip,
-                    trip_supplier_chains, supplier_priority_state)
+                    trip_supplier_chains, supplier_priority_state, create_empty_trip, add_orders_to_trip)
 from .trip_excel import supplier_order_xlsx, trip_order_xlsx
 from .trip_prices import line_price_lock_reason, trip_financials
 from .order_editing import downstream_lock_reason
 
 VIEW_PERMISSIONS = ("orders.generate_supplier_orders", "partners.view_supplier_details")
+
+
+@require_http_methods(['GET', 'POST'])
+@permission_required_all(*MANAGE_PERMISSIONS)
+def trip_empty_create(request):
+    form = EmptyTripForm(request.POST if request.method == 'POST' else None, initial={'creation_key': uuid4()})
+    if request.method == 'POST' and form.is_valid():
+        try:
+            batch = create_empty_trip(actor=request.user, **form.cleaned_data)
+        except (ValidationError, OperationalError) as exc:
+            form.add_error(None, ' '.join(exc.messages) if isinstance(exc, ValidationError) else 'База занята. Повторите создание.')
+        else:
+            messages.success(request, f'{batch} создан. Можно добавлять заказы и дополнительные товары.')
+            return redirect('orders:trip_detail', pk=batch.pk)
+    return render(request, 'orders/trip_empty_create.html', {'form': form})
+
+
+@require_http_methods(['GET', 'POST'])
+@permission_required_all(*MANAGE_PERMISSIONS)
+def trip_add_orders(request, pk):
+    batch = get_object_or_404(SupplierOrderBatch.objects.trips(), pk=pk)
+    form = TripAddOrdersForm(request.POST if request.method == 'POST' else None, batch=batch)
+    if request.method == 'POST' and form.is_valid():
+        try:
+            batch = add_orders_to_trip(actor=request.user, batch_id=batch.pk,
+                order_ids=[order.pk for order in form.cleaned_data['orders']], revision=form.cleaned_data['revision'])
+        except (ValidationError, OperationalError) as exc:
+            form.add_error(None, ' '.join(exc.messages) if isinstance(exc, ValidationError) else 'База занята. Повторите добавление.')
+        else:
+            messages.success(request, 'Заказы добавлены в рейс.')
+            return redirect('orders:trip_detail', pk=batch.pk)
+    return render(request, 'orders/trip_add_orders.html', {'batch': batch, 'form': form})
 
 
 def _trip_line_order_key(line):
@@ -56,7 +89,8 @@ def trip_create(request):
 @permission_required_all(*MANAGE_PERMISSIONS)
 def order_trip_assign(request, pk):
     order = get_object_or_404(CustomerProcurementOrder.objects.select_related("trip"), pk=pk)
-    trips = list(available_trips(price_list_id=order.price_list_id, exclude_id=order.trip_id))
+    price_id = order.trip.price_list_id if order.trip_id and order.price_list.is_trip_addition else order.price_list_id
+    trips = list(available_trips(price_list_id=price_id, exclude_id=order.trip_id))
     form = TripAssignmentForm(request.POST if request.method == "POST" else None, trips=trips, order=order)
     editable = order.status == order.Status.CREATED and (
         not order.trip_id or not order.trip.trip_orders.exclude(status=order.Status.CREATED).exists())
@@ -81,13 +115,13 @@ def order_trip_assign(request, pk):
 @require_GET
 @permission_required_all(*VIEW_PERMISSIONS)
 def trip_detail(request, pk):
-    batch = get_object_or_404(trip_queryset(), pk=pk, price_list__isnull=False)
+    batch = get_object_or_404(trip_queryset().trips(), pk=pk)
     from .arrival_models import TripArrival
     batch._arrival_locked = TripArrival.objects.filter(trip=batch,arrived_at__isnull=False).exists()
     from .fulfillment import operation_actions
     operation_actions(request.user, batch.trip_orders.all())
     manager = can_manage_trips(request.user)
-    can_assign = manager and all(order.status == CustomerProcurementOrder.Status.CREATED
+    can_assign = manager and not batch._arrival_locked and all(order.status == CustomerProcurementOrder.Status.CREATED
         and not downstream_lock_reason(order) for order in batch.trip_orders.all())
     grouped, editor, price_editor = defaultdict(list), {}, {}
     accepted_suppliers = set(batch.invoice_flags.filter(accepted=True).values_list('supplier_id', flat=True))
@@ -180,7 +214,7 @@ def trip_line_update(request, pk, line_pk):
 @permission_required_all(*VIEW_PERMISSIONS, "price.view_supplier_prices")
 def trip_full_export(request, pk):
     with transaction.atomic():
-        batch = get_object_or_404(SupplierOrderBatch, pk=pk, price_list__isnull=False)
+        batch = get_object_or_404(SupplierOrderBatch.objects.trips(), pk=pk)
         lines = list(batch.lines.select_related(
             "supplier", "cd__platform", "cd__game_series", "tech__brand", "tech__product_type",
         ).order_by("pk"))
@@ -195,7 +229,7 @@ def trip_full_export(request, pk):
 @require_GET
 @permission_required_all(*VIEW_PERMISSIONS)
 def trip_export(request, pk, supplier_pk):
-    batch = get_object_or_404(SupplierOrderBatch, pk=pk, price_list__isnull=False)
+    batch = get_object_or_404(SupplierOrderBatch.objects.trips(), pk=pk)
     supplier = get_object_or_404(Supplier, pk=supplier_pk)
     lines = list(batch.lines.filter(supplier=supplier).select_related(
         "cd__platform", "cd__game_series", "tech__brand", "tech__product_type",

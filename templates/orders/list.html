@@ -1,15 +1,17 @@
 {% extends "base.html" %}
+{% load static %}
 {% block body_class %}responsive-crm-page trip-order-page{% endblock %}
 {% block title %}Заказы и рейсы · ReSOURCE{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{% static 'css/orders-list.css' %}?v=20261027-1">{% endblock %}
 {% block content %}
-<div class="page-heading"><div><p class="eyebrow">Закупки для клиентов и на склад</p><h1>Заказы и рейсы</h1><p class="muted">Объединяйте заказы без рейса по одной версии прайса.</p></div><div class="heading-actions">{% if can_create and perms.price.view_supplier_prices %}<a class="button" href="{% url 'orders:stock_create' %}">Заказ на склад через форму</a>{% endif %}{% if can_create %}<a class="button button-large" href="{% url 'orders:upload' %}">Новый заказ</a>{% endif %}</div></div>
+<div class="page-heading"><div><p class="eyebrow">Закупки для клиентов и на склад</p><h1>Заказы и рейсы</h1><p class="muted">Объединяйте заказы без рейса по одной версии прайса.</p></div><div class="heading-actions">{% if can_create_trip %}<a class="button button-secondary" href="{% url 'orders:trip_empty_create' %}">Создать пустой рейс</a>{% endif %}{% if can_create and perms.price.view_supplier_prices %}<a class="button" href="{% url 'orders:stock_create' %}">Заказ на склад через форму</a>{% endif %}{% if can_create %}<a class="button button-large" href="{% url 'orders:upload' %}">Новый заказ</a>{% endif %}</div></div>
 
 {% if can_generate_batches %}
 <section id="formed-trips" class="panel table-panel">
   <div class="section-heading"><h2>Сформированные рейсы</h2></div>
-  <div class="table-scroll"><table><thead><tr><th>ID</th><th>Дата</th><th>Исходных заказов</th><th>Автор</th>{% if can_export_trips %}<th>Действия</th>{% endif %}</tr></thead><tbody>
-    {% for batch in batches %}<tr><td><a class="mono" href="{% if batch.price_list_id %}{% url 'orders:trip_detail' batch.pk %}{% else %}{% url 'orders:supplier_batch_detail' batch.pk %}{% endif %}">{{ batch }}</a></td><td>{{ batch.created_at|date:"d.m.Y H:i" }}</td><td>{{ batch.source_orders.count }}</td><td>{{ batch.created_by.full_name|default:batch.created_by.username }}</td>{% if can_export_trips %}<td>{% if batch.price_list_id %}<a class="button button-secondary" href="{% url 'orders:trip_full_export' batch.pk %}" aria-label="Скачать Excel всего рейса {{ batch.pk }}">Скачать Excel</a>{% else %}—{% endif %}</td>{% endif %}</tr>
-    {% empty %}<tr><td class="empty-cell" colspan="{% if can_export_trips %}5{% else %}4{% endif %}">Рейсов пока нет.</td></tr>{% endfor %}
+  <div class="table-scroll"><table class="trips-table"><thead><tr><th>ID</th><th>Дата</th><th>Статус</th><th>Исходных заказов</th><th>Автор</th>{% if can_export_trips %}<th>Действия</th>{% endif %}</tr></thead><tbody>
+    {% for batch in batches %}<tr data-trip-id="{{ batch.pk }}"{% if batch.is_completed %} class="trip-completed"{% endif %}><td><a class="mono" href="{% if batch.is_trip %}{% url 'orders:trip_detail' batch.pk %}{% else %}{% url 'orders:supplier_batch_detail' batch.pk %}{% endif %}">{{ batch }}</a></td><td>{{ batch.created_at|date:"d.m.Y H:i" }}</td><td data-trip-status><span class="badge">{{ batch.completion_label }}</span></td><td>{{ batch.source_orders.count }}</td><td>{{ batch.created_by.full_name|default:batch.created_by.username }}</td>{% if can_export_trips %}<td>{% if batch.is_trip %}<a class="button button-secondary" href="{% url 'orders:trip_full_export' batch.pk %}" aria-label="Скачать Excel всего рейса {{ batch.pk }}">Скачать Excel</a>{% else %}—{% endif %}</td>{% endif %}</tr>
+    {% empty %}<tr><td class="empty-cell" colspan="{% if can_export_trips %}6{% else %}5{% endif %}">Рейсов пока нет.</td></tr>{% endfor %}
   </tbody></table></div>
 </section>
 {% endif %}

@@ -121,7 +121,7 @@ def _locked_context(actor, batch_id, line_id):
         raise PermissionDenied
     _require_manage(actor)
     try:
-        batch = SupplierOrderBatch.objects.select_for_update().get(pk=batch_id, price_list__isnull=False)
+        batch = SupplierOrderBatch.objects.trips().select_for_update().get(pk=batch_id)
         line = SupplierOrderBatchLine.objects.select_for_update().select_related(
             'supplier', 'price_list_item__price_list').get(pk=line_id, batch=batch)
     except (SupplierOrderBatch.DoesNotExist, SupplierOrderBatchLine.DoesNotExist, ValueError, TypeError) as exc:

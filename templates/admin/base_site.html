@@ -5,5 +5,5 @@
 {% block dark-mode-vars %}{% endblock %}
 {% block extrastyle %}{{ block.super }}<link rel="stylesheet" href="{% static 'css/admin-gamebat.css' %}">{% endblock %}
 {% block branding %}<div id="site-name"><a href="{% url 'admin:index' %}"><span class="gb-admin-mark">RS</span> ReSOURCE</a></div>{% endblock %}
-{% block nav-global %}{% include 'sales/_notification_counter.html' %}<a class="gb-back-link" href="{% url 'core:home' %}">Вернуться в CRM</a>{% endblock %}
+{% block nav-global %}{% include 'sales/_notification_counter.html' %}{% include 'sales/_notification_sound_button.html' %}<a class="gb-back-link" href="{% url 'core:home' %}">Вернуться в CRM</a>{% endblock %}
 {% block messages %}{% include 'sales/_notification_panel.html' %}{{ block.super }}{% endblock %}

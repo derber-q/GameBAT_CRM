@@ -1,6 +1,7 @@
 from django.conf import settings
 from django.core.validators import MinValueValidator
 from django.db import models
+from django.db.models.functions import Round
 
 from cash.models import CashTransaction
 from warehouse.models import Warehouse
@@ -32,7 +33,7 @@ class Creditor(models.Model):
     @property
     def display_name(self):
         partner = getattr(self, 'partner', None)
-        return partner.name if partner else self.name
+        return partner.display_name if partner else self.name
 
     @property
     def debt_direction(self):
@@ -96,7 +97,9 @@ class CreditorTransaction(models.Model):
         constraints = [
             models.CheckConstraint(condition=models.Q(amount__gt=0), name="creditor_tx_amount_positive"),
             models.CheckConstraint(condition=~models.Q(delta=0), name="creditor_tx_delta_nonzero"),
-            models.CheckConstraint(condition=models.Q(delta=models.F('new_debt') - models.F('old_debt')), name='creditor_tx_delta_matches_balances'),
+            # SQLite хранит NUMERIC с дробью как REAL. Округление до копеек
+            # исключает отказ корректной Decimal-проводки из-за двоичного вычитания.
+            models.CheckConstraint(condition=models.Q(delta=Round(models.F('new_debt') - models.F('old_debt'), precision=2)), name='creditor_tx_delta_matches_balances'),
             models.CheckConstraint(condition=models.Q(delta=models.F('amount')) | models.Q(delta=-models.F('amount')), name='creditor_tx_amount_matches_delta'),
             models.CheckConstraint(condition=models.Q(money_source_type__in=('bank', 'offset'), cash_transaction__isnull=True)
                 | models.Q(money_source_type__in=('cash', 'safe'), cash_transaction__isnull=False), name='creditor_tx_money_source_consistent'),

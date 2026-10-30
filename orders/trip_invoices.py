@@ -12,7 +12,7 @@ logger = logging.getLogger('gamebat.business')
 
 def _locked_batch(batch_id):
     try:
-        return SupplierOrderBatch.objects.select_for_update().get(pk=batch_id, price_list__isnull=False)
+        return SupplierOrderBatch.objects.trips().select_for_update().get(pk=batch_id)
     except SupplierOrderBatch.DoesNotExist as exc:
         raise ValidationError('Рейс не найден.') from exc
 

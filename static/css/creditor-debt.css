@@ -1,0 +1,12 @@
+.debt-options { border: 0; margin: 0 0 16px; min-width: 0; padding: 0; }
+.debt-options legend { color: var(--gb-text-strong); font-size: 12px; font-weight: 650; margin-bottom: 8px; }
+.debt-options > div { display: flex; flex-wrap: wrap; gap: 8px; }
+.debt-options label { align-items: center; border: 1px solid var(--gb-border); border-radius: 5px; cursor: pointer; display: flex; gap: 8px; min-height: 40px; padding: 8px 12px; }
+.debt-options label:has(input:checked) { background: #e8f5f7; border-color: var(--gb-primary); color: var(--gb-primary-hover); }
+.debt-options input[type="radio"] { accent-color: var(--gb-primary); margin: 0; width: auto; }
+.debt-preview { background: #f0f6f8; border-radius: 5px; color: var(--gb-text-strong); font-weight: 650; margin: 0 0 16px; padding: 12px; }
+[data-creditor-debt-form] { grid-template-columns: minmax(0, 1fr); }
+[data-creditor-debt-form] .field, [data-creditor-debt-form] [data-debt-mode-fields] { min-width: 0; }
+[data-creditor-debt-form] input, [data-creditor-debt-form] select, [data-creditor-debt-form] textarea { min-width: 0; max-width: 100%; }
+[data-creditor-debt-form] [hidden] { display: none; }
+[data-creditor-debt-form] .help-text { font-size: 12px; margin: 6px 0 0; }

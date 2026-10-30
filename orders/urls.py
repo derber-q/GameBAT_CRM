@@ -5,6 +5,8 @@ from . import trip_addition_views, fulfillment_views, arrival_views
 
 app_name = "orders"
 urlpatterns = [
+    path('trips/new/', trip_views.trip_empty_create, name='trip_empty_create'),
+    path('trips/<int:pk>/orders/add/', trip_views.trip_add_orders, name='trip_add_orders'),
     path('trips/<int:pk>/arrival/',arrival_views.update_arrival,name='trip_arrival'),
     path('trips/<int:pk>/finalization/',arrival_views.finalization,name='arrival_finalization'),
     path('trips/<int:pk>/finalization/auto/',arrival_views.finalization_auto,name='arrival_finalization_auto'),

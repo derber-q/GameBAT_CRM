@@ -3,10 +3,12 @@
 {% block extra_head %}<script src="{% static 'js/trip-additions.js' %}?v=1" defer></script>{% endblock %}
 {% block content %}
 <div class="page-heading"><div><p class="eyebrow">{{ batch }}</p><h1>Дополнительные товары</h1><p>Шаг {{ step }} из 4 · Состав → Заказчики → Распределение → Проверка</p></div><a class="button button-secondary" href="{% url 'orders:trip_detail' batch.pk %}">К рейсу</a></div>
-<section class="panel"><p>Курс рейса AED/RUB: {{ batch.price_list.exchange_rate_aed_rub }}. Доставка рассчитывается по сохранённым тарифам только для добавляемых товаров.</p>
+<section class="panel"><p>{% if not batch.price_list_id and step == 1 %}Курсы и доставка будут взяты из выбранного ниже закупочного прайса.{% else %}{% if batch.price_list_id %}Курс рейса{% else %}Курс расчёта партии{% endif %} AED/RUB: {{ calculation_price.exchange_rate_aed_rub|default:'—' }}. Доставка рассчитывается по сохранённым тарифам только для добавляемых товаров.{% endif %}</p>
+{% if not batch.price_list_id %}<p class="muted">Выбранный прайс задаёт курсы и доставку этой дополнительной партии. Прайс рейса будет определён первым обычным заказом; сохранённые цены дополнительных товаров останутся прежними.</p>{% endif %}
 {% if error %}<p class="errorlist" role="alert">{{ error }}</p>{% endif %}
 <form method="post" class="stacked-form" data-trip-addition-form data-search-url="{% url 'orders:trip_addition_search' batch.pk %}" data-calculation-url="{% url 'orders:trip_addition_calculation' batch.pk %}">{% csrf_token %}
 {% if step == 1 %}
+{% if calculation_form %}<div class="field"><label for="{{ calculation_form.calculation_price_list.id_for_label }}">{{ calculation_form.calculation_price_list.label }}</label>{{ calculation_form.calculation_price_list }}{{ calculation_form.calculation_price_list.errors }}</div>{% endif %}
 {{ line_formset.management_form }}{{ line_formset.non_form_errors }}
 <p>Выберите существующие товары и поставщиков. Цена для заказчика единая, вводится вручную.</p>
 <div class="table-scroll"><table><thead><tr><th>Товар</th><th>Поставщик</th><th>Закупка, AED</th><th>Цена заказчику, ₽</th><th>На склад</th><th>Заказчикам</th><th>Убрать</th></tr></thead><tbody data-addition-lines>
@@ -16,7 +18,7 @@
 {% elif step == 2 %}{{ partner_form.as_p }}
 {% elif step == 3 %}
 <p>Распределите только количество для заказчиков. Складское количество уже сохранено на первом шаге.</p>{{ allocation_form.non_field_errors }}
-<div class="table-scroll"><table><thead><tr><th>Товар</th><th>Распределить</th>{% for partner in partners %}<th>{{ partner.name }}</th>{% endfor %}</tr></thead><tbody>
+<div class="table-scroll"><table><thead><tr><th>Товар</th><th>Распределить</th>{% for partner in partners %}<th>{{ partner.display_name }}</th>{% endfor %}</tr></thead><tbody>
 {% for row in rows %}{% if row.customer_qty %}<tr><td>{{ row.name }}</td><td>{{ row.customer_qty }}</td>{% for field in row.allocation_fields %}<td>{{ field }}{{ field.errors }}</td>{% endfor %}</tr>{% endif %}{% endfor %}
 </tbody></table></div>
 {% else %}

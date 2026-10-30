@@ -141,3 +141,26 @@ class CreditorPermissionAndUiTests(TestCase):
         response = self.client.get(reverse("creditors:detail", args=(self.creditor.pk,)))
         self.assertContains(response, "История операций")
         self.assertContains(response, "Выдача")
+
+    def test_list_groups_debt_directions_and_removes_edit_links(self):
+        from partners.models import Partner
+
+        self.worker.user_permissions.add(self.permission('view_creditors'), self.permission('change_creditor'), self.permission('change_debt'))
+        entries = []
+        for name, amount in [('Я Должник', '100'), ('А Получатель', '-20'), ('Б Должник', '0.01')]:
+            partner = Partner.objects.create(name=name, contact_person='Иван')
+            creditor = partner.creditor
+            creditor.current_debt = Decimal(amount)
+            creditor.save(update_fields=['current_debt'])
+            entries.append(creditor)
+        response = self.client.get(reverse('creditors:list'))
+        self.assertEqual(list(response.context['creditors'].values_list('pk', flat=True)),
+            [entries[2].pk, entries[0].pk, entries[1].pk, self.creditor.pk])
+        self.assertContains(response, 'creditor-debt-positive', count=2)
+        self.assertContains(response, 'creditor-debt-negative', count=1)
+        self.assertContains(response, 'creditor-debt-zero', count=1)
+        self.assertContains(response, 'creditor-debt-amount is-outstanding', count=3)
+        self.assertNotContains(response, 'Редактировать')
+        self.assertContains(response, 'Изменить долг', count=4)
+        self.assertContains(response, 'Б Должник (Иван)')
+        self.assertContains(response, 'creditors.css?v=20261027-3')

@@ -47,6 +47,7 @@ def crm_header(request):
     transfers_access = authenticated and (
         user.is_superuser or user.has_perm("warehouse.view_transfers")
     )
+    supplies_access = authenticated and (user.is_superuser or user.has_perm("supplies.view_supply"))
     cash_access = authenticated and (
         user.is_superuser
         or user.has_perm("cash.view_cash_register")
@@ -62,7 +63,7 @@ def crm_header(request):
         "nav": {
             'market_notifications': market_notifications,
             'avito_notifications': avito_notifications,
-            "warehouse": warehouse_global_access or warehouse_details_access or transfers_access,
+            "warehouse": warehouse_global_access or warehouse_details_access or transfers_access or supplies_access,
             "warehouse_global": warehouse_global_access,
             "warehouse_details": warehouse_details_access,
             "transfers": transfers_access,
@@ -74,7 +75,7 @@ def crm_header(request):
             "nomenclature": authenticated and (
                 user.is_superuser or user.has_perm("catalog.view_nomenclature")
             ),
-            "supplies": authenticated and (user.is_superuser or user.has_perm("supplies.view_supply")),
+            "supplies": supplies_access,
             "consignment": authenticated and (user.is_superuser or user.has_perm("consignment.view_cdconsignmentstock") or user.has_perm("consignment.view_techconsignmentstock")),
             "suppliers": authenticated and (user.is_superuser or user.has_perm("partners.view_supplier")),
             "pricing": authenticated and (user.is_superuser or user.has_perm("pricing.view_pricing")),

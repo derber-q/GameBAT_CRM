@@ -1,9 +1,10 @@
 {% load static %}
 {% if nav.market_notifications or nav.avito_notifications %}
-<link rel="stylesheet" href="{% static 'css/market-notifications.css' %}?v=4">
+<link rel="stylesheet" href="{% static 'css/market-notifications.css' %}?v=5">
 <script src="{% static 'js/market-notification-state.js' %}?v=1" defer></script>
+<script src="{% static 'js/notification-sound-controls.js' %}?v=1" defer></script>
 {% endif %}
 {% if nav.market_notifications %}
-<script src="{% static 'js/market-notifications.js' %}?v=2" defer></script>
+<script src="{% static 'js/market-notifications.js' %}?v=3" defer></script>
 {% endif %}
-{% if nav.avito_notifications %}<script src="{% static 'js/avito-alert-sound.js' %}?v=2" defer></script><script src="{% static 'js/avito-notifications.js' %}?v=3" defer></script>{% endif %}
+{% if nav.avito_notifications %}<script src="{% static 'js/avito-alert-sound.js' %}?v=3" defer></script><script src="{% static 'js/avito-notifications.js' %}?v=3" defer></script>{% endif %}

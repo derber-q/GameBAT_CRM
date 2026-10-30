@@ -1,0 +1,11 @@
+{% extends 'base.html' %}
+{% block title %}Создать пустой рейс · ReSOURCE{% endblock %}
+{% block body_class %}responsive-crm-page{% endblock %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">Заказы и рейсы</p><h1>Создать пустой рейс</h1><p class="muted">Прайс определится после добавления первого заказа. Дополнительные товары можно внести сразу.</p></div><a class="button button-secondary" href="{% url 'orders:list' %}">Отмена</a></div>
+<section class="panel form-panel"><form method="post" class="stacked-form">{% csrf_token %}{{ form.creation_key }}
+{{ form.non_field_errors }}{{ form.creation_key.errors }}
+<div class="field"><label for="{{ form.name.id_for_label }}">Название рейса (необязательно)</label>{{ form.name }}{{ form.name.errors }}</div>
+<div class="form-actions"><button class="button" type="submit">Создать рейс</button></div>
+</form></section>
+{% endblock %}

@@ -61,7 +61,8 @@ class TripAssignmentForm(forms.Form):
     def __init__(self, *args, trips, order, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["target_trip"].choices = [("", "Выберите рейс")] + [
-            (f"{trip.pk}:{trip.revision}", f"{trip} · прайс №{trip.price_list_id}") for trip in trips
+            (f"{trip.pk}:{trip.revision}", f"{trip} · " + (
+                f"прайс №{trip.price_list_id}" if trip.price_list_id else "прайс определится первым заказом")) for trip in trips
         ]
         self.fields["source_trip"].initial = order.trip_id
         self.fields["source_revision"].initial = order.trip.revision if order.trip_id else None
@@ -69,3 +70,28 @@ class TripAssignmentForm(forms.Form):
     def clean_target_trip(self):
         batch_id, revision = self.cleaned_data["target_trip"].split(":")
         return int(batch_id), int(revision)
+
+
+class EmptyTripForm(forms.Form):
+    name = forms.CharField(label='Название рейса', max_length=255, required=False)
+    creation_key = forms.UUIDField(widget=forms.HiddenInput)
+
+
+class TripOrdersChoiceField(forms.ModelMultipleChoiceField):
+    def label_from_instance(self, order):
+        return f'Заказ №{order.pk} · {order.recipient} · Прайс №{order.price_list_id}'
+
+
+class TripAddOrdersForm(forms.Form):
+    orders = TripOrdersChoiceField(label='Заказы без рейса', queryset=None, widget=forms.CheckboxSelectMultiple)
+    revision = forms.IntegerField(min_value=0, widget=forms.HiddenInput)
+
+    def __init__(self, *args, batch, **kwargs):
+        from .models import CustomerProcurementOrder
+        super().__init__(*args, **kwargs)
+        orders = CustomerProcurementOrder.objects.filter(trip__isnull=True, status='created',
+            price_list__is_trip_addition=False).select_related('price_list').order_by('pk')
+        if batch.price_list_id:
+            orders = orders.filter(price_list_id=batch.price_list_id)
+        self.fields['orders'].queryset = orders
+        self.fields['revision'].initial = batch.revision

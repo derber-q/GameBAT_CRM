@@ -44,7 +44,7 @@ def panel_context(request, batch):
 @require_POST
 @permission_required_any('orders.generate_supplier_orders')
 def update_arrival(request, pk):
-    batch=get_object_or_404(SupplierOrderBatch,pk=pk,price_list__isnull=False)
+    batch=get_object_or_404(SupplierOrderBatch.objects.trips(),pk=pk)
     require_arrival_permissions(request.user)
     action=request.POST.get('action')
     try:

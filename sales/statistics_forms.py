@@ -5,6 +5,7 @@ from warehouse.models import Warehouse
 
 from .models import Sale
 from partners.models import Partner
+from partners.customers import PartnerChoiceField
 
 
 CHANNEL_CHOICES = (
@@ -32,7 +33,7 @@ PRODUCT_SORT_CHOICES = (
 
 
 class SaleStatisticsFilterForm(forms.Form):
-    partner = forms.ModelChoiceField(label='Партнёр', queryset=Partner.objects.all(), required=False, empty_label='Все партнёры')
+    partner = PartnerChoiceField(label='Партнёр', queryset=Partner.objects.all(), required=False, empty_label='Все партнёры')
     arbitrary_partner_name = forms.CharField(label='Произвольный заказчик (точное название)', required=False, max_length=255)
     operation_kind = forms.ChoiceField(label="Вид операции", required=False, choices=(("", "Все операции"), *Sale.OperationKind.choices))
     date_from = forms.DateField(label="Дата с", required=False, widget=forms.DateInput(attrs={"type": "date"}))

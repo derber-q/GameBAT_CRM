@@ -40,10 +40,10 @@ class AvitoCounterBrowserChecks(StaticLiveServerTestCase):
             for page in pages:
                 page.goto(self.live_server_url + reverse('sales:market_pending'))
                 expect(page.locator('[data-avito-action-count]')).to_have_text('1')
-            pages[0].locator('[data-avito-sound-enable]').click()
+            pages[0].locator('[data-notification-sound-enable]').click()
             expect(pages[0].locator('[data-avito-sound-status]')).to_contain_text('Звук Avito включён')
             def total():
-                return sum(page.evaluate('window.__audioEvents.length') for page in pages)
+                return sum(page.evaluate('window.__audioEvents.filter(event => event.channel === "avito").length') for page in pages)
             self.assertEqual(total(), 1)
             def switch_action():
                 CDWarehouseStock.objects.filter(cd=self.cd).update(quantity=3)
@@ -97,7 +97,7 @@ class AvitoCounterBrowserChecks(StaticLiveServerTestCase):
                 '(node) => node.nextElementSibling.hasAttribute("data-avito-counter")'))
             expect(counter.locator('img')).to_be_visible()
             self.assertTrue(counter.locator('img').evaluate('(node) => node.complete && node.naturalWidth > 0'))
-            self.assertEqual(counter.bounding_box()['width'], 40)
+            self.assertEqual(counter.bounding_box()['width'], 36)
             counter.hover()
             expect(counter).to_have_css('background-color', 'rgb(255, 231, 166)')
             page.locator('.session-tools').screenshot(path=str(output / 'header.png'))

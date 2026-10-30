@@ -571,7 +571,7 @@ def contacts(request):
         row.copy_token = recover_token(row.active_link) if row.active_link else ""
     from partners.models import Partner
     return render(request, "resource_storefront/contacts.html", {"contacts": rows, "query": term,
-        'partners': Partner.objects.filter(is_archived=False).only('pk', 'name')})
+        'partners': Partner.objects.filter(is_archived=False).only('pk', 'name', 'contact_person')})
 
 
 @permission_required_any("resource_storefront.manage_wholesale_contacts")

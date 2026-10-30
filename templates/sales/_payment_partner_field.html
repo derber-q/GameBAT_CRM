@@ -2,7 +2,7 @@
   <label for="{{ partner_select_id }}">Партнёр для расчётов</label>
   <select id="{{ partner_select_id }}" name="settlement_partner_id" data-settlement-partner>
     <option value="">Не выбран — полная оплата</option>
-    {% for partner in payment_partners %}<option value="{{ partner.id }}">{{ partner.name }}</option>{% endfor %}
+    {% for partner in payment_partners %}<option value="{{ partner.id }}">{{ partner.display_name }}</option>{% endfor %}
   </select>
   <span class="help-text">Для частичной оплаты выберите партнёра из справочника. После подтверждения разница будет учтена в его задолженности.</span>
 </div>

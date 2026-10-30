@@ -10,6 +10,19 @@
 .market-alert-panel { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 0 16px; font-size: 12px; }
 .market-alert-panel .error-text { font-weight: 650; color: #ac243f; }
 .market-alert-panel [hidden] { display: none; }
+.market-alert-panel.notification-state { display: block; margin: 0; }
+.notification-audio-status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.notification-state [data-market-feed-status]:not(:empty) { display: block; margin-bottom: 12px; padding: 8px 0; }
+.notification-sound-toggle { align-items: center; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.22); border-radius: 5px; color: #c8d3df; cursor: pointer; display: inline-flex; flex: 0 0 auto; height: 32px; justify-content: center; padding: 0; vertical-align: middle; width: 32px; }
+.notification-sound-toggle:hover:not(:disabled) { background: rgba(255,255,255,.14); color: white; }
+.notification-sound-toggle:focus-visible { outline: 2px solid #37a7ba; outline-offset: 2px; }
+.notification-sound-toggle:disabled { cursor: default; opacity: 1; }
+.notification-sound-toggle .sound-waves { display: none; }
+.notification-sound-toggle[aria-pressed="true"] { background: rgba(64,180,126,.12); border-color: rgba(145,224,186,.45); color: #91e0ba; }
+.notification-sound-toggle[aria-pressed="true"] .sound-waves { display: block; }
+.notification-sound-toggle[aria-pressed="true"] .sound-muted-mark { display: none; }
+.notification-sound-toggle[data-sound-state="blocked"] { border-color: #edbf64; color: #ffd166; }
+.notification-sound-toggle[aria-busy="true"] { opacity: .65; }
 .market-order-unacknowledged { background: #fff9e8; box-shadow: inset 4px 0 #bc8e23; }
 .market-new-order { background: #fff1c9; color: #674b00; }
 .market-attention-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }

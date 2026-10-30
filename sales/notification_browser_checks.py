@@ -27,7 +27,7 @@ window.Audio = class {
   constructor(src) {this.src=src; this.dataset={}; this.volume=0; this.currentTime=0;}
   play() {
     if (window.__audioDenied) return Promise.reject(new DOMException('Autoplay blocked', 'NotAllowedError'));
-    const event = {id:this.dataset.marketOrderId, volume:this.volume, start:Date.now(), end:null};
+    const event = {id:this.dataset.marketOrderId, channel:this.dataset.notificationChannel, volume:this.volume, start:Date.now(), end:null};
     this.record=event; window.__audioEvents.push(event);
     this.timer=setTimeout(()=>{event.end=Date.now(); this.onended?.();},120);
     return Promise.resolve();
@@ -62,12 +62,12 @@ class MarketNotificationBrowserChecks(StaticLiveServerTestCase):
             expect(counter.locator('img')).to_be_visible()
             self.assertTrue(counter.locator('img').evaluate('(node) => node.complete && node.naturalWidth > 0'))
             box = counter.bounding_box()
-            self.assertEqual((box['width'], box['height']), (40, 40))
+            self.assertEqual((box['width'], box['height']), (36, 36))
             counter.hover()
             expect(counter).to_have_css('background-color', 'rgba(255, 255, 255, 0.16)')
             page.screenshot(path=str(output / 'counter-empty.png'), clip={
                 'x': max(0, box['x'] - 8), 'y': max(0, box['y'] - 8), 'width': 56, 'height': 56})
-            page.locator('[data-market-sound-enable]').click()
+            page.locator('[data-notification-sound-enable]').click()
             expect(page.locator('[data-market-audio-status]')).to_contain_text('Звук включён')
             page.wait_for_function('window.__marketClip.ended')
             actual = page.evaluate('({volume:window.__marketClip.volume, duration:window.__marketClip.duration, ended:window.__marketClip.ended})')
@@ -134,7 +134,7 @@ class MarketNotificationBrowserChecks(StaticLiveServerTestCase):
                 for current in pages:
                     current.evaluate('window.GameBAT.refreshMarketNotifications()')
             def signals(pages):
-                return sorted([event for current in pages for event in current.evaluate('window.__audioEvents') if event['id'] != 'test'],
+                return sorted([event for current in pages for event in current.evaluate('window.__audioEvents') if event.get('channel') == 'market' and event.get('id') != 'test'],
                     key=lambda event: event['start'])
             def wait_signals(pages, count, prefix=()):
                 deadline = time.monotonic() + 15
@@ -151,7 +151,7 @@ class MarketNotificationBrowserChecks(StaticLiveServerTestCase):
             a2 = page(ctx_a, 'sales:market_pending')
             b1 = page(ctx_b, 'supplies:list')
             groups = a1.locator('[data-sale-group]:visible')
-            self.assertEqual(groups.evaluate_all('nodes => nodes.map(node=>node.dataset.saleGroup)'), ['yandex_market', 'wholesale', 'avito'])
+            self.assertEqual(groups.evaluate_all('nodes => nodes.map(node=>node.dataset.saleGroup)'), ['wholesale', 'avito', 'yandex_market'])
             self.assertEqual(a1.locator('[data-sales-channel]').all_text_contents(), ['Все', 'Яндекс Маркет', 'Опт', 'Авито', 'Розница'])
             for kind, count in [('yandex_market', 1), ('wholesale', 1), ('avito', 1), ('retail', 0), ('all', 3)]:
                 a1.locator(f'[data-sales-channel="{kind}"]').click()
@@ -189,8 +189,8 @@ class MarketNotificationBrowserChecks(StaticLiveServerTestCase):
                 expect(current.locator('[data-market-counter]')).to_have_class('market-alert-counter has-pending')
                 expect(current.locator('[data-market-counter]')).to_have_attribute(
                     'aria-label', 'Яндекс Маркет: непринятых заказов — 1')
-            a1.locator('[data-market-sound-enable]').click()
-            b1.locator('[data-market-sound-enable]').click()
+            a1.locator('[data-notification-sound-enable]').click()
+            b1.locator('[data-notification-sound-enable]').click()
             wait_signals([a1, a2], 1)
             wait_signals([b1], 1)
             second = run(lambda: new_order(102, 4))
@@ -244,13 +244,13 @@ class MarketNotificationBrowserChecks(StaticLiveServerTestCase):
             ctx_c, outage = context()
             c1 = page(ctx_c, 'sales:market_pending')
             c1.evaluate('window.__audioDenied=true')
-            c1.locator('[data-market-sound-enable]').click()
+            c1.locator('[data-notification-sound-enable]').click()
             expect(c1.locator('[data-market-audio-status]')).to_contain_text('Браузер заблокировал звук')
             self.assertEqual(signals([c1]), [])
             expect(c1.locator('[data-market-pending-count]')).to_have_text('1')
             c1.screenshot(path=str(output / 'autoplay-blocked.png'), full_page=True)
             c1.evaluate('window.__audioDenied=false')
-            c1.locator('[data-market-sound-enable]').click()
+            c1.locator('[data-notification-sound-enable]').click()
             wait_signals([c1], 1)
             outage[0] = True
             clock[0] = start + timedelta(minutes=31)

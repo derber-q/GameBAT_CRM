@@ -1,0 +1,5 @@
+.creditors-table tr.creditor-debt-positive > td { background-color: #fee2e2; }
+.creditors-table tr.creditor-debt-negative > td { background-color: #dcfce7; }
+.creditors-table tr.creditor-debt-zero > td { background-color: #fff; }
+.creditors-table .creditor-debt-amount.is-outstanding { font-size: 22px; font-weight: 800; line-height: 1.3; }
+.creditors-table .creditor-name { color: #000; font-size: 20px; font-weight: 700; line-height: 1.3; }
