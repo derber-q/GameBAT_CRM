@@ -46,7 +46,7 @@ class TripReductionTests(TestCase):
     def editor(self, trip, line):
         response = self.client.get(reverse("orders:trip_detail", args=[trip.pk]))
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "js/order-trips.js?v=4")
+        self.assertContains(response, "js/order-trips.js?v=20261031-1")
         return response.context["editor"][str(line.pk)]
 
     def snapshot(self):

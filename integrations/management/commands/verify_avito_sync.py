@@ -1,3 +1,4 @@
+"""Сверка с реальным Avito; без --fix остаётся сетевой операцией, с --fix может менять объявления."""
 import csv
 from dataclasses import asdict
 from pathlib import Path

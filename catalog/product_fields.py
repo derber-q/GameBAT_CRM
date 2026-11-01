@@ -1,3 +1,4 @@
+"""Единая конфигурация полей карточки и прав их просмотра/изменения; используется несколькими интерфейсами."""
 PRICE_FIELDS = ("avito_price", "wholesale_price", "yandex_market_price")
 MARKUP_FIELDS = ("avito_markup_from_wholesale", "yandex_markup_from_wholesale")
 PRICING_FIELDS = (*PRICE_FIELDS, *MARKUP_FIELDS)

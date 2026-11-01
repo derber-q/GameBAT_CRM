@@ -29,6 +29,7 @@ def _debt(value, *, signed=False):
 @retry_database_lock
 @transaction.atomic
 def adjust_creditor_debt(*, actor, creditor_id, warehouse_id, money_source_type, new_debt=None, debt_delta=None, comment=""):
+    """Корректирует абсолютный долг или дельту под блокировкой с журналом. Движение наличных/сейфа выбирается отдельно от банка и взаимозачёта."""
     if not actor.has_perm('creditors.change_debt'):
         from django.core.exceptions import PermissionDenied
         raise PermissionDenied('Нет права изменения задолженности.')

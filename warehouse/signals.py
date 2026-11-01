@@ -1,3 +1,6 @@
+"""Реакции на сохранение моделей и запуск связанных действий складов.
+
+Различать физический остаток конкретного склада, реализацию и товар в пути."""
 from django.db.models import Sum
 from django.db.models.signals import post_delete, post_save
 from django.dispatch import receiver

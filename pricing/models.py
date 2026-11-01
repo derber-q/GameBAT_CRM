@@ -1,3 +1,6 @@
+"""Схема данных, ограничения БД и вычисляемые свойства состояния ценообразования.
+
+Себестоимость, опт, цена Avito, FBS и найденный минимум — разные величины."""
 from django.core.validators import MinValueValidator
 from django.db import models
 
@@ -17,6 +20,8 @@ class SupplierPriceBase(models.Model):
 
 
 class SupplierCDPrice(SupplierPriceBase):
+    """Текущее AED-предложение поставщика на диск; не историческая закупочная партия."""
+
     cd = models.ForeignKey(CD, on_delete=models.PROTECT, related_name="supplier_prices", verbose_name="CD")
 
     class Meta:
@@ -40,6 +45,8 @@ class SupplierCDPrice(SupplierPriceBase):
 
 
 class SupplierTechPrice(SupplierPriceBase):
+    """Текущее AED-предложение поставщика на технику."""
+
     tech = models.ForeignKey(Tech, on_delete=models.PROTECT, related_name="supplier_prices", verbose_name="Техника")
 
     class Meta:

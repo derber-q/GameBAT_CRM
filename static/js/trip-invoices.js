@@ -1,3 +1,4 @@
+/* ReSOURCE: Сохраняемый флаг инвойса и блокировка блока поставщика; backend повторно проверяет доступность изменения. */
 (() => {
   'use strict';
   document.querySelectorAll('[data-trip-invoice-form]').forEach(form => {

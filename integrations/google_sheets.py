@@ -1,3 +1,4 @@
+"""Односторонняя публикация номенклатуры/физического наличия в Google Sheets; лист не источник складских движений."""
 import calendar
 import re
 from decimal import Decimal
@@ -11,6 +12,7 @@ from django.utils import timezone
 from catalog.models import CD, ProductFieldChange, Tech
 
 from .models import GoogleSheetsIntegration
+from core.external_policy import require_live_operation
 
 
 SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets"
@@ -33,7 +35,7 @@ def get_google_sheets_integration():
         pk=1,
         defaults={
             "spreadsheet_url": spreadsheet_url,
-            "spreadsheet_id": extract_spreadsheet_id(spreadsheet_url),
+            "spreadsheet_id": extract_spreadsheet_id(spreadsheet_url) if spreadsheet_url else '',
             "sheet_name": settings.GOOGLE_SHEETS_DEFAULT_TAB,
             "enabled": credentials_configured,
             "status": (
@@ -153,6 +155,7 @@ def build_price_rows(*, nomenclature=False, tech=None, cds=None, now=None):
 
 
 def _google_service():
+    require_live_operation('google')
     key_file = str(settings.GOOGLE_SERVICE_ACCOUNT_FILE or "").strip()
     if not key_file:
         raise RuntimeError("Не задан GOOGLE_SERVICE_ACCOUNT_FILE.")
@@ -258,6 +261,7 @@ def _sheet_range(name, cells="A:D"):
 
 
 def sync_price_sheet(integration=None):
+    require_live_operation('google')
     integration = integration or get_google_sheets_integration()
     integration.status = GoogleSheetsIntegration.Status.SYNCING
     integration.last_attempt_at = timezone.now()

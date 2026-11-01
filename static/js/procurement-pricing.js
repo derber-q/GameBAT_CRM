@@ -1,3 +1,4 @@
+/* ReSOURCE: Расчётные поля закупочного прайса, наценка/постоплата и серверное подтверждение изменений. */
 document.addEventListener("DOMContentLoaded", () => {
   const maxMoney = 99999999999999999999n;
   const parseMoney = (value, signed = false) => {

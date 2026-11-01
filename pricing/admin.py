@@ -1,3 +1,6 @@
+"""Регистрация моделей и разрешённых действий в Django Admin ценообразования.
+
+Себестоимость, опт, цена Avito, FBS и найденный минимум — разные величины."""
 from django.contrib import admin
 
 from partners.admin import SupplierDetailAdminMixin

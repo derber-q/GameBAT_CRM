@@ -1,3 +1,6 @@
+"""Регистрация моделей и разрешённых действий в Django Admin продаж.
+
+Склад, деньги и долг проводят штатные сервисы; исторические строки сохраняют снимки."""
 from django.contrib import admin
 
 from .models import Sale, SaleCDItem, SaleConsignmentItem, SaleTechItem, SaleCustomItem

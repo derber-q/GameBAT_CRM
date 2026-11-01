@@ -1,3 +1,4 @@
+/* ReSOURCE: Управление товарными строками/показателями доступности; фактическое наличие проверяется сервером. */
 (() => {
   "use strict";
   document.querySelectorAll(".stock-lines-form").forEach((form) => {

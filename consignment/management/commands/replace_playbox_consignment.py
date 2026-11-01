@@ -1,3 +1,4 @@
+"""Адресная замена состава PlayBox; потенциально меняет партии и требует прямого поручения на данные."""
 from collections import defaultdict
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP

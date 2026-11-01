@@ -1,3 +1,4 @@
+"""Decimal-расчёт комиссии Avito по строке; комиссия не уменьшает фактически полученную наличную оплату."""
 from decimal import Decimal, ROUND_HALF_UP
 
 

@@ -63,6 +63,7 @@ def _locked_safe(warehouse_id):
 
 @transaction.atomic
 def deposit_cash(*, actor, warehouse_id, amount, comment, operation_key=None):
+    """Вносит реальные наличные на выбранный склад атомарно с журналом. Ключ операции позволяет безопасный повтор; права проверяет вызывающий сценарий."""
     amount = _positive_amount(amount)
     comment = _comment(comment)
     operation_key = _operation_key(operation_key)
@@ -86,6 +87,7 @@ def deposit_cash(*, actor, warehouse_id, amount, comment, operation_key=None):
 
 @transaction.atomic
 def collect_cash(*, actor, warehouse_id, amount, comment, operation_key=None):
+    """Уменьшает кассу вместе с журналом; недостаток наличных откатывает всё. Это инкассация, не отмена продажи."""
     amount = _positive_amount(amount)
     comment = _comment(comment)
     operation_key = _operation_key(operation_key)
@@ -111,7 +113,7 @@ def collect_cash(*, actor, warehouse_id, amount, comment, operation_key=None):
 
 @transaction.atomic
 def credit_sale_payment(*, sale, actor):
-    """Зачисляет оплату продажи ровно один раз в кассу её склада."""
+    """Проводит одну наличную оплату продажи. Предоплата заказа не дублируется, банк исключён, нулевой долг не создаёт фиктивную кассовую запись."""
     if not sale.is_cash_payment:
         raise ValidationError("Банковская оплата не проводится через кассу.")
     if getattr(sale, "operation_kind", "normal") == "EXPENSE":
@@ -158,7 +160,7 @@ def credit_sale_payment(*, sale, actor):
 
 @transaction.atomic
 def refund_sale_payment(*, sale, actor, comment):
-    """Возвращает фактически принятую наличную оплату ровно один раз."""
+    """Возвращает сумму исходной кассовой оплаты один раз. Недостаток наличных блокирует полную отмену; отдельный произвольный deposit не входит в этот возврат."""
     if not sale.is_cash_payment:
         raise ValidationError("Банковский возврат не проводится через кассу.")
     if getattr(sale, "operation_kind", "normal") == "EXPENSE":
@@ -255,6 +257,7 @@ def collect_safe(*, actor, warehouse_id, amount, comment, operation_key=None):
 
 @transaction.atomic
 def transfer_cash_to_safe(*, actor, warehouse_id, amount, comment, operation_key=None):
+    """Переносит наличные между двумя балансами и единым журналом в одной транзакции; выручку не создаёт."""
     amount = _positive_amount(amount)
     comment = _comment(comment)
     operation_key = _operation_key(operation_key)
@@ -285,6 +288,7 @@ def transfer_cash_to_safe(*, actor, warehouse_id, amount, comment, operation_key
 
 @transaction.atomic
 def transfer_safe_to_cash(*, actor, warehouse_id, amount, comment, operation_key=None):
+    """Обратный перевод сейф -> касса, атомарный и идемпотентный по ключу запроса."""
     amount = _positive_amount(amount)
     comment = _comment(comment)
     operation_key = _operation_key(operation_key)

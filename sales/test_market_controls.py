@@ -187,6 +187,22 @@ class MarketSaleControlsTests(TestCase):
         self.assertNotContains(response, 'data-market-action="ready"')
         self.assertNotContains(response, 'data-market-action="cancel"')
 
+    def test_print_status_exposes_confirmed_market_label_and_available_actions(self):
+        job = MarketPrintJob.objects.get(order=self.order)
+        job.state = 'done'
+        job.save(update_fields=['state'])
+        self.order.substatus = 'READY_TO_SHIP'
+        self.order.save(update_fields=['substatus'])
+        response = self.client.get(reverse('sales:market_print_status', args=[job.request_id]))
+        self.assertEqual(response.json()['market_status_label'], 'Готов к отгрузке')
+        self.assertEqual(response.json()['market_actions'], ['cancel'])
+        for url in (reverse('sales:incomplete'), reverse('sales:detail', args=[self.sale.pk])):
+            page = self.client.get(url)
+            self.assertContains(page, 'data-market-status-label>Готов к отгрузке</span>')
+            self.assertNotContains(page, 'data-market-action="ready"')
+            self.assertContains(page, 'js/sale-market-print.js?v=20261101-1')
+            self.assertContains(page, 'css/sale-market.css?v=20261101-1')
+
     def test_ready_is_blocked_until_windows_confirms_printing(self):
         MarketPrintJob.objects.filter(order=self.order).delete()
         self.action()

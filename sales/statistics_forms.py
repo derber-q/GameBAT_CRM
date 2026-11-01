@@ -1,3 +1,4 @@
+"""Валидация периода и фильтров отчёта продаж без изменения документов."""
 from django import forms
 
 from catalog.models import Brand, GameSeries, Platform, ProductType

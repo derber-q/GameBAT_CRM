@@ -1,3 +1,6 @@
+"""Схема данных, ограничения БД и вычисляемые свойства состояния пользователей и прав.
+
+Управление сотрудниками и stuf требует superuser; документы выдаются защищённо."""
 from django.contrib.auth.models import AbstractUser, Group
 from django.db import models
 
@@ -7,6 +10,8 @@ def verification_document_path(instance, filename):
 
 
 class User(AbstractUser):
+    """Пользователь CRM с Django permissions; защищённый документ не является публичным медиа."""
+
     full_name = models.CharField("Ф.И.О.", max_length=255, blank=True)
     phone_1 = models.CharField("Телефон №1", max_length=40, blank=True)
     phone_2 = models.CharField("Телефон №2", max_length=40, blank=True)
@@ -33,6 +38,8 @@ class User(AbstractUser):
 
 
 class PermissionSetMetadata(models.Model):
+    """Дополнительные метаданные набора прав Django Group; не второй источник permissions."""
+
     group = models.OneToOneField(Group, on_delete=models.CASCADE, related_name="gamebat_metadata", verbose_name="Набор прав")
     description = models.TextField("Описание", blank=True)
 

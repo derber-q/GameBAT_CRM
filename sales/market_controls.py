@@ -18,19 +18,23 @@ def with_market_controls(queryset):
     ))
 
 
-def market_context(sale, user, *, editable=True):
-    order = getattr(sale, 'yandex_order', None)
-    if not order:
-        return None
+def market_status_label(order):
     labels = {
         'PROCESSING': 'В обработке', 'DELIVERY': 'Передан в доставку', 'PICKUP': 'В пункте выдачи',
         'DELIVERED': 'Доставлен покупателю', 'CANCELLED': 'Отменён', 'UNPAID': 'Ожидает оплаты на Маркете',
         'PENDING': 'Ожидает обработки', 'RETURNED': 'Возвращён', 'PARTIALLY_RETURNED': 'Частично возвращён',
     }
-    status_label = labels.get(order.status, order.status or 'Статус не получен')
     if order.status == 'PROCESSING' and order.substatus == 'READY_TO_SHIP':
-        status_label = 'Готов к отгрузке'
+        return 'Готов к отгрузке'
+    return labels.get(order.status, order.status or 'Статус не получен')
+
+
+def market_context(sale, user, *, editable=True):
+    order = getattr(sale, 'yandex_order', None)
+    if not order:
+        return None
     actions = available_actions(order).copy()
+    can_ready = 'ready' in actions
     needs_boxes = 'ready' in actions and not order.boxes
     if needs_boxes:
         actions.pop('ready')
@@ -40,7 +44,8 @@ def market_context(sale, user, *, editable=True):
     latest_request = next((job for job in order.integration.sale_order_jobs
                            if job.payload.get('order_id') == order.order_id), None)
     attention = getattr(order, 'staff_attention', None)
-    return {'order': order, 'status_label': status_label, 'actions': actions if can_manage else {},
+    return {'order': order, 'status_label': market_status_label(order), 'actions': actions if can_manage else {},
+            'show_status': not can_manage or not can_ready,
             'can_manage': can_manage, 'needs_boxes': needs_boxes,
             'can_print': user.has_perm('yandex_market.print_labels'),
             'can_view_order': user.has_perm('yandex_market.view_integration'),

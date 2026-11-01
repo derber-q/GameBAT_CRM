@@ -1,3 +1,4 @@
+/* ReSOURCE: Прямые действия Яндекс-заказа; отмена требует подтверждения, готовность проверяет сервер. */
 (() => {
   const dialog = document.getElementById('sale-market-cancel-dialog');
   const question = document.getElementById('sale-market-cancel-question');

@@ -1,3 +1,4 @@
+/* ReSOURCE: Оформление финансовых карточек/знака долга. Стили не заменяют серверные учётные проверки. */
 .creditors-table tr.creditor-debt-positive > td { background-color: #fee2e2; }
 .creditors-table tr.creditor-debt-negative > td { background-color: #dcfce7; }
 .creditors-table tr.creditor-debt-zero > td { background-color: #fff; }

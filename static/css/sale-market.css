@@ -1,5 +1,7 @@
+/* ReSOURCE: Оформление действий и печати Yandex-продажи. Стили не заменяют серверные учётные проверки. */
 .sale-market-controls { display: grid; gap: 8px; min-width: 250px; max-width: 460px; white-space: normal; overflow-wrap: anywhere; }
 .sale-market-controls small { display: block; }
+.sale-market-controls [hidden] { display: none !important; }
 .sale-market-controls p { margin: 0; }
 .sale-market-controls .sale-market-form { display: grid; gap: 8px; min-width: 0; padding-top: 8px; border-top: 1px solid var(--gb-border); }
 .sale-market-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }

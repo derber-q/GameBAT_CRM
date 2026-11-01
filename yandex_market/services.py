@@ -1,3 +1,4 @@
+"""Настройки, офферы и управляемые действия FBS с аудитом и существующей очередью."""
 import hashlib
 from decimal import Decimal
 
@@ -103,6 +104,8 @@ def store_api_key(value):
     from pathlib import Path
     from django.conf import settings
     from integrations.crypto import encrypt_secret
+    from core.external_policy import require_live_operation
+    require_live_operation('yandex_credentials')
     value = str(value).strip()
     if not value or any(char.isspace() for char in value):
         raise ValidationError("Введите только API-Key, без пробелов и пояснений.")

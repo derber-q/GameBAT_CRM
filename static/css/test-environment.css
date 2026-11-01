@@ -1,0 +1,15 @@
+/* Только local_test. Цвета товаров, денег, ошибок и обычных кнопок не меняются. */
+:root { --gb-nav-bg: #b85c12; --gb-nav-bg-secondary: #8f410a; }
+body { min-width: 0; }
+.test-environment-banner { align-items: center; background: #8f410a; box-sizing: border-box; color: #fff; display: flex; font: 700 12px/1.2 "Segoe UI", sans-serif; gap: 8px; height: 28px; justify-content: center; letter-spacing: .6px; position: sticky; top: 0; z-index: 101; }
+.test-environment-banner span { font-weight: 400; letter-spacing: 0; }
+.test-menu-environment { background: #8f410a; color: #fff; font-size: 12px; font-weight: 700; padding: 8px 16px; }
+.crm-topbar .main-nav a, .crm-topbar .drawer-navigation a, .crm-topbar .nav-section-toggle { color: #fff; }
+body .topbar.crm-topbar { top: 28px; }
+.crm-topbar .profile-toggle { background: #8f410a; }
+.crm-topbar .nav-dropdown-trigger.active { border-bottom-color: #ffddac; }
+.crm-topbar .nav-sale { background: #8f410a; }
+.crm-topbar .nav-sale:hover { background: #733406; }
+#header { background: #b85c12; }
+.resource-storefront .rs-header, .resource-storefront .topline { background: #b85c12; color: #fff; }
+@media (max-width: 760px) { .test-environment-banner { font-size: 11px; } }

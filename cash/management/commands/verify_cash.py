@@ -1,3 +1,4 @@
+"""Диагностика балансов кассы/сейфа по журналу; команда ничего не исправляет."""
 from decimal import Decimal
 
 from django.core.management.base import BaseCommand, CommandError

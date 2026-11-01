@@ -1,3 +1,4 @@
+"""Диагностика физического склада и суммы партий реализации; команда ничего не исправляет."""
 from django.core.management.base import BaseCommand, CommandError
 from django.db.models import Sum
 

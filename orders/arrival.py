@@ -64,6 +64,7 @@ def _revision(actual, expected):
 
 
 def lock_arrival(arrival_id, expected_revision=None, *, finalized_allowed=False):
+    """Сериализует изменения сначала блокировкой рейса, затем прибытия. Проверяет revision, факт прибытия и запрет правки финализированных затрат."""
     trip_id = TripArrival.objects.values_list('trip_id', flat=True).get(pk=arrival_id)
     SupplierOrderBatch.objects.select_for_update().get(pk=trip_id)
     arrival = TripArrival.objects.select_for_update().get(pk=arrival_id)
@@ -113,6 +114,7 @@ def arrival_preview(*, actor, batch_id, **parameters):
 @retry_database_lock
 @transaction.atomic
 def confirm_arrival(*, actor, batch_id, expected_revision, **parameters):
+    """Фиксирует единые USDT-курсы, D и первоначальные источники рейса. После первой операции основания прибытия нельзя незаметно заменить."""
     trip = SupplierOrderBatch.objects.select_for_update().get(pk=batch_id)
     _revision(trip.revision, expected_revision)
     existing = TripArrival.objects.select_for_update().filter(trip=trip).first()
@@ -183,6 +185,7 @@ def recalculate_arrival(arrival, *, actor=None):
 @retry_database_lock
 @transaction.atomic
 def reduce_received(*, actor, arrival_id, order_id, quantities, expected_revision):
+    """Уменьшает фактический состав с проверкой ревизии и общим перераспределением D. Исходный заказ остаётся в истории."""
     arrival = lock_arrival(arrival_id, expected_revision)
     from .fulfillment import require_permissions
     order = arrival.trip.trip_orders.filter(pk=order_id).first()

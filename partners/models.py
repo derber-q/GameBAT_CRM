@@ -1,3 +1,6 @@
+"""Схема данных, ограничения БД и вычисляемые свойства состояния контрагентов.
+
+Partner, Supplier и SalesPlatform имеют разные роли; имя не заменяет финансовую FK-связь."""
 from django.db import models
 from django.core.validators import MinValueValidator
 from .validators import hex_color_validator
@@ -7,6 +10,8 @@ import uuid
 
 
 class Supplier(models.Model):
+    """Поставщик закупки с отдельно защищёнными реквизитами."""
+
     name = models.CharField("Название", max_length=255)
     letter = models.CharField("Буква", max_length=8, unique=True)
     highlight_color = models.CharField("Цвет", max_length=7, validators=[hex_color_validator])
@@ -34,6 +39,8 @@ class Supplier(models.Model):
 
 
 class SalesPlatform(models.Model):
+    """Площадка реализации со своими партиями; не игровая Platform."""
+
     name = models.CharField("Название", max_length=255)
     address = models.CharField("Адрес", max_length=500)
     legal_entity = models.CharField("Юридическое лицо", max_length=255)
@@ -53,6 +60,8 @@ class SalesPlatform(models.Model):
 
 
 class Partner(models.Model):
+    """Единый контрагент, связывающий финансовую карточку и клиентские сценарии."""
+
     creation_key = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     name = models.CharField("Название", max_length=255)
     contact_person = models.CharField("Контактное лицо", max_length=255, blank=True)

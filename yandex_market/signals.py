@@ -1,3 +1,6 @@
+"""Реакции на сохранение моделей и запуск связанных действий Яндекс Маркета FBS.
+
+Удалённое состояние, локальная продажа и подтверждение сотрудника — разные уровни."""
 from django.db.models.signals import post_save, pre_save
 from django.db.models import F
 from django.dispatch import receiver

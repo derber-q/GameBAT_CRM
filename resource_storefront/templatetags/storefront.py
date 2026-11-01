@@ -1,3 +1,4 @@
+"""URL и общие шаблонные компоненты оптового/розничного контекста."""
 from django import template
 from django.urls import reverse
 from resource_storefront.modes import mode_for

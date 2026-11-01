@@ -1,3 +1,6 @@
+"""Серверная валидация пользовательского ввода и допустимого выбора пользователей и прав.
+
+Управление сотрудниками и stuf требует superuser; документы выдаются защищённо."""
 from django import forms
 from django.contrib.auth.forms import SetPasswordForm, UserCreationForm
 from django.contrib.auth.models import Group, Permission

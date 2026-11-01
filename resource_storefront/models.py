@@ -1,3 +1,6 @@
+"""Схема данных, ограничения БД и вычисляемые свойства состояния оптовой и розничной витрин.
+
+Публичная витрина не раскрывает закупочные данные и повторно проверяет наличие при оформлении."""
 from django.conf import settings
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.db import models

@@ -16,6 +16,7 @@ from django.db.models import Q
 from .client import MarketError, NoRedirect
 from .content import public_https
 from .models import LabelDocument, Media, OrderMetadata
+from core.external_policy import require_live_operation
 
 
 def label_cache_signature(order):
@@ -64,6 +65,7 @@ def request_labels(*, integration, orders, actor, format_name='A7', box_id=None,
 
 
 def download_public(url, *, pdf=False):
+    require_live_operation('market_document')
     public_https(url)
     parsed = urlparse(url)
     host = parsed.hostname

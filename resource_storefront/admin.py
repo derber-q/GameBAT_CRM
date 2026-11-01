@@ -1,3 +1,6 @@
+"""Регистрация моделей и разрешённых действий в Django Admin оптовой и розничной витрин.
+
+Публичная витрина не раскрывает закупочные данные и повторно проверяет наличие при оформлении."""
 from django.contrib import admin
 from django.urls import reverse
 from django.utils.html import format_html

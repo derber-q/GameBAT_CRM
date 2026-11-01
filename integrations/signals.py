@@ -1,3 +1,6 @@
+"""Реакции на сохранение моделей и запуск связанных действий Avito, ReefAPI и Google Sheets.
+
+Внешние вызовы могут менять реальные данные; тесты подменяют API, обмен выполняет worker."""
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.core.exceptions import ObjectDoesNotExist

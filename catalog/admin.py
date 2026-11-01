@@ -1,3 +1,6 @@
+"""Регистрация моделей и разрешённых действий в Django Admin номенклатуры.
+
+Карточка описывает товар; физическое количество хранится в warehouse, штрихкоды — в BarcodeRegistry."""
 import logging
 
 from django.contrib import admin

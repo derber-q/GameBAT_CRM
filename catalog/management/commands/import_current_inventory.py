@@ -1,3 +1,4 @@
+"""Явный перенос исходного наличия из файла; меняет рабочие данные только по отдельному поручению."""
 import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass

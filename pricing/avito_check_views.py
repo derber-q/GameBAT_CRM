@@ -2,6 +2,7 @@
 from decimal import Decimal, InvalidOperation
 
 from django.contrib import messages
+from django.conf import settings
 from django.core.cache import cache
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
@@ -77,6 +78,8 @@ def page(request):
 @never_cache
 @permission_required_all('pricing.view_pricing', 'pricing.change_retail_price')
 def manual_context(request):
+    if settings.GAMEBAT_ENV == 'local_test':
+        return JsonResponse({'ok':False, 'message':'ТЕСТОВЫЙ РЕЖИМ: живой сценарий расширения запрещён.'}, status=403)
     product_id = request.GET.get('product_id')
     if product_id is not None:
         if not product_id.isascii() or not product_id.isdecimal() or len(product_id) > 18:
@@ -94,6 +97,8 @@ def manual_context(request):
 @require_POST
 @permission_required_all("pricing.view_pricing", "pricing.change_retail_price")
 def save_found_price(request):
+    if settings.GAMEBAT_ENV == 'local_test' and request.POST.get('manual_queue') == '1':
+        return JsonResponse({'ok':False, 'message':'ТЕСТОВЫЙ РЕЖИМ: запись из живого расширения запрещена.'}, status=403)
     kind = request.POST.get("kind")
     model = {"cd": CD, "tech": Tech}.get(kind)
     try:

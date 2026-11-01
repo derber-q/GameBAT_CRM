@@ -1,3 +1,4 @@
+/* ReSOURCE: Управление полями карточки, новинкой и исключениями поставщика с серверными permissions. */
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('[data-newness-options]').forEach((block) => {
     const choice = block.querySelector('[data-newness-duration]');

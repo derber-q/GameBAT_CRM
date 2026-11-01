@@ -1,3 +1,4 @@
+"""HTTP-клиент реального Avito: авторизация, таймауты и ошибки API. Для тестов клиент подменяется."""
 import json
 import time
 from dataclasses import dataclass
@@ -5,6 +6,7 @@ from urllib import error, parse, request
 
 from django.conf import settings
 from django.core.cache import cache
+from core.external_policy import require_live_operation
 
 from .crypto import decrypt_secret
 from .models import IntegrationCredential
@@ -29,6 +31,7 @@ class AvitoClient:
     """Единый HTTP-клиент. Токены, секреты и полные ответы никогда не логируются."""
 
     def __init__(self, credential=None):
+        require_live_operation('avito')
         self.credential = credential or IntegrationCredential.objects.get(
             provider=IntegrationCredential.Provider.AVITO
         )
@@ -45,6 +48,7 @@ class AvitoClient:
             raise AvitoAPIError("Avito вернул некорректный ответ.", "temporary", response.status) from exc
 
     def _execute(self, req, *, retry_network=False):
+        require_live_operation('avito')
         # GET не меняет состояние Avito; получение OAuth-токена также можно повторить.
         # Запросы изменения цены и остатка здесь намеренно не повторяются.
         attempts = 5 if req.get_method() == "GET" else 3 if retry_network else 1
@@ -83,6 +87,7 @@ class AvitoClient:
                 raise AvitoAPIError(message, "network") from exc
 
     def _token(self):
+        require_live_operation('avito')
         cache_key = f"avito-token-{self.credential.pk}-{self.credential.updated_at.timestamp()}"
         cached = cache.get(cache_key)
         if cached:
@@ -105,6 +110,7 @@ class AvitoClient:
         return token
 
     def request_json(self, method, path, *, payload=None, query=None, retry_network=False):
+        require_live_operation('avito')
         url = f"{self.base_url}{path}"
         if query:
             url = f"{url}?{parse.urlencode(query)}"

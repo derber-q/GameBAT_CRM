@@ -2,7 +2,7 @@
 {% load static l10n %}
 {% block body_class %}avito-check-page{% endblock %}
 {% block title %}Avito Check · ReSOURCE{% endblock %}
-{% block extra_head %}<script src="{% static 'js/wholesale-margin.js' %}?v=1" defer></script>{% endblock %}
+{% block extra_head %}<script src="{% static 'js/wholesale-margin.js' %}?v=20261031-1" defer></script>{% endblock %}
 {% block content %}
 <div class="page-heading"><div><p class="eyebrow">Ценообразование</p><h1>Avito Check · Автоматическая проверка</h1><p class="muted">Товар {{ index|add:1 }} из {{ total }}</p></div><a class="button button-secondary" href="{% url 'pricing:avito_check' %}">Все товары</a></div>
 <section class="panel avito-check-product">
@@ -34,5 +34,5 @@
   </div>
 </section>
 <div id="avito-check-results">{% include "pricing/_avito_check_results.html" %}</div>
-<script src="{% static 'js/avito-check.js' %}?v=2" defer></script>
+<script src="{% static 'js/avito-check.js' %}?v=20261031-1" defer></script>
 {% endblock %}

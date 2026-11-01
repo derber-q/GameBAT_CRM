@@ -6,6 +6,7 @@ CENT = Decimal('.01')
 
 
 def allocate_amount(amount, weights):
+    """Распределяет сумму в целых копейках по неотрицательным весам методом наибольших остатков. Порядок равных остатков устойчив, сумма долей строго равна исходной."""
     try:
         amount = Decimal(str(amount))
         weights = [Decimal(str(value)) for value in weights]

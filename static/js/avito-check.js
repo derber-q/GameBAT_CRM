@@ -1,3 +1,4 @@
+/* ReSOURCE: Автоматическая проверка рынка, результат и управление состоянием запроса. */
 (() => {
   const form = document.getElementById('avito-check-run');
   if (!form) return;

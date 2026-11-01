@@ -1,3 +1,4 @@
+/* ReSOURCE: Протокол сообщений расширения между CRM, background и Avito; проверка источника обязательна. */
 (() => {
   'use strict';
   const crmHosts = new Set(['127.0.0.1', 'localhost', '192.168.0.131']);
@@ -12,7 +13,7 @@
     try {
       const value = new URL(url);
       return value.protocol === 'https:' && !value.username && !value.password && !value.port &&
-        ['www.avito.ru', 'avito.ru'].includes(value.hostname);
+        ['www.avito.ru', 'avito.ru', 'm.avito.ru'].includes(value.hostname);
     } catch { return false; }
   }
   function price(value) {

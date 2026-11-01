@@ -1,3 +1,4 @@
+"""Разрешённая покупателю выборка витрины, фильтры, цены и доступное физическое наличие."""
 from catalog.product_search import filter_products_by_text
 
 from catalog.models import CD, Tech, Platform, Brand, ProductType, ProductImage

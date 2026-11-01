@@ -1,10 +1,21 @@
+"""Именованные HTTP-маршруты приложения Avito, ReefAPI и Google Sheets.
+
+Внешние вызовы могут менять реальные данные; тесты подменяют API, обмен выполняет worker."""
 from django.urls import path
 
 from . import views
+from . import worker_views
+from core.update_views import updates
 
 app_name = "integrations"
 
 urlpatterns = [
+    path('updates/', updates, name='updates'),
+    path('workers/', worker_views.workers, name='workers'),
+    path('workers/status/', worker_views.worker_status, name='worker_status'),
+    path('workers/restore/', worker_views.worker_start, name='worker_restore'),
+    path('workers/<str:service>/start/', worker_views.worker_start, name='worker_start'),
+    path('workers/commands/<uuid:pk>/', worker_views.worker_command, name='worker_command'),
     path("", views.api_keys, name="api_keys"),
     path("reef/key/", views.reef_key_save, name="reef_key_save"),
     path("reef/check/", views.reef_connection_check, name="reef_check"),

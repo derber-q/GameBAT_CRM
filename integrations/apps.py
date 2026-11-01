@@ -1,3 +1,6 @@
+"""Конфигурация приложения и его регистрация в Django Avito, ReefAPI и Google Sheets.
+
+Внешние вызовы могут менять реальные данные; тесты подменяют API, обмен выполняет worker."""
 from django.apps import AppConfig
 
 

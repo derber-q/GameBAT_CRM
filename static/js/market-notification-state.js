@@ -1,3 +1,4 @@
+/* ReSOURCE: Чистое состояние повторов и подтверждений уведомлений, отделённое от DOM и внешнего API. */
 ((root, factory) => {
   const api = factory();
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
@@ -15,10 +16,10 @@
         - (Date.parse(b.order.started_at) + b.cycle * period) || Number(a.order.id) - Number(b.order.id))[0] || null;
   }
   class IndexedState {
-    constructor(idb = globalThis.indexedDB) {
+    constructor(idb = globalThis.indexedDB, databaseName = 'gamebat-market-alerts') {
       this.ready = new Promise((resolve, reject) => {
         if (!idb) {reject(new Error('Браузер не поддерживает координацию вкладок.')); return;}
-        const request = idb.open('gamebat-market-alerts', 1);
+        const request = idb.open(databaseName, 1);
         request.onupgradeneeded = () => request.result.createObjectStore('state', {keyPath: 'key'});
         request.onerror = () => reject(request.error);
         request.onblocked = () => reject(new Error('Хранилище уведомлений заблокировано другой вкладкой.'));

@@ -1,3 +1,6 @@
+"""Схема данных, ограничения БД и вычисляемые свойства состояния реализации.
+
+Операции адресуют конкретную партию stock_id; разные условия партий не объединяются."""
 from django.conf import settings
 from django.core.validators import MinValueValidator
 from django.db import models

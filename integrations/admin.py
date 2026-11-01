@@ -1,3 +1,6 @@
+"""Регистрация моделей и разрешённых действий в Django Admin Avito, ReefAPI и Google Sheets.
+
+Внешние вызовы могут менять реальные данные; тесты подменяют API, обмен выполняет worker."""
 from django.contrib import admin
 
 from .models import (

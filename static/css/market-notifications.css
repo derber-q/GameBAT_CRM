@@ -1,3 +1,4 @@
+/* ReSOURCE: Оформление бейджей и сообщений Яндекса. Стили не заменяют серверные учётные проверки. */
 .market-alert-counter { position: relative; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; box-sizing: border-box; width: 40px; height: 40px; margin-right: 6px; padding: 6px; border-radius: 8px; background: rgba(255, 255, 255, .08); color: #fff; text-decoration: none; vertical-align: middle; }
 .market-alert-counter:hover, #header .market-alert-counter:hover { background: rgba(255, 255, 255, .16); text-decoration: none; }
 .market-alert-counters { display: inline-flex; align-items: center; flex: 0 0 auto; gap: 12px; vertical-align: middle; }

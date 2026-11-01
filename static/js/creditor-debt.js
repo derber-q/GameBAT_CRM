@@ -1,3 +1,4 @@
+/* ReSOURCE: Предпросмотр абсолютной/относительной коррекции долга; конечный баланс берётся под серверной блокировкой. */
 (() => {
   'use strict';
   const form = document.querySelector('[data-creditor-debt-form]');

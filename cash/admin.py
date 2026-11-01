@@ -1,3 +1,6 @@
+"""Регистрация моделей и разрешённых действий в Django Admin кассы и сейфа.
+
+Наличные отделены от банка/долга; баланс согласуется с журналом в одной транзакции."""
 from django.contrib import admin
 
 from .models import CashRegister, CashTransaction, Safe

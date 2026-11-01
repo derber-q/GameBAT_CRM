@@ -1,3 +1,4 @@
+"""Идемпотентное создание системных цифровых/расходных позиций с сохранением выданных штрихкодов."""
 from django.core.management.base import BaseCommand
 
 from catalog.system_products import ensure_system_products

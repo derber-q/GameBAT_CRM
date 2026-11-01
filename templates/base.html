@@ -1,22 +1,24 @@
 {% load static %}
 <!doctype html>
-<html lang="ru">
+<html lang="ru" data-gamebat-environment="{{ gamebat_environment }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}ReSOURCE{% endblock %}</title>
   <link rel="icon" href="{% static 'img/gamebat-favicon.ico' %}" sizes="32x32" type="image/x-icon">
-  <link rel="stylesheet" href="{% static 'css/gamebat.css' %}?v=trip-operations-3-price-control-3-avito-commission-4-product-media-1-pricing-stock-filter-1-resource-crm-routes-1-avito-check-4-pricing-columns-1-sale-layout-1-supply-barcode-1-wholesale-margin-2-signed-discount-1-system-operations-1-stats-sale-cards-2-pricing-storage-1-payments-2-header-status-1-resource-logo-1">
-  <script src="{% static 'js/app.js' %}?v=collapse-fix-3-pricing-stock-filter-1-resource-crm-routes-1-nomenclature-split-1-market-collapse-1" defer></script>
-  <script src="{% static 'js/product-image-preview.js' %}?v=product-media-1" defer></script>
+  <link rel="stylesheet" href="{% static 'css/gamebat.css' %}?v=20261031-1">
+  <script src="{% static 'js/app.js' %}?v=20261031-1" defer></script>
+  <script src="{% static 'js/product-image-preview.js' %}?v=20261031-1" defer></script>
   {% include 'sales/_notification_assets.html' %}
   {% block extra_head %}{% endblock %}
-  <link rel="stylesheet" href="{% static 'css/navigation.css' %}?v=20261027-2">
-  <script src="{% static 'js/navigation.js' %}?v=20261027-1" defer></script>
-  <script src="{% static 'js/partner-customers.js' %}?v=2" defer></script>
-  <script src="{% static 'js/partner-settlements.js' %}?v=4" defer></script>
+  <link rel="stylesheet" href="{% static 'css/navigation.css' %}?v=20261031-1">
+  <script src="{% static 'js/navigation.js' %}?v=20261031-1" defer></script>
+  <script src="{% static 'js/partner-customers.js' %}?v=20261031-1" defer></script>
+  <script src="{% static 'js/partner-settlements.js' %}?v=20261031-1" defer></script>
+  {% if is_local_test %}<link rel="stylesheet" href="{% static 'css/test-environment.css' %}?v=20261031-1">{% endif %}
 </head>
 <body class="{% block body_class %}{% endblock %}" data-exchange-rates-url="{% url 'core:exchange_rates' %}" data-partner-settlement-url="{% url 'sales:settlement_preview' %}">
+  {% if is_local_test %}{% include 'core/_test_environment_banner.html' %}{% endif %}
   {% if user.is_authenticated %}
     <header class="topbar crm-topbar" data-adaptive-navigation>
       <a class="brand" href="{% url 'core:home' %}" aria-label="Главная страница CRM" title="Главная страница CRM"><img class="brand-logo" src="{% static 'img/resource-logo.png' %}?v=20261027-1" width="56" height="56" alt=""></a>
@@ -117,11 +119,13 @@
         {% endif %}
         {% if nav.integrations %}
           <div class="nav-dropdown">
-            <a class="nav-dropdown-trigger {% if request.resolver_match.namespace == 'integrations' or request.resolver_match.namespace == 'yandex_market' %}active{% endif %}" href="{% if nav.integration_keys %}{% url 'integrations:api_keys' %}{% elif nav.integration_yandex %}{% url 'yandex_market:dashboard' %}{% else %}{% url 'integrations:avito' %}{% endif %}" aria-haspopup="true">Интеграции</a>
+            <a class="nav-dropdown-trigger {% if request.resolver_match.namespace == 'integrations' or request.resolver_match.namespace == 'yandex_market' %}active{% endif %}" href="{% if nav.integration_keys %}{% url 'integrations:api_keys' %}{% elif nav.integration_yandex %}{% url 'yandex_market:dashboard' %}{% elif nav.integration_avito %}{% url 'integrations:avito' %}{% else %}{% url 'integrations:workers' %}{% endif %}" aria-haspopup="true">Интеграции</a>
             <div class="nav-dropdown-menu">
               {% if nav.integration_keys %}<a href="{% url 'integrations:api_keys' %}">API ключи</a>{% endif %}
               {% if nav.integration_avito %}<a href="{% url 'integrations:avito' %}">Avito</a>{% endif %}
               {% if nav.integration_yandex %}<a href="{% url 'yandex_market:dashboard' %}">Яндекс Маркет</a>{% endif %}
+              {% if nav.worker_monitoring %}<a href="{% url 'integrations:workers' %}">Обработчики</a>{% endif %}
+              {% if nav.updates %}<a href="{% url 'integrations:updates' %}">Обновления</a>{% endif %}
               {% if nav.integration_storefront %}<a href="{% url 'resource_storefront:manage' %}">Оптовый сайт</a>{% endif %}
             </div>
           </div>
@@ -134,6 +138,7 @@
       <div class="session-tools">
         {% include 'sales/_notification_counter.html' %}
         {% include 'sales/_notification_sound_button.html' %}
+        {% if nav.worker_monitoring %}<a class="worker-alert" data-worker-alert href="{% url 'integrations:workers' %}" aria-label="Проблема обработчиков" title="Проблема обработчиков" hidden><span aria-hidden="true">!</span></a>{% endif %}
         <div class="header-utilities" data-header-utilities>
         <div class="header-status">
           <div class="rates" aria-label="Курсы валют">
@@ -156,6 +161,7 @@
       </div>
       <dialog class="navigation-drawer" id="mobile-navigation" aria-labelledby="mobile-navigation-title">
         <div class="navigation-drawer-heading"><b id="mobile-navigation-title">Навигация</b><button type="button" data-close-navigation aria-label="Закрыть навигацию">×</button></div>
+        {% if is_local_test %}<div class="test-menu-environment">ТЕСТОВЫЙ РЕЖИМ</div>{% endif %}
         <nav class="drawer-navigation" aria-label="Основная навигация на телефоне" data-mobile-navigation></nav>
         <div class="drawer-utilities" data-mobile-utilities></div>
       </dialog>
@@ -163,6 +169,7 @@
   {% endif %}
   <main class="page {% block page_class %}{% endblock %}">
     {% include 'sales/_notification_panel.html' %}
+    {% if nav.worker_monitoring %}{% include 'integrations/_worker_alert.html' %}{% endif %}
     {% if messages %}
       <div class="messages" aria-live="polite">
         {% for message in messages %}<div class="alert alert-{{ message.tags|default:'info' }}">{{ message }}</div>{% endfor %}

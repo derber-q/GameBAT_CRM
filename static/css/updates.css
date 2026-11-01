@@ -1,0 +1,10 @@
+/* Страница ручного обновления: длинные SHA и журнал остаются в границах экрана. */
+.updates-page .panel { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+.updates-page .details { grid-template-columns: minmax(0, 160px) minmax(0, 1fr); }
+.updates-page .details dd { min-width: 0; }
+.updates-page code { white-space: normal; overflow-wrap: anywhere; }
+.updates-page button { max-width: 100%; white-space: normal; text-align: left; }
+.updates-page article + article { border-top: 1px solid var(--gb-border); margin-top: 20px; padding-top: 12px; }
+@media (max-width: 600px) {
+  .updates-page .details { grid-template-columns: minmax(0, 1fr); }
+}

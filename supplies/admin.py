@@ -1,3 +1,6 @@
+"""Регистрация моделей и разрешённых действий в Django Admin приходов.
+
+Проведение меняет остаток/оценку через сервис; предварительная проверка цен товар не приходует."""
 from django.contrib import admin
 from .models import (
     Supply, SupplyCDItem, SupplyCostCalculation, SupplyExpense, SupplyFinalization,

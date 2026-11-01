@@ -2,7 +2,7 @@
 from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.db import OperationalError
-from django.http import JsonResponse
+from django.http import JsonResponse, Http404
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
 from django.views.decorators.cache import never_cache
@@ -11,7 +11,8 @@ from django.views.decorators.http import require_POST, require_GET
 from core.decorators import permission_required_any
 from yandex_market.documents import request_labels
 from yandex_market.models import OrderMetadata, LabelDocument
-from yandex_market.orders import request_order_action
+from yandex_market.orders import request_order_action, available_actions
+from .market_controls import market_status_label
 from .market_fulfillment import record_scan, request_print
 from .models import MarketPrintJob
 
@@ -94,6 +95,8 @@ def sale_market_label_status(request, pk, document_id):
 def _print_response(job):
     messages_by_state = {
         'pending': 'Подготавливаем заказ и стикер…', 'waiting_pdf': 'Яндекс готовит PDF стикера…',
+        'agent_waiting':'Ожидаем подключения агента печати…', 'agent_claimed':'Агент получает стикер…',
+        'agent_printing':'Агент передаёт стикер принтеру…', 'agent_spooled':'Ожидаем подтверждения принтера…',
         'printing': 'Передаём стикер на принтер…', 'spooled': 'Ожидаем завершения печати…',
         'printed': 'Стикер напечатан. Отправляем готовность…' if job.ready_after_print else 'Стикер напечатан.',
         'waiting_ready': 'Стикер напечатан. Яндекс подтверждает готовность…',
@@ -102,6 +105,8 @@ def _print_response(job):
     return {'state': job.state, 'print_job_id': str(job.request_id), 'order_id': job.order.order_id,
             'sale_pk': job.order.sale_id, 'printed': bool(job.printed_at),
             'market_status': job.order.status, 'market_substatus': job.order.substatus,
+            'market_status_label': market_status_label(job.order),
+            'market_actions': list(available_actions(job.order)),
             'status_url': reverse('sales:market_print_status', args=[job.request_id]),
             'message': job.last_error if job.state in {'error', 'uncertain'} else messages_by_state.get(job.state, 'Обработка…')}
 
@@ -145,3 +150,19 @@ def sale_market_print(request, pk):
 def sale_market_print_status(request, request_id):
     job = get_object_or_404(MarketPrintJob.objects.select_related('order'), request_id=request_id)
     return JsonResponse(_print_response(job))
+
+
+@require_POST
+@permission_required_any('yandex_market.print_labels')
+def print_resolve(request, request_id):
+    from .print_agents import resolve
+    try:
+        if request.POST.get('confirm')!='yes':
+            raise ValidationError('Сначала проверьте физический результат печати.')
+        resolve(request_id,request.user,request.POST.get('decision'))
+        messages.success(request,'Решение о результате печати сохранено в журнале.')
+    except MarketPrintJob.DoesNotExist:
+        raise Http404 from None
+    except ValidationError as exc:
+        messages.error(request,' '.join(exc.messages))
+    return redirect('integrations:workers')

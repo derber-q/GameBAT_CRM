@@ -1,3 +1,4 @@
+"""Общие проверки аутентификации и permissions для HTTP-обработчиков CRM."""
 from functools import wraps
 
 from django.contrib.auth.views import redirect_to_login

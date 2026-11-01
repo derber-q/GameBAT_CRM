@@ -1,3 +1,6 @@
+"""Регистрация моделей и разрешённых действий в Django Admin реализации.
+
+Операции адресуют конкретную партию stock_id; разные условия партий не объединяются."""
 from django.contrib import admin
 from .models import CDConsignmentStock, ConsignmentMovement, ConsignmentMovementItem, TechConsignmentStock
 

@@ -1,3 +1,6 @@
+"""Серверная валидация пользовательского ввода и допустимого выбора импортных заказов и рейсов.
+
+План закупки, фактическое поступление и проведённые Sale/Supply учитываются раздельно."""
 from django import forms
 
 from warehouse.form_defaults import SingleWarehouseInitialMixin

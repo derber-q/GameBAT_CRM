@@ -1,3 +1,4 @@
+"""Генерация и проверяемый импорт XLSX. Служебная разметка/подписи, ведущие нули и разные правила нулевых строк обязательны."""
 import logging
 from copy import copy
 from decimal import Decimal, InvalidOperation

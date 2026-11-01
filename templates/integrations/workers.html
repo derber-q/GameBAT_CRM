@@ -1,0 +1,59 @@
+{% extends 'base.html' %}
+{% block title %}Обработчики — ReSOURCE{% endblock %}
+{% block body_class %}responsive-crm-page worker-page{% endblock %}
+{% block content %}
+<div class="page-heading"><h1>Обработчики</h1><button type="button" class="button" data-worker-refresh>Обновить</button></div>
+<section class="panel worker-summary" aria-live="polite">
+  <p data-worker-summary>{% if monitoring %}{{ monitoring.controller_label }}{% else %}Состояние недоступно. Проверьте БД и применение миграций.{% endif %}</p>
+  <p class="muted">Последнее достоверное обновление: <span data-worker-observed>{{ monitoring.observed_at|date:'d.m.Y H:i:s'|default:'Нет данных' }}</span></p>
+  <p data-worker-counts></p>
+  <p role="status" data-worker-command-result></p>
+  {% if user.is_superuser %}<form data-worker-command action="{% url 'integrations:worker_restore' %}" method="post">{% csrf_token %}<button class="button" type="submit">Восстановить все</button></form>{% endif %}
+</section>
+<div class="worker-list">
+{% for service in monitoring.services %}
+<section class="panel worker-row" data-worker-row="{{ service.code }}">
+  <div class="worker-heading"><h2>{{ service.name }}</h2><strong data-field="status_label">{{ service.status_label }}</strong></div>
+  <p class="muted" data-field="expected_label">{{ service.expected_label }}</p>
+  <dl class="worker-details">
+    <dt>Последняя активность</dt><dd data-field="heartbeat_at">{{ service.heartbeat_at|date:'d.m.Y H:i:s'|default:'Нет данных' }}</dd>
+    <dt>Подтверждённый запуск</dt><dd data-field="last_started_at">{{ service.last_started_at|date:'d.m.Y H:i:s'|default:'Нет данных' }}</dd>
+    <dt>Успешное задание</dt><dd data-field="last_task_success_at">{{ service.last_task_success_at|date:'d.m.Y H:i:s'|default:'Нет данных' }}</dd>
+    <dt>Текущее действие</dt><dd data-field="current_action">{{ service.current_action }}</dd>
+    <dt>Начало действия</dt><dd data-field="current_started_at">{{ service.current_started_at|date:'d.m.Y H:i:s'|default:'Нет данных' }}</dd>
+    <dt>Следующее действие</dt><dd data-field="next_action">{{ service.next_action }}</dd>
+    <dt>Срок</dt><dd data-field="next_at">{% if service.next_at %}{{ service.next_at|date:'d.m.Y H:i:s' }}{% elif service.code == 'print' %}По поступлению{% else %}Не запланировано{% endif %}</dd>
+    <dt>Неудачные восстановления</dt><dd data-field="failures">{{ service.failures }} / 3</dd>
+    <dt>Автовосстановление</dt><dd data-field="paused">{% if service.paused %}Приостановлено{% else %}Разрешено для необходимых обработчиков{% endif %}</dd>
+  </dl>
+  <p class="error-text" data-field="error">{{ service.error }}</p><p class="muted" data-field="task_error">{{ service.task_error }}</p>
+  {% if user.is_superuser %}<form data-worker-command action="{% url 'integrations:worker_start' service.code %}" method="post">{% csrf_token %}<button class="button" type="submit" {% if not service.can_start %}disabled{% endif %}>Запустить</button></form>{% endif %}
+</section>
+{% endfor %}
+</div>
+{% if monitoring.print_agents %}
+<section class="panel"><h2>Магазинные агенты печати</h2>
+{% for agent in monitoring.print_agents %}<div data-print-agent="{{ agent.id }}">
+  <h3>{{ agent.name }}</h3>
+  <p>Связь: <strong data-agent-field="connected">{% if agent.connected %}Подключён{% else %}Нет связи{% endif %}</strong> · Принтер: {{ agent.printer_name }}</p>
+  <p>Принтер доступен: <span data-agent-field="printer_available">{{ agent.printer_available|yesno:'Да,Нет,Нет данных' }}</span> · Версия: <span data-agent-field="version">{{ agent.version }}</span></p>
+  <p>Последняя активность: <span data-agent-field="last_seen_at">{{ agent.last_seen_at|date:'d.m.Y H:i:s'|default:'Нет данных' }}</span> · Незавершённых заданий: <span data-agent-field="pending">{{ agent.pending }}</span></p>
+  <p class="error-text" data-agent-field="last_error">{{ agent.last_error }}</p>
+</div>{% endfor %}
+<p class="muted">Печать выполняет компьютер магазина. Если он выключен, сервер ожидает его подключения.</p>
+</section>
+{% endif %}
+{% if uncertain_print_jobs %}<section class="panel"><h2>Проверьте результат печати</h2>
+<p>Проверьте этикетку, принтер и очередь Windows. Автоматического повтора и готовности Маркету не будет до вашего решения.</p>
+{% for job in uncertain_print_jobs %}<form action="{% url 'sales:print_resolve' job.request_id %}" method="post">
+{% csrf_token %}<p>Заказ {{ job.order.order_id }} · {{ job.last_error }}</p>
+<select name="decision" required aria-label="Результат проверки заказа {{ job.order.order_id }}"><option value="">Выберите результат проверки</option><option value="printed">Этикетка напечатана</option><option value="not_printed">Этикетка не напечатана — разрешить повтор</option></select>
+<label><input type="checkbox" name="confirm" value="yes" required> Я проверил этикетку и очередь принтера</label>
+<button class="button" type="submit">Сохранить решение</button>
+</form>{% endfor %}</section>{% endif %}
+<section class="panel"><h2>Последние события</h2>
+<div class="table-wrapper"><table><thead><tr><th>Время</th><th>Обработчик</th><th>Событие</th><th>Результат</th><th>Сотрудник</th></tr></thead>
+<tbody data-worker-history>{% for item in monitoring.history %}<tr><td>{{ item.created_at|date:'d.m.Y H:i:s' }}</td><td>{{ item.service }}</td><td>{{ item.kind }}</td><td>{{ item.result }}</td><td>{{ item.actor }}</td></tr>{% empty %}<tr><td colspan="5">Событий пока нет</td></tr>{% endfor %}</tbody></table></div>
+</section>
+<p class="muted">Если контроллер завершился, повторно запустите штатный ярлык CRM. При неизвестном результате печати сначала проверьте ярлык и задание заказа.</p>
+{% endblock %}

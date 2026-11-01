@@ -1,3 +1,4 @@
+"""Шаблонное форматирование витрины; не пересчитывает сохранённые финансовые значения."""
 from decimal import Decimal, InvalidOperation
 from django import template
 from django.utils.html import format_html

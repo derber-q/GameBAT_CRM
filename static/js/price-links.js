@@ -1,3 +1,4 @@
+/* ReSOURCE: Публичные ссылки прайсов с сохранением выбранного контекста. */
 document.addEventListener("click", async (event) => {
   const button = event.target.closest("[data-copy-link]");
   if (!button) return;

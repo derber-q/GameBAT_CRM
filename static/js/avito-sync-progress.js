@@ -1,3 +1,4 @@
+/* ReSOURCE: Опрос прогресса задания Avito; постановка в очередь не равна завершённой синхронизации. */
 (() => {
   const panel = document.querySelector("[data-avito-sync-status-url]");
   if (!panel) return;

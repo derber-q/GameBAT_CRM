@@ -1,3 +1,4 @@
+"""Ручной импорт номенклатуры из внешнего файла; не запускать повторно как процедуру развёртывания."""
 import re
 import unicodedata
 from collections import Counter, defaultdict

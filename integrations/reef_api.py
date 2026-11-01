@@ -1,6 +1,7 @@
 """HTTP-клиент ReefAPI. Секрет и тело ответа не попадают в исключения и журналы."""
 import requests
 from django.core.exceptions import ImproperlyConfigured
+from core.external_policy import require_live_operation
 
 from .crypto import decrypt_secret
 from .models import ReefApiCredential
@@ -16,6 +17,7 @@ class ReefApiClient:
     BASE_URL = "https://api.reefapi.com/avito/v1"
 
     def __init__(self, key=None, transport=None):
+        require_live_operation('reefapi')
         if key is None:
             credential = ReefApiCredential.objects.filter(pk=1).first()
             if not credential or not credential.is_configured:
@@ -28,6 +30,7 @@ class ReefApiClient:
         self._transport = transport or requests.post
 
     def _post(self, action, payload):
+        require_live_operation('reefapi')
         try:
             response = self._transport(
                 f"{self.BASE_URL}/{action}",

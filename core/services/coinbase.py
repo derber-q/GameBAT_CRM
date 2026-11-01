@@ -1,3 +1,4 @@
+"""Получение валютной оценки для шапки из Coinbase; курсы старых документов этим не пересчитываются."""
 import json
 import logging
 from decimal import Decimal, InvalidOperation
@@ -8,6 +9,7 @@ from urllib.request import Request, urlopen
 from django.conf import settings
 from django.core.cache import cache
 from django.utils import timezone
+from core.external_policy import require_live_operation
 
 
 logger = logging.getLogger("gamebat.business")
@@ -36,6 +38,7 @@ def fetch_usdt_aed_rate():
         method="GET",
     )
     try:
+        require_live_operation('coinbase')
         with urlopen(request, timeout=settings.COINBASE_API_TIMEOUT_SECONDS) as response:
             status = getattr(response, "status", None) or response.getcode()
             if status < 200 or status >= 300:
@@ -89,6 +92,8 @@ def _unavailable_snapshot():
 
 def get_cached_usdt_aed_rate():
     """Возвращает 30-секундный cache курса и сохраняет last-known-good."""
+    if settings.GAMEBAT_ENV == 'local_test':
+        return _unavailable_snapshot()
     cached = cache.get(FRESH_CACHE_KEY)
     if cached is not None:
         return cached

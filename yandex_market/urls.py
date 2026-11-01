@@ -1,3 +1,6 @@
+"""Именованные HTTP-маршруты приложения Яндекс Маркета FBS.
+
+Удалённое состояние, локальная продажа и подтверждение сотрудника — разные уровни."""
 from django.urls import path
 from . import views, webhooks, pricing_views
 

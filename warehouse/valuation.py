@@ -23,7 +23,7 @@ def warehouse_owned_quantity(product_type, product_id):
 
 
 def weighted_warehouse_cost(*, old_quantity, old_unit_cost, incoming_quantity, incoming_unit_cost):
-    """Смешивает складской остаток с поступающей партией и округляет до копеек."""
+    """Смешивает текущий физический остаток всех складов с приходом. Реализация/путь не входят в old_quantity; округление HALF_UP до копеек."""
     old_quantity = int(old_quantity)
     incoming_quantity = int(incoming_quantity)
     resulting_quantity = old_quantity + incoming_quantity

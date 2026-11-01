@@ -63,6 +63,15 @@ db.sqlite3-journal
 db.sqlite3-wal
 db.sqlite3-shm
 db.sqlite3.*.bak
+# Любые локальные SQLite/дампы, в том числе копии под другими именами.
+*.sqlite
+*.sqlite3
+*.sqlite3-*
+*.sqlite-*
+*.sqlite3.*
+*.db
+*.db-*
+*.bak
 protected_media/
 staticfiles/
 .django-secret-key
@@ -76,6 +85,7 @@ outputs/
 /output/
 /tmp/
 node_modules/
+*.lnk
 
 # Flask stuff:
 instance/
@@ -165,8 +175,11 @@ activemq-data/
 
 # Environments
 .env
+.env.*
+!.env.example
 .envrc
 .venv
+.tools/
 env/
 venv/
 ENV/

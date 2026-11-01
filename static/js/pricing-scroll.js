@@ -1,3 +1,4 @@
+/* ReSOURCE: Восстановление позиции таблицы цен; не изменяет финансовые значения. */
 (() => {
   "use strict";
   document.querySelectorAll('.inline-price-form').forEach((form) => {

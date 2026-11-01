@@ -1,3 +1,4 @@
+/* ReSOURCE: Оформление ручной таблицы Avito Check. Стили не заменяют серверные учётные проверки. */
 /* Размеры ограничены таблицей Avito Check; название получает всю свободную ширину. */
 .avito-list-table { width: 100%; min-width: 1120px; table-layout: fixed; }
 .avito-list-table .avito-col-cost { width: 112px; }

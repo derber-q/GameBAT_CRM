@@ -1,3 +1,4 @@
+"""WSGI-вход Django. Рабочие секреты и база остаются вне исходников."""
 import os
 from django.core.wsgi import get_wsgi_application
 

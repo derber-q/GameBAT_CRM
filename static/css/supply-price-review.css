@@ -1,3 +1,4 @@
+/* ReSOURCE: Оформление проверки цен по будущей средней себестоимости. Стили не заменяют серверные учётные проверки. */
 .supply-avito-price-control { display: flex; align-items: center; gap: 8px; }
 .supply-avito-price-control input { box-sizing: border-box; width: 110px; min-width: 110px; }
 .supply-avito-price-control .button { flex-shrink: 0; white-space: nowrap; }

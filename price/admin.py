@@ -1,3 +1,6 @@
+"""Регистрация моделей и разрешённых действий в Django Admin прайсов и Excel.
+
+Сохранённые предложения и расчёты закупочной версии не подменяются текущим прайсом."""
 from django.contrib import admin
 
 from .models import PriceDocumentSettings, ProcurementPriceList, ProcurementPriceListItem

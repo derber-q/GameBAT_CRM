@@ -1,3 +1,4 @@
+/* ReSOURCE: Панель на Avito: минимальная цена, сохранение/пропуск и следующий товар, без служебных API-ключей. */
 (() => {
   'use strict';
   const prefix = 'resource-avito:';

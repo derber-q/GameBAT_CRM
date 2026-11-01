@@ -17,12 +17,14 @@ from django.db.models import F
 from django.utils import timezone
 
 from integrations.crypto import decrypt_secret
+from core.external_policy import require_live_operation
 
 CONTRACTS = json.loads(Path(__file__).with_name("contracts.json").read_text("utf-8"))
 BASE_URL = "https://api.partner.market.yandex.ru"
 
 
 def api_key():
+    require_live_operation('yandex')
     value = settings.YANDEX_MARKET_API_KEY
     if value:
         return value.strip()
@@ -72,6 +74,7 @@ class NoRedirect(HTTPRedirectHandler):
 
 class YandexMarketClient:
     def __init__(self, integration=None, *, key=None, job=None, actor=None, transport=None):
+        require_live_operation('yandex')
         self.integration = integration
         self.key = api_key() if key is None else key
         self.job = job
@@ -109,6 +112,7 @@ class YandexMarketClient:
             budget.save(update_fields=["window_start", "used"])
 
     def call(self, operation, *, body=None, params=None, query=None, pdf=False, entity_id=""):
+        require_live_operation('yandex')
         if database.in_atomic_block and not getattr(settings, "YANDEX_MARKET_ALLOW_TEST_TRANSACTION", False):
             raise RuntimeError("Сетевой запрос Маркета запрещён внутри транзакции CRM.")
         if not self.key:

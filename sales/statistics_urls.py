@@ -1,3 +1,4 @@
+"""Маршруты статистики и экспорта с отдельными правами просмотра."""
 from django.urls import path
 
 from . import statistics_views

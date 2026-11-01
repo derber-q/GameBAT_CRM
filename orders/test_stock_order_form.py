@@ -83,7 +83,7 @@ class StockOrderFormTests(TestCase):
         self.assertIsNone(response.context['previous_trip'])
         self.assertEqual([row['previous_trip_quantity'] for row in rows], [0, 0])
         self.assertContains(response, 'На склад в предыдущем рейсе')
-        self.assertContains(response, 'css/stock-order-form.css?v=2')
+        self.assertContains(response, 'css/stock-order-form.css?v=20261031-1')
         self.assertContains(response, 'data-unit-kopecks="205025"')
         self.assertContains(response, reverse("orders:upload"))
 

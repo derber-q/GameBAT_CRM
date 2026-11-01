@@ -1,3 +1,4 @@
+"""Явный импорт оптовых цен; не является миграцией и требует проверки источника/области."""
 import re
 import unicodedata
 from dataclasses import dataclass

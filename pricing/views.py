@@ -1,3 +1,6 @@
+"""HTTP-обработчики: доступ, формы, вызов сервисов и ответ пользователю ценообразования.
+
+Себестоимость, опт, цена Avito, FBS и найденный минимум — разные величины."""
 from collections import defaultdict
 from decimal import ROUND_CEILING
 

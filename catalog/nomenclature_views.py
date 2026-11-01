@@ -1,3 +1,4 @@
+"""Карточки номенклатуры: полевые permissions, оптимистическая версия и аудит значимых изменений."""
 import logging
 import mimetypes
 from collections import defaultdict

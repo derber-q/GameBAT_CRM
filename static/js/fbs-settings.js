@@ -1,3 +1,4 @@
+/* ReSOURCE: Интерфейс параметров FBS-интеграции, без хранения API-секретов на клиенте. */
 (() => {
   'use strict';
   document.querySelectorAll('[data-formset-add]').forEach((button) => {

@@ -1,3 +1,4 @@
+/* ReSOURCE: Оформление Предпросмотр/сохранение расчёта FBS; итоговую цену и ограничения проверяет сервер.. Стили не заменяют серверные учётные проверки. */
 .fbs-inline { display: grid; gap: 4px; text-align: left; margin-top: 0; font-size: 11px; line-height: 1.35; white-space: normal; }
 .fbs-inline label { font-weight: 600; }
 .fbs-inline input { width: 100%; min-width: 0; }

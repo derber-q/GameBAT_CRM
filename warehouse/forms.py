@@ -1,3 +1,6 @@
+"""Серверная валидация пользовательского ввода и допустимого выбора складов.
+
+Различать физический остаток конкретного склада, реализацию и товар в пути."""
 from django import forms
 
 from .form_defaults import SingleWarehouseInitialMixin

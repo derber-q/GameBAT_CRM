@@ -1,3 +1,4 @@
+/* ReSOURCE: Оформление Ручная закупка на склад и подсказка ранее заказанного складского количества, без подмешивания клиентских назначений.. Стили не заменяют серверные учётные проверки. */
 .stock-order-page .heading-actions { flex-wrap: wrap; }
 .stock-order-page .section-heading > div { display: block; }
 .stock-order-page .section-heading { gap: 16px; }

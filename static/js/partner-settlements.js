@@ -1,3 +1,4 @@
+/* ReSOURCE: Предпросмотр/подтверждение знакового долга. Клиентские суммы в копейках/BigInt, токен повторно сверяется сервером. */
 (() => {
   'use strict';
   const config = document.querySelector('[data-partner-settlement-url]');

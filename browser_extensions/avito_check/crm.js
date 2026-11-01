@@ -1,3 +1,4 @@
+/* ReSOURCE: Связь расширения с ручным поиском CRM и сохранённым минимумом; работает только в разрешённом контексте. */
 (() => {
   'use strict';
   if (!ResourceAvito.isCrm(location.href)) return;

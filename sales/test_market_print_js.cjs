@@ -2,25 +2,32 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
-async function scenario({failed = false, network = false} = {}) {
+async function scenario({failed = false, network = false, ready = false} = {}) {
   let submit, counter = 0, networkFailed = false;
   const requests = [], button = {disabled: false}, message = {textContent: ''};
   const form = {action: '/sales/7/market-print/', dataset: {},
     querySelector: (selector) => selector === 'button' ? button : message,
     setAttribute() {}, removeAttribute() {}};
   form.closest = () => form;
-  const readyButton = {disabled: true}, current = {}, substatus = {};
-  const ready = {dataset: {marketOrderNumber: '123', marketAction: 'ready'}, querySelector: (selector) =>
+  const readyButton = {disabled: true, removeAttribute() {}}, current = {}, substatus = {};
+  const readyForm = {dataset: {marketOrderNumber: '123', marketAction: 'ready'}, querySelector: (selector) =>
     selector === 'button' ? readyButton : (selector.includes('substatus') ? substatus : current)};
+  const label = {textContent: '', hidden: true}, placeholder = {hidden: false};
+  const controls = {dataset: {marketOrderNumber: '123'}, querySelector: () => label,
+    querySelectorAll: (selector) => selector === '[data-market-action]' ? [readyForm] : [placeholder]};
+  const other = {dataset: {marketOrderNumber: '456'}, querySelector() {throw Error('Unrelated order changed');}};
   const result = (state) => ({state, status_url: '/sales/market-print/test/', order_id: 123,
-    market_status: 'PROCESSING', market_substatus: 'STARTED', printed: state === 'printed' || state === 'done',
+    market_status: 'PROCESSING', market_substatus: ready && state === 'done' ? 'READY_TO_SHIP' : 'STARTED',
+    market_status_label: ready && state === 'done' ? 'Готов к отгрузке' : 'В обработке',
+    market_actions: ready && state === 'done' ? ['cancel'] : ['ready', 'cancel'],
+    printed: state === 'printed' || state === 'done',
     message: state === 'error' ? 'Windows print failed' : (state === 'done' ? 'Стикер напечатан' : state)});
   const replies = network ? [result('done')] : [result('pending'), result(failed ? 'error' : 'spooled'), result('printed'), result('done')];
   vm.runInNewContext(fs.readFileSync('static/js/sale-market-print.js', 'utf8'), {
     window: {GameBAT: {}, print() {throw Error('Browser print is forbidden');}, open() {throw Error('New pages are forbidden');}},
     document: {
       addEventListener: (event, callback) => {submit = callback;},
-      querySelectorAll: () => [ready],
+      querySelectorAll: () => [controls, other],
       createElement() {throw Error('PDF iframe is forbidden');},
     },
     crypto: {randomUUID: () => 'request-' + (++counter)},
@@ -43,7 +50,14 @@ async function scenario({failed = false, network = false} = {}) {
   }
   assert.equal(requests.filter(({options}) => options.method === 'POST').length, network ? 2 : 1);
   assert.equal(button.disabled, false);
-  assert.equal(readyButton.disabled, failed);
+  assert.equal(readyButton.disabled, failed || ready);
+  if (!failed) {
+    assert.equal(readyForm.hidden, ready);
+    assert.equal(label.hidden, !ready);
+    assert.equal(placeholder.hidden, ready);
+    assert.equal(substatus.value, ready ? 'READY_TO_SHIP' : 'STARTED');
+    assert.equal(label.textContent, ready ? 'Готов к отгрузке' : 'В обработке');
+  }
   assert(message.textContent.includes(failed ? 'Windows print failed' : 'напечатан'));
   assert.equal(form.dataset.printRequestId, undefined);
   assert(!requests.some(({url}) => url.includes('/file/')));
@@ -53,5 +67,6 @@ async function scenario({failed = false, network = false} = {}) {
   await scenario();
   await scenario({failed: true});
   await scenario({network: true});
+  await scenario({ready: true});
   console.log('Native label print JS: no browser printing or pages, polling to printed, error recovery and idempotent network retry OK');
 })().catch((error) => {console.error(error); process.exitCode = 1;});

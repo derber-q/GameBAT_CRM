@@ -1,3 +1,4 @@
+/* ReSOURCE: Форма прихода: состав, вес, CUSA/PPSA, штрихкоды и цены. Проведение подтверждается серверным сервисом. */
 (() => {
   "use strict";
   const form = document.getElementById("supply-form");

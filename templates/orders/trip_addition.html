@@ -1,6 +1,6 @@
 {% extends "base.html" %}{% load static l10n %}
 {% block title %}Дополнительные товары · {{ batch }}{% endblock %}
-{% block extra_head %}<script src="{% static 'js/trip-additions.js' %}?v=1" defer></script>{% endblock %}
+{% block extra_head %}<script src="{% static 'js/trip-additions.js' %}?v=20261031-1" defer></script>{% endblock %}
 {% block content %}
 <div class="page-heading"><div><p class="eyebrow">{{ batch }}</p><h1>Дополнительные товары</h1><p>Шаг {{ step }} из 4 · Состав → Заказчики → Распределение → Проверка</p></div><a class="button button-secondary" href="{% url 'orders:trip_detail' batch.pk %}">К рейсу</a></div>
 <section class="panel"><p>{% if not batch.price_list_id and step == 1 %}Курсы и доставка будут взяты из выбранного ниже закупочного прайса.{% else %}{% if batch.price_list_id %}Курс рейса{% else %}Курс расчёта партии{% endif %} AED/RUB: {{ calculation_price.exchange_rate_aed_rub|default:'—' }}. Доставка рассчитывается по сохранённым тарифам только для добавляемых товаров.{% endif %}</p>

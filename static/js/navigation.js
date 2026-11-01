@@ -1,3 +1,4 @@
+/* ReSOURCE: Единственная адаптивная навигация: перенос существующих узлов в «Ещё»/мобильный диалог без дублирования ID и обработчиков. */
 (() => {
   'use strict';
   const header = document.querySelector('[data-adaptive-navigation]');

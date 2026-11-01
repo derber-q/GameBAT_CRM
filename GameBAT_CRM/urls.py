@@ -1,3 +1,4 @@
+"""Корневые маршруты CRM, витрин и стабильного webhook Яндекса. Публичные входы не открывают доступ к защищённым медиа."""
 from django.contrib import admin
 from django.http import HttpResponseRedirect
 from django.urls import include, path
@@ -28,6 +29,7 @@ def crm_entry(request):
 
 
 urlpatterns = [
+    path('crm/print-agent/', include('sales.print_agent_urls')),
     path("", crm_entry, name="root"),
     # Existing marketplace notification URL is externally configured and stays stable.
     path("integrations/yandex/notifications/", yandex_notification, name="yandex_market_public_notification"),

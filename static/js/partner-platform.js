@@ -1,3 +1,4 @@
+/* ReSOURCE: Создание площадки реализации в форме партнёра без независимого дублирования контрагента. */
 (() => {
   'use strict';
   const checkbox = document.querySelector('[name="create_platform"]');

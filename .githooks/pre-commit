@@ -1,0 +1,10 @@
+#!/bin/sh
+# Защита исходников CRM: проверяем индекс, а не рабочую SQLite.
+set -eu
+if [ -x .venv/Scripts/python.exe ]; then
+    exec .venv/Scripts/python.exe -Xutf8 scripts/check_repository.py --staged
+elif [ -x .venv/bin/python ]; then
+    exec .venv/bin/python scripts/check_repository.py --staged
+else
+    exec python scripts/check_repository.py --staged
+fi

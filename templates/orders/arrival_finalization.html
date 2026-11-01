@@ -2,7 +2,7 @@
 {% load static l10n %}
 {% block body_class %}responsive-crm-page trip-order-page{% endblock %}
 {% block title %}Итоговая финализация · {{ batch }}{% endblock %}
-{% block extra_head %}<link rel="stylesheet" href="{% static 'css/trip-finalization.css' %}?v=2">{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{% static 'css/trip-finalization.css' %}?v=20261031-1">{% endblock %}
 {% block content %}
 <div class="page-heading"><div><p class="eyebrow">{{ batch }}</p><h1>Итоговая финализация рейса</h1><p class="muted">Перераспределите затраты между товарами, сохранив общую сумму. Цены покупателей фиксированы. Продажи и приходы проводятся отдельно.</p></div><a class="button button-secondary" href="{% url 'orders:trip_detail' batch.pk %}">К рейсу</a></div>
 <section class="panel"><p>Закупка: <strong>{{ arrival.purchase_total|floatformat:2 }} ₽</strong> · Фактическая доставка: <strong>{{ arrival.actual_delivery|floatformat:2 }} ₽</strong></p><p>Контрольная общая себестоимость: <strong>{{ arrival.control_total|floatformat:2 }} ₽</strong></p><p class="help-text">Если сумма не делится на количество до копейки, товар показан несколькими строками. Так сохраняется точная общая стоимость. Оптовая цена и цена Авито подтверждаются отдельно при приёмке прихода по пересчитанной средней себестоимости склада.</p></section>
@@ -21,5 +21,5 @@
 </tr>{% endfor %}
 </tbody></table></div></section>
 <div class="submit-bar finalization-submit-bar"><div class="finalization-penalty" data-finalization-penalty><span>Нераспределённый остаток</span><strong>0,00 ₽</strong></div><button class="button" type="submit" data-apply-finalization>Подтвердить финализацию рейса</button></div></form>
-<script src="{% static 'js/supply-finalization.js' %}?v=2"></script>
+<script src="{% static 'js/supply-finalization.js' %}?v=20261031-1"></script>
 {% endblock %}

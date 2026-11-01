@@ -1,3 +1,4 @@
+"""Шифрование реквизитов интеграций локальным ключом вне Git; утрата ключа не исправляется откатом кода."""
 from pathlib import Path
 
 from cryptography.fernet import Fernet, InvalidToken

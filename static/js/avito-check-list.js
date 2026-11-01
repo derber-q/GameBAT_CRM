@@ -1,3 +1,4 @@
+/* ReSOURCE: Ручной минимум Avito и передача разрешённого контекста расширению; найденная цена отделена от цены продажи. */
 (() => {
   'use strict';
   const extensionStatus = document.querySelector('[data-manual-extension-status]');

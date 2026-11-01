@@ -1,3 +1,4 @@
+/* ReSOURCE: Действия прайсов/экспортов и пользовательские поля формирования документа. */
 document.addEventListener("DOMContentLoaded", () => {
   const form = document.querySelector("[data-retail-export]");
   if (!form || !window.fetch) return;

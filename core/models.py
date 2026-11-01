@@ -1,8 +1,13 @@
+"""Схема данных, ограничения БД и вычисляемые свойства состояния общего ядра.
+
+Общие компоненты не должны получать складскую логику отдельных сценариев."""
 from django.core.validators import MinValueValidator
 from django.db import models
 
 
 class CurrencyRate(models.Model):
+    """Кэш валютной пары для интерфейса; исторические документы хранят собственные курсы."""
+
     class Pair(models.TextChoices):
         USD_RUB = "USD_RUB", "USD/RUB"
         AED_RUB = "AED_RUB", "AED/RUB"

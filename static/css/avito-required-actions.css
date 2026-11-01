@@ -1,3 +1,4 @@
+/* ReSOURCE: Оформление необходимых действий/уведомлений Avito. Стили не заменяют серверные учётные проверки. */
 .avito-actions-table { width: 100%; table-layout: fixed; }
 .avito-actions-table .action-listing { width: 34%; }
 .avito-actions-table .action-product { width: 34%; }

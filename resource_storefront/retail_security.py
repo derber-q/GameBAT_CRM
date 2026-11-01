@@ -1,3 +1,4 @@
+"""Розничный контекст доступа и токены; отделён от оптового контакта и CRM-сессии."""
 import hashlib
 import logging
 import secrets

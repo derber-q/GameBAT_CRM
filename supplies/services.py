@@ -136,12 +136,7 @@ _old_owned_quantity = warehouse_owned_quantity
 
 def accept_supply(*, accepted_by, warehouse_id, lines, expenses=(), weight_transport_cost=0,
                   defer_balance=False, _pending_supply=None):
-    """Принимает поставку целиком и пересчитывает среднюю стоимость товаров.
-
-    Расходы делятся на физические единицы. В средневзвешенной стоимости участвует
-    только товар на физических складах. Все изменяемые товары блокируются до
-    конца транзакции.
-    """
+    """Готовит приход и основание будущей оценки/проверки цен. Реальное проведение определяется штатным состоянием, а не названием функции."""
     if _pending_supply is not None:
         from orders.fulfillment import validate_supply_snapshot
         validate_supply_snapshot(_pending_supply, lines, expenses, weight_transport_cost)
@@ -382,7 +377,7 @@ def edit_pending_supply(*, actor, supply_id, expected_revision_number, warehouse
 
 @transaction.atomic
 def confirm_supply_price_review(*, actor, supply_id, price_changes=None, expected_revision_number=None, independent_expenses=None):
-    """Атомарно сохраняет цены и только затем ставит ожидающий приход на баланс."""
+    """Повторно проверяет ревизию и актуальный физический склад, затем атомарно применяет разрешённые цены, среднюю оценку и приход. Устаревший preview отклоняется."""
     from orders.arrival import lock_document_trip
     lock_document_trip('supply',supply_id)
     try:
@@ -782,6 +777,7 @@ def revise_supply(
     *, actor, supply_id, expected_revision_number, warehouse_id, lines, expenses,
     weight_transport_cost, reason,
 ):
+    """Сохраняет ревизию принятого прихода и воспроизводит связанную оценку. Завершённые снимки старых продаж не заменяет текущей cost."""
     reason = str(reason or "").strip()
     if not reason:
         raise ValidationError("Укажите причину изменения принятого прихода.")
@@ -1166,7 +1162,7 @@ def _recalculated_cost(*, product_type, product_id, excluded_supply_id):
 
 @transaction.atomic
 def cancel_supply(*, actor, supply_id, comment):
-    """Полностью откатывает принятый приход, его stock и moving-average cost."""
+    """Отменяет приход штатными количественными/стоимостными проверками и аудитом; не является удалением карточки товара."""
     comment = str(comment or "").strip()
     if not comment:
         raise ValidationError("Укажите причину отмены прихода.")

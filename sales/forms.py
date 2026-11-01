@@ -1,3 +1,6 @@
+"""Серверная валидация пользовательского ввода и допустимого выбора продаж.
+
+Склад, деньги и долг проводят штатные сервисы; исторические строки сохраняют снимки."""
 from django import forms
 
 from warehouse.form_defaults import SingleWarehouseInitialMixin

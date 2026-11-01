@@ -1,0 +1,28 @@
+name: resource-crm-local
+services:
+  crm-local:
+    container_name: resource-crm-local
+    image: resource-crm-local:current
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 5m
+    user: "10001:10001"
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: ["/tmp"]
+    ports: ["8000:8000"]
+    volumes:
+      # Это доверенная рабочая установка: SQLite и её WAL/SHM должны лежать в одном каталоге.
+      - type: bind
+        source: ../..
+        target: /app
+        bind:
+          create_host_path: false
+    environment:
+      GAMEBAT_ENV: local_live
+      GAMEBAT_PRINT_BACKEND: agent
+      DJANGO_DEBUG: '1'
+      DJANGO_ALLOWED_HOSTS: ${GAMEBAT_LOCAL_ALLOWED_HOSTS:-localhost,127.0.0.1}
+    # Только проверка схемы: запуск никогда не применяет миграции автоматически.
+    command: ["python", "-u", "-m", "GameBAT_CRM.container_runtime"]

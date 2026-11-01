@@ -1,3 +1,4 @@
+"""Закупочные версии, тарифы, предложения, память наценок и Decimal-расчёты; сохранение версии атомарно."""
 import logging
 from collections import Counter, defaultdict
 from decimal import Decimal, InvalidOperation, ROUND_CEILING, ROUND_HALF_UP

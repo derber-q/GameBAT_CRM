@@ -1,3 +1,4 @@
+"""Маршруты карточек, галерей, штрихкодов и контролируемого удаления номенклатуры."""
 from django.urls import path
 
 from . import nomenclature_views as views

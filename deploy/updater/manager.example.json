@@ -1,0 +1,11 @@
+{
+  "production_verified": false,
+  "root": "/srv/resource-manager",
+  "shared_dir": "/srv/resource-shared",
+  "compose_file": "/srv/resource-infra/compose.yaml",
+  "project": "resource-production",
+  "database_user": "resource",
+  "database_name": "resource",
+  "health_origin": "https://crm.example.ru",
+  "web_uid": 110000
+}

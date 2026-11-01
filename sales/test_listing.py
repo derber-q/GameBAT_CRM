@@ -66,7 +66,7 @@ class SaleListingTests(TestCase):
             self.assertContains(response, 'Keep this note')
             self.assertContains(response, 'Статус заказа')
             self.assertContains(response, 'Статус оплаты')
-            self.assertContains(response, 'css/sales-list.css?v=3')
+            self.assertContains(response, 'css/sales-list.css?v=20261031-1')
             if name != 'incomplete':
                 self.assertNotContains(response, 'data-status-field=')
 

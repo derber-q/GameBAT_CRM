@@ -1,0 +1,7 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="panel"><h1>Заказы Avito · связь с расширением</h1>
+<p>Оставьте эту вкладку открытой: расширение использует ваш вход в CRM для создания продаж и печати стикеров.</p>
+<p>Продажа создаётся после сохранения формы. Печать не меняет статусы Avito.</p>
+<input type="hidden" id="avito-extension-csrf" value="{{ csrf }}"></section>
+{% endblock %}

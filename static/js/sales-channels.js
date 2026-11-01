@@ -1,3 +1,4 @@
+/* ReSOURCE: Согласование типа продажи и доступного типа цены; оптовая цена предназначена оптовому сценарию. */
 (() => {
   const controls = document.querySelector('[data-sales-channels]');
   if (!controls) return;

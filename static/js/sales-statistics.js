@@ -1,3 +1,4 @@
+/* ReSOURCE: Выбор и раскрытие продаж в отчёте, без пересчёта исторических снимков на клиенте. */
 document.addEventListener("DOMContentLoaded", () => {
   const form = document.getElementById("statistics-filter-form");
   if (!form) return;

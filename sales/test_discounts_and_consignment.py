@@ -207,7 +207,7 @@ class MixedConsignmentSaleTests(TestCase):
         )[0]
         self.assertNotIn("dataset.unitCost", consignment_script)
         self.assertIn('costCell.className = "numeric muted"; costCell.textContent = "—";', consignment_script)
-        self.assertContains(response, "stock-lines.js?v=global-barcode-1-sale-discounts-2-avito-commission-9-barcode-focus-2-signed-discount-1")
+        self.assertContains(response, "stock-lines.js?v=20261031-1")
 
     def test_mixed_sale_consumes_each_inventory_source_once_and_cancel_restores_it(self):
         sale = create_sale(

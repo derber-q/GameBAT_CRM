@@ -1,3 +1,4 @@
+"""Отложенная дедуплицированная очередь Avito. Изменение товара назначается после commit, не внутри откатываемой операции."""
 from datetime import timedelta
 
 from django.conf import settings

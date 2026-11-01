@@ -1,3 +1,6 @@
+"""HTTP-обработчики: доступ, формы, вызов сервисов и ответ пользователю складов.
+
+Различать физический остаток конкретного склада, реализацию и товар в пути."""
 from collections import defaultdict
 
 from django.contrib import messages

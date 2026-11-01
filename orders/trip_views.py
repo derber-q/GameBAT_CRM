@@ -1,3 +1,4 @@
+"""Страницы рейса, доступные заказы, таблицы поставщиков и Excel; учётные изменения делегируются сервисам."""
 import json
 from uuid import uuid4
 from collections import defaultdict

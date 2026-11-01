@@ -1,3 +1,6 @@
+"""HTTP-обработчики: доступ, формы, вызов сервисов и ответ пользователю пользователей и прав.
+
+Управление сотрудниками и stuf требует superuser; документы выдаются защищённо."""
 import logging
 import mimetypes
 from functools import wraps

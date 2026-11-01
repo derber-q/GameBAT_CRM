@@ -1,3 +1,4 @@
+/* ReSOURCE: Независимые расходы рейсового прихода перед обычной проверкой средней себестоимости; доставка рейса не дублируется. */
 (() => {
   "use strict";
   document.querySelectorAll("[data-independent-expenses]").forEach((form) => {

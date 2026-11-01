@@ -1,3 +1,4 @@
+/* ReSOURCE: Оформление Каталог, корзина и оформление оптовой/розничной витрины; наличие/цена повторно проверяются при отправке.. Стили не заменяют серверные учётные проверки. */
 @font-face{font-family:Manrope;src:url("fonts/manrope.ttf") format("truetype");font-style:normal;font-weight:200 800;font-display:swap}
 @font-face{font-family:"Playfair Display";src:url("fonts/playfairdisplay.ttf") format("truetype");font-style:normal;font-weight:400 900;font-display:swap}
 .resource-storefront{min-height:100vh;font:400 15px/1.55 var(--rs-font-body);background:radial-gradient(ellipse at 50% -20%,#123a2f 0,transparent 52%),var(--rs-bg);color:var(--rs-text)}

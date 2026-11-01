@@ -1,3 +1,4 @@
+/* ReSOURCE: Оформление компактной финализации рейса. Стили не заменяют серверные учётные проверки. */
 /* Компактная таблица рейса: поставщик и назначение остаются в заголовке группы. */
 .trip-finalization-table { min-width: 0; table-layout: fixed; width: 100%; font-size: 12px; }
 .trip-finalization-table .trip-col-auto { width: 3%; }

@@ -1,3 +1,4 @@
+"""Доплаты за постоплату по виду/типу товара; эти правила отличаются от фиксированной памяти наценки."""
 import re
 import unicodedata
 from decimal import Decimal

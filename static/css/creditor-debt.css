@@ -1,3 +1,4 @@
+/* ReSOURCE: Оформление Предпросмотр абсолютной/относительной коррекции долга; конечный баланс берётся под серверной блокировкой.. Стили не заменяют серверные учётные проверки. */
 .debt-options { border: 0; margin: 0 0 16px; min-width: 0; padding: 0; }
 .debt-options legend { color: var(--gb-text-strong); font-size: 12px; font-weight: 650; margin-bottom: 8px; }
 .debt-options > div { display: flex; flex-wrap: wrap; gap: 8px; }

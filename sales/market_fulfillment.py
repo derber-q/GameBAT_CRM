@@ -3,10 +3,12 @@ from collections import defaultdict
 from datetime import timedelta
 import uuid
 import logging
+import hashlib
 
 from django.core.exceptions import PermissionDenied, ValidationError
+from django.conf import settings
 from django.db import IntegrityError, OperationalError, transaction
-from django.db.models import F
+from django.db.models import F, Q
 from django.utils import timezone
 
 from catalog.models import BarcodeRegistry
@@ -18,6 +20,16 @@ from .label_printing import print_pdf, printer_configuration, print_job_complete
 from .models import MarketPicking, MarketPrintJob, MarketScanEvent
 
 logger = logging.getLogger('gamebat.business')
+
+
+def _printer_target():
+    from core.external_policy import require_live_operation
+    require_live_operation('printer_configuration')
+    if getattr(settings, 'LABEL_PRINT_BACKEND', 'native') == 'agent':
+        from .print_agents import configured_agent
+        agent = configured_agent()
+        return {'printer_name':agent.printer_name, 'print_backend':'agent', 'agent':agent}
+    return {'printer_name':printer_configuration(), 'print_backend':'native'}
 
 
 def _uuid(value):
@@ -61,7 +73,7 @@ def record_scan(*, actor, barcode, request_id):
     barcode = str(barcode or '').strip()
     if not barcode or len(barcode) > 100:
         raise ValidationError('Некорректный штрихкод.')
-    printer = printer_configuration()
+    printer = _printer_target()
     try:
         with transaction.atomic():
             # Первая операция — запись: SQLite сериализует конкурирующие счётчики.
@@ -92,7 +104,7 @@ def record_scan(*, actor, barcode, request_id):
                 result = {'order_id': order.order_id, 'sale_pk': order.sale_id, 'scanned': sum(picking.scanned.values()),
                           'required': sum(required.values()), 'complete': complete}
                 if complete:
-                    job = MarketPrintJob.objects.create(order=order, actor=actor, ready_after_print=True, printer_name=printer)
+                    job = MarketPrintJob.objects.create(order=order, actor=actor, ready_after_print=True, **printer)
                     result['print_job_id'] = str(job.request_id)
                 event.order, event.result = order, result
                 event.save(update_fields=['order', 'result'])
@@ -114,8 +126,16 @@ def request_print(*, order, actor, request_id):
     if order.fake:
         raise ValidationError('Это тестовый заказ Маркета.')
     with transaction.atomic():
+        OrderMetadata.objects.select_for_update().get(pk=order.pk)
+        existing = MarketPrintJob.objects.filter(request_id=_uuid(request_id)).first()
+        if existing:
+            if existing.order_id!=order.pk or existing.actor_id!=actor.pk or existing.ready_after_print:
+                raise ValidationError('Идентификатор печати уже использован другим запросом.')
+            return existing
+        if not existing and MarketPrintJob.objects.filter(order=order).exclude(state__in=['done','error']).exists():
+            raise ValidationError('У заказа уже есть незавершённая печать. Проверьте результат на странице «Обработчики».')
         job, _ = MarketPrintJob.objects.get_or_create(request_id=_uuid(request_id), defaults={
-            'order': order, 'actor': actor, 'printer_name': printer_configuration(),
+            'order': order, 'actor': actor, **_printer_target(),
         })
         if job.order_id != order.pk or job.actor_id != actor.pk or job.ready_after_print:
             raise ValidationError('Идентификатор печати уже использован другим запросом.')
@@ -173,6 +193,19 @@ def _step(job):
         raise ValidationError(job.document.last_error or 'Маркет не сформировал PDF стикера.')
     if job.document.state != 'done':
         return False
+    if not job.printed_at and job.print_backend == 'agent':
+        from .print_agents import expire_job, MAX_PDF_BYTES
+        if job.state in ('agent_waiting','agent_claimed','agent_printing','agent_spooled'):
+            expire_job(job.pk)
+            return False
+        with job.document.file.open('rb') as source:
+            data=source.read(MAX_PDF_BYTES+1)
+        if len(data)>MAX_PDF_BYTES or not data.startswith(b'%PDF-'):
+            raise ValidationError('PDF стикера недоступен или превышает допустимый размер.')
+        job.document_digest=hashlib.sha256(data).hexdigest()
+        job.state='agent_waiting'
+        _save(job,'document_digest','state')
+        return True
     if not job.printed_at:
         if job.printer_job_id:
             if job.spooled_at < timezone.now() - timedelta(minutes=3):
@@ -217,16 +250,20 @@ def _step(job):
     return True
 
 
-def process_print_jobs(*, limit=50):
+def process_print_jobs(*, limit=50, stop=None):
     now = timezone.now()
-    stale = MarketPrintJob.objects.filter(lease__isnull=False, leased_at__lt=now - timedelta(minutes=3))
+    jobs = MarketPrintJob.objects.filter(Q(print_backend=getattr(settings,'LABEL_PRINT_BACKEND','native')) |
+                                        Q(printed_at__isnull=False,state__in=['printed','waiting_ready']))
+    stale = jobs.filter(lease__isnull=False, leased_at__lt=now - timedelta(minutes=3))
     stale.filter(state='printing').update(state='uncertain', last_error='Процесс печати прервался. Проверьте ярлык; автоматического повтора не будет.', lease=None)
     stale.exclude(state='printing').update(lease=None)
-    MarketPrintJob.objects.filter(state='printing', lease__isnull=True).update(
+    jobs.filter(state='printing', lease__isnull=True).update(
         state='uncertain', last_error='Результат прерванной печати неизвестен. Проверьте стикер перед повторением.')
     processed = False
-    active = MarketPrintJob.objects.exclude(state__in=['done', 'error', 'uncertain', 'printing']).filter(lease__isnull=True).order_by('pk')
+    active = jobs.exclude(state__in=['done', 'error', 'uncertain', 'printing']).filter(lease__isnull=True).order_by('pk')
     for pk in list(active.values_list('pk', flat=True)[:limit]):
+        if stop is not None and stop.is_set():
+            break
         lease = uuid.uuid4()
         if not MarketPrintJob.objects.filter(pk=pk, lease__isnull=True).exclude(
                 state__in=['done', 'error', 'uncertain']).update(lease=lease, leased_at=now):
@@ -241,7 +278,7 @@ def process_print_jobs(*, limit=50):
             if MarketPrintJob.objects.filter(pk=pk, state='printing').exists():
                 raise
         except Exception as exc:
-            job.state = 'uncertain' if job.state in {'printing', 'spooled'} else 'error'
+            job.state = 'uncertain' if job.state in {'printing','spooled','agent_printing','agent_spooled'} else 'error'
             if isinstance(exc, ValidationError):
                 job.last_error = ' '.join(exc.messages)
             elif isinstance(exc, PermissionDenied):

@@ -1,3 +1,4 @@
+/* ReSOURCE: Оформление цен карточек Avito в расширении. Стили не заменяют серверные учётные проверки. */
 /* Подключается браузером как CSS расширения, независимо от правил inline-стилей Avito. */
 html[data-resource-avito-picking] [data-marker="item"] { cursor: copy !important; }
 html[data-resource-avito-picking] [data-marker="item"][data-resource-price-selected] {

@@ -1,3 +1,4 @@
+/* ReSOURCE: Предпросмотр кадрирования изображения; исходный защищённый файл не становится публичным целиком. */
 document.addEventListener("DOMContentLoaded", () => {
   const photo = document.querySelector("[data-crop-preview]");
   if (!photo) return;

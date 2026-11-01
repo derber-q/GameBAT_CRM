@@ -1,3 +1,4 @@
+/* ReSOURCE: Выбор связанного партнёра или разрешённого текстового заказчика; текст не создаёт финансовую связь. */
 (() => {
   'use strict';
   document.querySelectorAll('select[name="customer"]').forEach(select => {

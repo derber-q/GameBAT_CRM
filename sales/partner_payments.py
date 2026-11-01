@@ -45,6 +45,7 @@ def money(value):
 
 
 def quote(*, total, received, debt, partner_id, sale_id=None, creation_key=None):
+    """Чистый Decimal-предпросмотр: сначала погашение/взаимозачёт существующего знакового долга, затем новый долг/переплата. Сам денег и записей не создаёт."""
     debt = Decimal(str(debt)).quantize(CENT)
     total = money(total)
     received = total if received in (None, '') else money(received)
@@ -60,6 +61,7 @@ def quote(*, total, received, debt, partner_id, sale_id=None, creation_key=None)
 
 
 def payment_values(*, actor, sale_type, partner, total, received, note, confirmation='', sale_id=None, creation_key=None):
+    """Повторно рассчитывает платёж под блокировкой кредитора и сверяет подписанное подтверждение. Обычная частичная оплата требует Partner/опта/права/примечания."""
     from .models import Sale
     actual = total if received in (None, '') else money(received)
     if sale_type != Sale.SaleType.WHOLESALE or partner is None:
@@ -88,6 +90,7 @@ def payment_values(*, actor, sale_type, partner, total, received, note, confirma
 
 @transaction.atomic
 def record_settlement(*, sale, actor):
+    """Записывает единственную долговую дельту продажи без второй кассовой проводки. partner_debt — отдельная ветка полного начисления T."""
     charge = sale.debt_charge_amount
     amount = sale.debt_repayment_amount or sale.debt_offset_amount + charge
     if not amount:
@@ -116,6 +119,7 @@ def record_settlement(*, sale, actor):
 
 @transaction.atomic
 def reverse_settlement(*, sale, actor, comment):
+    """Сторнирует дельту своей продажи относительно текущего баланса, сохраняя последующие оплаты и коррекции других операций."""
     original = sale.creditor_movements.filter(reversal_of__isnull=True).first()
     if not original or CreditorTransaction.objects.filter(reversal_of=original).exists():
         return

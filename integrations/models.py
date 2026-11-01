@@ -1,10 +1,17 @@
+"""Схема данных, ограничения БД и вычисляемые свойства состояния Avito, ReefAPI и Google Sheets.
+
+Внешние вызовы могут менять реальные данные; тесты подменяют API, обмен выполняет worker."""
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Q
 
+from .worker_models import WorkerController, WorkerProcess, WorkerService, WorkerCommand, WorkerEvent  # noqa: F401
+
 
 class IntegrationCredential(models.Model):
+    """Защищённые реквизиты провайдера; ключ шифрования хранится вне Git."""
+
     class Provider(models.TextChoices):
         AVITO = "avito", "Avito"
 
@@ -107,6 +114,8 @@ class AvitoManualPrice(models.Model):
 
 
 class AvitoProductProfile(models.Model):
+    """Локальная целевая карточка синхронизации Avito."""
+
     class SyncStatus(models.TextChoices):
         IDLE = "idle", "Ожидает"
         QUEUED = "queued", "В очереди"
@@ -204,6 +213,8 @@ class AvitoProductPhoto(models.Model):
 
 
 class AvitoRemoteListing(models.Model):
+    """Последний полученный снимок удалённого объявления, который может устареть."""
+
     avito_item_id = models.PositiveBigIntegerField("Avito ID", unique=True)
     title = models.CharField("Название", max_length=500, blank=True)
     category_name = models.CharField("Категория", max_length=255, blank=True)
@@ -226,6 +237,8 @@ class AvitoRemoteListing(models.Model):
 
 
 class AvitoListingConnection(models.Model):
+    """Явная связь удалённого объявления и локального профиля товара."""
+
     profile = models.OneToOneField(
         AvitoProductProfile, on_delete=models.CASCADE, related_name="connection", verbose_name="Профиль товара"
     )
@@ -244,6 +257,8 @@ class AvitoListingConnection(models.Model):
 
 
 class AvitoSyncJob(models.Model):
+    """Задание очереди Avito с ключом дедупликации и состоянием выполнения."""
+
     class JobType(models.TextChoices):
         PRODUCT = "product", "Товар"
         RECONCILE = "reconcile", "Контрольная сверка"
@@ -289,6 +304,8 @@ class AvitoSyncJob(models.Model):
 
 
 class AvitoSyncLog(models.Model):
+    """История попытки/фазы обмена Avito без раскрытия рабочих секретов."""
+
     class Result(models.TextChoices):
         SUCCESS = "success", "Успешно"
         ERROR = "error", "Ошибка"
@@ -332,6 +349,8 @@ class IntegrationAuditEvent(models.Model):
 
 
 class GoogleSheetsIntegration(models.Model):
+    """Настройка односторонней выгрузки CRM в Google Sheets."""
+
     class Status(models.TextChoices):
         NOT_CONFIGURED = "not_configured", "Не настроено"
         IDLE = "idle", "Ожидает"
@@ -360,6 +379,8 @@ class GoogleSheetsIntegration(models.Model):
 
 
 class GoogleSheetsSyncJob(models.Model):
+    """Дедуплицированное задание Sheets с ошибкой и временем следующей попытки."""
+
     class Status(models.TextChoices):
         PENDING = "pending", "Ожидает"
         RUNNING = "running", "Выполняется"

@@ -1,3 +1,6 @@
+"""Именованные HTTP-маршруты приложения пользователей и прав.
+
+Управление сотрудниками и stuf требует superuser; документы выдаются защищённо."""
 from django.contrib.auth import views as auth_views
 from django.urls import path
 from . import views

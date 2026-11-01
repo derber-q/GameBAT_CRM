@@ -1,3 +1,6 @@
+"""Схема данных, ограничения БД и вычисляемые свойства состояния приходов.
+
+Проведение меняет остаток/оценку через сервис; предварительная проверка цен товар не приходует."""
 from django.conf import settings
 from django.core.validators import MinValueValidator
 from django.db import models
@@ -8,6 +11,8 @@ from warehouse.models import Warehouse
 
 
 class Supply(models.Model):
+    """Приход выбранного склада; проверка цен и фактическая приёмка — разные этапы."""
+
     class Status(models.TextChoices):
         PRICE_REVIEW_REQUIRED = "price_review", "Требуется проверка цен"
         WAITING_TRIP_FINALIZATION = "trip_finalization", "Ждёт финализации рейса"
@@ -144,6 +149,8 @@ class SupplyItemBase(models.Model):
 
 
 class SupplyCDItem(SupplyItemBase):
+    """Строка диска в приходе с закупкой, расходами и возможным источником рейса."""
+
     supply = models.ForeignKey(Supply, on_delete=models.PROTECT, related_name="cd_items", verbose_name="Поставка")
     product = models.ForeignKey(CD, on_delete=models.PROTECT, related_name="supply_items", verbose_name="CD")
 
@@ -165,6 +172,8 @@ class SupplyCDItem(SupplyItemBase):
 
 
 class SupplyTechItem(SupplyItemBase):
+    """Строка техники в приходе; вес и расходы участвуют в расчёте оценки."""
+
     supply = models.ForeignKey(Supply, on_delete=models.PROTECT, related_name="tech_items", verbose_name="Поставка")
     product = models.ForeignKey(Tech, on_delete=models.PROTECT, related_name="supply_items", verbose_name="Техника")
 
@@ -261,6 +270,8 @@ class SupplyCostCalculation(models.Model):
 
 
 class SupplyExpense(models.Model):
+    """Независимый дополнительный расход прихода, распределяемый учётным сервисом."""
+
     supply = models.ForeignKey(Supply, on_delete=models.PROTECT, related_name="expenses", verbose_name="Поставка")
     name = models.CharField("Название расхода", max_length=255)
     amount = models.DecimalField("Сумма", max_digits=20, decimal_places=2, validators=[MinValueValidator(0)])
@@ -275,6 +286,8 @@ class SupplyExpense(models.Model):
 
 
 class SupplyRevision(models.Model):
+    """Историческая версия исправления принятого прихода."""
+
     supply = models.ForeignKey(
         Supply, on_delete=models.PROTECT, related_name="revisions", verbose_name="Приход"
     )
@@ -322,6 +335,8 @@ class SupplyRevision(models.Model):
 
 
 class SupplyRevisionItem(models.Model):
+    """Сохранённые значения строки конкретной ревизии прихода."""
+
     class ProductKind(models.TextChoices):
         CD = "cd", "CD"
         TECH = "tech", "Tech"
@@ -369,6 +384,8 @@ class SupplyRevisionItem(models.Model):
 
 
 class SupplyRevisionExpense(models.Model):
+    """Снимок расходов версии прихода, а не текущая настройка."""
+
     revision = models.ForeignKey(
         SupplyRevision, on_delete=models.CASCADE, related_name="expenses", verbose_name="Редакция"
     )
@@ -436,6 +453,8 @@ class SupplyFinalization(models.Model):
 
 
 class SupplyFinalizationItem(models.Model):
+    """Стоимость строки до/после конкретной финализации."""
+
     class ProductKind(models.TextChoices):
         CD = "cd", "CD"
         TECH = "tech", "Tech"

@@ -1,3 +1,4 @@
+/* ReSOURCE: Шаги дополнительных партий, расчёт и распределение по заказчикам с серверным контролем сумм количеств. */
 (() => {
   const form = document.querySelector('[data-trip-addition-form]');
   const body = form?.querySelector('[data-addition-lines]');

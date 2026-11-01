@@ -1,3 +1,4 @@
+"""Исполнение очереди интеграций отдельным worker с фазами, ошибками и повторными попытками."""
 from datetime import timedelta
 import logging
 import time

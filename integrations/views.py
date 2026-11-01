@@ -1,3 +1,6 @@
+"""HTTP-обработчики: доступ, формы, вызов сервисов и ответ пользователю Avito, ReefAPI и Google Sheets.
+
+Внешние вызовы могут менять реальные данные; тесты подменяют API, обмен выполняет worker."""
 import logging
 from uuid import uuid4
 

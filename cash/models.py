@@ -1,3 +1,6 @@
+"""Схема данных, ограничения БД и вычисляемые свойства состояния кассы и сейфа.
+
+Наличные отделены от банка/долга; баланс согласуется с журналом в одной транзакции."""
 from django.conf import settings
 from django.core.validators import MinValueValidator
 from django.db import models
@@ -6,6 +9,8 @@ from warehouse.models import Warehouse
 
 
 class CashRegister(models.Model):
+    """Наличная касса конкретного склада, сверяемая с журналом."""
+
     warehouse = models.OneToOneField(
         Warehouse, on_delete=models.PROTECT, related_name="cash_register", verbose_name="Склад"
     )
@@ -31,6 +36,8 @@ class CashRegister(models.Model):
 
 
 class Safe(models.Model):
+    """Наличный сейф конкретного склада с отдельным балансом."""
+
     warehouse = models.OneToOneField(
         Warehouse, on_delete=models.PROTECT, related_name="safe", verbose_name="Склад"
     )
@@ -57,6 +64,8 @@ class Safe(models.Model):
 
 
 class CashTransaction(models.Model):
+    """Журнальная проводка кассы/сейфа; банк и безденежный долг сюда не попадают."""
+
     class OperationType(models.TextChoices):
         DEPOSIT = "deposit", "Внесение наличных"
         COLLECTION = "collection", "Инкассация"

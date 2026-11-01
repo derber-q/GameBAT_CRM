@@ -90,9 +90,9 @@ class InternalPageSmokeTests(TestCase):
         self.assertContains(response, 'class="admin-shortcut"')
         self.assertContains(response, 'aria-label="Админ-панель" title="Админ-панель"')
         self.assertNotContains(response, '>Админ-панель</a>')
-        self.assertContains(response, 'payments-2-header-status-1')
-        self.assertContains(response, 'css/navigation.css?v=20261027-2')
-        self.assertContains(response, 'js/navigation.js?v=20261027-1')
+        self.assertContains(response, 'css/gamebat.css?v=20261031-1')
+        self.assertContains(response, 'css/navigation.css?v=20261031-1')
+        self.assertContains(response, 'js/navigation.js?v=20261031-1')
         self.assertContains(response, 'aria-controls="nav-overflow-list"')
         self.assertContains(response, 'aria-controls="mobile-navigation"')
         self.assertNotContains(response, 'data-rate-symbol="AED/RUB"')
@@ -170,8 +170,8 @@ class InternalPageSmokeTests(TestCase):
     def test_sound_icon_respects_notification_permissions_in_crm_and_admin(self):
         self.assertContains(self.client.get(reverse('admin:index')), 'data-notification-sound-enable', count=1)
         for app, codename, endpoint, engine in [
-            ('sales', 'view_sales', 'sales:incomplete', 'market-notifications.js?v=3'),
-            ('integrations', 'view_avito_integration', 'integrations:avito', 'avito-alert-sound.js?v=3'),
+            ('sales', 'view_sales', 'sales:incomplete', 'market-notifications.js?v=20261031-1'),
+            ('integrations', 'view_avito_integration', 'integrations:avito', 'avito-alert-sound.js?v=20261031-1'),
         ]:
             with self.subTest(permission=codename):
                 worker = User.objects.create_user('sound-' + codename)
@@ -182,7 +182,11 @@ class InternalPageSmokeTests(TestCase):
                 self.assertContains(response, 'data-notification-sound-enable', count=1)
                 self.assertContains(response, engine)
         self.client.force_login(User.objects.create_user('no-notification-sound'))
-        self.assertNotContains(self.client.get(reverse('accounts:password_change')), 'data-notification-sound-enable')
+        response = self.client.get(reverse('accounts:password_change'))
+        self.assertContains(response, 'data-notification-sound-enable', count=1)
+        self.assertContains(response, 'js/worker-monitoring.js?v=20261031-2')
+        self.assertNotContains(response, 'js/market-notifications.js')
+        self.assertNotContains(response, 'js/avito-alert-sound.js')
 
     def test_supply_only_user_keeps_warehouse_menu_without_stock_access(self):
         employee = User.objects.create_user('supply-menu-worker')

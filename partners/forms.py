@@ -1,3 +1,6 @@
+"""Серверная валидация пользовательского ввода и допустимого выбора контрагентов.
+
+Partner, Supplier и SalesPlatform имеют разные роли; имя не заменяет финансовую FK-связь."""
 from django import forms
 from .models import Supplier, Partner, SalesPlatform
 import uuid

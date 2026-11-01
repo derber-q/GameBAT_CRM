@@ -1,3 +1,4 @@
+/* ReSOURCE: Ручная закупка на склад и подсказка ранее заказанного складского количества, без подмешивания клиентских назначений. */
 (() => {
   "use strict";
   const form = document.querySelector("[data-stock-order-form]");

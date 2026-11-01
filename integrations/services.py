@@ -1,3 +1,4 @@
+"""Оркестрация привязок, профилей и подтверждённой сверки Avito; реальные изменения API требуют разрешённого сценария."""
 import hashlib
 import json
 from decimal import Decimal
@@ -7,6 +8,7 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.db.models import Q, Sum
 from django.utils import timezone
+from core.external_policy import require_live_operation
 
 from .client import AvitoAPIError, AvitoClient
 from .crypto import encrypt_secret
@@ -72,6 +74,7 @@ def get_avito_credential():
 
 
 def save_avito_credentials(*, client_id, client_secret, actor=None):
+    require_live_operation('avito_credentials')
     credential, _ = IntegrationCredential.objects.get_or_create(
         provider=IntegrationCredential.Provider.AVITO
     )

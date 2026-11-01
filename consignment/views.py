@@ -1,3 +1,6 @@
+"""HTTP-обработчики: доступ, формы, вызов сервисов и ответ пользователю реализации.
+
+Операции адресуют конкретную партию stock_id; разные условия партий не объединяются."""
 from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, OperationalError

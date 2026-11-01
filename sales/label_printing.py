@@ -8,9 +8,11 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from PIL import Image, ImageWin
 import pymupdf
+from core.external_policy import require_live_operation
 
 
 def printer_configuration():
+    require_live_operation('printer_configuration')
     try:
         config = json.loads(Path(settings.LABEL_PRINTER_CONFIG_PATH).read_text('utf-8'))
         name = config['printer_name']
@@ -43,6 +45,7 @@ def render_label_pages(data, *, dpi):
 
 @contextmanager
 def _windows_printer(name):
+    require_live_operation('physical_print')
     import win32con
     import win32gui
     import win32print
@@ -76,6 +79,7 @@ def _windows_printer(name):
 
 
 def print_pdf(data, *, printer_name, title):
+    require_live_operation('physical_print')
     with _windows_printer(printer_name) as dc:
         dpi = dc.GetDeviceCaps(88)
         pages = render_label_pages(data, dpi=dpi)
@@ -100,12 +104,14 @@ def print_pdf(data, *, printer_name, title):
 
 
 def _start_document(dc, title):
+    require_live_operation('physical_print')
     import win32print
     # PyCDC.StartDoc возвращает None; StartDoc Win32 возвращает нужный ID задания.
     return win32print.StartDoc(dc.GetHandleOutput(), (title, None, None, 0))
 
 
 def _control_job(printer_name, job_id, command):
+    require_live_operation('physical_print')
     import win32print
     printer = win32print.OpenPrinter(printer_name)
     try:
@@ -115,6 +121,7 @@ def _control_job(printer_name, job_id, command):
 
 
 def _printer_job_info(printer_name, job_id):
+    require_live_operation('physical_print')
     import win32print
     printer = win32print.OpenPrinter(printer_name)
     try:
@@ -123,12 +130,15 @@ def _printer_job_info(printer_name, job_id):
         win32print.ClosePrinter(printer)
 
 
-def print_job_completed(printer_name, job_id):
+def print_job_completed(printer_name, job_id, *, expected_title=None):
+    require_live_operation('physical_print')
     import win32print
     try:
         info = _printer_job_info(printer_name, job_id)
     except OSError:
         raise ValidationError('Не удалось подтвердить завершение печати. Готовность не отправлена.') from None
+    if expected_title is not None and info.get('pDocument')!=expected_title:
+        raise ValidationError('Идентификатор Windows принадлежит другому документу. Проверьте этикетку.')
     blocked = (win32print.JOB_STATUS_ERROR | win32print.JOB_STATUS_OFFLINE | win32print.JOB_STATUS_PAPEROUT |
                win32print.JOB_STATUS_DELETED | win32print.JOB_STATUS_DELETING | win32print.JOB_STATUS_PAUSED |
                win32print.JOB_STATUS_USER_INTERVENTION | win32print.JOB_STATUS_BLOCKED_DEVQ)
@@ -142,5 +152,7 @@ def print_job_completed(printer_name, job_id):
     return printed or (retained and total > 0 and completed >= total)
 
 
-def release_print_job(printer_name, job_id):
+def release_print_job(printer_name, job_id, *, expected_title=None):
+    if expected_title is not None and _printer_job_info(printer_name,job_id).get('pDocument')!=expected_title:
+        raise ValidationError('Неизвестное задание Windows не освобождается автоматически.')
     _control_job(printer_name, job_id, 9)  # JOB_CONTROL_RELEASE — после сохранения подтверждённого результата.

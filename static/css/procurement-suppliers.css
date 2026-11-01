@@ -1,3 +1,4 @@
+/* ReSOURCE: Оформление выбора предложения поставщика. Стили не заменяют серверные учётные проверки. */
 .procurement-supplier-offers { display: flex; flex-wrap: wrap; align-items: center; gap: 3px; min-width: 150px; }
 .procurement-supplier-offer { padding: 3px 5px; border: 1px solid transparent; border-radius: 5px; white-space: nowrap; }
 .procurement-supplier-offer.is-selected { color: #14532d; background: #dcfce7; border-color: #86efac; font-weight: 700; }

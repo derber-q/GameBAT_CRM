@@ -1,3 +1,4 @@
+/* ReSOURCE: Оформление Выбор и подтверждение массового удаления карточек; связи/историю проверяет backend.. Стили не заменяют серверные учётные проверки. */
 [data-nomenclature-bulk] [hidden] { display: none !important; }
 .bulk-delete-toolbar { padding: 12px 16px; margin-bottom: 18px; }
 .bulk-delete-switch, .bulk-delete-check { display: flex; align-items: center; gap: 9px; cursor: pointer; }

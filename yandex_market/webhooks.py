@@ -1,3 +1,4 @@
+"""Публичный приём уведомлений Яндекса с проверкой входящего контекста и защитой повторов."""
 import hashlib
 import ipaddress
 import json
@@ -34,6 +35,8 @@ def allowed_source(request):
 @csrf_exempt
 @require_POST
 def notification(request):
+    if settings.GAMEBAT_ENV == 'local_test':
+        return JsonResponse({'error':{'message':'ТЕСТОВЫЙ РЕЖИМ: реальные вебхуки заблокированы.'}}, status=403)
     if not allowed_source(request):
         return JsonResponse({"error": {"message": "Источник уведомления не разрешён."}}, status=403)
     if len(request.body) > 1024 * 1024:

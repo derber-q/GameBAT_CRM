@@ -1,3 +1,4 @@
+"""Определения полей/контрактов профиля Avito, используемые формами и API-преобразованиями."""
 from django.core.exceptions import ValidationError
 
 

@@ -1,3 +1,4 @@
+/* ReSOURCE: Локальные действия списка объявлений и обновление статусов; внешнее состояние подтверждает сервер. */
 (() => {
   const section = document.querySelector('#required-actions');
   let previousKeys;

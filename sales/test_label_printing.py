@@ -1,5 +1,7 @@
 from io import BytesIO
 from unittest.mock import patch, Mock
+import sys
+from types import SimpleNamespace
 
 from django.test import SimpleTestCase
 import pymupdf
@@ -17,6 +19,19 @@ def label_pdf(width=58, height=40):
 
 
 class LabelPrintingTests(SimpleTestCase):
+    def setUp(self):
+        # Ни на Windows, ни на Linux тесты не обращаются к настоящему spooler.
+        module=SimpleNamespace(StartDoc=Mock(),JOB_STATUS_ERROR=2,JOB_STATUS_OFFLINE=32,
+            JOB_STATUS_PAPEROUT=64,JOB_STATUS_DELETED=256,JOB_STATUS_DELETING=4,
+            JOB_STATUS_PAUSED=1,JOB_STATUS_USER_INTERVENTION=1024,JOB_STATUS_BLOCKED_DEVQ=512,
+            JOB_STATUS_PRINTED=128)
+        fake=patch.dict(sys.modules,{'win32print':module});fake.start();self.addCleanup(fake.stop)
+
+    def test_agent_spool_identity_must_match_the_document(self):
+        from django.core.exceptions import ValidationError
+        with patch('sales.label_printing._printer_job_info',return_value={'Status':128,'pDocument':'another label'}):
+            with self.assertRaises(ValidationError):
+                print_job_completed('test',1,expected_title='expected label')
     def test_pdf_is_rendered_at_printer_resolution_and_other_sizes_are_rejected(self):
         pages = render_label_pages(label_pdf(), dpi=203)
         self.assertEqual(len(pages), 1)

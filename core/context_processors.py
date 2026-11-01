@@ -1,3 +1,4 @@
+"""Контекст общей шапки: доступные пункты, склады и локальные счётчики; видимость не заменяет backend-защиту."""
 from django.db.utils import OperationalError, ProgrammingError
 
 from warehouse.models import Warehouse
@@ -15,7 +16,7 @@ def crm_header(request):
         # До применения первой миграции таблицы ещё может не быть.
         pass
     user = request.user
-    authenticated = user.is_authenticated
+    authenticated = user.is_authenticated and user.is_active
     market_notifications = authenticated and user.has_perm('sales.view_sales')
     market_pending_count = 0
     if market_notifications:
@@ -61,6 +62,7 @@ def crm_header(request):
         'market_pending_count': market_pending_count,
         'avito_action_counts': avito_action_counts,
         "nav": {
+            'worker_monitoring': authenticated,
             'market_notifications': market_notifications,
             'avito_notifications': avito_notifications,
             "warehouse": warehouse_global_access or warehouse_details_access or transfers_access or supplies_access,
@@ -88,12 +90,8 @@ def crm_header(request):
             ),
             "statistics": authenticated and (user.is_superuser or user.has_perm("sales.view_sales_statistics")),
             "orders": authenticated and (user.is_superuser or user.has_perm("orders.view_orders")),
-            "integrations": authenticated and (
-                user.is_superuser
-                or user.has_perm("integrations.view_integrations")
-                or user.has_perm("integrations.view_avito_integration")
-                or user.has_perm("yandex_market.view_integration")
-            ),
+            "integrations": authenticated,
+            "updates": authenticated and user.is_superuser,
             "integration_keys": authenticated and (
                 user.is_superuser or user.has_perm("integrations.view_integrations")
             ),

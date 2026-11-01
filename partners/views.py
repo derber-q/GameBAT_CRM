@@ -1,3 +1,6 @@
+"""HTTP-обработчики: доступ, формы, вызов сервисов и ответ пользователю контрагентов.
+
+Partner, Supplier и SalesPlatform имеют разные роли; имя не заменяет финансовую FK-связь."""
 from django.contrib import messages
 from django.contrib.auth.decorators import permission_required
 from django.shortcuts import get_object_or_404, redirect, render

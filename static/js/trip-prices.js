@@ -1,3 +1,4 @@
+/* ReSOURCE: Предпросмотр и подтверждение закупочной AED-цены партии рейса, без изменения глобального прайса поставщика. */
 (() => {
   'use strict';
   const data = document.getElementById('trip-price-data');

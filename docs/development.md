@@ -1,5 +1,29 @@
 # Карта кода для сопровождения
 
+Ручные обновления: `core/update_views.py`, `templates/core/updates.html` и
+`deployment/`. Web не импортирует исполняющий Docker-адаптер. Личная SQLite менеджера
+отдельна от Django, миграций бизнес-БД эта функция не добавляет. Проверки:
+`core.test_updates`, `deployment.test_*`, `core.updates_browser_checks`.
+CI/публикация описаны в [порядке обновления](updates.md); workflow запускается вручную.
+
+Печать из контейнера и удалённого сервера: [контракт и проверки Print Agent](print_agent.md).
+Серверный API находится в `sales/print_agent_views.py`, назначения и переходы
+состояний — в `sales/print_agents.py`, автономный клиент — в `print_agent/`.
+Проверки `sales.test_print_agents` и `print_agent.test_engine` подменяют принтер и
+площадки; браузерная проверка `sales.print_agent_browser_checks` использует
+отдельную тестовую БД. Комплект агента собирает `scripts/package_print_agent.py`.
+
+Конфигурация окружений: `GameBAT_CRM/environments.py`, `local_test.py`, `test_guard.py`;
+центральная политика внешних эффектов — `core/external_policy.py`.
+[Контракт этапа A](environments_stage_a.md), [план A–F](hosting_plan.md).
+
+Мониторинг: `integrations/worker_*.py`, `run_worker_supervisor`,
+`configure_worker_monitoring`, `scripts/local_network.ps1`.
+[Контракт и эксплуатация](worker_monitoring.md); OS-адаптер, heartbeat, чтение очередей
+и HTTP разделены, проверки используют подменённую ОС и изолированные БД/Chromium.
+
+Полный актуализируемый справочник модулей, функций, схемы, URL и UI: [технический навигатор](technical/README.md). Границы блокировок/повторов: [транзакции](technical/transactions.md); ограничения следующего этапа: [реестр рисков](technical/risk_register.md).
+
 Партнёры: `partners/models.py`, `customers.py`, `excel.py`, `partner_views.py`. Расчёты продажи: `sales/partner_payments.py`, подтверждение — `sales/partner_views.py`, `static/js/partner-settlements.js`. Единая финансовая лента отчёта: `sales/partner_statistics.py`; выручка и прибыль остаются в прежнем `statistics_service.py`. Правила совместимости и тесты: [партнёры](partners.md).
 
 Новые точки расширения каталога и закупок от 20.10.2026: [catalog_procurement_controls.md](catalog_procurement_controls.md). Проверки: `catalog.test_supplier_newness`, `price.test_supplier_newness_rounding` и `catalog/test_product_options_js.cjs`. Реальный Chromium запускается отдельно: `.venv\Scripts\python.exe manage.py test catalog.features_browser_checks --settings=catalog.newness_browser_settings`; используется отдельная тестовая БД, без запуска интеграционного worker.

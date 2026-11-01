@@ -1,3 +1,6 @@
+"""Именованные HTTP-маршруты приложения ценообразования.
+
+Себестоимость, опт, цена Avito, FBS и найденный минимум — разные величины."""
 from django.urls import path
 
 from . import views, fbs_views

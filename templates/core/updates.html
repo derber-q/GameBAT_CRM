@@ -1,0 +1,48 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}Обновления · ReSOURCE{% endblock %}
+{% block body_class %}responsive-crm-page updates-page{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{% static 'css/updates.css' %}?v=20261101-1">{% endblock %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">Интеграции</p><h1>Обновления</h1><p class="muted">Проверка и установка выполняются только по кнопке. Автоматическое обновление выключено.</p></div></div>
+<section class="panel">
+  <h2>Текущая версия</h2>
+  <dl class="details">
+    <dt>Окружение</dt><dd>{{ mode }}</dd>
+    <dt>Коммит</dt><dd><code>{{ current.sha|default:version.sha|default:'Неизвестен' }}</code></dd>
+    <dt>Ветка</dt><dd>{{ version.ref|default:'Неизвестна' }}</dd>
+    <dt>Дата установки</dt><dd>{{ current.installed_at|default:'Неизвестна' }}</dd>
+    <dt>Источник</dt><dd><a href="{{ source }}" target="_blank" rel="noopener noreferrer">derber-q/GameBAT_CRM · main</a></dd>
+  </dl>
+  {% if not production %}<p class="alert">Локальная и тестовая CRM используют экспериментальную рабочую копию. Обновления доступны только для production-версии. Базовый Git-коммит не описывает незакоммиченные изменения.</p>{% endif %}
+  {% if reason %}<p class="alert alert-error" role="status">{{ reason }}</p>{% endif %}
+  <form method="post">{% csrf_token %}<input type="hidden" name="action" value="check"><input type="hidden" name="request_id" value="{{ request_check }}"><button type="submit" class="button button-secondary"{% if production and not manager_available or production and busy %} disabled{% endif %}>Проверить обновления</button></form>
+</section>
+<section class="panel">
+  <h2>Доступная версия</h2>
+  {% if latest.sha %}
+    <p><a href="{{ source }}/commit/{{ latest.sha }}" target="_blank" rel="noopener noreferrer"><code>{{ latest.sha }}</code></a></p>
+    <p>{{ latest.summary }}</p><p class="help-text">Последняя ручная проверка: {{ latest.checked_at }}. Новые коммиты после этой проверки не проверялись.</p>
+    {% if latest.changes %}<ul>{% for change in latest.changes %}<li><a href="{{ source }}/commit/{{ change.sha }}" target="_blank" rel="noopener noreferrer">{{ change.summary }}</a></li>{% endfor %}</ul>{% endif %}
+    {% if latest.compare_from %}<p><a href="{{ source }}/compare/{{ latest.compare_from }}...{{ latest.sha }}" target="_blank" rel="noopener noreferrer">Все изменения между версиями</a></p>{% endif %}
+    {% if latest.sha == current.sha %}<p>Эта версия уже установлена.</p>{% endif %}
+    <p>{% if latest.approved %}CI конкретного коммита подтверждён. Перед установкой менеджер повторно проверит образ и совместимость.{% else %}Не проверено: {{ latest.reason }}{% endif %}</p>
+  {% else %}<p>Обновления не проверялись. Обращений к GitHub при открытии страницы нет.</p>{% endif %}
+  <form method="post">{% csrf_token %}<input type="hidden" name="action" value="install"><input type="hidden" name="request_id" value="{{ request_install }}"><input type="hidden" name="target" value="{{ latest.sha }}">
+    {% if production and latest.approved %}<p><label><input type="checkbox" name="confirm" value="yes" required> Подтверждаю установку указанного коммита.</label></p>{% endif %}
+    <button type="submit" class="button"{% if production and not latest.approved or production and latest.sha == current.sha or production and not manager_available or production and busy %} disabled{% endif %}>Обновить до последней версии</button>
+  </form>
+  <p class="help-text">Устанавливается версия, показанная после ручной проверки. Проверка сама по себе код не меняет.</p>
+</section>
+{% if production %}
+<section class="panel"><h2>Совместимый откат кода</h2>
+  {% if rollback.approved %}<p><code>{{ rollback.sha }}</code>. БД и новые продажи сохраняются.</p>
+  <form method="post">{% csrf_token %}<input type="hidden" name="action" value="rollback"><input type="hidden" name="request_id" value="{{ request_rollback }}"><input type="hidden" name="target" value="{{ rollback.sha }}"><p><label><input type="checkbox" name="confirm" value="yes" required> Подтверждаю возврат указанной версии кода.</label></p><button type="submit" class="button button-secondary">Откатить код</button></form>
+  {% else %}<p>Подтверждённых совместимых точек отката нет.</p>{% endif %}
+</section>
+<section class="panel"><h2>История операций</h2><p><a href="{% url 'integrations:updates' %}">Обновить состояние страницы</a></p>
+{% for operation in history %}<article><h3>{{ operation.action_label }} · {{ operation.state_label }}</h3><p><code>{{ operation.id }}</code> · сотрудник {{ operation.actor }} · {{ operation.requested_at }}</p><p>{{ operation.message }}</p>{% if operation.target %}<p>Версия: <code>{{ operation.target }}</code></p>{% endif %}
+{% if operation.result.backup.verified %}<p>Резервная копия проверена.</p>{% endif %}
+<details><summary>Этапы операции</summary><ol>{% for row in operation.journal %}<li>{{ row.at }} · {{ row.stage_label }} · {{ row.message }}</li>{% endfor %}</ol></details></article>{% empty %}<p>Операций ещё нет.</p>{% endfor %}</section>
+{% endif %}
+{% endblock %}

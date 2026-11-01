@@ -1,6 +1,7 @@
 """Настройки ключа ReefAPI в существующем хранилище интеграций."""
 from django.core.exceptions import ValidationError
 from django.utils import timezone
+from core.external_policy import require_live_operation
 
 from .crypto import encrypt_secret
 from .models import AvitoListingConnection, ReefApiCredential
@@ -8,6 +9,7 @@ from .reef_api import ReefApiClient, ReefApiError
 
 
 def save_key(value):
+    require_live_operation('reef_credentials')
     value = str(value or "").strip()
     if not value:
         raise ValidationError("Введите API key ReefAPI.")

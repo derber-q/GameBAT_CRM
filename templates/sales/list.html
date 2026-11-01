@@ -3,13 +3,13 @@
 {% block title %}{{ page_title }} · ReSOURCE{% endblock %}
 {% block body_class %}responsive-crm-page sale-market-page{% endblock %}
 {% block extra_head %}
-<link rel="stylesheet" href="{% static 'css/sales-list.css' %}?v=3">
-<link rel="stylesheet" href="{% static 'css/sale-market.css' %}?v=2">
-<script src="{% static 'js/sale-market-print.js' %}?v=2" defer></script>
-{% if state == 'incomplete' %}<script src="{% static 'js/sale-market-scan.js' %}?v=2" defer></script>{% endif %}
-<script src="{% static 'js/sale-market-actions.js' %}?v=1" defer></script>
-{% if state != 'cancelled' %}<script src="{% static 'js/sales-channels.js' %}?v=2" defer></script>{% endif %}
-{% if state == 'incomplete' %}<script src="{% static 'js/sales-status.js' %}?v=partners-2-debt-1-4-channels-report-2" defer></script>{% endif %}
+<link rel="stylesheet" href="{% static 'css/sales-list.css' %}?v=20261031-1">
+<link rel="stylesheet" href="{% static 'css/sale-market.css' %}?v=20261101-1">
+<script src="{% static 'js/sale-market-print.js' %}?v=20261101-1" defer></script>
+{% if state == 'incomplete' %}<script src="{% static 'js/sale-market-scan.js' %}?v=20261031-1" defer></script>{% endif %}
+<script src="{% static 'js/sale-market-actions.js' %}?v=20261031-1" defer></script>
+{% if state != 'cancelled' %}<script src="{% static 'js/sales-channels.js' %}?v=20261031-1" defer></script>{% endif %}
+{% if state == 'incomplete' %}<script src="{% static 'js/sales-status.js' %}?v=20261031-1" defer></script>{% endif %}
 {% endblock %}
 {% block content %}
 <div class="page-heading"><div><p class="eyebrow">Продажи GameBAT</p><h1>{{ page_title }}</h1><p class="muted">Заказы, оплаты и исторические цены.</p></div>{% if perms.sales.create_sale or user.is_superuser %}<a class="button button-large" href="{% url 'sales:create' %}">Новая продажа</a>{% endif %}</div>

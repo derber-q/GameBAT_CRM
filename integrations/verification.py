@@ -1,3 +1,4 @@
+"""Сверка локальных целей с реальным Avito. Диагностика выполняет сеть, режим исправления может менять объявления."""
 from dataclasses import dataclass
 from decimal import Decimal
 import time

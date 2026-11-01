@@ -1,3 +1,6 @@
+"""Схема данных, ограничения БД и вычисляемые свойства состояния прайсов и Excel.
+
+Сохранённые предложения и расчёты закупочной версии не подменяются текущим прайсом."""
 import uuid
 
 from django.conf import settings
@@ -9,6 +12,8 @@ from partners.models import Supplier
 
 
 class PriceDocumentSettings(models.Model):
+    """Настройки оформления выдаваемых прайсов, а не складской учёт."""
+
     company_name = models.CharField("Название компании", max_length=255, default="ReSOURCE")
     address = models.CharField("Адрес", max_length=500, blank=True)
     phone_1 = models.CharField("Телефон №1", max_length=40, blank=True)
@@ -53,6 +58,8 @@ class PriceDocumentSettings(models.Model):
 
 
 class ProcurementPriceList(models.Model):
+    """Версия закупочного расчёта со снимками курсов/тарифов и предложений."""
+
     is_trip_addition = models.BooleanField("Расчёт дополнительной партии рейса", default=False, editable=False)
     supplier_offers_complete = models.BooleanField(
         "Сохранены все предложения поставщиков", default=False, db_default=False, editable=False,
@@ -101,6 +108,8 @@ class ProcurementPriceList(models.Model):
 
 
 class ProcurementPriceListItem(models.Model):
+    """Снимок товара и его закупочных/покупательских условий внутри версии."""
+
     class ProductKind(models.TextChoices):
         CD = "cd", "CD"
         TECH = "tech", "Tech"
@@ -249,6 +258,8 @@ class ProcurementSupplierOffer(models.Model):
 
 
 class ProcurementPricePreference(models.Model):
+    """Память пользовательской наценки/предпочтений товара для следующих версий."""
+
     cd = models.OneToOneField(
         CD, on_delete=models.PROTECT, null=True, blank=True,
         related_name="procurement_price_preference", verbose_name="Диск",

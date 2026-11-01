@@ -1,3 +1,4 @@
+"""Адресный импорт партий реализации из файла; повторный запуск не является штатной проверкой."""
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from pathlib import Path

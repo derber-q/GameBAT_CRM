@@ -1,3 +1,4 @@
+/* ReSOURCE: Звуковой канал Avito и взаимодействие с разрешением воспроизведения. */
 (() => {
   'use strict';
   const root = document.querySelector('[data-avito-sound]');

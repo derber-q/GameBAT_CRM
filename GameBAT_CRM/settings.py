@@ -8,11 +8,17 @@ from cryptography.fernet import Fernet
 from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+from .environments import selected_mode
+GAMEBAT_ENV = selected_mode()
 LABEL_PRINTER_CONFIG_PATH = BASE_DIR / '.label-printer.json'
+LABEL_PRINT_BACKEND = os.environ.get('GAMEBAT_PRINT_BACKEND', 'native')
+PRINT_AGENT_ID = os.environ.get('GAMEBAT_PRINT_AGENT_ID', '')
+if LABEL_PRINT_BACKEND not in ('native', 'agent'):
+    raise ImproperlyConfigured('GAMEBAT_PRINT_BACKEND: допустимы native и agent.')
 
 # В репозитории нет фиксированного секрета. Локальный ключ хранится в игнорируемом
 # файле, а production должен передавать DJANGO_SECRET_KEY через окружение.
-SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY")
+SECRET_KEY = 'local-test-configuration-pending' if GAMEBAT_ENV == 'local_test' else os.environ.get("DJANGO_SECRET_KEY")
 if not SECRET_KEY:
     local_secret_path = BASE_DIR / ".django-secret-key"
     if local_secret_path.exists():
@@ -152,7 +158,7 @@ def _resource_token_encryption_key():
     return configured
 
 
-RESOURCE_TOKEN_ENCRYPTION_KEY = _resource_token_encryption_key()
+RESOURCE_TOKEN_ENCRYPTION_KEY = '' if GAMEBAT_ENV == 'local_test' else _resource_token_encryption_key()
 AVITO_API_BASE_URL = "https://api.avito.ru"
 AVITO_API_TIMEOUT_SECONDS = int(os.environ.get("AVITO_API_TIMEOUT_SECONDS", "10"))
 AVITO_SYNC_DEBOUNCE_SECONDS = int(os.environ.get("AVITO_SYNC_DEBOUNCE_SECONDS", "3"))
@@ -175,6 +181,8 @@ COINBASE_EXCHANGE_RATES_URL = "https://api.coinbase.com/v2/exchange-rates"
 COINBASE_API_TIMEOUT_SECONDS = 5
 COINBASE_RATES_CACHE_TTL_SECONDS = 30
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+UPDATE_STATUS_FILE = os.environ.get('GAMEBAT_UPDATE_STATUS_FILE', '') if GAMEBAT_ENV == 'production' else ''
+UPDATE_SOCKET = os.environ.get('GAMEBAT_UPDATE_SOCKET', '') if GAMEBAT_ENV == 'production' else ''
 AUTH_USER_MODEL = "accounts.User"
 LOGIN_URL = "accounts:login"
 LOGIN_REDIRECT_URL = "core:home"
@@ -208,3 +216,11 @@ LOGGING = {
         "gamebat.business": {"handlers": ["console"], "level": os.environ.get("DJANGO_LOG_LEVEL", "INFO"), "propagate": False}
     },
 }
+
+# Без переменной окружения пути и поведение рабочей локальной CRM сохранены.
+WORKER_RUNTIME_DIR = BASE_DIR / 'outputs/localhost/workers'
+if GAMEBAT_ENV == 'local_test':
+    from .environments import apply_test_settings
+    apply_test_settings(globals(), BASE_DIR)
+else:
+    TEMPLATES[0]['OPTIONS']['context_processors'].append('core.environment_context.environment')

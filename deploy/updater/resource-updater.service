@@ -1,0 +1,23 @@
+# Пользовательский systemd unit непривилегированного владельца rootless Docker.
+[Unit]
+Description=ReSOURCE manual update manager
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/resource-manager
+Environment=GAMEBAT_ENV=production
+ExecStart=/opt/resource-manager/.venv/bin/python -m deployment --config /srv/resource-manager/manager.json
+UMask=0077
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=1800
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/srv/resource-manager
+
+[Install]
+WantedBy=default.target

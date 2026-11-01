@@ -1,3 +1,4 @@
+/* ReSOURCE: Действия конкретной партии stock_id, вознаграждение/возврат/продажа и защита повторной отправки. */
 (() => {
   'use strict';
   document.addEventListener('submit', async event => {

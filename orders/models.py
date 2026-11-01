@@ -1,3 +1,6 @@
+"""Схема данных, ограничения БД и вычисляемые свойства состояния импортных заказов и рейсов.
+
+План закупки, фактическое поступление и проведённые Sale/Supply учитываются раздельно."""
 from decimal import Decimal
 
 from django.conf import settings
@@ -78,6 +81,8 @@ class ProductReferenceMixin(models.Model):
 
 
 class CustomerProcurementOrder(models.Model):
+    """Клиентский или складской закупочный заказ, который может входить в рейс."""
+
     class Purpose(models.TextChoices):
         CUSTOMER = "customer", "Клиентский заказ"
         STOCK = "stock", "Заказ на склад"
@@ -193,6 +198,8 @@ class CustomerProcurementOrder(models.Model):
 
 
 class CustomerProcurementOrderItem(ProductReferenceMixin):
+    """Количество и ценовые части товара в сохранённом заказе."""
+
     order = models.ForeignKey(
         CustomerProcurementOrder, on_delete=models.PROTECT, related_name="items", verbose_name="Заказ"
     )
@@ -254,6 +261,8 @@ class CustomerProcurementOrderItem(ProductReferenceMixin):
 
 
 class CustomerOrderStatusEvent(models.Model):
+    """След перехода статуса закупочного заказа."""
+
     order = models.ForeignKey(
         CustomerProcurementOrder, on_delete=models.PROTECT, related_name="status_events", verbose_name="Заказ"
     )
@@ -269,6 +278,8 @@ class CustomerOrderStatusEvent(models.Model):
 
 
 class OrderAdjustment(models.Model):
+    """Документ согласованной корректировки заказа и денежной разницы."""
+
     order = models.ForeignKey(
         CustomerProcurementOrder, on_delete=models.PROTECT, related_name="adjustments", verbose_name="Заказ"
     )
@@ -286,6 +297,8 @@ class OrderAdjustment(models.Model):
 
 
 class OrderAdjustmentChange(models.Model):
+    """Снимок изменения одной позиции корректировки заказа."""
+
     adjustment = models.ForeignKey(
         OrderAdjustment, on_delete=models.PROTECT, related_name="changes", verbose_name="Корректировка"
     )
@@ -309,6 +322,8 @@ class SupplierOrderBatchQuerySet(models.QuerySet):
 
 
 class SupplierOrderBatch(models.Model):
+    """Рейс или историческая подборка поставщикам; различать через is_trip/trips()."""
+
     objects = SupplierOrderBatchQuerySet.as_manager()
     price_list = models.ForeignKey(ProcurementPriceList, on_delete=models.PROTECT, null=True, blank=True,
                                   related_name="trips", verbose_name="Общий прайс", editable=False)
@@ -365,6 +380,8 @@ class SupplierTripInvoice(models.Model):
 
 
 class SupplierOrderBatchLine(ProductReferenceMixin):
+    """Закупочная ценовая партия поставщика внутри рейса."""
+
     supplier_price_updated_at = models.DateTimeField(
         'Закупочная цена скорректирована', null=True, blank=True, editable=False,
     )
@@ -427,6 +444,8 @@ class SupplierTripAllocation(models.Model):
 
 
 class SupplierTripChange(models.Model):
+    """Аудит изменения состава/назначений/условий рейса."""
+
     batch = models.ForeignKey(SupplierOrderBatch, on_delete=models.PROTECT, related_name="changes")
     actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
     created_at = models.DateTimeField(auto_now_add=True)

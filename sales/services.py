@@ -291,7 +291,7 @@ def create_sale(
     cash_received_amount=None, note="", external_prices=None, creation_key=None,
     partner_id=None, partner_name="", settlement_confirmation="",
 ):
-    """Обычная продажа; заказы и цены Маркета доступны только внутреннему импорту."""
+    """Обычный доверенный вход создания продажи с блокировкой запасов, снимками и денежным расчётом. Yandex-тип запрещён: ему нужен внутренний импорт."""
     if sale_type == Sale.SaleType.YANDEX_MARKET or price_type == Sale.PriceType.YANDEX_MARKET:
         raise ValidationError("Продажи и цены Яндекс Маркета доступны только через автоматическую интеграцию.")
     return _create_sale(actor=actor, warehouse_id=warehouse_id, price_type=price_type,
@@ -594,6 +594,7 @@ def set_sale_payment_method(*, actor, sale_id, payment_method):
 @transaction.atomic
 def mark_sale_paid(*, actor, sale_id, cash_received_amount=None, settlement_confirmation="", note=None,
                    settlement_partner_id=None):
+    """Подтверждает постоплату один раз с актуальным расчётом партнёра. Рейсовая финализация проверяется до денег; наличные и долг проводятся согласованно."""
     from orders.arrival import lock_document_trip
     lock_document_trip('sale',sale_id)
     sale = Sale.objects.select_for_update().select_related("warehouse").get(pk=sale_id)
@@ -671,7 +672,7 @@ def update_sale_note(*, actor, sale_id, note):
 
 @transaction.atomic
 def edit_postpay_sale_items(*, actor, sale_id, lines, note=None, partner_id=None, partner_name=None):
-    """Применяет разницы stock одним блоком; существующие строки сохраняют unit_price."""
+    """Меняет только разрешённую незавершённую постоплату. Проверяет общий остаток повторов, сохраняет исторические строки, разделяет рейсовые и складские источники."""
     custom_lines = [line for line in lines if line.get("product_type") in ("custom", "system")]
     consignment_lines = [line for line in lines if line.get("product_type") == "consignment"]
     product_lines = [line for line in lines if line.get("product_type") in ("cd", "tech")]
@@ -823,7 +824,7 @@ def edit_postpay_sale_items(*, actor, sale_id, lines, note=None, partner_id=None
 @retry_database_lock
 @transaction.atomic
 def cancel_sale(*, actor, sale_id, comment, _market=False, restore_stock=True):
-    """Возвращает товары и фактическую оплату, сохраняя продажу и все исходные строки."""
+    """Сторнирует собственные деньги/долг и восстанавливает реально списанные партии. Direct-delivery не возвращается на физический склад; повтор отмены не дублирует движения."""
     comment = str(comment or "").strip()
     if not comment:
         raise ValidationError("Укажите причину отмены продажи.")

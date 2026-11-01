@@ -1,3 +1,4 @@
+"""Контролируемое заполнение исторических доплат; сначала dry-run и согласованная копия БД."""
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.core.management.base import BaseCommand, CommandError

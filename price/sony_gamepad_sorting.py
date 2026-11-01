@@ -1,3 +1,4 @@
+"""Классификация моделей Sony-геймпадов по нормализованному названию; не изменяет товарные карточки."""
 import re
 import unicodedata
 from dataclasses import dataclass

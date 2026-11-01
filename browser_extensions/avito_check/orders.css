@@ -1,0 +1,11 @@
+/* Цвет строки дополняет текст Avito; размеры и отступы исходной строки сохраняются. */
+[data-marker="order-row"].resource-avito-order-row {
+  position: relative !important;
+  border-radius: 8px;
+}
+[data-resource-order-state="unlinked"].resource-avito-order-row { background-color: #fff1de !important; }
+[data-resource-order-state="cancelled"].resource-avito-order-row { background-color: #fde8e8 !important; }
+[data-resource-order-state="transit"].resource-avito-order-row { background-color: #edf8ee !important; }
+[data-resource-order-state="payment"].resource-avito-order-row { background-color: #eaf3ff !important; }
+[data-resource-order-state="ready"].resource-avito-order-row { background-color: #fff !important; }
+.resource-avito-order-row .resource-order-images-muted { visibility: hidden !important; }

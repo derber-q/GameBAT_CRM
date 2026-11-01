@@ -1,5 +1,7 @@
+/* ReSOURCE: Service worker расширения: разрешённые вкладки/сообщения и очередь ручного поиска CRM. */
 'use strict';
 importScripts('protocol.js');
+importScripts('orders-background.js');
 const PREFIX = 'resource-avito:';
 const locks = new Map();
 

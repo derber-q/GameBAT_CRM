@@ -1,3 +1,4 @@
+/* ReSOURCE: Сборка заказа Яндекса сканами через общий scanner; готовность возможна только после полного состава и печати. */
 (() => {
   const controls = document.getElementById('market-scan-controls');
   const status = document.getElementById('market-scan-status');

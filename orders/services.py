@@ -1,3 +1,4 @@
+"""Транзакционные переходы клиентских закупочных заказов, их предоплаты/приёмки и связанных записей."""
 import logging
 from collections import defaultdict
 from decimal import Decimal

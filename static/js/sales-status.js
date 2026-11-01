@@ -1,3 +1,4 @@
+/* ReSOURCE: Асинхронные переходы продажи и обработка устаревшей версии; оплата и доставка раздельны. */
 (() => {
   'use strict';
   const dialog = document.getElementById('sale-status-dialog');

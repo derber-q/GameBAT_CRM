@@ -1,3 +1,6 @@
+"""Именованные HTTP-маршруты приложения контрагентов.
+
+Partner, Supplier и SalesPlatform имеют разные роли; имя не заменяет финансовую FK-связь."""
 from django.urls import path
 from . import views
 from . import partner_views

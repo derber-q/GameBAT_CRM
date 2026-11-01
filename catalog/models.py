@@ -1,3 +1,6 @@
+"""Схема данных, ограничения БД и вычисляемые свойства состояния номенклатуры.
+
+Карточка описывает товар; физическое количество хранится в warehouse, штрихкоды — в BarcodeRegistry."""
 import re
 import unicodedata
 from decimal import Decimal, InvalidOperation
@@ -28,6 +31,8 @@ class NamedReference(models.Model):
 
 
 class Platform(NamedReference):
+    """Игровая платформа; не площадка реализации SalesPlatform."""
+
     class Meta(NamedReference.Meta):
         verbose_name = "платформа"
         verbose_name_plural = "платформы"
@@ -37,12 +42,16 @@ class Platform(NamedReference):
 
 
 class Brand(NamedReference):
+    """Справочник брендов техники для карточек, фильтров и группировки."""
+
     class Meta(NamedReference.Meta):
         verbose_name = "бренд"
         verbose_name_plural = "бренды"
 
 
 class ProductType(NamedReference):
+    """Тип техники, участвующий в фильтрах и закупочных тарифах."""
+
     class DeliveryGroup(models.TextChoices):
         GENERAL = "general", "Прочая техника"
         DEVICES = "devices", "Консоли, мини-ПК и VR/AR"
@@ -66,6 +75,8 @@ def normalize_game_series_name(value):
 
 
 class GameSeries(models.Model):
+    """Игровая серия для группировки номенклатуры, не издание отдельного диска."""
+
     name = models.CharField("Название", max_length=255)
     normalized_name = models.CharField("Нормализованное название", max_length=255, unique=True, editable=False)
     created_at = models.DateTimeField("Создано", auto_now_add=True)
@@ -279,6 +290,8 @@ class ProductBase(models.Model):
 
 
 class CD(ProductBase):
+    """Карточка диска/игры с платформой и серией; физическое наличие хранится по складам."""
+
     yandex_desired_profit = models.DecimalField("Желаемая чистая прибыль, ₽", max_digits=20, decimal_places=2, null=True, blank=True, default=CD_DESIRED_PROFIT, validators=[MinValueValidator(0)])
     length_cm = models.DecimalField("Длина упаковки, см", max_digits=8, decimal_places=3, null=True, blank=True, default=CD_DIMENSIONS["length_cm"], validators=[MinValueValidator(Decimal("0.001"))])
     width_cm = models.DecimalField("Ширина упаковки, см", max_digits=8, decimal_places=3, null=True, blank=True, default=CD_DIMENSIONS["width_cm"], validators=[MinValueValidator(Decimal("0.001"))])
@@ -327,6 +340,8 @@ class CD(ProductBase):
 
 
 class Tech(ProductBase):
+    """Карточка техники с брендом и типом; остатки площадок и складов учитываются отдельно."""
+
     yandex_desired_profit = models.DecimalField("Желаемая чистая прибыль, ₽", max_digits=20, decimal_places=2, null=True, blank=True, validators=[MinValueValidator(0)])
     brand = models.ForeignKey(Brand, on_delete=models.PROTECT, related_name="tech_items", verbose_name="Бренд")
     product_type = models.ForeignKey(ProductType, on_delete=models.PROTECT, related_name="tech_items", verbose_name="Тип товара")
@@ -364,6 +379,8 @@ class Tech(ProductBase):
 
 
 class ProductSupplierExclusion(models.Model):
+    """Исключение товара из нового выбора поставщика; старые закупочные снимки сохраняются."""
+
     cd = models.ForeignKey(CD, on_delete=models.CASCADE, null=True, blank=True, related_name='supplier_exclusions')
     tech = models.ForeignKey(Tech, on_delete=models.CASCADE, null=True, blank=True, related_name='supplier_exclusions')
     supplier = models.ForeignKey('partners.Supplier', on_delete=models.PROTECT, related_name='product_exclusions')
@@ -381,6 +398,8 @@ class ProductSupplierExclusion(models.Model):
 
 
 class ProductImage(models.Model):
+    """Защищённое изображение карточки с порядком галереи."""
+
     class ProductKind(models.TextChoices):
         CD = "cd", "CD"
         TECH = "tech", "Tech"
@@ -444,6 +463,8 @@ class ProductImage(models.Model):
 
 
 class ProductRemovalEvent(models.Model):
+    """След контролируемого удаления/архивации карточки без уничтожения истории операции."""
+
     class Action(models.TextChoices):
         HARD_DELETE = "hard_delete", "Безвозвратное удаление"
         ARCHIVE = "archive", "Удаление с сохранением истории"
@@ -494,6 +515,8 @@ class SystemProduct(models.Model):
 
 
 class BarcodeRegistry(models.Model):
+    """Глобальный реестр строковых штрихкодов, включая альтернативные и ведущие нули."""
+
     class ProductKind(models.TextChoices):
         CD = "cd", "CD"
         TECH = "tech", "Tech"
@@ -577,6 +600,8 @@ class BarcodeRegistry(models.Model):
 
 
 class ProductChangeEvent(models.Model):
+    """Неизменяемое событие аудита карточки/связанной операции."""
+
     class Source(models.TextChoices):
         NOMENCLATURE = "nomenclature", "Номенклатура"
         CRM = "crm", "CRM"
@@ -698,6 +723,8 @@ class ProductChangeEvent(models.Model):
 
 
 class ProductFieldChange(models.Model):
+    """Старое и новое значение одного поля события аудита."""
+
     event = models.ForeignKey(
         ProductChangeEvent,
         on_delete=models.CASCADE,

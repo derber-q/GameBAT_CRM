@@ -293,7 +293,7 @@ class ConsignmentServiceTests(TestCase):
         self.assertContains(response, "data-consignment-barcode-feedback")
         self.assertContains(response, "data-consignment-barcode-input")
         self.assertContains(response, "data-consignment-barcode-add")
-        self.assertContains(response, "consignment-transfer.js?v=consignment-wholesale-1")
+        self.assertContains(response, "consignment-transfer.js?v=20261031-1")
 
         failed_response = self.client.post(reverse("consignment:transfer"), {
             "warehouse": self.warehouse.pk,

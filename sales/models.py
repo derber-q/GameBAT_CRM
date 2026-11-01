@@ -1,3 +1,6 @@
+"""Схема данных, ограничения БД и вычисляемые свойства состояния продаж.
+
+Склад, деньги и долг проводят штатные сервисы; исторические строки сохраняют снимки."""
 import uuid
 from decimal import Decimal
 
@@ -10,6 +13,7 @@ from django.utils import timezone
 from catalog.models import CD, Tech
 from partners.models import SalesPlatform
 from warehouse.models import Warehouse
+from .print_agent_models import PrintAgent  # noqa: F401
 
 
 def temporary_sale_id():
@@ -17,6 +21,8 @@ def temporary_sale_id():
 
 
 class Sale(models.Model):
+    """Продажа со снимками строк и независимыми статусами сборки/оплаты/отмены."""
+
     direct_delivery = models.BooleanField('Прямая отгрузка по заказу рейса', default=False, db_default=False, editable=False)
     procurement_prepaid_amount = models.DecimalField('Ранее оплачено по закупочному заказу', max_digits=20, decimal_places=2, default=0, db_default=0, editable=False)
     consignment_report_id = models.UUIDField("Отчёт площадки", null=True, blank=True, unique=True, editable=False)
@@ -400,6 +406,8 @@ class SaleItemBase(models.Model):
 
 
 class SaleCDItem(SaleItemBase):
+    """Историческая строка продажи диска: цена, скидка, комиссия, себестоимость и источник."""
+
     sale = models.ForeignKey(Sale, on_delete=models.PROTECT, related_name="cd_items", verbose_name="Продажа")
     cd = models.ForeignKey(CD, on_delete=models.PROTECT, related_name="sale_items", verbose_name="CD")
 
@@ -425,6 +433,8 @@ class SaleCDItem(SaleItemBase):
 
 
 class SaleTechItem(SaleItemBase):
+    """Историческая строка продажи техники; текущая cost карточки её не пересчитывает."""
+
     sale = models.ForeignKey(Sale, on_delete=models.PROTECT, related_name="tech_items", verbose_name="Продажа")
     tech = models.ForeignKey(Tech, on_delete=models.PROTECT, related_name="sale_items", verbose_name="Техника")
 
@@ -585,6 +595,11 @@ class MarketPrintJob(models.Model):
     boxes_job = models.ForeignKey('yandex_market.SyncJob', on_delete=models.PROTECT, null=True, related_name='+')
     ready_job = models.ForeignKey('yandex_market.SyncJob', on_delete=models.PROTECT, null=True, related_name='+')
     printer_name = models.CharField(max_length=200)
+    print_backend = models.CharField(max_length=12, default='native', db_default='native')
+    agent = models.ForeignKey('sales.PrintAgent', on_delete=models.PROTECT, null=True, editable=False)
+    agent_claim = models.UUIDField(null=True, editable=False)
+    agent_claimed_at = models.DateTimeField(null=True, editable=False)
+    document_digest = models.CharField(max_length=64, blank=True, default='', db_default='', editable=False)
     printer_job_id = models.PositiveIntegerField(null=True)
     spooled_at = models.DateTimeField(null=True)
     printed_at = models.DateTimeField(null=True)
@@ -616,3 +631,6 @@ class MarketOrderAttention(models.Model):
             models.Q(acknowledged_at__isnull=True, acknowledged_by__isnull=True)
             | models.Q(acknowledged_at__isnull=False, acknowledged_by__isnull=False)
         ), name='market_attention_ack_complete')]
+
+
+from .avito_order_models import AvitoBrowserOrder, AvitoShippingPrintJob  # noqa: E402,F401

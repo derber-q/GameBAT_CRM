@@ -1,3 +1,6 @@
+"""Именованные HTTP-маршруты приложения реализации.
+
+Операции адресуют конкретную партию stock_id; разные условия партий не объединяются."""
 from django.urls import path
 from . import views, report_views
 from partners.platform_views import platform_create

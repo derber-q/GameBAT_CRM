@@ -1,3 +1,4 @@
+/* ReSOURCE: Каталог, корзина и оформление оптовой/розничной витрины; наличие/цена повторно проверяются при отправке. */
 document.addEventListener("DOMContentLoaded", () => {
   const root = document.querySelector(".resource-storefront");
   if (!root) return;

@@ -1,12 +1,18 @@
+"""Именованные HTTP-маршруты приложения продаж.
+
+Склад, деньги и долг проводят штатные сервисы; исторические строки сохраняют снимки."""
 from django.urls import path
 
 from . import views
 from . import market_views
 from . import notification_views
 from . import partner_views
+from . import avito_order_views
 
 app_name = "sales"
 urlpatterns = [
+    path('avito-extension/', avito_order_views.bridge, name='avito_bridge'),
+    path('avito-orders/<int:pk>/create/', avito_order_views.create, name='avito_create'),
     path('partner-settlement/preview/', partner_views.settlement_preview, name='settlement_preview'),
     path("", views.sale_list, name="list"),
     path("incomplete/", views.sale_list, name="incomplete"),
@@ -20,6 +26,7 @@ urlpatterns = [
     path('market-scan/', market_views.sale_market_scan, name='market_scan'),
     path('<int:pk>/market-print/', market_views.sale_market_print, name='market_print'),
     path('market-print/<uuid:request_id>/', market_views.sale_market_print_status, name='market_print_status'),
+    path('market-print/<uuid:request_id>/resolve/', market_views.print_resolve, name='print_resolve'),
     path('<int:pk>/market-label/', market_views.sale_market_label, name='market_label'),
     path('<int:pk>/market-label/<int:document_id>/', market_views.sale_market_label_status, name='market_label_status'),
     path("new/", views.sale_create, name="create"),

@@ -2,7 +2,7 @@
 {% load static %}
 {% block body_class %}responsive-crm-page trip-order-page{% endblock %}
 {% block title %}Заказы и рейсы · ReSOURCE{% endblock %}
-{% block extra_head %}<link rel="stylesheet" href="{% static 'css/orders-list.css' %}?v=20261027-1">{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{% static 'css/orders-list.css' %}?v=20261031-1">{% endblock %}
 {% block content %}
 <div class="page-heading"><div><p class="eyebrow">Закупки для клиентов и на склад</p><h1>Заказы и рейсы</h1><p class="muted">Объединяйте заказы без рейса по одной версии прайса.</p></div><div class="heading-actions">{% if can_create_trip %}<a class="button button-secondary" href="{% url 'orders:trip_empty_create' %}">Создать пустой рейс</a>{% endif %}{% if can_create and perms.price.view_supplier_prices %}<a class="button" href="{% url 'orders:stock_create' %}">Заказ на склад через форму</a>{% endif %}{% if can_create %}<a class="button button-large" href="{% url 'orders:upload' %}">Новый заказ</a>{% endif %}</div></div>
 

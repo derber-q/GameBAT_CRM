@@ -148,6 +148,7 @@ def _confirm(actor, arrival, order, rows, changes, key, confirmation, details):
 @transaction.atomic
 def create_arrival_sale(*, actor, arrival_id, order_id, expected_revision, warehouse_id, lines=None,
         draft_key=None, payment_method='cash_postpay', note='', changes_confirmation=''):
+    """Создаёт связанную незавершённую продажу с подтверждением отклонений и идемпотентностью. Рейсовые direct-delivery и добавленные складские строки различаются."""
     from sales.models import Sale
     from sales.services import _create_sale
     from .fulfillment import _link, prepaid_amount
@@ -178,6 +179,7 @@ def create_arrival_sale(*, actor, arrival_id, order_id, expected_revision, wareh
 @transaction.atomic
 def create_arrival_supply(*, actor, arrival_id, order_id, expected_revision, warehouse_id, lines=None,
         draft_key=None, changes_confirmation=''):
+    """Создаёт ожидающий рейсовый приход из складского назначения. До общей финализации/проверки цен физического поступления нет."""
     from supplies.services import accept_supply
     from supplies.models import Supply
     from .fulfillment import _link

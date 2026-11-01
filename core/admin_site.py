@@ -1,3 +1,4 @@
+"""Допуск к Admin по специальному праву без превращения сотрудника в staff/superuser."""
 from django.contrib.admin.forms import AdminAuthenticationForm
 from django.core.exceptions import ValidationError
 

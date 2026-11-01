@@ -1,3 +1,4 @@
+/* ReSOURCE: Оформление читаемых строк продажи и статусов. Стили не заменяют серверные учётные проверки. */
 .sales-pages { margin-bottom: 18px; flex-wrap: wrap; }
 .sales-pages [aria-current="page"] { border-color: var(--gb-primary); font-weight: 700; }
 .sales-type-group { margin-bottom: 20px; scroll-margin-top: 20px; }

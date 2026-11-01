@@ -1,3 +1,6 @@
+"""Регистрация моделей и разрешённых действий в Django Admin пользователей и прав.
+
+Управление сотрудниками и stuf требует superuser; документы выдаются защищённо."""
 from django.contrib import admin
 from django.contrib.auth.admin import GroupAdmin, UserAdmin
 from django.contrib.auth.models import Group

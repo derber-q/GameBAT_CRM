@@ -163,4 +163,4 @@ class CreditorPermissionAndUiTests(TestCase):
         self.assertNotContains(response, 'Редактировать')
         self.assertContains(response, 'Изменить долг', count=4)
         self.assertContains(response, 'Б Должник (Иван)')
-        self.assertContains(response, 'creditors.css?v=20261027-3')
+        self.assertContains(response, 'creditors.css?v=20261031-1')

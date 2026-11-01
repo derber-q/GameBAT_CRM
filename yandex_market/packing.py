@@ -1,3 +1,4 @@
+"""Состав и коробки заказа FBS; изменение упаковки влияет на актуальность официального ярлыка."""
 from collections import defaultdict
 
 from django.core.exceptions import ValidationError

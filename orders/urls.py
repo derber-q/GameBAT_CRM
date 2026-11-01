@@ -1,3 +1,6 @@
+"""Именованные HTTP-маршруты приложения импортных заказов и рейсов.
+
+План закупки, фактическое поступление и проведённые Sale/Supply учитываются раздельно."""
 from django.urls import path
 
 from . import views, trip_views, stock_order_views, trip_price_views, trip_invoice_views

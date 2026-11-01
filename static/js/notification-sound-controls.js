@@ -1,3 +1,4 @@
+/* ReSOURCE: Единый пользовательский регулятор звука нескольких каналов; учитывает блокировку autoplay браузером. */
 (() => {
   'use strict';
   const button = document.querySelector('[data-notification-sound-enable]');

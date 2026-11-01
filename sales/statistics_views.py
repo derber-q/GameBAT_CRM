@@ -1,3 +1,4 @@
+"""Построение отчёта/экспорта по выбранным продажам; финансовые снимки не подменяются текущими ценами."""
 from django.core.paginator import Paginator
 from django.http import HttpResponse
 from django.shortcuts import render

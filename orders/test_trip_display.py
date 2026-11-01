@@ -71,7 +71,7 @@ class TripDisplayTests(TestCase):
         self.assertContains(response, 'Техника · Геймпады', count=2)
         self.assertContains(response, 'Диски · PS5', count=2)
         self.assertContains(response, 'scope="rowgroup" colspan="7"', count=12)
-        self.assertContains(response, 'css/order-trips.css?v=5')
+        self.assertContains(response, 'css/order-trips.css?v=20261031-1')
         self.assertFalse(any(query['sql'].lstrip().upper().startswith(('INSERT ', 'UPDATE ', 'DELETE '))
             for query in queries))
         self.assertEqual(list(trip.lines.values()), before)

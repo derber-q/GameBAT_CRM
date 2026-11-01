@@ -1,12 +1,13 @@
-<div class="sale-market-controls" data-market-order="{{ market.order.pk }}">
+<div class="sale-market-controls" data-market-order="{{ market.order.pk }}" data-market-order-number="{{ market.order.order_id }}">
   {% if not suppress_staff_ack %}{% include 'sales/_market_attention.html' %}{% endif %}
   {% if market.order.last_error %}<p class="alert alert-error">{{ market.order.last_error }}</p>{% endif %}
   {% if market.latest_request.state == 'pending' or market.latest_request.state == 'running' %}<small role="status">Запрос в Маркет обрабатывается. Обновите страницу после выполнения.</small>{% elif market.latest_request.state == 'error' %}<p class="alert alert-error">Не удалось выполнить запрос: {{ market.latest_request.last_error }}</p>{% endif %}
   {% if market.order.fake %}<p class="help-text">Тестовый заказ</p>{% endif %}
+  <span class="badge" role="status" data-market-status-label{% if not market.show_status %} hidden{% endif %}>{% if market.show_status %}{{ market.status_label }}{% endif %}</span>
   {% if market.can_manage %}
-    {% if market.needs_boxes %}<p class="help-text">Укажите коробки в заказе Маркета перед готовностью к отгрузке.</p>{% endif %}
+    {% if market.needs_boxes %}<p class="help-text" data-market-ready-placeholder>Укажите коробки в заказе Маркета перед готовностью к отгрузке.</p>{% endif %}
     <div class="sale-market-actions">
-      {% if market.needs_boxes %}<button type="button" class="button button-small" disabled>Готов к отгрузке</button>{% endif %}
+      {% if market.needs_boxes %}<button type="button" class="button button-small" data-market-ready-placeholder disabled>Готов к отгрузке</button>{% endif %}
       {% for value,label in market.actions.items %}
       <form method="post" action="{% url 'sales:market_action' sale.pk %}" data-market-action="{{ value }}" data-market-order-number="{{ market.order.order_id }}">
         {% csrf_token %}

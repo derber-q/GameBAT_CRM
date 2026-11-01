@@ -1,3 +1,4 @@
+/* ReSOURCE: Мобильная сверка выбранного склада с общим scanner; отметки ревизии сами не меняют физический остаток. */
 (() => {
   'use strict';
   const list = document.querySelector('[data-revision-list]');

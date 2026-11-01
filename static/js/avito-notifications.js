@@ -1,3 +1,4 @@
+/* ReSOURCE: Бейдж и звук новых необходимых действий Avito, без повторного сигнала на неизменившийся список. */
 (() => {
   'use strict';
   const counters = [...document.querySelectorAll('[data-avito-counter]')];

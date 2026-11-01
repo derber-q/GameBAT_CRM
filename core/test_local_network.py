@@ -14,6 +14,37 @@ from django.test import SimpleTestCase
 
 @skipUnless(sys.platform == "win32" and shutil.which("powershell.exe"), "Нужен Windows PowerShell")
 class LocalNetworkTests(SimpleTestCase):
+    def test_repeated_shortcut_adopts_supervisor_and_never_launches_individual_workers(self):
+        result = self.run_powershell(
+            '$script:running = $false; $script:calls = @(); '
+            'function Get-GameBATWorkerProcesses { if ($script:running) { [pscustomobject]@{services=@("supervisor")} } }; '
+            'function Start-Process { param($FilePath,$ArgumentList,$WorkingDirectory,$WindowStyle,$RedirectStandardOutput,$RedirectStandardError); '
+            '$script:calls += [pscustomobject]@{args=$ArgumentList; style=$WindowStyle}; $script:running=$true }; '
+            "Start-GameBATSupervisor -ProjectDir 'C:\\CRM' -PythonExe 'python-test' -RuntimeDir 'C:\\CRM'; "
+            "Start-GameBATSupervisor -ProjectDir 'C:\\CRM' -PythonExe 'python-test' -RuntimeDir 'C:\\CRM'; "
+            'ConvertTo-Json -Depth 4 -InputObject @($script:calls)')
+        self.assertEqual(result, [{'args': ['-u', 'manage.py', 'run_worker_supervisor'], 'style': 'Hidden'}])
+
+    def test_worker_identity_all_default_service_equal_and_foreign_interpreter(self):
+        project = r'C:\CRM'
+        commands = [
+            rf'"{project}\.venv\Scripts\python.exe" -u "{project}\manage.py" run_integration_worker --service=all',
+            rf'"{project}\.venv\Scripts\python.exe" manage.py run_integration_worker',
+            rf'"{project}\.venv\Scripts\python.exe" manage.py run_label_print_worker --once',
+            rf'"{project}\.venv\Scripts\python.exe" manage.py run_worker_supervisor',
+            rf'"C:\Other\python.exe" "{project}\manage.py" run_integration_worker',
+            rf'"{project}\.venv\Scripts\python.exe" "C:\Other\manage.py" run_integration_worker',
+        ]
+        fixtures = json.dumps([{'Name': 'python.exe', 'CommandLine': command, 'ProcessId': index,
+                                'ParentProcessId': 90} for index, command in enumerate(commands)])
+        rows = self.run_powershell(f"$script:fixtures = '{fixtures}' | ConvertFrom-Json; "
+            'function Get-CimInstance { $script:fixtures }; '
+            "ConvertTo-Json -Depth 4 -InputObject @(Get-GameBATWorkerProcesses -ProjectDir 'C:\\CRM')")
+        self.assertEqual([row['pid'] for row in rows], [0, 1, 2, 3])
+        self.assertEqual(rows[0]['services'], ['avito', 'yandex', 'google'])
+        self.assertEqual(rows[1]['services'], ['avito', 'yandex', 'google'])
+        self.assertEqual(rows[2]['services'], ['print'])
+
     def test_worker_coverage_checks_service_and_preserves_other_projects(self):
         commands = [
             r'"C:\CRM\.venv\Scripts\python.exe" -u manage.py run_integration_worker --service yandex',
@@ -25,7 +56,7 @@ class LocalNetworkTests(SimpleTestCase):
             f"$script:fixtures = '{fixtures}' | ConvertFrom-Json; "
             "function Get-CimInstance { $script:fixtures }; "
             "$specific = @('avito','yandex','google') | ForEach-Object { Test-GameBATIntegrationWorker -ProjectDir 'C:\\CRM' -Service $_ }; "
-            "$script:fixtures[0].CommandLine = 'C:\\CRM\\python.exe manage.py run_integration_worker'; "
+            "$script:fixtures[0].CommandLine = 'C:\\CRM\\.venv\\Scripts\\python.exe manage.py run_integration_worker'; "
             "$all = @('avito','yandex','google') | ForEach-Object { Test-GameBATIntegrationWorker -ProjectDir 'C:\\CRM' -Service $_ }; "
             "ConvertTo-Json -InputObject @($specific + $all)"
         )

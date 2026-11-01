@@ -1,3 +1,4 @@
+/* ReSOURCE: Опрос локального внимания к заказам Яндекса; подтверждение уведомления не означает готовность к отгрузке. */
 (() => {
   'use strict';
   const root = document.getElementById('market-order-alerts');

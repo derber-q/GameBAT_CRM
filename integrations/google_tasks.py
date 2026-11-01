@@ -1,3 +1,4 @@
+"""Назначение и выполнение заданий Sheets с периодичностью и защитой от повторного запуска."""
 from datetime import timedelta
 from django.db import transaction
 from django.utils import timezone

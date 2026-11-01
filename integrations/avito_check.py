@@ -319,6 +319,9 @@ def _search_query(product, kind):
 
 def manual_search_url(product, kind):
     """Коды фильтров сверены с формой поиска Avito; платформа остаётся в запросе."""
+    from django.conf import settings
+    if settings.GAMEBAT_ENV == 'local_test':
+        return '#test-external-action-blocked'
     query = _search_query(product, kind)
     if kind != "cd":
         return "https://www.avito.ru/all?" + urlencode({"q": query + " новый", "localPriority": 0})

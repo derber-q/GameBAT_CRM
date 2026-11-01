@@ -85,6 +85,7 @@ def distribute_arrival(*, actor, arrival_id, expected_revision, raw_rows, select
 @retry_database_lock
 @transaction.atomic
 def finalize_arrival(*, actor, arrival_id, expected_revision, raw_rows, proposed_prices=None):
+    """Атомарно закрепляет затраты всех связанных партий с точным общим итогом. Не принимает приход и не применяет продажные цены карточек."""
     require_arrival_permissions(actor,finalization=True)
     arrival=lock_arrival(arrival_id,finalized_allowed=True)
     if arrival.finalized:
@@ -142,7 +143,7 @@ def prepare_supply_posting(supply, *, actor, independent_expenses=None):
 @retry_database_lock
 @transaction.atomic
 def prepare_supply_price_review(*, actor, supply_id, expected_revision_number=None, independent_expenses=None):
-    """Фиксирует предпросмотр средней стоимости, оставляя приход непроведённым."""
+    """Открывает обычную проверку цен рейсового прихода по актуальной средней физического склада. Независимые расходы не дублируют D; склад до подтверждения не меняется."""
     from django.core.exceptions import PermissionDenied
     from .arrival import lock_document_trip, assert_document_finalized
     from .arrival_documents import refresh_supply_calculations

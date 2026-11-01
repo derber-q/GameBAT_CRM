@@ -1,3 +1,4 @@
+/* ReSOURCE: Форма передачи конкретного физического склада на площадку реализации. */
 (() => {
   "use strict";
   const form = document.getElementById("consignment-transfer-form");

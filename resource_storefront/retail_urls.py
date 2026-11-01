@@ -1,3 +1,4 @@
+"""Маршруты розничной витрины с общими каталогом/корзиной и отдельным контекстом доступа."""
 from django.urls import path
 from . import views, retail_views
 

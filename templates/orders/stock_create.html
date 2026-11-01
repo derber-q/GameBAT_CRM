@@ -2,7 +2,7 @@
 {% load static %}
 {% block title %}Заказ на склад через форму · ReSOURCE{% endblock %}
 {% block body_class %}responsive-crm-page stock-order-page{% endblock %}
-{% block extra_head %}<link rel="stylesheet" href="{% static 'css/stock-order-form.css' %}?v=2"><script src="{% static 'js/stock-order-form.js' %}?v=1" defer></script>{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{% static 'css/stock-order-form.css' %}?v=20261031-1"><script src="{% static 'js/stock-order-form.js' %}?v=20261031-1" defer></script>{% endblock %}
 {% block content %}
 <div class="page-heading"><div><p class="eyebrow">Импортные закупки</p><h1>Заказ на склад через форму</h1><p class="muted">Выберите версию прайса и укажите количество товаров. Склад поступления выбирается после доставки.</p></div><div class="heading-actions"><a class="button button-secondary" href="{% url 'orders:upload' %}">Загрузить заказ из Excel</a><a class="button button-secondary" href="{% url 'price:imports' %}">К импортным прайсам</a></div></div>
 {% if has_price_lists %}

@@ -6,6 +6,18 @@
 $ErrorActionPreference = "Stop"
 
 $projectDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+# После передачи БД контейнеру ярлык не должен запускать Windows-worker рядом с ним.
+if (Test-Path -LiteralPath (Join-Path $projectDir 'outputs/local_container/owner.json')) {
+    $containerState = & (Join-Path $projectDir '.venv/Scripts/python.exe') -c "import subprocess; r=subprocess.run(['docker','inspect','--format','{{.State.Running}}','resource-crm-local'],capture_output=True,text=True,timeout=15); print(r.stdout.strip() if r.returncode==0 else 'unknown')"
+    if ($LASTEXITCODE -ne 0 -or $containerState -eq 'unknown') {
+        throw 'Не удалось проверить владельца рабочей БД в Docker. Сначала проверьте resource-crm-local; нативный запуск отменён.'
+    }
+    if ($containerState -eq 'true') {
+        Write-Output 'Рабочая CRM уже запущена в resource-crm-local: http://127.0.0.1:8000/'
+        if (-not $NoBrowser) { Start-Process 'http://127.0.0.1:8000/' }
+        exit 0
+    }
+}
 . (Join-Path $projectDir "scripts\local_network.ps1")
 $pythonExe = Join-Path $projectDir ".venv\Scripts\python.exe"
 $siteUrl = "http://127.0.0.1:8000/"
@@ -72,30 +84,17 @@ if (-not (Test-AllGameBATAddresses)) {
     }
 }
 
+$monitoringArgs = @('manage.py', 'configure_worker_monitoring')
+if ($SiteOnly) { $monitoringArgs += '--site-only' }
+& $pythonExe @monitoringArgs
+if ($LASTEXITCODE -ne 0) { throw 'Не удалось настроить мониторинг обработчиков. Проверьте миграции.' }
+
 if (-not $SiteOnly) {
     $runtimeDir = Join-Path $projectDir 'outputs\localhost'
     New-Item -ItemType Directory -Path $runtimeDir -Force | Out-Null
-    foreach ($service in @('avito', 'yandex', 'google')) {
-        if (-not (Test-GameBATIntegrationWorker -ProjectDir $projectDir -Service $service)) {
-            $workerLogPrefix = Join-Path $runtimeDir ((Get-Date -Format 'yyyyMMdd_HHmmss_fff') + "_${service}_worker")
-            Start-Process -FilePath $pythonExe `
-                -ArgumentList @('-u', 'manage.py', 'run_integration_worker', '--service', $service) `
-                -WorkingDirectory $projectDir -WindowStyle Hidden `
-                -RedirectStandardOutput "$workerLogPrefix.stdout.log" `
-                -RedirectStandardError "$workerLogPrefix.stderr.log"
-        }
-    }
+    # Только контроллер запускает worker. Его блокировка защищает от одновременных ярлыков.
+    Start-GameBATSupervisor -ProjectDir $projectDir -PythonExe $pythonExe -RuntimeDir $runtimeDir
 }
 
 Write-Output "CRM: $networkUrl"
-if (-not $SiteOnly) {
-    $escapedProjectDir = [Regex]::Escape($projectDir)
-    $printWorker = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
-        $_.CommandLine -match $escapedProjectDir -and $_.CommandLine -match 'manage\.py run_label_print_worker\s*$'
-    } | Select-Object -First 1
-    if (-not $printWorker) {
-        Start-Process -FilePath $pythonExe -ArgumentList @('manage.py', 'run_label_print_worker') `
-            -WorkingDirectory $projectDir -WindowStyle Hidden
-    }
-}
 if (-not $NoBrowser) { Start-Process $networkUrl }

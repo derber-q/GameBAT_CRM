@@ -1,3 +1,4 @@
+/* ReSOURCE: Выбор/привязка заказов и действия таблицы рейсов с проверкой ревизии на сервере. */
 (() => {
   'use strict';
   const data = document.getElementById('trip-editor-data');

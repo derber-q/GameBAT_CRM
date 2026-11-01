@@ -1,3 +1,4 @@
+/* ReSOURCE: Оформление Управление полями карточки, новинкой и исключениями поставщика с серверными permissions.. Стили не заменяют серверные учётные проверки. */
 .nomenclature-options-page .product-form-grid { align-items: start; }
 .nomenclature-options-page .field,
 .nomenclature-options-page .barcode-value-field { min-width: 0; }

@@ -1,3 +1,4 @@
+/* ReSOURCE: Ввод штрихкодов и добавление строк formset с сохранением обычного клавиатурного ввода. */
 document.addEventListener("DOMContentLoaded", () => {
   document.querySelectorAll("[data-barcode-formset]").forEach((container) => {
     const rows = container.querySelector("[data-barcode-rows]");

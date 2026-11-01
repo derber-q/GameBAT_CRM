@@ -3,9 +3,9 @@
 {% block title %}{{ sale.visible_id }} · ReSOURCE{% endblock %}
 {% block body_class %}responsive-crm-page sale-market-page{% endblock %}
 {% block extra_head %}
-<link rel="stylesheet" href="{% static 'css/sale-market.css' %}?v=2">
-<script src="{% static 'js/sale-market-print.js' %}?v=2" defer></script>
-<script src="{% static 'js/sale-market-actions.js' %}?v=1" defer></script>
+<link rel="stylesheet" href="{% static 'css/sale-market.css' %}?v=20261101-1">
+<script src="{% static 'js/sale-market-print.js' %}?v=20261101-1" defer></script>
+<script src="{% static 'js/sale-market-actions.js' %}?v=20261031-1" defer></script>
 {% endblock %}
 {% block content %}
 {% include 'orders/_operation_source.html' with operation=sale.trip_operation %}

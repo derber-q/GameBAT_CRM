@@ -1,0 +1,6 @@
+# Только фиксированный вход в local_test; исходников CRM, данных и секретов здесь нет.
+FROM nginx:1.28-alpine@sha256:a8b39bd9cf0f83869a2162827a0caf6137ddf759d50a171451b335cecc87d236
+COPY ingress.conf /etc/nginx/nginx.conf
+USER 101:101
+ENTRYPOINT ["nginx"]
+CMD ["-g", "daemon off;"]

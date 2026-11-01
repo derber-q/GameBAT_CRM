@@ -1,3 +1,4 @@
+/* ReSOURCE: Постановка и опрос задачи тихой печати; браузерный ответ не заменяет подтверждение принтера. */
 (() => {
   const pending = new Set();
   const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -35,15 +36,28 @@
   }
 
   function updateControls(job) {
-    document.querySelectorAll('[data-market-action]').forEach((form) => {
-      if (String(form.dataset.marketOrderNumber) !== String(job.order_id)) return;
-      const status = form.querySelector('[name="market_status"]');
-      const substatus = form.querySelector('[name="market_substatus"]');
-      if (status) status.value = job.market_status;
-      if (substatus) substatus.value = job.market_substatus;
-      if (form.dataset.marketAction === 'ready') {
-        form.querySelector('button').disabled = job.market_status !== 'PROCESSING' || job.market_substatus !== 'STARTED';
+    const actions = new Set(job.market_actions);
+    document.querySelectorAll('[data-market-order]').forEach((controls) => {
+      if (String(controls.dataset.marketOrderNumber) !== String(job.order_id)) return;
+      const label = controls.querySelector('[data-market-status-label]');
+      if (label) {
+        label.textContent = job.market_status_label;
+        label.hidden = actions.has('ready') && Boolean(controls.querySelector('[data-market-action="ready"], [data-market-ready-placeholder]'));
       }
+      controls.querySelectorAll('[data-market-ready-placeholder]').forEach((element) => {
+        element.hidden = !actions.has('ready');
+      });
+      controls.querySelectorAll('[data-market-action]').forEach((form) => {
+        const status = form.querySelector('[name="market_status"]');
+        const substatus = form.querySelector('[name="market_substatus"]');
+        if (status) status.value = job.market_status;
+        if (substatus) substatus.value = job.market_substatus;
+        const allowed = actions.has(form.dataset.marketAction);
+        form.hidden = !allowed;
+        const button = form.querySelector('button');
+        button.disabled = !allowed || (form.dataset.marketAction === 'ready' && !job.printed);
+        if (job.printed) button.removeAttribute('title');
+      });
     });
   }
 

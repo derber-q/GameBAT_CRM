@@ -413,7 +413,7 @@ def return_from_consignment(*, actor, warehouse_id, platform_id, product_type, p
 
 
 def consume_consignment_sale_lines(*, actor, sale, lines):
-    """Списывает выбранные партии реализации и создаёт неизменяемые снимки продажи."""
+    """Списывает точные stock_id и создаёт снимки площадки/цены/стоимости. Вызывается внутри транзакции продажи; агрегат реализации меняется вместе с партией."""
     grouped = {}
     for raw in lines:
         product_type = str(raw.get("product_kind") or raw.get("product_type") or "").lower()
@@ -507,6 +507,7 @@ def quote_consignment_sale_lines(lines):
 
 
 def restore_consignment_sale_lines(*, actor, sale, delete=False):
+    """Восстанавливает исходные партии строк данной продажи, а не произвольную партию того же товара. delete используется штатным редактированием после восстановления."""
     items = list(sale.consignment_items.select_for_update().order_by("product_kind", "source_stock_id"))
     for item in items:
         product_type = item.product_kind

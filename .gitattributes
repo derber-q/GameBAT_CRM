@@ -1,0 +1,15 @@
+# Одинаковые окончания строк для Python/шаблонов и исполняемых Git hooks.
+* text=auto
+.gitignore text eol=lf
+.gitattributes text eol=lf
+*.py text eol=lf
+*.js text eol=lf
+*.cjs text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+*.md text eol=lf
+*.json text eol=lf
+*.txt text eol=lf
+*.sh text eol=lf
+.githooks/* text eol=lf
+*.ps1 text eol=crlf

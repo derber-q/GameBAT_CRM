@@ -1,3 +1,4 @@
+/* ReSOURCE: Оформление действий партии реализации. Стили не заменяют серверные учётные проверки. */
 /* .field uses display:grid globally, so hidden dialog fields need an explicit rule. */
 #consignment-action-dialog [hidden],
 .consignment-product-group[hidden],

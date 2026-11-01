@@ -1,3 +1,4 @@
+"""Подстановка складских значений формы из доступного пользователю контекста."""
 from django import forms
 
 from .models import Warehouse

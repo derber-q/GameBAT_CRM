@@ -1,3 +1,6 @@
+"""Реакции на сохранение моделей и запуск связанных действий кассы и сейфа.
+
+Наличные отделены от банка/долга; баланс согласуется с журналом в одной транзакции."""
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 

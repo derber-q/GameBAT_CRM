@@ -1,0 +1,38 @@
+# Сборка отдельно, runtime без внешней сети; рабочие каталоги хоста не монтируются.
+services:
+  crm-test:
+    container_name: resource-crm-test
+    image: resource-local-test:stage-a
+    init: true
+    user: "10001:10001"
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    networks: [isolated]
+    volumes:
+      - test-data:/app/outputs/local_test
+    tmpfs: ["/tmp"]
+    environment:
+      GAMEBAT_TEST_ROOT: /app/outputs/local_test/container
+      GAMEBAT_TEST_CONTAINER: '1'
+    command: ["/bin/sh", "-c", "python -m GameBAT_CRM.local_test migrate --noinput && python -m GameBAT_CRM.local_test initialize_local_test && exec python -m GameBAT_CRM.local_test runserver 0.0.0.0:8001 --noreload --insecure"]
+  # Только этот фиксированный reverse proxy имеет входной порт; CRM остаётся в одной закрытой сети.
+  ingress:
+    container_name: resource-crm-test-proxy
+    image: resource-local-test-ingress:stage-a
+    user: "101:101"
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    networks: [entry, isolated]
+    tmpfs: ["/tmp"]
+    ports: ["127.0.0.1:8002:8080"]
+    depends_on: [crm-test]
+networks:
+  entry:
+  isolated:
+    internal: true
+    driver_opts:
+      com.docker.network.bridge.gateway_mode_ipv4: isolated
+volumes:
+  test-data:

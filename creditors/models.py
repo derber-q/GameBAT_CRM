@@ -1,3 +1,6 @@
+"""Схема данных, ограничения БД и вычисляемые свойства состояния задолженности.
+
+У связанного партнёра положительный долг — нам должны, отрицательный — мы должны."""
 from django.conf import settings
 from django.core.validators import MinValueValidator
 from django.db import models
@@ -8,6 +11,8 @@ from warehouse.models import Warehouse
 
 
 class Creditor(models.Model):
+    """Финансовая карточка; у связанного Partner знак задаёт направление долга."""
+
     name = models.CharField("Название", max_length=255, unique=True)
     current_debt = models.DecimalField(
         "Текущая задолженность", max_digits=20, decimal_places=2, default=0,
@@ -45,6 +50,8 @@ class Creditor(models.Model):
 
 
 class CreditorTransaction(models.Model):
+    """История дельт задолженности и сторно, отделённая от кассовой проводки."""
+
     class MoneySourceType(models.TextChoices):
         CASH = "cash", "Касса"
         SAFE = "safe", "Сейф"

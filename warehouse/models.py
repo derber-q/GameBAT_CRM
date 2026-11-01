@@ -1,3 +1,6 @@
+"""Схема данных, ограничения БД и вычисляемые свойства состояния складов.
+
+Различать физический остаток конкретного склада, реализацию и товар в пути."""
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
@@ -7,6 +10,8 @@ from catalog.models import CD, Tech
 
 
 class Warehouse(models.Model):
+    """Физический склад с собственной кассой, сейфом и остатками."""
+
     name = models.CharField("Название", max_length=255, unique=True)
 
     class Meta:
@@ -90,6 +95,8 @@ class WarehouseStorageLocation(models.Model):
 
 
 class CDWarehouseStock(WarehouseStockBase):
+    """Физический остаток конкретного диска на конкретном складе."""
+
     warehouse = models.ForeignKey(
         Warehouse, on_delete=models.PROTECT, related_name="cd_stocks", verbose_name="Склад"
     )
@@ -108,6 +115,8 @@ class CDWarehouseStock(WarehouseStockBase):
 
 
 class TechWarehouseStock(WarehouseStockBase):
+    """Физический остаток конкретной техники на конкретном складе."""
+
     warehouse = models.ForeignKey(
         Warehouse, on_delete=models.PROTECT, related_name="tech_stocks", verbose_name="Склад"
     )
@@ -146,6 +155,8 @@ class WarehouseStorageAssignmentBase(models.Model):
 
 
 class CDWarehouseStorageAssignment(WarehouseStorageAssignmentBase):
+    """Назначение мест хранения диска на данном складе, без самостоятельного количества."""
+
     stock = models.ForeignKey(
         CDWarehouseStock, on_delete=models.CASCADE, related_name="storage_assignments",
         verbose_name="Остаток CD",
@@ -165,6 +176,8 @@ class CDWarehouseStorageAssignment(WarehouseStorageAssignmentBase):
 
 
 class TechWarehouseStorageAssignment(WarehouseStorageAssignmentBase):
+    """Назначение мест хранения техники на данном складе, без отдельной оценки партии."""
+
     stock = models.ForeignKey(
         TechWarehouseStock, on_delete=models.CASCADE, related_name="storage_assignments",
         verbose_name="Остаток Tech",
@@ -184,6 +197,8 @@ class TechWarehouseStorageAssignment(WarehouseStorageAssignmentBase):
 
 
 class WarehouseRevision(models.Model):
+    """Сессия проверки наличия выбранного склада; отметка проверки не проводит движение."""
+
     warehouse = models.ForeignKey(Warehouse, on_delete=models.PROTECT, related_name="revisions")
     started_at = models.DateTimeField(auto_now_add=True)
     started_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name="warehouse_revisions_started")
@@ -200,6 +215,8 @@ class WarehouseRevision(models.Model):
 
 
 class WarehouseRevisionItem(models.Model):
+    """Результат сверки одной позиции в конкретной сессии ревизии."""
+
     revision = models.ForeignKey(WarehouseRevision, on_delete=models.CASCADE, related_name="items")
     cd = models.ForeignKey(CD, null=True, blank=True, on_delete=models.PROTECT, related_name="warehouse_revision_items")
     tech = models.ForeignKey(Tech, null=True, blank=True, on_delete=models.PROTECT, related_name="warehouse_revision_items")
@@ -220,6 +237,8 @@ class WarehouseRevisionItem(models.Model):
 
 
 class WarehouseTransfer(models.Model):
+    """Документ перемещения: отправка, путь и приёмка различаются."""
+
     class Status(models.TextChoices):
         CREATED = "created", "Создан"
         ASSEMBLED = "assembled", "Собран"
@@ -298,6 +317,8 @@ class WarehouseTransferItemBase(models.Model):
 
 
 class CDWarehouseTransferItem(WarehouseTransferItemBase):
+    """Неизменяемая строка перемещения диска с количественным/стоимостным снимком."""
+
     transfer = models.ForeignKey(
         WarehouseTransfer, on_delete=models.PROTECT, related_name="cd_items", verbose_name="Перемещение"
     )
@@ -313,6 +334,8 @@ class CDWarehouseTransferItem(WarehouseTransferItemBase):
 
 
 class TechWarehouseTransferItem(WarehouseTransferItemBase):
+    """Неизменяемая строка перемещения техники с сохранёнными условиями."""
+
     transfer = models.ForeignKey(
         WarehouseTransfer, on_delete=models.PROTECT, related_name="tech_items", verbose_name="Перемещение"
     )

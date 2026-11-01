@@ -1,3 +1,6 @@
+"""Регистрация моделей и разрешённых действий в Django Admin контрагентов.
+
+Partner, Supplier и SalesPlatform имеют разные роли; имя не заменяет финансовую FK-связь."""
 import logging
 
 from django.contrib import admin
