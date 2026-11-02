@@ -182,8 +182,15 @@ def order_preview(request):
         return redirect("orders:upload")
     _require_stock_prices(request.user, draft.get("purpose"))
     from_form = draft.get("entry_method") == "form"
+    target_trip = None
+    if draft.get('target_trip_id') is not None:
+        if not can_manage_trips(request.user):
+            raise PermissionDenied
+        target_trip = get_object_or_404(SupplierOrderBatch.objects.trips(), pk=draft['target_trip_id'])
     back_url = (f"{reverse('orders:stock_create')}?price_list={draft['price_list_id']}"
                 if from_form else reverse("orders:upload"))
+    if target_trip:
+        back_url = reverse('orders:trip_stock_create', args=[target_trip.pk]) + f"?price_list={draft['price_list_id']}"
     item_ids = [row["price_list_item_id"] for row in draft["lines"]]
     items = {
         item.pk: item
@@ -201,9 +208,15 @@ def order_preview(request):
         preview_rows.append({"item": item, **row})
     if request.method == "POST":
         try:
-            order = create_customer_procurement_order(actor=request.user, **{
-                key: value for key, value in draft.items() if key != "entry_method"
-            })
+            if target_trip:
+                from .trips import create_stock_order_for_trip
+                order = create_stock_order_for_trip(actor=request.user, batch_id=target_trip.pk,
+                    revision=draft['target_trip_revision'], **{key: draft[key] for key in
+                        ('price_list_id', 'recipient', 'comment', 'lines')})
+            else:
+                order = create_customer_procurement_order(actor=request.user, **{
+                    key: value for key, value in draft.items() if key != "entry_method"
+                })
         except ValidationError as exc:
             messages.error(request, " ".join(exc.messages))
         else:
@@ -212,7 +225,7 @@ def order_preview(request):
             return redirect("orders:detail", pk=order.pk)
     return render(request, "orders/preview.html", {"draft": draft, "rows": preview_rows,
                   "is_stock_order": draft.get("purpose") == CustomerProcurementOrder.Purpose.STOCK,
-                  "back_url": back_url, "from_form": from_form})
+                  "back_url": back_url, "from_form": from_form, 'target_trip': target_trip})
 
 
 @require_GET

@@ -4,13 +4,13 @@
 {% block body_class %}responsive-crm-page stock-order-page{% endblock %}
 {% block extra_head %}<link rel="stylesheet" href="{% static 'css/stock-order-form.css' %}?v=20261031-1"><script src="{% static 'js/stock-order-form.js' %}?v=20261031-1" defer></script>{% endblock %}
 {% block content %}
-<div class="page-heading"><div><p class="eyebrow">Импортные закупки</p><h1>Заказ на склад через форму</h1><p class="muted">Выберите версию прайса и укажите количество товаров. Склад поступления выбирается после доставки.</p></div><div class="heading-actions"><a class="button button-secondary" href="{% url 'orders:upload' %}">Загрузить заказ из Excel</a><a class="button button-secondary" href="{% url 'price:imports' %}">К импортным прайсам</a></div></div>
+<div class="page-heading"><div><p class="eyebrow">{% if target_trip %}{{ target_trip }}{% else %}Импортные закупки{% endif %}</p><h1>Заказ на склад через форму</h1><p class="muted">{% if target_trip %}После подтверждения заказ будет добавлен в рейс №{{ target_trip.pk }}. {% endif %}Выберите версию прайса и укажите количество товаров. Склад поступления выбирается после доставки.</p></div><div class="heading-actions">{% if target_trip %}<a class="button button-secondary" href="{% url 'orders:trip_detail' target_trip.pk %}">К рейсу</a>{% endif %}<a class="button button-secondary" href="{% url 'orders:upload' %}">Загрузить заказ из Excel</a><a class="button button-secondary" href="{% url 'price:imports' %}">К импортным прайсам</a></div></div>
 {% if has_price_lists %}
 <form method="get" class="panel form-panel"><div class="field"><label for="{{ choice_form.price_list.id_for_label }}">{{ choice_form.price_list.label }}</label>{{ choice_form.price_list }}{% for error in choice_form.price_list.errors %}<span class="error-text">{{ error }}</span>{% endfor %}</div><button class="button button-secondary" type="submit">Показать товары</button></form>
 {% else %}<section class="panel"><p class="muted">Сохранённых импортных прайсов пока нет. Сначала создайте прайс в разделе «Импортные прайсы».</p></section>{% endif %}
 {% if form %}
 {% if price_list.excluded_item_count %}<div class="alert alert-warning">Не показано позиций: {{ price_list.excluded_item_count }}. Их поставщик в этой версии прайса теперь исключён из подбора. Сформируйте новый прайс, чтобы выбрать допустимое предложение.</div>{% endif %}
-<form method="post" data-stock-order-form>{% csrf_token %}<input type="hidden" name="price_list" value="{{ price_list.pk }}">
+<form method="post" data-stock-order-form>{% csrf_token %}<input type="hidden" name="price_list" value="{{ price_list.pk }}">{% if target_trip %}{{ form.trip_revision }}{{ form.trip_revision.errors }}{% endif %}
 <section class="panel form-panel stacked-form">
 {% if form.non_field_errors %}<div class="alert alert-error" role="alert">{{ form.non_field_errors }}</div>{% endif %}
 <div class="field"><label for="{{ form.recipient.id_for_label }}">{{ form.recipient.label }}</label>{{ form.recipient }}<small class="muted">{{ form.recipient.help_text }}</small>{% for error in form.recipient.errors %}<span class="error-text">{{ error }}</span>{% endfor %}</div>

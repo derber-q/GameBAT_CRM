@@ -21,9 +21,12 @@ class StockOrderCreateForm(forms.Form):
                                help_text="Если оставить пустым, заказ будет называться «На склад».")
     comment = forms.CharField(label="Комментарий", required=False, widget=forms.Textarea(attrs={"rows": 3}))
 
-    def __init__(self, *args, items, **kwargs):
+    def __init__(self, *args, items, target_trip=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.items = items
+        if target_trip is not None:
+            self.fields['trip_revision'] = forms.IntegerField(
+                min_value=0, initial=target_trip.revision, widget=forms.HiddenInput)
         for item in items:
             self.fields[f"quantity_{item.pk}"] = forms.IntegerField(
                 label=f"Количество: {item.product_name_snapshot}", min_value=0, max_value=2147483647,
@@ -60,8 +63,12 @@ def stock_order_items(price_list):
     return allowed
 
 
-def previous_trip_stock_quantities():
-    trip = SupplierOrderBatch.objects.trips().first()
+def previous_trip_stock_quantities(target_trip=None):
+    trips = SupplierOrderBatch.objects.trips()
+    if target_trip is not None:
+        trips = trips.filter(Q(created_at__lt=target_trip.created_at) |
+            Q(created_at=target_trip.created_at, pk__lt=target_trip.pk))
+    trip = trips.first()
     if trip is None:
         return None, {}
     rows = CustomerProcurementOrderItem.objects.filter(

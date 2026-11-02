@@ -56,6 +56,7 @@ INSTALLED_APPS = [
     "price",
     "orders",
     "integrations.apps.IntegrationsConfig",
+    "telegram_bots.apps.TelegramBotsConfig",
     "yandex_market.apps.YandexMarketConfig",
     "resource_storefront.apps.ResourceStorefrontConfig",
 ]

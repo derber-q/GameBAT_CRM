@@ -1,0 +1,13 @@
+{% extends 'base.html' %}
+{% block title %}Подключить Telegram · ReSOURCE{% endblock %}
+{% block body_class %}responsive-crm-page{% endblock %}
+{% block content %}
+<h1>Мой Telegram</h1>
+<section class="panel">
+  {% if access.telegram_user_id %}<p>Telegram привязан: {{ access.username|default:'Личный аккаунт' }}.</p>{% endif %}
+  <p>Для доступа администратор должен разрешить бота и формирование оптового прайса.</p>
+  <form method="post">{% csrf_token %}<button class="button" type="submit">Привязать Telegram</button></form>
+  {% if error %}<p class="error-text" role="alert">{{ error }}</p>{% endif %}
+  {% if link %}<p><a class="button" href="{{ link }}" target="_blank" rel="noopener noreferrer">Открыть бота и подключиться</a></p><p class="muted">Ссылка действует 10 минут, один раз. Не передавайте её другим людям.</p>{% endif %}
+</section>
+{% endblock %}

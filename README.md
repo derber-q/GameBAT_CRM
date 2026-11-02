@@ -11,6 +11,7 @@
 - [Архитектура и правила учёта](docs/architecture.md).
 - [Эксплуатация и восстановление](docs/operations.md).
 - [Карта сопровождения кода](docs/development.md).
+- [Telegram-бот сотрудников: актуальный оптовый Excel](docs/telegram_staff_bot.md).
 - [Печать из Docker и удалённого сервера через Windows-агент](docs/print_agent.md).
 - [Ручные обновления GitHub: страница и отдельный серверный менеджер](docs/updates.md).
 - [Пользовательские сценарии](docs/user_guide.md).
@@ -32,6 +33,7 @@
 | `pricing`, `price` | Текущие цены/FBS/Avito Check и проверяемые Excel-прайсы |
 | `orders` | Закупочные заказы, поставщики, рейсы, прибытие/финализация |
 | `integrations`, `yandex_market` | Очереди и внешние сервисы |
+| `telegram_bots` | Личный бот сотрудников, безопасная привязка и свежий оптовый Excel |
 | `resource_storefront` | Оптовая/розничная витрины и оформление |
 
 `templates/` и `static/` содержат общую оболочку. `browser_extensions/avito_check/` — исходники расширения Opera/Chromium. Миграции и тесты являются частью CRM, а не временными файлами.

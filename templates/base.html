@@ -124,6 +124,7 @@
               {% if nav.integration_keys %}<a href="{% url 'integrations:api_keys' %}">API ключи</a>{% endif %}
               {% if nav.integration_avito %}<a href="{% url 'integrations:avito' %}">Avito</a>{% endif %}
               {% if nav.integration_yandex %}<a href="{% url 'yandex_market:dashboard' %}">Яндекс Маркет</a>{% endif %}
+              <a href="{% if user.is_superuser %}{% url 'telegram_bots:dashboard' %}{% else %}{% url 'telegram_bots:connection' %}{% endif %}">Telegram-боты</a>
               {% if nav.worker_monitoring %}<a href="{% url 'integrations:workers' %}">Обработчики</a>{% endif %}
               {% if nav.updates %}<a href="{% url 'integrations:updates' %}">Обновления</a>{% endif %}
               {% if nav.integration_storefront %}<a href="{% url 'resource_storefront:manage' %}">Оптовый сайт</a>{% endif %}

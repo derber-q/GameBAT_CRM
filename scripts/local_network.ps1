@@ -62,7 +62,7 @@ function Get-GameBATWorkerProcesses {
     param([Parameter(Mandatory)][string]$ProjectDir)
     $project = $ProjectDir.TrimEnd('\')
     $pythonPattern = '^"?' + [Regex]::Escape((Join-Path $project '.venv\Scripts\python.exe')) + '"?\s+'
-    $managePattern = '(?:^|\s)"?(?:' + [Regex]::Escape($project + '\') + ')?manage\.py"?\s+(run_integration_worker|run_label_print_worker|run_worker_supervisor)(?:\s|$)'
+    $managePattern = '(?:^|\s)"?(?:' + [Regex]::Escape($project + '\') + ')?manage\.py"?\s+(run_integration_worker|run_label_print_worker|run_worker_supervisor|run_telegram_staff_bot)(?:\s|$)'
     # Ошибка CIM не означает пустой список: контроллер обязан запретить запуск.
     foreach ($worker in @(Get-CimInstance Win32_Process -ErrorAction Stop)) {
         if ($worker.Name -notmatch '^python' -or $worker.CommandLine -notmatch $pythonPattern) { continue }
@@ -72,6 +72,7 @@ function Get-GameBATWorkerProcesses {
         switch ($command.Groups[1].Value) {
             'run_label_print_worker' { $services = @('print') }
             'run_worker_supervisor' { $services = @('supervisor') }
+            'run_telegram_staff_bot' { $services = @('telegram_staff') }
             'run_integration_worker' {
                 $selection = [Regex]::Match($worker.CommandLine, '--service(?:=|\s+)["'']?(all|avito|yandex|google)\b', 'IgnoreCase')
                 if (-not $selection.Success -or $selection.Groups[1].Value -eq 'all') {

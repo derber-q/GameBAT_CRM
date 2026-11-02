@@ -1,5 +1,10 @@
 # Карта кода для сопровождения
 
+Telegram сотрудников: `telegram_bots/` — доступ, меню, адаптер прежнего Excel,
+квитанции updates и очередь. `run_telegram_staff_bot` встроен как `telegram_staff`
+в существующий мониторинг; задания не меняют склад/продажи.
+[Устройство, права и запрет Telegram в local_test](telegram_staff_bot.md).
+
 Ручные обновления: `core/update_views.py`, `templates/core/updates.html` и
 `deployment/`. Web не импортирует исполняющий Docker-адаптер. Личная SQLite менеджера
 отдельна от Django, миграций бизнес-БД эта функция не добавляет. Проверки:

@@ -98,7 +98,7 @@ class AvitoExtensionBrowserChecks(StaticLiveServerTestCase):
                 discount = avito.locator('#discount-card')
                 old = discount.locator('[data-marker="old-price-value"]')
                 current = discount.locator('[data-marker="item-price-value"]')
-                expect(panel).to_have_attribute('data-version','1.6.1')
+                expect(panel).to_have_attribute('data-version','1.6.4')
                 expect(old).to_have_css('color','rgb(17, 17, 17)')
                 expect(old).to_have_css('text-decoration-line','none')
                 expect(discount.locator('.redesignDiscountWrapper-test')).to_have_css('text-decoration-line','none')

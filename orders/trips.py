@@ -11,7 +11,7 @@ from .models import (
     CustomerProcurementOrder, CustomerProcurementOrderItem, OrderAdjustment, OrderAdjustmentChange,
     SupplierOrderBatch, SupplierOrderBatchLine, SupplierTripAllocation, SupplierTripChange,
 )
-from .services import _quantity, _save_totals
+from .services import _quantity, _save_totals, create_customer_procurement_order
 from .order_editing import require_untransferred_order
 
 MANAGE_PERMISSIONS = (
@@ -309,6 +309,28 @@ def assign_order_to_trip(*, actor, order_id, target_batch_id, target_revision,
     _record_trip_change(target, actor, f"Заказ №{order.pk} " + (
         f"перенесён из рейса №{source.pk}" if source else "добавлен в рейс"), details)
     return target
+
+
+@transaction.atomic
+def create_stock_order_for_trip(*, actor, batch_id, revision, price_list_id, recipient, comment, lines):
+    """Заказ и распределения рейса сохраняются вместе; при отказе свободного заказа не остаётся."""
+    _require_manage(actor)
+    if not actor.has_perm('orders.create_order'):
+        raise PermissionDenied('Недостаточно прав для создания заказа.')
+    try:
+        batch = SupplierOrderBatch.objects.trips().select_for_update().get(pk=batch_id)
+    except SupplierOrderBatch.DoesNotExist as exc:
+        raise ValidationError('Рейс не найден.') from exc
+    if batch.revision != _quantity(revision, 'Версия рейса'):
+        raise ValidationError('Рейс уже изменён другим запросом. Вернитесь к форме и проверьте состав.')
+    _require_editable_trip(batch)
+    if batch.price_list_id is not None and batch.price_list_id != price_list_id:
+        raise ValidationError('Заказ и рейс должны быть из одной версии прайса.')
+    order = create_customer_procurement_order(actor=actor, price_list_id=price_list_id,
+        recipient=recipient, comment=comment, lines=lines, purpose=CustomerProcurementOrder.Purpose.STOCK)
+    assign_order_to_trip(actor=actor, order_id=order.pk, target_batch_id=batch.pk,
+        target_revision=batch.revision)
+    return order
 
 
 @transaction.atomic

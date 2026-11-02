@@ -4,7 +4,7 @@
 
 Справочник исходников и метаданных схемы, без рабочих записей/ключей. Перегенерация: `.venv/Scripts/python.exe scripts/build_technical_reference.py`.
 
-Конкретных собственных моделей: **129**.
+Конкретных собственных моделей: **134**.
 
 Метаданные моделей не показывают значения записей. `blank/null/editable` не заменяют ограничения формы, permissions и проверки сервиса. `on_delete=CASCADE` не означает разрешённое пользовательское удаление документа.
 
@@ -2014,7 +2014,7 @@ WorkerService(code, expected, status, heartbeat_at, last_started_at, observed_at
 
 | Поле | Тип/параметры | Назначение/связь |
 | --- | --- | --- |
-| `code` | CharField; null=False; blank=False; editable=True; max_length=12 | code; choices: avito → Avito; yandex → Яндекс Маркет; google → Google Sheets; print → Печать этикеток |
+| `code` | CharField; null=False; blank=False; editable=True; max_length=20 | code; choices: avito → Avito; yandex → Яндекс Маркет; google → Google Sheets; print → Печать этикеток; telegram_staff → Telegram — сотрудники |
 | `expected` | CharField; null=False; blank=False; editable=True; max_length=20 | expected |
 | `status` | CharField; null=False; blank=False; editable=True; max_length=20 | status |
 | `heartbeat_at` | DateTimeField; null=True; blank=True; editable=True | heartbeat at |
@@ -2045,7 +2045,7 @@ WorkerCommand(id, request_id, service, actor, state, result, created_at, finishe
 | --- | --- | --- |
 | `id` | UUIDField; null=False; blank=False; editable=False; max_length=32 | id |
 | `request_id` | UUIDField; null=False; blank=False; editable=True; max_length=32 | request id |
-| `service` | CharField; null=False; blank=False; editable=True; max_length=12 | service; choices: avito → Avito; yandex → Яндекс Маркет; google → Google Sheets; print → Печать этикеток |
+| `service` | CharField; null=False; blank=False; editable=True; max_length=20 | service; choices: avito → Avito; yandex → Яндекс Маркет; google → Google Sheets; print → Печать этикеток; telegram_staff → Telegram — сотрудники |
 | `actor` | ForeignKey; null=True; blank=False; editable=True | actor → accounts.User; on_delete=SET_NULL |
 | `state` | CharField; null=False; blank=False; editable=True; max_length=16 | state |
 | `result` | CharField; null=False; blank=True; editable=True; max_length=40 | result |
@@ -2387,6 +2387,114 @@ Permissions: [('manual_google_sheets_sync', 'Google Sheets: ручная син�
 Permissions: []. Стандартные: ('add', 'change', 'delete', 'view').
 
 Ограничения: `[]`; unique_together: `()`.
+
+## `telegram_bots.StaffBot` — бот сотрудников
+
+StaffBot(id, code, name, username, enabled, cooldown_seconds, next_update_id, last_poll_at, last_success_at, error_category, lease_owner, lease_until)
+
+Таблица `telegram_bots_staffbot`; порядок `[]`.
+
+| Поле | Тип/параметры | Назначение/связь |
+| --- | --- | --- |
+| `id` | BigAutoField; null=False; blank=True; editable=True | ID |
+| `code` | CharField; null=False; blank=False; editable=False; max_length=32 | code |
+| `name` | CharField; null=False; blank=False; editable=True; max_length=100 | name |
+| `username` | CharField; null=False; blank=True; editable=True; max_length=32 | username |
+| `enabled` | BooleanField; null=False; blank=False; editable=True | enabled |
+| `cooldown_seconds` | PositiveIntegerField; null=False; blank=False; editable=True | cooldown seconds |
+| `next_update_id` | BigIntegerField; null=False; blank=False; editable=True | next update id |
+| `last_poll_at` | DateTimeField; null=True; blank=True; editable=True | last poll at |
+| `last_success_at` | DateTimeField; null=True; blank=True; editable=True | last success at |
+| `error_category` | CharField; null=False; blank=True; editable=True; max_length=40 | error category |
+| `lease_owner` | UUIDField; null=True; blank=True; editable=True; max_length=32 | lease owner |
+| `lease_until` | DateTimeField; null=True; blank=True; editable=True | lease until |
+
+Permissions: [('use_staff_bot', 'Может пользоваться Telegram-ботом сотрудников')]. Стандартные: ('add', 'change', 'delete', 'view').
+
+Ограничения: `[]`; unique_together: `()`.
+
+## `telegram_bots.StaffBotAccess` — staff bot access
+
+StaffBotAccess(id, bot, user, allowed, telegram_user_id, username, linked_at, revoked_at)
+
+Таблица `telegram_bots_staffbotaccess`; порядок `[]`.
+
+| Поле | Тип/параметры | Назначение/связь |
+| --- | --- | --- |
+| `id` | BigAutoField; null=False; blank=True; editable=True | ID |
+| `bot` | ForeignKey; null=False; blank=False; editable=True | bot → telegram_bots.StaffBot; on_delete=CASCADE |
+| `user` | ForeignKey; null=False; blank=False; editable=True | user → accounts.User; on_delete=CASCADE |
+| `allowed` | BooleanField; null=False; blank=False; editable=True | allowed |
+| `telegram_user_id` | BigIntegerField; null=True; blank=True; editable=True | telegram user id |
+| `username` | CharField; null=False; blank=True; editable=True; max_length=64 | username |
+| `linked_at` | DateTimeField; null=True; blank=True; editable=True | linked at |
+| `revoked_at` | DateTimeField; null=True; blank=True; editable=True | revoked at |
+
+Permissions: []. Стандартные: ('add', 'change', 'delete', 'view').
+
+Ограничения: `[<UniqueConstraint: fields=('bot', 'user') name='telegram_bot_employee'>, <UniqueConstraint: fields=('bot', 'telegram_user_id') name='telegram_bot_identity'>]`; unique_together: `()`.
+
+## `telegram_bots.StaffBotLink` — staff bot link
+
+StaffBotLink(id, access, token_hash, expires_at, used_at, created_at)
+
+Таблица `telegram_bots_staffbotlink`; порядок `[]`.
+
+| Поле | Тип/параметры | Назначение/связь |
+| --- | --- | --- |
+| `id` | BigAutoField; null=False; blank=True; editable=True | ID |
+| `access` | ForeignKey; null=False; blank=False; editable=True | access → telegram_bots.StaffBotAccess; on_delete=CASCADE |
+| `token_hash` | CharField; null=False; blank=False; editable=True; max_length=64 | token hash |
+| `expires_at` | DateTimeField; null=False; blank=False; editable=True | expires at |
+| `used_at` | DateTimeField; null=True; blank=True; editable=True | used at |
+| `created_at` | DateTimeField; null=False; blank=True; editable=False | created at |
+
+Permissions: []. Стандартные: ('add', 'change', 'delete', 'view').
+
+Ограничения: `[]`; unique_together: `[]`.
+
+## `telegram_bots.StaffBotUpdate` — staff bot update
+
+StaffBotUpdate(id, bot, update_id, created_at, result)
+
+Таблица `telegram_bots_staffbotupdate`; порядок `[]`.
+
+| Поле | Тип/параметры | Назначение/связь |
+| --- | --- | --- |
+| `id` | BigAutoField; null=False; blank=True; editable=True | ID |
+| `bot` | ForeignKey; null=False; blank=False; editable=True | bot → telegram_bots.StaffBot; on_delete=CASCADE |
+| `update_id` | BigIntegerField; null=False; blank=False; editable=True | update id |
+| `created_at` | DateTimeField; null=False; blank=True; editable=False | created at |
+| `result` | CharField; null=False; blank=True; editable=True; max_length=40 | result |
+
+Permissions: []. Стандартные: ('add', 'change', 'delete', 'view').
+
+Ограничения: `[<UniqueConstraint: fields=('bot', 'update_id') name='telegram_bot_update'>]`; unique_together: `()`.
+
+## `telegram_bots.StaffBotJob` — staff bot job
+
+StaffBotJob(id, bot, access, warehouse, update, chat_id, state, created_at, started_at, finished_at, error_category, telegram_message_id)
+
+Таблица `telegram_bots_staffbotjob`; порядок `['created_at']`.
+
+| Поле | Тип/параметры | Назначение/связь |
+| --- | --- | --- |
+| `id` | UUIDField; null=False; blank=False; editable=False; max_length=32 | id |
+| `bot` | ForeignKey; null=False; blank=False; editable=True | bot → telegram_bots.StaffBot; on_delete=CASCADE |
+| `access` | ForeignKey; null=False; blank=False; editable=True | access → telegram_bots.StaffBotAccess; on_delete=PROTECT |
+| `warehouse` | ForeignKey; null=True; blank=False; editable=True | warehouse → warehouse.Warehouse; on_delete=SET_NULL |
+| `update` | OneToOneField; null=False; blank=False; editable=True | update → telegram_bots.StaffBotUpdate; on_delete=PROTECT |
+| `chat_id` | BigIntegerField; null=False; blank=False; editable=True | chat id |
+| `state` | CharField; null=False; blank=False; editable=True; max_length=16 | state; choices: queued → В очереди; generating → Формируется; sending → Отправляется; done → Отправлен; error → Ошибка; uncertain → Результат отправки неизвестен |
+| `created_at` | DateTimeField; null=False; blank=True; editable=False | created at |
+| `started_at` | DateTimeField; null=True; blank=True; editable=True | started at |
+| `finished_at` | DateTimeField; null=True; blank=True; editable=True | finished at |
+| `error_category` | CharField; null=False; blank=True; editable=True; max_length=40 | error category |
+| `telegram_message_id` | BigIntegerField; null=True; blank=True; editable=True | telegram message id |
+
+Permissions: []. Стандартные: ('add', 'change', 'delete', 'view').
+
+Ограничения: `[<UniqueConstraint: fields=('access',) name='telegram_one_active_price' condition=(AND: ('state__in', ['queued', 'generating', 'sending']))>]`; unique_together: `()`.
 
 ## `yandex_market.Integration` — integration
 

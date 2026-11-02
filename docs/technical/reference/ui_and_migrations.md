@@ -4,7 +4,7 @@
 
 Справочник исходников и метаданных схемы, без рабочих записей/ключей. Перегенерация: `.venv/Scripts/python.exe scripts/build_technical_reference.py`.
 
-## HTML-шаблоны (164)
+## HTML-шаблоны (167)
 
 ### `resource_storefront/templates/resource_storefront/_card.html`
 
@@ -130,7 +130,7 @@
 
 Части: `core/_test_environment_banner.html`, `integrations/_worker_alert.html`, `sales/_notification_assets.html`, `sales/_notification_counter.html`, `sales/_notification_panel.html`, `sales/_notification_sound_button.html`.
 
-Именованные действия: `accounts:logout`, `accounts:password_change`, `accounts:staff_by_group`, `accounts:user_list`, `admin:index`, `cash:register`, `catalog:warehouse`, `consignment:list`, `consignment:platform`, `core:exchange_rates`, `core:home`, `creditors:list`, `integrations:api_keys`, `integrations:avito`, `integrations:updates`, `integrations:workers`, `nomenclature:cd_list`, `nomenclature:create`, `nomenclature:list`, `nomenclature:tech_list`, `orders:list`, `partners:list`, `partners:partner_list`, `price:imports`, `price:index`, `price:site_links`, `pricing:avito_check`, `pricing:cd_list`, `pricing:list`, `pricing:tech_list`, `resource_storefront:manage`, `sales:cancelled`, `sales:completed`, `sales:create`, `sales:incomplete`, `sales:settlement_preview`, `statistics:index`, `supplies:list`, `warehouse:detail`, `warehouse:transfer_list`, `yandex_market:dashboard`.
+Именованные действия: `accounts:logout`, `accounts:password_change`, `accounts:staff_by_group`, `accounts:user_list`, `admin:index`, `cash:register`, `catalog:warehouse`, `consignment:list`, `consignment:platform`, `core:exchange_rates`, `core:home`, `creditors:list`, `integrations:api_keys`, `integrations:avito`, `integrations:updates`, `integrations:workers`, `nomenclature:cd_list`, `nomenclature:create`, `nomenclature:list`, `nomenclature:tech_list`, `orders:list`, `partners:list`, `partners:partner_list`, `price:imports`, `price:index`, `price:site_links`, `pricing:avito_check`, `pricing:cd_list`, `pricing:list`, `pricing:tech_list`, `resource_storefront:manage`, `sales:cancelled`, `sales:completed`, `sales:create`, `sales:incomplete`, `sales:settlement_preview`, `statistics:index`, `supplies:list`, `telegram_bots:connection`, `telegram_bots:dashboard`, `warehouse:detail`, `warehouse:transfer_list`, `yandex_market:dashboard`.
 
 ### `templates/cash/operation.html`
 
@@ -422,7 +422,7 @@
 
 Части: `orders/_orders_table.html`.
 
-Именованные действия: `orders:stock_create`, `orders:supplier_batch_detail`, `orders:trip_create`, `orders:trip_detail`, `orders:trip_empty_create`, `orders:trip_full_export`, `orders:upload`.
+Именованные действия: `orders:supplier_batch_detail`, `orders:trip_create`, `orders:trip_detail`, `orders:trip_empty_create`, `orders:trip_full_export`, `orders:trip_stock_create`, `orders:upload`.
 
 ### `templates/orders/operation_prepare.html`
 
@@ -438,7 +438,7 @@
 
 Базовый шаблон: `base.html`.
 
-Именованные действия: `orders:upload`, `price:imports`.
+Именованные действия: `orders:trip_detail`, `orders:upload`, `price:imports`.
 
 ### `templates/orders/supplier_batch_detail.html`
 
@@ -470,7 +470,7 @@
 
 Части: `orders/_operation_actions.html`, `orders/_procurement_financials.html`, `orders/_trip_arrival.html`, `orders/_trip_price_dialog.html`.
 
-Именованные действия: `orders:assign_trip`, `orders:detail`, `orders:list`, `orders:trip_add_orders`, `orders:trip_addition`, `orders:trip_export`, `orders:trip_invoice_update`, `orders:trip_line_update`.
+Именованные действия: `orders:assign_trip`, `orders:detail`, `orders:list`, `orders:trip_add_orders`, `orders:trip_addition`, `orders:trip_export`, `orders:trip_invoice_update`, `orders:trip_line_update`, `orders:trip_stock_create`.
 
 ### `templates/orders/trip_empty_create.html`
 
@@ -532,7 +532,7 @@
 
 Части: `price/_procurement_fields.html`.
 
-Именованные действия: `orders:stock_create`, `price:procurement_create`, `price:procurement_detail`, `price:procurement_stock_export`, `price:supplier_template_kind`, `price:supplier_template_prefilled`, `price:supplier_upload`.
+Именованные действия: `orders:stock_create`, `price:procurement_create`, `price:procurement_detail`, `price:supplier_template_kind`, `price:supplier_template_prefilled`, `price:supplier_upload`.
 
 ### `templates/price/index.html`
 
@@ -757,6 +757,20 @@
 Базовый шаблон: `base.html`.
 
 Именованные действия: `supplies:detail`.
+
+### `templates/telegram_bots/connection.html`
+
+Базовый шаблон: `base.html`.
+
+### `templates/telegram_bots/dashboard.html`
+
+Базовый шаблон: `base.html`.
+
+Именованные действия: `integrations:workers`, `telegram_bots:connection`.
+
+### `templates/telegram_bots/stub.html`
+
+Базовый шаблон: `base.html`.
 
 ### `templates/warehouse/_global_stock_table.html`
 
@@ -1254,7 +1268,7 @@ ReSOURCE: Каталог, корзина и оформление оптовой/
 
 ReSOURCE: Оформление дизайн-токенов витрин. Стили не заменяют серверные учётные проверки.
 
-## Тесты Python/CJS и браузерные проверки (215)
+## Тесты Python/CJS и браузерные проверки (217)
 
 ### `GameBAT_CRM/test_guard.py`
 
@@ -1888,6 +1902,14 @@ MV3 Chromium с подменённым Avito: форма, связь прода�
 
 ### `supplies/tests.py`
 
+### `telegram_bots/test_worker.py`
+
+Polling и конкуренция на отдельной тестовой БД, без настоящего Telegram.
+
+### `telegram_bots/tests.py`
+
+Фиктивные Telegram API и товары. Рабочие ключи, сообщения и склад не используются.
+
 ### `warehouse/test_revision.py`
 
 ### `warehouse/test_storage_locations.py`
@@ -1912,7 +1934,7 @@ PDF готовится отдельно от печати и хранится д
 
 Проверки на изолированной БД и подменённом API; рабочие ключи не используются.
 
-## Миграции (160)
+## Миграции (162)
 
 ### `accounts/migrations/0001_initial.py`
 
@@ -2207,6 +2229,10 @@ PDF готовится отдельно от печати и хранится д
 ### `integrations/migrations/0009_worker_monitoring.py`
 
 Зависимости: `[('integrations', '0008_avito_manual_price'), migrations.swappable_dependency(settings.AUTH_USER_MODEL)]`.
+
+### `integrations/migrations/0010_alter_workercommand_service_alter_workerservice_code.py`
+
+Зависимости: `[('integrations', '0009_worker_monitoring')]`.
 
 ### `orders/migrations/0001_initial.py`
 
@@ -2562,6 +2588,10 @@ PDF готовится отдельно от печати и хранится д
 
 Зависимости: `[('orders', '0011_trip_arrival_costs'), ('supplies', '0010_remove_supply_supply_cancellation_fields_consistent_and_more'), ('warehouse', '0006_warehouse_revision'), migrations.swappable_dependency(settings.AUTH_USER_MODEL)]`.
 
+### `telegram_bots/migrations/0001_initial.py`
+
+Зависимости: `[('warehouse', '0006_warehouse_revision'), migrations.swappable_dependency(settings.AUTH_USER_MODEL)]`.
+
 ### `warehouse/migrations/0001_initial.py`
 
 Зависимости: `[('catalog', '0001_initial')]`.
@@ -2618,7 +2648,7 @@ PDF готовится отдельно от печати и хранится д
 
 Зависимости: `[('yandex_market', '0006_offerconnection_exchange_defaults')]`.
 
-## Management commands (22)
+## Management commands (23)
 
 ### `cash/management/commands/verify_cash.py`
 
@@ -2703,6 +2733,10 @@ Windows-исполнитель печати ярлыков. Подтверждё
 ### `supplies/management/commands/recalculate_warehouse_costs.py`
 
 Одноразовый безопасный пересчёт истории приходов по физическому складу.
+
+### `telegram_bots/management/commands/run_telegram_staff_bot.py`
+
+Отдельный управляемый процесс; отсутствие настройки не мешает веб-серверу.
 
 ### `yandex_market/management/commands/configure_yandex_market.py`
 

@@ -7,7 +7,7 @@ import threading
 
 from django.conf import settings
 
-SERVICES = ('avito', 'yandex', 'google', 'print')
+SERVICES = ('avito', 'yandex', 'google', 'print', 'telegram_staff')
 POLL_SECONDS = 15
 HEARTBEAT_SECONDS = 20
 STALE_SECONDS = 90

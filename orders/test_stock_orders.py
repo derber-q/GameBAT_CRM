@@ -253,7 +253,8 @@ class StockOrderTests(TestCase):
         self.assertEqual(order.items.get().prepayment_unit_price, Decimal("2050"))
 
     def test_export_button_and_backend_cost_permission(self):
-        self.assertContains(self.client.get(reverse("price:imports")), reverse("price:procurement_stock_export", args=(self.price.pk,)))
+        self.assertNotContains(self.client.get(reverse("price:imports")), reverse("price:procurement_stock_export", args=(self.price.pk,)))
+        self.assertContains(self.client.get(reverse("price:procurement_detail", args=(self.price.pk,))), reverse("price:procurement_stock_export", args=(self.price.pk,)))
         self.assertEqual(self.client.get(reverse("price:procurement_stock_export", args=(self.price.pk,))).status_code, 200)
         employee = self.employee("price.view_price_page", "price.export_procurement_price_list", "orders.create_order", "orders.view_order_detail", "orders.view_orders")
         order = self.order()

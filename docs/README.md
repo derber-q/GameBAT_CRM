@@ -11,6 +11,8 @@
 
 ## Основные тематические контракты
 
+- Telegram сотрудников: [права, привязки, Excel и worker](telegram_staff_bot.md), [согласованная установка](telegram_staff_bot_installation.md).
+
 - Заказы Avito в расширении: [создание продажи, связь и отправительные стикеры](avito_browser_orders.md).
 
 - Рейсы: [пустой рейс](empty_trips.md), [изменения количества](trip_quantity_reductions.md), [AED-цена](trip_supplier_prices.md), [дополнительные партии](crm_complex_20261025.md), [действующее прибытие/финализация](trip_arrival_costs.md).

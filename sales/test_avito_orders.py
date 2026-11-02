@@ -199,9 +199,33 @@ class AvitoOrderTests(TestCase):
             self.assertAlmostEqual(doc[0].rect.width*25.4/72, 58, places=2)
             self.assertAlmostEqual(doc[0].rect.height*25.4/72, 40, places=2)
             self.assertIn('Почта', doc[0].get_text())
+            box=pymupdf.Rect(doc[0].get_image_info()[0]['bbox'])
+            self.assertAlmostEqual(box.width/box.height,840/335,places=3)
         from django.core.exceptions import ValidationError
         with self.assertRaises(ValidationError):
             label_pdf('https://example.com/label.png', 'СДЭК')
+
+    def test_original_qr_payload_is_generated_locally_with_leading_zeros(self):
+        from .avito_shipping import request_label
+        from tempfile import TemporaryDirectory
+        import pymupdf
+        data=dict(request_id=str(uuid.uuid4()),order={**self.payload,'carrier':'5Post'},
+                  symbol={'type':'QR','content':'001234567'})
+        with TemporaryDirectory() as media,self.settings(MEDIA_ROOT=media,LABEL_PRINT_BACKEND='native'),patch('sales.market_fulfillment.printer_configuration',return_value='Fake'):
+            job=request_label(actor=self.user,data=data)
+            with job.file.open('rb') as source:pdf=source.read()
+            with pymupdf.open(stream=pdf,filetype='pdf') as doc:
+                self.assertIn('5Post',doc[0].get_text())
+                bounds=pymupdf.Rect(doc[0].get_image_info()[0]['bbox'])
+                self.assertAlmostEqual(bounds.width,bounds.height,places=3)
+                image=Image.open(BytesIO(doc.extract_image(doc[0].get_images()[0][0])['image'])).convert('L')
+                # Version 1 имеет 21 модуль + quiet zone по 4. Верхний finder — 7×7.
+                self.assertEqual(image.width,image.height)
+                for y in range(7):
+                    for x in range(7):
+                        black=x in (0,6) or y in (0,6) or (2<=x<=4 and 2<=y<=4)
+                        pixel=image.getpixel((int((x+4.5)*image.width/29),int((y+4.5)*image.height/29)))
+                        self.assertEqual(pixel<128,black)
 
     @override_settings(LABEL_PRINT_BACKEND='agent')
     def test_shipping_agent_queue_confirms_only_after_print_and_preserves_sale(self):

@@ -17,6 +17,7 @@ class LinuxProcessesTests(SimpleTestCase):
                 (11, ['python', '/other/manage.py', 'run_label_print_worker'], '/app'),
                 (12, ['python', 'manage.py', 'run_label_print_worker'], '/app'),
                 (13, ['python', 'manage.py', 'run_integration_worker'], '/other'),
+                (14, ['python', '/app/manage.py', 'run_telegram_staff_bot'], '/app'),
             ):
                 proc = root / str(pid)
                 proc.mkdir()
@@ -25,10 +26,11 @@ class LinuxProcessesTests(SimpleTestCase):
                 (proc/'cwd').write_text(cwd)
             with override_settings(BASE_DIR=Path('/app')), patch('integrations.linux_processes.os.readlink', side_effect=lambda p: Path(p).read_text()):
                 rows = LinuxProcesses(proc_root=root).inventory()
-            self.assertEqual([r['pid'] for r in rows], [10, 12])
+            self.assertEqual([r['pid'] for r in rows], [10, 12, 14])
             self.assertEqual(rows[0]['services'], ['avito'])
             self.assertEqual(rows[0]['birth'], '12345')
             self.assertEqual(rows[1]['services'], ['print'])
+            self.assertEqual(rows[2]['services'], ['telegram_staff'])
 
     def test_factory_preserves_windows_and_test_mode_is_denied(self):
         from .worker_processes import process_adapter, WindowsProcesses

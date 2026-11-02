@@ -115,7 +115,7 @@ def supervise_once(adapter, *, now=None, instance=None):
     for code in SERVICES:
         service, _ = WorkerService.objects.get_or_create(code=code)
         before = (service.expected, service.status, service.error)
-        service.expected, service.observed_at = policy[code], now
+        service.expected, service.observed_at = policy.get(code, 'unconfigured'), now
         command = WorkerCommand.objects.filter(service=code, state__in=['queued', 'running']).first()
         matches = [row for row in rows or [] if code in row['services']]
         active = next((process for process in processes if process.ready and code in process.services
@@ -220,7 +220,7 @@ def monitoring_snapshot(*, now=None, with_history=False):
     services, incidents = [], []
     for code, name in SERVICE_CHOICES:
         row = known.get(code)
-        expected = policy[code]
+        expected = policy.get(code, 'unconfigured')
         status = expected if expected != 'required' else (
             row.status if row and controller_ok and _fresh(row.observed_at, now) else 'unknown')
         if status == 'running' and not _fresh(row.heartbeat_at, now):

@@ -4,7 +4,7 @@
 
 Справочник исходников и метаданных схемы, без рабочих записей/ключей. Перегенерация: `.venv/Scripts/python.exe scripts/build_technical_reference.py`.
 
-Функций/методов: **1649**.
+Функций/методов: **1693**.
 
 Вложенные функции, миграции и тесты не включены в этот индекс; их отдельная карта находится ниже в справочнике UI/проверок. Декораторы, docstring и вызываемые символы описывают контракт/зависимости, но не заменяют чтение тела перед изменением.
 
@@ -4623,7 +4623,7 @@ HTTP-клиент реального Avito: авторизация, таймау
 
 ### `LinuxProcesses._option(args, name)`
 
-Исходник: `integrations/linux_processes.py:55`.
+Исходник: `integrations/linux_processes.py:57`.
 
 Декораторы: `staticmethod`.
 
@@ -4633,7 +4633,7 @@ HTTP-клиент реального Avito: авторизация, таймау
 
 ### `LinuxProcesses.launch(self, service, instance)`
 
-Исходник: `integrations/linux_processes.py:63`.
+Исходник: `integrations/linux_processes.py:65`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
@@ -5778,7 +5778,7 @@ HTTP-обработчики: доступ, формы, вызов сервисо
 
 Один цикл. Вызывающий держит межпроцессную блокировку supervisor весь срок жизни.
 
-Статические вызовы: `WorkerCommand.objects.filter`, `WorkerCommand.objects.filter(service=code, state__in=['queued', 'running']).first`, `WorkerController.objects.get_or_create`, `WorkerEvent.objects.create`, `WorkerProcess.objects.filter`, `WorkerService.objects.get_or_create`, `_failed`, `_finish`, `_fresh`, `adapter.inventory`, `adapter.launch`, `any`, `bool`, `command.save`, `controller.save`, `dict.fromkeys`, `event`, `expected_services`, `list`, `next`, `service.save`, `str`, `timedelta`, `timezone.now`, `transaction.atomic`, `uuid.uuid4`.
+Статические вызовы: `WorkerCommand.objects.filter`, `WorkerCommand.objects.filter(service=code, state__in=['queued', 'running']).first`, `WorkerController.objects.get_or_create`, `WorkerEvent.objects.create`, `WorkerProcess.objects.filter`, `WorkerService.objects.get_or_create`, `_failed`, `_finish`, `_fresh`, `adapter.inventory`, `adapter.launch`, `any`, `bool`, `command.save`, `controller.save`, `dict.fromkeys`, `event`, `expected_services`, `list`, `next`, `policy.get`, `service.save`, `str`, `timedelta`, `timezone.now`, `transaction.atomic`, `uuid.uuid4`.
 
 ### `monitoring_snapshot(*, now=None, with_history=False)`
 
@@ -5786,7 +5786,7 @@ HTTP-обработчики: доступ, формы, вызов сервисо
 
 GET только читает локальные таблицы; не планирует работу и не проверяет API.
 
-Статические вызовы: `ERROR_LABELS.get`, `WorkerController.objects.filter`, `WorkerController.objects.filter(pk=1).first`, `WorkerService.objects.all`, `_fresh`, `agent_snapshot`, `any`, `bool`, `data['incidents'].append`, `dict.fromkeys`, `expected_services`, `getattr`, `history_snapshot`, `incidents.append`, `known.get`, `len`, `queue_snapshot`, `services.append`, `str`, `sum`, `timezone.now`.
+Статические вызовы: `ERROR_LABELS.get`, `WorkerController.objects.filter`, `WorkerController.objects.filter(pk=1).first`, `WorkerService.objects.all`, `_fresh`, `agent_snapshot`, `any`, `bool`, `data['incidents'].append`, `dict.fromkeys`, `expected_services`, `getattr`, `history_snapshot`, `incidents.append`, `known.get`, `len`, `policy.get`, `queue_snapshot`, `services.append`, `str`, `sum`, `timezone.now`.
 
 ### `history_snapshot()`
 
@@ -5800,7 +5800,7 @@ GET только читает локальные таблицы; не плани
 
 Только чтение конфигурации. Ошибка внешнего API не выключает ожидаемый worker.
 
-Импорты: `django.conf`, `django.core.exceptions`, `models`, `pathlib`, `sales.label_printing`, `sales.models`, `worker_runtime`, `yandex_market.models`.
+Импорты: `django.conf`, `django.core.exceptions`, `models`, `pathlib`, `sales.label_printing`, `sales.models`, `telegram_bots.configuration`, `worker_runtime`, `yandex_market.models`.
 
 ### `expected_services()`
 
@@ -5808,7 +5808,7 @@ GET только читает локальные таблицы; не плани
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
-Статические вызовы: `GoogleSheetsIntegration.objects.first`, `Integration.objects.all`, `IntegrationCredential.objects.filter`, `IntegrationCredential.objects.filter(provider='avito').first`, `Path`, `Path(settings.GOOGLE_SERVICE_ACCOUNT_FILE).is_file`, `Path(settings.YANDEX_MARKET_KEY_FILE).is_file`, `PrintAgent.objects.filter`, `PrintAgent.objects.filter(enabled=True).exists`, `dict.fromkeys`, `getattr`, `printer_configuration`, `yandex.exists`, `yandex.filter`, `yandex.filter(enabled=True).exists`.
+Статические вызовы: `GoogleSheetsIntegration.objects.first`, `Integration.objects.all`, `IntegrationCredential.objects.filter`, `IntegrationCredential.objects.filter(provider='avito').first`, `Path`, `Path(settings.GOOGLE_SERVICE_ACCOUNT_FILE).is_file`, `Path(settings.YANDEX_MARKET_KEY_FILE).is_file`, `PrintAgent.objects.filter`, `PrintAgent.objects.filter(enabled=True).exists`, `dict.fromkeys`, `expected_status`, `getattr`, `printer_configuration`, `yandex.exists`, `yandex.filter`, `yandex.filter(enabled=True).exists`.
 
 ## `integrations/worker_processes.py`
 
@@ -5870,7 +5870,7 @@ SIGTERM прекращает получение новых задач, но не
 
 Безопасные сведения о фактически назначенных заданиях; никаких ensure/enqueue.
 
-Импорты: `django.db.models`, `models`, `sales.models`, `yandex_market.models`.
+Импорты: `django.db.models`, `models`, `sales.models`, `telegram_bots.monitoring`, `yandex_market.models`.
 
 ### `_nearest(query, state, now)`
 
@@ -5886,7 +5886,7 @@ SIGTERM прекращает получение новых задач, но не
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
-Статические вызовы: `AvitoSyncJob.objects.all`, `AvitoSyncJob.objects.filter`, `AvitoSyncJob.objects.filter(status='done').aggregate`, `Case`, `GoogleSheetsIntegration.objects.aggregate`, `GoogleSheetsSyncJob.objects.all`, `IntegerField`, `MarketPrintJob.objects.all`, `Max`, `SyncJob.objects.all`, `Value`, `When`, `YANDEX_NAMES.get`, `_nearest`, `getattr`, `job.get_job_type_display`, `jobs.aggregate`, `jobs.annotate`, `jobs.exclude`, `jobs.exclude(state__in=['done', 'error', 'uncertain']).order_by`, `jobs.exclude(state__in=['done', 'error', 'uncertain']).order_by('pk').first`, `jobs.filter`, `jobs.filter(**{state: 'error'}).exists`, `jobs.filter(**{state: 'pending'}).exclude`, `jobs.filter(**{state: 'pending'}).exclude(last_error='').exists`, `jobs.filter(**{state: 'running'}).order_by`, `jobs.filter(**{state: 'running'}).order_by('updated_at', 'pk').first`, `jobs.filter(state='done').aggregate`, `jobs.filter(state__in=['error', 'uncertain']).exists`, `names.get`, `title`.
+Статические вызовы: `AvitoSyncJob.objects.all`, `AvitoSyncJob.objects.filter`, `AvitoSyncJob.objects.filter(status='done').aggregate`, `Case`, `GoogleSheetsIntegration.objects.aggregate`, `GoogleSheetsSyncJob.objects.all`, `IntegerField`, `MarketPrintJob.objects.all`, `Max`, `SyncJob.objects.all`, `Value`, `When`, `YANDEX_NAMES.get`, `_nearest`, `data.update`, `getattr`, `job.get_job_type_display`, `jobs.aggregate`, `jobs.annotate`, `jobs.exclude`, `jobs.exclude(state__in=['done', 'error', 'uncertain']).order_by`, `jobs.exclude(state__in=['done', 'error', 'uncertain']).order_by('pk').first`, `jobs.filter`, `jobs.filter(**{state: 'error'}).exists`, `jobs.filter(**{state: 'pending'}).exclude`, `jobs.filter(**{state: 'pending'}).exclude(last_error='').exists`, `jobs.filter(**{state: 'running'}).order_by`, `jobs.filter(**{state: 'running'}).order_by('updated_at', 'pk').first`, `jobs.filter(state='done').aggregate`, `jobs.filter(state__in=['error', 'uncertain']).exists`, `names.get`, `telegram_snapshot`, `title`.
 
 ## `integrations/worker_views.py`
 
@@ -7320,7 +7320,7 @@ SIGTERM прекращает получение новых задач, но не
 
 Импорты: `catalog.nomenclature_grouping`, `catalog.supplier_exclusions`, `django`, `django.db.models`, `models`, `price.models`, `warehouse.models`.
 
-### `StockOrderCreateForm.__init__(self, *args, items, **kwargs)`
+### `StockOrderCreateForm.__init__(self, *args, items, target_trip=None, **kwargs)`
 
 Исходник: `orders/stock_order_form.py:24`.
 
@@ -7330,7 +7330,7 @@ SIGTERM прекращает получение новых задач, но не
 
 ### `StockOrderCreateForm.clean(self)`
 
-Исходник: `orders/stock_order_form.py:37`.
+Исходник: `orders/stock_order_form.py:40`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
@@ -7338,7 +7338,7 @@ SIGTERM прекращает получение новых задач, но не
 
 ### `StockOrderCreateForm.order_lines(self)`
 
-Исходник: `orders/stock_order_form.py:47`.
+Исходник: `orders/stock_order_form.py:50`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
@@ -7346,23 +7346,23 @@ SIGTERM прекращает получение новых задач, но не
 
 ### `stock_order_items(price_list)`
 
-Исходник: `orders/stock_order_form.py:53`.
+Исходник: `orders/stock_order_form.py:56`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
 Статические вызовы: `Q`, `exclusion_keys`, `len`, `list`, `price_list.items.select_related`, `price_list.items.select_related('cd__platform', 'cd__game_series', 'tech__brand', 'tech__product_type').filter`.
 
-### `previous_trip_stock_quantities()`
+### `previous_trip_stock_quantities(target_trip=None)`
 
-Исходник: `orders/stock_order_form.py:63`.
+Исходник: `orders/stock_order_form.py:66`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
-Статические вызовы: `CustomerProcurementOrderItem.objects.filter`, `CustomerProcurementOrderItem.objects.filter(order__trip=trip, order__purpose=CustomerProcurementOrder.Purpose.STOCK).values`, `CustomerProcurementOrderItem.objects.filter(order__trip=trip, order__purpose=CustomerProcurementOrder.Purpose.STOCK).values('product_kind', 'cd_id', 'tech_id').annotate`, `Sum`, `SupplierOrderBatch.objects.trips`, `SupplierOrderBatch.objects.trips().first`.
+Статические вызовы: `CustomerProcurementOrderItem.objects.filter`, `CustomerProcurementOrderItem.objects.filter(order__trip=trip, order__purpose=CustomerProcurementOrder.Purpose.STOCK).values`, `CustomerProcurementOrderItem.objects.filter(order__trip=trip, order__purpose=CustomerProcurementOrder.Purpose.STOCK).values('product_kind', 'cd_id', 'tech_id').annotate`, `Q`, `Sum`, `SupplierOrderBatch.objects.trips`, `trips.filter`, `trips.first`.
 
 ### `stock_order_groups(items, form, *, previous_trip_quantities=None)`
 
-Исходник: `orders/stock_order_form.py:75`.
+Исходник: `orders/stock_order_form.py:82`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
@@ -7372,17 +7372,17 @@ SIGTERM прекращает получение новых задач, но не
 
 Ручная закупка на склад; клиентские назначения не включаются в подсказку уже заказанного складского объёма.
 
-Импорты: `core.decorators`, `django.shortcuts`, `django.views.decorators.cache`, `django.views.decorators.http`, `models`, `price.models`, `stock_order_form`, `views`.
+Импорты: `core.decorators`, `django.contrib`, `django.core.exceptions`, `django.db`, `django.shortcuts`, `django.views.decorators.cache`, `django.views.decorators.http`, `models`, `price.models`, `stock_order_form`, `trips`, `views`.
 
-### `stock_order_create(request)`
+### `stock_order_create(request, trip_pk=None)`
 
-Исходник: `orders/stock_order_views.py:18`.
+Исходник: `orders/stock_order_views.py:22`.
 
 Декораторы: `never_cache`; `require_http_methods(['GET', 'POST'])`; `permission_required_all('orders.create_order', 'price.view_supplier_prices')`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
-Статические вызовы: `ProcurementPriceList.objects.filter`, `ProcurementPriceList.objects.filter(is_trip_addition=False).first`, `StockOrderCreateForm`, `StockOrderPriceListForm`, `choice_form.is_valid`, `draft.get`, `form.is_valid`, `form.order_lines`, `permission_required_all`, `previous_trip_stock_quantities`, `redirect`, `render`, `request.GET.get`, `request.POST.get`, `request.session.get`, `require_http_methods`, `stock_order_groups`, `stock_order_items`.
+Статические вызовы: `' '.join`, `ProcurementPriceList.objects.filter`, `ProcurementPriceList.objects.filter(is_trip_addition=False).first`, `StockOrderCreateForm`, `StockOrderPriceListForm`, `SupplierOrderBatch.objects.trips`, `_require_editable_trip`, `can_manage_trips`, `choice_form.fields['price_list'].queryset.filter`, `choice_form.is_valid`, `draft.get`, `form.is_valid`, `form.order_lines`, `get_object_or_404`, `messages.error`, `permission_required_all`, `previous_trip_stock_quantities`, `redirect`, `render`, `request.GET.get`, `request.POST.get`, `request.session.get`, `require_http_methods`, `stock_order_groups`, `stock_order_items`, `transaction.atomic`.
 
 ## `orders/trip_addition_views.py`
 
@@ -7896,9 +7896,19 @@ SIGTERM прекращает получение новых задач, но не
 
 Статические вызовы: `CustomerProcurementOrder.objects.select_for_update`, `CustomerProcurementOrder.objects.select_for_update().get`, `ProcurementSupplierOffer.objects.filter`, `ProcurementSupplierOffer.objects.filter(price_list_item=item.price_list_item, supplier_id=supplier_id, price_aed=item.supplier_price_aed_snapshot).exists`, `Supplier.objects.filter`, `Supplier.objects.filter(letter='F').first`, `SupplierOrderBatch.objects.trips`, `SupplierOrderBatch.objects.trips().select_for_update`, `SupplierOrderBatch.objects.trips().select_for_update().filter`, `SupplierOrderBatch.objects.trips().select_for_update().filter(pk__in=ids).order_by`, `SupplierTripAllocation.objects.create`, `SupplierTripAllocation.objects.select_for_update`, `SupplierTripAllocation.objects.select_for_update().select_related`, `SupplierTripAllocation.objects.select_for_update().select_related('line__price_list_item__cd', 'line__price_list_item__tech').filter`, `SupplierTripAllocation.objects.select_for_update().select_related('line__price_list_item__cd', 'line__price_list_item__tech').filter(line__batch=source, order_item__order=order).order_by`, `ValidationError`, `_assert_balances`, `_batch_exclusions`, `_line_for`, `_quantity`, `_record_trip_change`, `_require_editable_trip`, `_require_manage`, `allocation.save`, `any`, `batches.get`, `int`, `line.allocations.exists`, `line.delete`, `line.save`, `list`, `new_line.save`, `order.items.select_for_update`, `order.items.select_for_update().select_related`, `order.items.select_for_update().select_related('price_list_item__cd', 'price_list_item__tech', 'selected_supplier', 'cd', 'tech').order_by`, `order.save`, `set`, `source.source_orders.remove`, `source_lines.setdefault`, `source_lines.values`, `str`, `target.save`, `target.source_orders.add`, `transfers.append`.
 
-### `add_orders_to_trip(*, actor, batch_id, order_ids, revision)`
+### `create_stock_order_for_trip(*, actor, batch_id, revision, price_list_id, recipient, comment, lines)`
 
 Исходник: `orders/trips.py:315`.
+
+Декораторы: `transaction.atomic`.
+
+Заказ и распределения рейса сохраняются вместе; при отказе свободного заказа не остаётся.
+
+Статические вызовы: `PermissionDenied`, `SupplierOrderBatch.objects.trips`, `SupplierOrderBatch.objects.trips().select_for_update`, `SupplierOrderBatch.objects.trips().select_for_update().get`, `ValidationError`, `_quantity`, `_require_editable_trip`, `_require_manage`, `actor.has_perm`, `assign_order_to_trip`, `create_customer_procurement_order`.
+
+### `add_orders_to_trip(*, actor, batch_id, order_ids, revision)`
+
+Исходник: `orders/trips.py:337`.
 
 Декораторы: `transaction.atomic`.
 
@@ -7908,7 +7918,7 @@ SIGTERM прекращает получение новых задач, но не
 
 ### `delete_empty_trip(*, actor, batch_id, revision, archive_batch_id)`
 
-Исходник: `orders/trips.py:337`.
+Исходник: `orders/trips.py:359`.
 
 Декораторы: `transaction.atomic`.
 
@@ -7918,7 +7928,7 @@ SIGTERM прекращает получение новых задач, но не
 
 ### `_record_customer_changes(actor, changes, batch)`
 
-Исходник: `orders/trips.py:368`.
+Исходник: `orders/trips.py:390`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
@@ -7926,7 +7936,7 @@ SIGTERM прекращает получение новых задач, но не
 
 ### `trip_supplier_chains(lines, *, excluded=None)`
 
-Исходник: `orders/trips.py:382`.
+Исходник: `orders/trips.py:404`.
 
 Предложения, фактические получатели и допустимый получатель M по чужой цене.
 
@@ -7934,7 +7944,7 @@ SIGTERM прекращает получение новых задач, но не
 
 ### `supplier_priority_state(supplier_id, priorities)`
 
-Исходник: `orders/trips.py:400`.
+Исходник: `orders/trips.py:422`.
 
 При равном максимуме не выбирает последнего по букве, имени или ID.
 
@@ -7942,7 +7952,7 @@ SIGTERM прекращает получение новых задач, но не
 
 ### `_automatic_reduction(allocations, quantity)`
 
-Исходник: `orders/trips.py:410`.
+Исходник: `orders/trips.py:432`.
 
 Сохраняет доли других поставщиков; нуль и одного получателя распределяет без выбора.
 
@@ -7950,7 +7960,7 @@ SIGTERM прекращает получение новых задач, но не
 
 ### `change_trip_line(*, actor, batch_id, line_id, revision, quantity, action, target_supplier_id=None, price_supplier_id=None, distribution=None, _allow_priority_transfer=False, _exclusions=None)`
 
-Исходник: `orders/trips.py:422`.
+Исходник: `orders/trips.py:444`.
 
 Декораторы: `transaction.atomic`.
 
@@ -7960,13 +7970,13 @@ SIGTERM прекращает получение новых задач, но не
 
 ### `is_m_order_in_f(line)`
 
-Исходник: `orders/trips.py:563`.
+Исходник: `orders/trips.py:585`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
 ### `apply_m_to_f_rule(*, actor, batch_id)`
 
-Исходник: `orders/trips.py:569`.
+Исходник: `orders/trips.py:591`.
 
 Декораторы: `transaction.atomic`.
 
@@ -7976,7 +7986,7 @@ SIGTERM прекращает получение новых задач, но не
 
 ### `return_line_to_m(*, actor, batch_id, line_id, revision)`
 
-Исходник: `orders/trips.py:606`.
+Исходник: `orders/trips.py:628`.
 
 Декораторы: `transaction.atomic`.
 
@@ -8072,11 +8082,11 @@ HTTP-обработчики: доступ, формы, вызов сервисо
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
-Статические вызовы: `' '.join`, `ProcurementPriceListItem.objects.select_related`, `ProcurementPriceListItem.objects.select_related('cd', 'tech').filter`, `_require_stock_prices`, `create_customer_procurement_order`, `draft.get`, `draft.items`, `items.get`, `messages.error`, `messages.success`, `permission_required_any`, `preview_rows.append`, `redirect`, `render`, `request.session.get`, `request.session.pop`, `reverse`.
+Статические вызовы: `' '.join`, `ProcurementPriceListItem.objects.select_related`, `ProcurementPriceListItem.objects.select_related('cd', 'tech').filter`, `SupplierOrderBatch.objects.trips`, `_require_stock_prices`, `can_manage_trips`, `create_customer_procurement_order`, `create_stock_order_for_trip`, `draft.get`, `draft.items`, `get_object_or_404`, `items.get`, `messages.error`, `messages.success`, `permission_required_any`, `preview_rows.append`, `redirect`, `render`, `request.session.get`, `request.session.pop`, `reverse`.
 
 ### `order_detail(request, pk)`
 
-Исходник: `orders/views.py:220`.
+Исходник: `orders/views.py:233`.
 
 Декораторы: `require_GET`; `permission_required_any('orders.view_order_detail')`.
 
@@ -8086,7 +8096,7 @@ HTTP-обработчики: доступ, формы, вызов сервисо
 
 ### `order_edit(request, pk)`
 
-Исходник: `orders/views.py:282`.
+Исходник: `orders/views.py:295`.
 
 Декораторы: `permission_required_any('orders.edit_created_order')`.
 
@@ -8096,7 +8106,7 @@ HTTP-обработчики: доступ, формы, вызов сервисо
 
 ### `order_confirm(request, pk)`
 
-Исходник: `orders/views.py:318`.
+Исходник: `orders/views.py:331`.
 
 Декораторы: `require_POST`; `permission_required_any('orders.confirm_order')`.
 
@@ -8106,7 +8116,7 @@ HTTP-обработчики: доступ, формы, вызов сервисо
 
 ### `order_start_receiving(request, pk)`
 
-Исходник: `orders/views.py:340`.
+Исходник: `orders/views.py:353`.
 
 Декораторы: `require_POST`; `permission_required_any('orders.start_receiving')`.
 
@@ -8116,7 +8126,7 @@ HTTP-обработчики: доступ, формы, вызов сервисо
 
 ### `order_adjust(request, pk)`
 
-Исходник: `orders/views.py:355`.
+Исходник: `orders/views.py:368`.
 
 Декораторы: `permission_required_any('orders.edit_receiving_order')`.
 
@@ -8126,7 +8136,7 @@ HTTP-обработчики: доступ, формы, вызов сервисо
 
 ### `order_complete(request, pk)`
 
-Исходник: `orders/views.py:380`.
+Исходник: `orders/views.py:393`.
 
 Декораторы: `require_POST`; `permission_required_any('orders.complete_order')`.
 
@@ -8136,7 +8146,7 @@ HTTP-обработчики: доступ, формы, вызов сервисо
 
 ### `supplier_batch_create(request)`
 
-Исходник: `orders/views.py:406`.
+Исходник: `orders/views.py:419`.
 
 Декораторы: `require_POST`; `permission_required_all('orders.generate_supplier_orders', 'partners.view_supplier_details', 'orders.edit_created_order', 'price.view_supplier_prices')`.
 
@@ -8146,7 +8156,7 @@ HTTP-обработчики: доступ, формы, вызов сервисо
 
 ### `supplier_batch_detail(request, pk)`
 
-Исходник: `orders/views.py:413`.
+Исходник: `orders/views.py:426`.
 
 Декораторы: `require_GET`; `permission_required_all('orders.generate_supplier_orders', 'partners.view_supplier_details')`.
 
@@ -11110,7 +11120,7 @@ Session/CSRF расширения и штатная форма создания 
 
 ### `check_actor(actor)`
 
-Исходник: `sales/avito_shipping.py:48`.
+Исходник: `sales/avito_shipping.py:56`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
@@ -11118,17 +11128,17 @@ Session/CSRF расширения и штатная форма создания 
 
 ### `request_label(*, actor, data)`
 
-Исходник: `sales/avito_shipping.py:54`.
+Исходник: `sales/avito_shipping.py:62`.
 
 Декораторы: `transaction.atomic`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
-Статические вызовы: `AvitoShippingPrintJob`, `AvitoShippingPrintJob.objects.filter`, `AvitoShippingPrintJob.objects.filter(request_id=key).first`, `BytesIO`, `Code128`, `Code128(symbol['content'], writer=ImageWriter()).write`, `ContentFile`, `ImageWriter`, `MarketPrintJob.objects.filter`, `MarketPrintJob.objects.filter(request_id=key).exists`, `ValidationError`, `_printer_target`, `base64.b64encode`, `base64.b64encode(output.getvalue()).decode`, `check_actor`, `data.get`, `data['order'].get`, `hashlib.sha256`, `hashlib.sha256(pdf).hexdigest`, `isinstance`, `job.file.save`, `job.save`, `label_pdf`, `order.print_jobs.exclude`, `order.print_jobs.exclude(state__in=['done', 'error']).first`, `output.getvalue`, `prepare_order`, `re.fullmatch`, `require_live_operation`, `str`, `str(data['order'].get('carrier', '')).strip`, `symbol.get`, `uuid.UUID`.
+Статические вызовы: `AvitoShippingPrintJob`, `AvitoShippingPrintJob.objects.filter`, `AvitoShippingPrintJob.objects.filter(request_id=key).first`, `BytesIO`, `Code128`, `Code128(content, writer=ImageWriter()).write`, `ContentFile`, `ImageWriter`, `MarketPrintJob.objects.filter`, `MarketPrintJob.objects.filter(request_id=key).exists`, `ValidationError`, `_printer_target`, `base64.b64encode`, `base64.b64encode(output.getvalue()).decode`, `check_actor`, `content.encode`, `data.get`, `data['order'].get`, `hashlib.sha256`, `hashlib.sha256(pdf).hexdigest`, `isinstance`, `job.file.save`, `job.save`, `label_pdf`, `len`, `order.print_jobs.exclude`, `order.print_jobs.exclude(state__in=['done', 'error']).first`, `output.getvalue`, `prepare_order`, `qr.add_data`, `qr.make`, `qr.make_image`, `qr.make_image(fill_color='black', back_color='white').save`, `qrcode.QRCode`, `re.fullmatch`, `require_live_operation`, `str`, `str(data['order'].get('carrier', '')).strip`, `symbol.get`, `uuid.UUID`.
 
 ### `process_jobs(stop=None)`
 
-Исходник: `sales/avito_shipping.py:91`.
+Исходник: `sales/avito_shipping.py:116`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
@@ -11136,7 +11146,7 @@ Session/CSRF расширения и штатная форма создания 
 
 ### `agent_claim(agent, instance)`
 
-Исходник: `sales/avito_shipping.py:141`.
+Исходник: `sales/avito_shipping.py:166`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
@@ -11144,7 +11154,7 @@ Session/CSRF расширения и штатная форма создания 
 
 ### `agent_owned(agent_id, instance, request_id, lock=False)`
 
-Исходник: `sales/avito_shipping.py:160`.
+Исходник: `sales/avito_shipping.py:185`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
@@ -11152,7 +11162,7 @@ Session/CSRF расширения и штатная форма создания 
 
 ### `agent_result(agent_id, instance, request_id, data)`
 
-Исходник: `sales/avito_shipping.py:174`.
+Исходник: `sales/avito_shipping.py:199`.
 
 Декораторы: `transaction.atomic`.
 
@@ -13609,6 +13619,456 @@ HTTP-обработчики: доступ, формы, вызов сервисо
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
 Статические вызовы: `' '.join`, `JsonResponse`, `add_product_barcode`, `permission_required`, `request.POST.get`, `request.POST.get('product_type', '').lower`, `request.user.has_perm`, `str`, `str(exc).lower`, `{'cd': 'catalog.change_cd_barcode', 'tech': 'catalog.change_tech_barcode'}.get`.
+
+## `telegram_bots/__init__.py`
+
+Личный Telegram-доступ сотрудников к существующим сервисам CRM.
+
+## `telegram_bots/access.py`
+
+Одноразовая привязка числового Telegram ID; контакты User.telegram не используются.
+
+Импорты: `core.db_retry`, `datetime`, `django.contrib.auth`, `django.contrib.auth.models`, `django.core.exceptions`, `django.db`, `django.utils`, `models`.
+
+### `BotDenied.__init__(self, category='denied', message='Доступ закрыт. Проверьте привязку и разрешения в CRM.')`
+
+Исходник: `telegram_bots/access.py:14`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `super`, `super().__init__`.
+
+### `check_access(access, *, require_link=True)`
+
+Исходник: `telegram_bots/access.py:19`.
+
+Новый User на каждой проверке исключает устаревший кэш Django permissions.
+
+Статические вызовы: `BotDenied`, `StaffBot.objects.get`, `get_user_model`, `get_user_model().objects.filter`, `get_user_model().objects.filter(pk=access.user_id, is_active=True).first`, `user.has_perm`.
+
+### `authorize(bot, telegram_id)`
+
+Исходник: `telegram_bots/access.py:31`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `BotDenied`, `StaffBotAccess.objects.filter`, `StaffBotAccess.objects.filter(bot=bot, telegram_user_id=telegram_id).first`, `check_access`.
+
+### `issue_link(user, bot)`
+
+Исходник: `telegram_bots/access.py:40`.
+
+Декораторы: `retry_database_lock`; `transaction.atomic`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `BotDenied`, `StaffBot.objects.select_for_update`, `StaffBot.objects.select_for_update().get`, `StaffBotAccess.objects.filter`, `StaffBotAccess.objects.filter(bot=bot, user=user).first`, `StaffBotLink.objects.create`, `access.staffbotlink_set.filter`, `check_access`, `hashlib.sha256`, `hashlib.sha256(token.encode()).hexdigest`, `old.save`, `secrets.token_urlsafe`, `timedelta`, `timezone.now`, `token.encode`.
+
+### `consume_link(bot, token, telegram_id, username='')`
+
+Исходник: `telegram_bots/access.py:58`.
+
+Вызывается внутри атомарного приёма update с блокировкой конкретного бота.
+
+Статические вызовы: `BotDenied`, `StaffBotAccess.objects.filter`, `StaffBotAccess.objects.filter(bot=bot, telegram_user_id=telegram_id).exists`, `StaffBotLink.objects.select_related`, `StaffBotLink.objects.select_related('access').filter`, `StaffBotLink.objects.select_related('access').filter(access__bot=bot, token_hash=hashlib.sha256(token.encode()).hexdigest(), used_at__isnull=True, expires_at__gt=timezone.now()).first`, `access.save`, `check_access`, `hashlib.sha256`, `hashlib.sha256(token.encode()).hexdigest`, `isinstance`, `len`, `link.save`, `str`, `timezone.now`, `token.encode`.
+
+### `set_employee_access(actor, bot, user, allowed)`
+
+Исходник: `telegram_bots/access.py:81`.
+
+Декораторы: `retry_database_lock`; `transaction.atomic`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `Permission.objects.get`, `StaffBot.objects.select_for_update`, `StaffBot.objects.select_for_update().get`, `StaffBotAccess.objects.get_or_create`, `access.save`, `access.staffbotlink_set.filter`, `link.save`, `timezone.now`, `user.user_permissions.add`.
+
+## `telegram_bots/apps.py`
+
+Назначение уточнять по экспортируемым символам.
+
+Импорты: `django.apps`.
+
+## `telegram_bots/client.py`
+
+Минимальный Bot API без повторов отправки и без исключений с URL/токеном.
+
+Импорты: `core.external_policy`.
+
+### `TelegramError.__init__(self, category, *, uncertain=False)`
+
+Исходник: `telegram_bots/client.py:7`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `super`, `super().__init__`.
+
+### `TelegramClient.__init__(self, token, session=None)`
+
+Исходник: `telegram_bots/client.py:15`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `requests.Session`, `require_live_operation`.
+
+### `TelegramClient.call(self, method, data=None, *, files=None)`
+
+Исходник: `telegram_bots/client.py:20`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `TelegramError`, `ValueError`, `isinstance`, `payload.get`, `require_live_operation`, `response.json`, `self._session.post`, `{401: 'unauthorized', 403: 'forbidden', 409: 'conflict', 429: 'rate_limited'}.get`.
+
+### `TelegramClient.message(self, chat_id, text, reply_markup=None)`
+
+Исходник: `telegram_bots/client.py:42`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `self.call`.
+
+### `TelegramClient.document(self, chat_id, filename, content)`
+
+Исходник: `telegram_bots/client.py:48`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `self.call`.
+
+### `TelegramClient.close(self)`
+
+Исходник: `telegram_bots/client.py:52`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `self._session.close`.
+
+## `telegram_bots/configuration.py`
+
+Секрет читается лениво только в live. Тестовая CRM не открывает файл ключа.
+
+Импорты: `core.external_policy`, `django.conf`, `django.core.exceptions`, `django.db`, `models`, `pathlib`.
+
+### `token_path()`
+
+Исходник: `telegram_bots/configuration.py:15`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `Path`, `getattr`.
+
+### `token_configured()`
+
+Исходник: `telegram_bots/configuration.py:19`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `bool`, `os.environ.get`, `token_path`, `token_path().is_file`.
+
+### `read_token()`
+
+Исходник: `telegram_bots/configuration.py:25`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `ValidationError`, `os.environ.get`, `require_live_operation`, `token_path`, `token_path().read_text`, `token_path().read_text(encoding='utf-8').strip`, `validate_token`.
+
+### `validate_token(value)`
+
+Исходник: `telegram_bots/configuration.py:36`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `ValidationError`, `re.fullmatch`, `str`, `str(value).strip`.
+
+### `save_token(value)`
+
+Исходник: `telegram_bots/configuration.py:43`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `Path`, `Path(name).unlink`, `ValidationError`, `os.chmod`, `os.fdopen`, `os.replace`, `path.is_symlink`, `require_live_operation`, `stream.write`, `tempfile.mkstemp`, `token_path`, `validate_token`.
+
+### `expected_status()`
+
+Исходник: `telegram_bots/configuration.py:60`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `StaffBot.objects.filter`, `StaffBot.objects.filter(code='staff').first`, `token_configured`.
+
+## `telegram_bots/documents.py`
+
+Тонкий адаптер существующего Excel; формулы и отбор товаров остаются в price.excel.
+
+Импорты: `access`, `django.conf`, `django.core.exceptions`, `django.utils`, `price.excel`, `warehouse.models`.
+
+### `wholesale_document(access, warehouse_id)`
+
+Исходник: `telegram_bots/documents.py:10`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `ValidationError`, `Warehouse.objects.filter`, `Warehouse.objects.filter(pk=warehouse_id).exists`, `check_access`, `generate_wholesale_price_xlsx`, `getattr`, `len`, `timezone.localdate`.
+
+## `telegram_bots/forms.py`
+
+Назначение уточнять по экспортируемым символам.
+
+Импорты: `configuration`, `django`, `models`.
+
+### `StaffBotForm.clean_token(self)`
+
+Исходник: `telegram_bots/forms.py:18`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `self.cleaned_data.get`, `validate_token`.
+
+### `StaffBotForm.clean(self)`
+
+Исходник: `telegram_bots/forms.py:22`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `os.environ.get`, `self.add_error`, `self.initial.get`, `super`, `super().clean`, `token_configured`, `values.get`.
+
+## `telegram_bots/handlers.py`
+
+Приём update сохраняет квитанцию и задание до сетевого ответа; XLSX здесь не строится.
+
+Импорты: `access`, `core.db_retry`, `datetime`, `django.db`, `django.utils`, `menu`, `models`, `warehouse.models`.
+
+### `_positive_id(value)`
+
+Исходник: `telegram_bots/handlers.py:12`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `isinstance`.
+
+### `_private_context(update)`
+
+Исходник: `telegram_bots/handlers.py:16`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `_positive_id`, `callback.get`, `chat.get`, `isinstance`, `message.get`, `sender.get`, `update.get`.
+
+### `_request_price(bot, access, warehouse_id, receipt, chat_id)`
+
+Исходник: `telegram_bots/handlers.py:31`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `BotDenied`, `StaffBotJob.objects.create`, `StaffBotJob.objects.filter`, `StaffBotJob.objects.filter(access=access, created_at__gt=timezone.now() - timedelta(seconds=bot.cooldown_seconds)).exists`, `StaffBotJob.objects.filter(access=access, state__in=['queued', 'generating', 'sending']).exists`, `Warehouse.objects.filter`, `Warehouse.objects.filter(pk=warehouse_id).exists`, `timedelta`, `timezone.now`.
+
+### `_dispatch(bot, update, receipt)`
+
+Исходник: `telegram_bots/handlers.py:43`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `BotDenied`, `Warehouse.objects.order_by`, `_private_context`, `_request_price`, `authorize`, `callback.get`, `consume_link`, `data.split`, `data.startswith`, `int`, `isinstance`, `len`, `list`, `main_menu`, `message.get`, `sender.get`, `text.split`, `text.split(' ', 1)[1].strip`, `text.startswith`, `value.isascii`, `value.isdecimal`, `warehouse_menu`.
+
+### `accept_update(bot_id, update)`
+
+Исходник: `telegram_bots/handlers.py:73`.
+
+Декораторы: `retry_database_lock`; `transaction.atomic`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `StaffBot.objects.select_for_update`, `StaffBot.objects.select_for_update().get`, `StaffBotUpdate.objects.get_or_create`, `_dispatch`, `_private_context`, `bot.save`, `callback.get`, `isinstance`, `max`, `receipt.save`, `update.get`.
+
+## `telegram_bots/jobs.py`
+
+Один исполнитель XLSX, отдельный от polling. Неопределённая отправка не повторяется.
+
+Импорты: `access`, `client`, `core.db_retry`, `django.core.exceptions`, `django.db`, `django.utils`, `documents`, `models`.
+
+### `claim_job(bot_id)`
+
+Исходник: `telegram_bots/jobs.py:14`.
+
+Декораторы: `retry_database_lock`; `transaction.atomic`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `StaffBotJob.objects.select_for_update`, `StaffBotJob.objects.select_for_update().filter`, `StaffBotJob.objects.select_for_update().filter(bot_id=bot_id, state='queued').first`, `job.save`, `timezone.now`.
+
+### `finish_job(job, state, category='', message_id=None)`
+
+Исходник: `telegram_bots/jobs.py:22`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `job.save`, `timezone.now`.
+
+### `run_job(job, client, *, owner=None)`
+
+Исходник: `telegram_bots/jobs.py:28`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `BotDenied`, `StaffBotAccess.objects.get`, `TelegramError`, `access.refresh_from_db`, `bot.refresh_from_db`, `check_access`, `client.document`, `client.message`, `finish_job`, `isinstance`, `job.save`, `result.get`, `timezone.now`, `wholesale_document`.
+
+### `recover_interrupted(bot_id)`
+
+Исходник: `telegram_bots/jobs.py:73`.
+
+Вызывается только после получения эксклюзивной аренды и блокировки процесса.
+
+Статические вызовы: `StaffBotJob.objects.filter`, `finish_job`.
+
+## `telegram_bots/management/commands/run_telegram_staff_bot.py`
+
+Отдельный управляемый процесс; отсутствие настройки не мешает веб-серверу.
+
+Импорты: `django.conf`, `django.core.exceptions`, `django.core.management.base`, `integrations.worker_heartbeat`, `integrations.worker_runtime`, `telegram_bots.configuration`, `telegram_bots.models`, `telegram_bots.worker`.
+
+### `Command.add_arguments(self, parser)`
+
+Исходник: `telegram_bots/management/commands/run_telegram_staff_bot.py:16`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `parser.add_argument`.
+
+### `Command.handle(self, *args, **options)`
+
+Исходник: `telegram_bots/management/commands/run_telegram_staff_bot.py:20`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `StaffBot.objects.get`, `expected_status`, `graceful_shutdown`, `monitored_worker`, `run_polling`, `self.stderr.write`, `self.stdout.write`, `uuid.uuid4`.
+
+## `telegram_bots/menu.py`
+
+Компактный реестр: добавление функции не меняет авторизацию или транспорт.
+
+Импорты: `dataclasses`.
+
+### `main_menu(user)`
+
+Исходник: `telegram_bots/menu.py:16`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `FUNCTIONS.values`, `user.has_perm`.
+
+### `warehouse_menu(warehouses)`
+
+Исходник: `telegram_bots/menu.py:23`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+## `telegram_bots/models.py`
+
+Только конфигурация, доступ и техническая очередь; товары и деньги не изменяются.
+
+Импорты: `django.conf`, `django.db`, `django.db.models`.
+
+## `telegram_bots/monitoring.py`
+
+Безопасный снимок для штатной страницы обработчиков, без Telegram ID и HTTP-вызовов.
+
+Импорты: `django.db`, `django.db.models`, `models`.
+
+### `queue_snapshot()`
+
+Исходник: `telegram_bots/monitoring.py:18`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `ERROR_LABELS.get`, `Max`, `StaffBot.objects.filter`, `StaffBot.objects.filter(code='staff').first`, `StaffBotJob.objects.filter`, `StaffBotJob.objects.filter(bot=bot, state='done').aggregate`, `StaffBotJob.objects.filter(bot=bot, state__in=['error', 'uncertain']).exists`, `StaffBotJob.objects.filter(bot=bot, state__in=['queued', 'generating', 'sending']).first`, `job.get_state_display`.
+
+## `telegram_bots/urls.py`
+
+Назначение уточнять по экспортируемым символам.
+
+Импорты: `django.urls`.
+
+## `telegram_bots/views.py`
+
+Настройки только superuser; сотрудник видит лишь собственную привязку.
+
+Импорты: `access`, `accounts.views`, `client`, `configuration`, `django.conf`, `django.contrib`, `django.contrib.auth`, `django.contrib.auth.decorators`, `django.core.exceptions`, `django.db`, `django.shortcuts`, `django.views.decorators.cache`, `django.views.decorators.debug`, `django.views.decorators.http`, `forms`, `integrations.worker_models`, `integrations.worker_monitoring`, `models`, `monitoring`.
+
+### `_stub(request)`
+
+Исходник: `telegram_bots/views.py:24`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `render`.
+
+### `dashboard(request)`
+
+Исходник: `telegram_bots/views.py:32`.
+
+Декораторы: `sensitive_post_parameters('token')`; `superuser_required`; `never_cache`; `require_http_methods(['GET', 'POST'])`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `ERROR_LABELS.get`, `STATUS_LABELS.get`, `StaffBot`, `StaffBot.objects.filter`, `StaffBot.objects.filter(code='staff').first`, `StaffBotAccess.objects.filter`, `StaffBotAccess.objects.filter(bot=bot).select_related`, `StaffBotForm`, `StaffBotJob.objects.filter`, `StaffBotJob.objects.filter(bot=bot).select_related`, `TelegramClient`, `TelegramError`, `WorkerService.objects.filter`, `WorkerService.objects.filter(code='telegram_staff').first`, `_stub`, `bool`, `bot.username.lower`, `by_user.get`, `client.call`, `client.close`, `expected_status`, `form.add_error`, `form.cleaned_data.get`, `form.is_valid`, `form.save`, `get_object_or_404`, `get_user_model`, `get_user_model().objects.order_by`, `getattr`, `isinstance`, `issue_link`, `list`, `logger.info`, `me.get`, `messages.error`, `messages.success`, `read_token`, `redirect`, `render`, `request.POST.get`, `require_http_methods`, `save_token`, `sensitive_post_parameters`, `set_employee_access`, `str`, `str(me.get('username', '')).lower`, `sum`, `token_configured`, `user.has_perm`, `webhook.get`.
+
+### `connection(request)`
+
+Исходник: `telegram_bots/views.py:105`.
+
+Декораторы: `login_required`; `never_cache`; `require_http_methods(['GET', 'POST'])`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `StaffBot.objects.filter`, `StaffBot.objects.filter(code='staff').first`, `StaffBotAccess.objects.filter`, `StaffBotAccess.objects.filter(bot=bot, user=request.user).first`, `ValidationError`, `_stub`, `issue_link`, `render`, `require_http_methods`.
+
+## `telegram_bots/worker.py`
+
+Long polling и исполнитель используют разные соединения; мониторинг — существующий.
+
+Импорты: `client`, `configuration`, `core.db_retry`, `core.external_policy`, `datetime`, `django.db`, `django.utils`, `handlers`, `integrations.worker_runtime`, `jobs`, `models`.
+
+### `lease(bot_id, owner, *, release=False)`
+
+Исходник: `telegram_bots/worker.py:18`.
+
+Декораторы: `retry_database_lock`; `transaction.atomic`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `AlreadyRunning`, `StaffBot.objects.select_for_update`, `StaffBot.objects.select_for_update().get`, `bot.save`, `timedelta`, `timezone.now`.
+
+### `connection_state(bot_id, category='')`
+
+Исходник: `telegram_bots/worker.py:28`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `StaffBot.objects.get`, `bot.save`, `fields.append`, `timezone.now`.
+
+### `dispatch_reply(client, reply)`
+
+Исходник: `telegram_bots/worker.py:38`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `client.call`, `client.message`, `reply.get`.
+
+### `job_loop(bot_id, stop, owner, client_factory)`
+
+Исходник: `telegram_bots/worker.py:49`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `StaffBot.objects.get`, `claim_job`, `client.close`, `client_factory`, `close_old_connections`, `connections.close_all`, `read_token`, `run_job`, `stop.is_set`, `stop.wait`, `timezone.now`.
+
+### `run_polling(bot_id, owner, stop, *, client_factory=TelegramClient, once=False)`
+
+Исходник: `telegram_bots/worker.py:73`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `StaffBot.objects.get`, `TelegramError`, `accept_update`, `bot.username.lower`, `client.call`, `client.close`, `client_factory`, `close_old_connections`, `connection_state`, `connections.close_all`, `dispatch_reply`, `executor.is_alive`, `executor.join`, `executor.start`, `executor_stop.set`, `expected_status`, `isinstance`, `lease`, `me.get`, `min`, `read_token`, `recover_interrupted`, `require_live_operation`, `stop.is_set`, `stop.wait`, `str`, `str(me.get('username', '')).lower`, `threading.Event`, `threading.Thread`, `webhook.get`.
 
 ## `warehouse/admin.py`
 

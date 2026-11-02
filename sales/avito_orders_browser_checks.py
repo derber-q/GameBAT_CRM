@@ -43,9 +43,120 @@ if (/Android/.test(navigator.userAgent) && navigator.userAgentData?.mobile === t
 }
 </script></body></html>'''
 
+# Искусственный QR P000000000001: фиксированная матрица, без новых зависимостей.
+QR_MATRIX = '''111111101111101111111
+100000100101001000001
+101110100110001011101
+101110100111001011101
+101110100010101011101
+100000100001101000001
+111111101010101111111
+000000001111100000000
+110110100110101000001
+110011001000101010111
+010101100000001101111
+011111000111000011101
+010000100100011111101
+000000001101111000111
+111111100100110110101
+100000100011100010100
+101110101101101101111
+101110101101100011100
+101110100110011111111
+100000101100011000110
+111111101011010110110'''.splitlines()
+
 
 @override_settings(LABEL_PRINT_BACKEND='agent')
 class AvitoOrdersBrowserChecks(StaticLiveServerTestCase):
+    def test_5post_svg_qr_uses_rendered_image_and_never_repeats_background_download(self):
+        import pymupdf
+        owner=User.objects.create_superuser('5post-browser')
+        PrintAgent.objects.create(name='Test QR',printer_name='Fake',token_hash=hashlib.sha256(b'qr-test').hexdigest())
+        self.client.force_login(owner)
+        media=self.enterContext(TemporaryDirectory())
+        self.enterContext(override_settings(MEDIA_ROOT=media))
+        detail=[DETAIL.replace('Почты России','5Post').replace('barcodeType=128','barcodeType=QR_IMAGE').replace('00123456789012','P000000000001')]
+        rectangles=''.join(f'<rect x="{(x+4)*8}" y="{(y+4)*8}" width="8" height="8"/>'
+            for y,line in enumerate(QR_MATRIX) for x,value in enumerate(line) if value=='1')
+        svg=f'<svg xmlns="http://www.w3.org/2000/svg" width="232" height="232"><rect width="232" height="232" fill="white"/><g fill="black">{rectangles}</g></svg>'
+        load_image=[False]
+        background_downloads=[]
+        extension=Path(settings.BASE_DIR)/'browser_extensions/avito_check'
+        with ThreadPoolExecutor(max_workers=1) as pool, TemporaryDirectory(ignore_cleanup_errors=True) as folder, sync_playwright() as pw:
+            run=lambda f:pool.submit(database_call,f).result()
+            context=pw.chromium.launch_persistent_context(folder,channel='chromium',headless=True,
+                viewport={'width':1440,'height':900},args=[f'--disable-extensions-except={extension}',f'--load-extension={extension}'])
+            context.add_cookies([{'name':settings.SESSION_COOKIE_NAME,'value':self.client.cookies[settings.SESSION_COOKIE_NAME].value,'url':self.live_server_url}])
+            context.route('**/*',lambda route:route.continue_() if route.request.url.startswith(self.live_server_url+'/') else route.abort())
+            context.route('https://www.avito.ru/**',lambda route:route.fulfill(content_type='text/html',body=LIST.replace('Почта России','5Post')))
+            context.route('https://m.avito.ru/**',lambda route:route.fulfill(content_type='text/html',body=detail[0]))
+            def original_image(route):
+                if route.request.resource_type!='image':
+                    background_downloads.append(route.request.resource_type);route.abort()
+                elif load_image[0]:route.fulfill(content_type='image/svg+xml',body=svg)
+                else:route.abort()
+            context.route('https://avito.ru/web/1/barcode/generate?*',original_image)
+            context.route('**/crm/api/exchange-rates/',lambda route:route.fulfill(json={'rates':{},'available':False}))
+            crm=context.new_page();crm.goto(self.live_server_url+'/crm/sales/avito-extension/')
+            page=context.new_page();page.goto('https://www.avito.ru/orders')
+            panel=page.locator('resource-avito-order')
+            button=panel.get_by_text('Напечатать отправительный код',exact=True)
+            button.click()
+            expect(panel.locator('small')).to_contain_text('Avito не загрузил изображение',timeout=40000)
+            self.assertEqual(run(lambda:AvitoShippingPrintJob.objects.count()),0)
+            load_image[0]=True
+            button.click()
+            expect(panel.locator('small')).to_contain_text('очередь',timeout=40000)
+            self.assertEqual(run(lambda:AvitoShippingPrintJob.objects.count()),1)
+            self.assertEqual(run(lambda:AvitoShippingPrintJob.objects.get().state),'agent_waiting')
+            self.assertEqual(run(lambda:AvitoBrowserOrder.objects.get().carrier),'5Post')
+            self.assertEqual(run(lambda:Sale.objects.count()),0)
+            self.assertEqual(background_downloads,[])
+            def read_pdf():
+                with AvitoShippingPrintJob.objects.get().file.open('rb') as source:
+                    return source.read()
+            pdf=run(read_pdf)
+            with pymupdf.open(stream=pdf,filetype='pdf') as document:
+                self.assertAlmostEqual(document[0].rect.width*25.4/72,58,places=2)
+                self.assertAlmostEqual(document[0].rect.height*25.4/72,40,places=2)
+                self.assertIn('5Post',document[0].get_text())
+                box=pymupdf.Rect(document[0].get_image_info()[0]['bbox'])
+                self.assertAlmostEqual(box.width,box.height,places=2)
+                image=document.extract_image(document[0].get_images()[0][0])
+                bitmap=Image.open(BytesIO(image['image'])).convert('L')
+                # Сравниваем каждую ячейку с оригинальным QR, включая порядок модулей.
+                self.assertEqual(bitmap.width,bitmap.height)
+                for y,line in enumerate(QR_MATRIX):
+                    for x,value in enumerate(line):
+                        pixel=bitmap.getpixel((int((x+4.5)*bitmap.width/29),int((y+4.5)*bitmap.height/29)))
+                        self.assertEqual(pixel<128,value=='1')
+            target=Path(settings.BASE_DIR)/'outputs/avito_orders_20261101'
+            target.mkdir(exist_ok=True)
+            (target/'sample_5post_label.pdf').write_bytes(pdf)
+            self.assertFalse(any(p.url.startswith('https://m.avito.ru/orders/') for p in context.pages))
+            # Распознанный QR не требует картинки: она намеренно недоступна,
+            # но точные исходные данные с ведущими нулями доходят до генератора CRM.
+            direct_id='70000000000000002'
+            detail[0]=DETAIL.replace('Почты России','5Post').replace('barcodeType=128','barcodeType=QrCode').replace('00123456789012','001234567')
+            load_image[0]=False
+            context.route('https://www.avito.ru/**',lambda route:route.fulfill(content_type='text/html',body=LIST.replace('Почта России','5Post').replace('70000000000000001',direct_id)))
+            received=[]
+            def record_original_payload(route):
+                if route.request.method=='POST' and route.request.post_data_json.get('action')=='print':
+                    received.append(route.request.post_data_json.get('symbol'))
+                route.fallback()
+            context.route('**/crm/sales/avito-extension/',record_original_payload)
+            page.reload()
+            button.click()
+            expect(panel.locator('small')).to_contain_text('очередь',timeout=40000)
+            self.assertEqual(received,[{'type':'QR','content':'001234567'}])
+            self.assertEqual(run(lambda:AvitoShippingPrintJob.objects.count()),2)
+            self.assertEqual(run(lambda:AvitoShippingPrintJob.objects.get(order__external_id=direct_id).state),'agent_waiting')
+            self.assertEqual(run(lambda:Sale.objects.count()),0)
+            self.assertEqual(background_downloads,[])
+            context.close()
+
     def test_buttons_open_form_keep_sale_link_and_enqueue_original_label(self):
         owner=User.objects.create_superuser('avito-browser')
         wh=Warehouse.objects.create(name='Synthetic warehouse')
@@ -119,8 +230,10 @@ class AvitoOrdersBrowserChecks(StaticLiveServerTestCase):
             # Несколько фото/названий и изменение ширины не увеличивают высоту строки.
             original_image=row.locator('[data-marker="images-row"] img').first
             original_image.evaluate('''image=>{
-              const second=image.cloneNode();second.alt='Второй тестовый товар с длинным названием';
-              image.parentElement.append(second);
+              // Avito создаёт отдельный images-row для каждого товара заказа.
+              const second=image.parentElement.cloneNode(true);
+              second.querySelector('img').alt='Второй тестовый товар с длинным названием';
+              image.parentElement.parentElement.append(second);
             }''')
             expect(product.locator('img')).to_have_count(2)
             expect(product.get_by_text('Второй тестовый товар с длинным названием',exact=True)).to_be_visible()
@@ -135,15 +248,28 @@ class AvitoOrdersBrowserChecks(StaticLiveServerTestCase):
                 metrics=row.evaluate('''row=>{
                   const gallery=row.querySelector('resource-avito-products');
                   const bounds=row.getBoundingClientRect(),photo=gallery.getBoundingClientRect();
+                  const cards=Array.from(gallery.shadowRoot.querySelectorAll('a')).map(el=>{
+                    const r=el.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top};
+                  });
                   gallery.style.display='none';const previous=row.getBoundingClientRect().height;gallery.style.display='';
-                  return {height:bounds.height,previous,left:photo.left,right:photo.right,rowLeft:bounds.left,rowRight:bounds.right};
+                  return {height:bounds.height,previous,left:photo.left,right:photo.right,rowLeft:bounds.left,rowRight:bounds.right,cards};
                 }''')
                 self.assertAlmostEqual(metrics['height'],metrics['previous'],delta=1)
                 self.assertGreaterEqual(metrics['left'],metrics['rowLeft'])
                 self.assertLessEqual(metrics['right'],metrics['rowRight']+1)
+                first,second=metrics['cards']
+                self.assertAlmostEqual(first['top'],second['top'],delta=1)
+                self.assertLessEqual(first['right'],second['left'])
+                self.assertLessEqual(second['right'],metrics['right']+1)
+                expect(row.locator('[data-marker="images-row"]')).to_have_count(2)
+                for group in row.locator('[data-marker="images-row"]').all():
+                    expect(group).to_have_css('visibility','hidden')
+            target=Path(settings.BASE_DIR)/'outputs/avito_orders_20261102'
+            target.mkdir(exist_ok=True)
+            row.screenshot(path=str(target/'multiple_products.png'))
             original_image.evaluate("image=>image.alt='Обновлённое название тестового товара'")
             expect(product.get_by_text('Обновлённое название тестового товара',exact=True)).to_be_visible()
-            original_image.evaluate("image=>{image.alt='Synthetic listing';image.parentElement.lastElementChild.remove()}")
+            original_image.evaluate("image=>{image.alt='Synthetic listing';image.parentElement.nextElementSibling.remove()}")
             expect(product.locator('img')).to_have_count(1)
             # Временный обрыв lookup не стирает связь; после восстановления ошибка исчезает.
             disconnected=[True]

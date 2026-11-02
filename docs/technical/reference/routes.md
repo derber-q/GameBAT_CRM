@@ -4,9 +4,33 @@
 
 Справочник исходников и метаданных схемы, без рабочих записей/ключей. Перегенерация: `.venv/Scripts/python.exe scripts/build_technical_reference.py`.
 
-Записей URL: **295**.
+Записей URL: **298**.
 
 Admin свёрнут в один вход. URL включает HTML, JSON, команды и файлы; не каждый маршрут является страницей. Проверки внутри сервиса/формы дополняют показанные декораторы.
+
+## `/crm/integrations/telegram/`
+
+Имя: `telegram_bots:dashboard`.
+
+Обработчик: `telegram_bots.views.dashboard`.
+
+Исходник: `telegram_bots/views.py:28`.
+
+Декораторы: `sensitive_post_parameters('token')`; `superuser_required`; `never_cache`; `require_http_methods(['GET', 'POST'])`.
+
+Прямые шаблоны: `telegram_bots/dashboard.html`, `telegram_bots/stub.html`.
+
+## `/crm/integrations/telegram/connect/`
+
+Имя: `telegram_bots:connection`.
+
+Обработчик: `telegram_bots.views.connection`.
+
+Исходник: `telegram_bots/views.py:102`.
+
+Декораторы: `login_required`; `never_cache`; `require_http_methods(['GET', 'POST'])`.
+
+Прямые шаблоны: `telegram_bots/connection.html`.
 
 ## `/crm/print-agent/heartbeat/`
 
@@ -1528,7 +1552,19 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 
 Обработчик: `orders.stock_order_views.stock_order_create`.
 
-Исходник: `orders/stock_order_views.py:15`.
+Исходник: `orders/stock_order_views.py:19`.
+
+Декораторы: `never_cache`; `require_http_methods(['GET', 'POST'])`; `permission_required_all('orders.create_order', 'price.view_supplier_prices')`.
+
+Прямые шаблоны: `orders/stock_create.html`.
+
+## `/crm/orders/trips/<int:trip_pk>/stock/new/`
+
+Имя: `orders:trip_stock_create`.
+
+Обработчик: `orders.stock_order_views.stock_order_create`.
+
+Исходник: `orders/stock_order_views.py:19`.
 
 Декораторы: `never_cache`; `require_http_methods(['GET', 'POST'])`; `permission_required_all('orders.create_order', 'price.view_supplier_prices')`.
 
@@ -1552,7 +1588,7 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 
 Обработчик: `orders.views.order_detail`.
 
-Исходник: `orders/views.py:218`.
+Исходник: `orders/views.py:231`.
 
 Декораторы: `require_GET`; `permission_required_any('orders.view_order_detail')`.
 
@@ -1584,7 +1620,7 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 
 Обработчик: `orders.views.order_edit`.
 
-Исходник: `orders/views.py:281`.
+Исходник: `orders/views.py:294`.
 
 Декораторы: `permission_required_any('orders.edit_created_order')`.
 
@@ -1608,7 +1644,7 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 
 Обработчик: `orders.views.order_confirm`.
 
-Исходник: `orders/views.py:316`.
+Исходник: `orders/views.py:329`.
 
 Декораторы: `require_POST`; `permission_required_any('orders.confirm_order')`.
 
@@ -1618,7 +1654,7 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 
 Обработчик: `orders.views.order_start_receiving`.
 
-Исходник: `orders/views.py:338`.
+Исходник: `orders/views.py:351`.
 
 Декораторы: `require_POST`; `permission_required_any('orders.start_receiving')`.
 
@@ -1628,7 +1664,7 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 
 Обработчик: `orders.views.order_adjust`.
 
-Исходник: `orders/views.py:354`.
+Исходник: `orders/views.py:367`.
 
 Декораторы: `permission_required_any('orders.edit_receiving_order')`.
 
@@ -1640,7 +1676,7 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 
 Обработчик: `orders.views.order_complete`.
 
-Исходник: `orders/views.py:378`.
+Исходник: `orders/views.py:391`.
 
 Декораторы: `require_POST`; `permission_required_any('orders.complete_order')`.
 
@@ -1650,7 +1686,7 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 
 Обработчик: `orders.views.supplier_batch_create`.
 
-Исходник: `orders/views.py:404`.
+Исходник: `orders/views.py:417`.
 
 Декораторы: `require_POST`; `permission_required_all('orders.generate_supplier_orders', 'partners.view_supplier_details', 'orders.edit_created_order', 'price.view_supplier_prices')`.
 
@@ -1660,7 +1696,7 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 
 Обработчик: `orders.views.supplier_batch_detail`.
 
-Исходник: `orders/views.py:411`.
+Исходник: `orders/views.py:424`.
 
 Декораторы: `require_GET`; `permission_required_all('orders.generate_supplier_orders', 'partners.view_supplier_details')`.
 

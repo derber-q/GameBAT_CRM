@@ -16,7 +16,7 @@ def main():
     if any(arg.startswith('--settings') for arg in sys.argv[1:]):
         raise SystemExit('local_test: подмена модуля настроек запрещена.')
     if len(sys.argv) > 1 and sys.argv[1] in (
-        'run_integration_worker','run_label_print_worker','run_worker_supervisor'):
+        'run_integration_worker','run_label_print_worker','run_worker_supervisor','run_telegram_staff_bot'):
         raise SystemExit('local_test: реальные worker запрещены. Моделирование выполняется изолированными тестами.')
     if len(sys.argv)>1 and sys.argv[1]=='runserver':
         address=next((arg for arg in sys.argv[2:] if not arg.startswith('-')), '')

@@ -1,5 +1,10 @@
 # Архитектура и правила учёта
 
+`telegram_bots` выдаёт безымянный оптовый Excel прежним генератором `price.excel`,
+используя числовую привязку к User и Django permissions. Polling/исполнитель встроен
+пятым сервисом в прежний supervisor; local_test отключён от Telegram.
+[Контракт и ограничения](telegram_staff_bot.md).
+
 Режимы и границы тестовой CRM: [этап A](environments_stage_a.md).
 
 Страница [ручных обновлений](updates.md) доступна только superuser. В локальной и

@@ -48,12 +48,19 @@ class RepositoryHygieneTests(unittest.TestCase):
         self.assertEqual(check_index(self.root), [])
         self.assertTrue((self.root / 'db.sqlite3').exists())
 
+    def test_telegram_token_is_rejected_under_an_arbitrary_filename(self):
+        self.stage('config/bot.txt', b'123456:' + b'x' * 35)
+        result = check_index(self.root)
+        self.assertEqual(result[0][0], 'config/bot.txt')
+        self.assertNotIn('123456:', repr(result))
+
     def test_local_keys_and_environment_are_rejected_without_revealing_contents(self):
         self.stage('.env.production', b'PRIVATE_VALUE=do-not-print\n')
         self.stage('.integration-encryption-key', b'do-not-print')
+        self.stage('.telegram-staff-bot-token', b'do-not-print')
         self.stage('config/key.pem', b'-----BEGIN PRIVATE KEY-----\nprivate\n')
         result = check_index(self.root)
-        self.assertEqual(len(result), 3)
+        self.assertEqual(len(result), 4)
         self.assertNotIn('do-not-print', repr(result))
 
 

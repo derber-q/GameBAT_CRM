@@ -38,6 +38,8 @@ class LinuxProcesses:
                         continue
                 elif command in ('run_label_print_worker', 'run_worker_supervisor'):
                     services = ['print' if command == 'run_label_print_worker' else 'supervisor']
+                elif command == 'run_telegram_staff_bot':
+                    services = ['telegram_staff']
                 else:
                     continue
                 instance = self._option(args, '--worker-instance')
@@ -66,6 +68,8 @@ class LinuxProcesses:
             raise ValueError('Unsupported worker')
         instance = str(uuid.UUID(str(instance)))
         command = ['run_label_print_worker'] if service == 'print' else ['run_integration_worker', '--service', service]
+        if service == 'telegram_staff':
+            command = ['run_telegram_staff_bot']
         folder = Path(settings.WORKER_RUNTIME_DIR).parent
         folder.mkdir(parents=True, exist_ok=True)
         with (folder/f'{instance}.stdout.log').open('ab') as stdout, (folder/f'{instance}.stderr.log').open('ab') as stderr:

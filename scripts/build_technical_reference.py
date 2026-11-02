@@ -19,7 +19,7 @@ sys.path.insert(0, str(ROOT))
 OUTPUT = ROOT / 'docs' / 'technical' / 'reference'
 APPS = {'core', 'accounts', 'catalog', 'partners', 'warehouse', 'supplies', 'consignment',
         'pricing', 'sales', 'cash', 'creditors', 'price', 'orders', 'integrations',
-        'yandex_market', 'resource_storefront'}
+        'yandex_market', 'resource_storefront', 'telegram_bots'}
 NOTICE = ('<!-- Сгенерировано scripts/build_technical_reference.py; не редактировать вручную. -->\n'
           '\nСправочник исходников и метаданных схемы, без рабочих записей/ключей. '
           'Перегенерация: `.venv/Scripts/python.exe scripts/build_technical_reference.py`.\n\n')

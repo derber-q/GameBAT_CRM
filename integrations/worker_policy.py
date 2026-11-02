@@ -15,6 +15,8 @@ def expected_services():
         # в существующих изолированных тестах с FakeProcesses.
         return dict.fromkeys(SERVICES, 'disabled')
     result = dict.fromkeys(SERVICES, 'unconfigured')
+    from telegram_bots.configuration import expected_status
+    result['telegram_staff'] = expected_status()
     avito = IntegrationCredential.objects.filter(provider='avito').first()
     if avito and avito.is_configured and avito.last_success_at:
         result['avito'] = 'required'

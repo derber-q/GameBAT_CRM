@@ -10,7 +10,8 @@
     fetch(location.pathname,{method:'POST',credentials:'same-origin',cache:'no-store',redirect:'error',
       headers:{'Content-Type':'application/json','X-CSRFToken':csrf},body:JSON.stringify(message.data),signal:AbortSignal.timeout(20000)})
       .then(async response=>{if(!(response.headers.get('content-type')||'').includes('application/json'))throw new Error('Войдите в CRM.');return response.json();})
-      .then(reply,error=>reply({ok:false,message:error.message||'Нет связи с CRM.'}));
+      .then(reply,error=>reply({ok:false,message:error.message==='Failed to fetch'?
+        'Нет связи с CRM. Проверьте, что сайт CRM запущен, и обновите вкладку связи.':error.message||'Нет связи с CRM.'}));
     return true;
   });
 })();

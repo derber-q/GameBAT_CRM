@@ -30,11 +30,19 @@ def label_pdf(encoded, carrier):
                 raise ValueError
             # Пересохранение убирает метаданные; SVG/HTML и URL сервер не принимает.
             clean = BytesIO()
+            width,height=image.size
             image.convert('RGB').save(clean, 'PNG')
         with pymupdf.open() as doc:
             mm = 72/25.4
             page = doc.new_page(width=58*mm, height=40*mm)
-            page.insert_image(pymupdf.Rect(2*mm,2*mm,56*mm,30*mm), stream=clean.getvalue(), keep_proportion=True)
+            area=pymupdf.Rect(2*mm,2*mm,56*mm,30*mm)
+            # Явный расчёт области сохраняет геометрию QR независимо от поведения
+            # версии PDF-библиотеки: квадрат нельзя растягивать до ширины этикетки.
+            scale=min(area.width/width,area.height/height)
+            x=area.x0+(area.width-width*scale)/2
+            y=area.y0+(area.height-height*scale)/2
+            fitted=pymupdf.Rect(x,y,x+width*scale,y+height*scale)
+            page.insert_image(fitted, stream=clean.getvalue(), keep_proportion=True)
             font = Path(settings.BASE_DIR)/'static/resource/fonts/manrope.ttf'
             page.insert_font(fontname='carrier', fontfile=str(font))
             text = carrier.strip()
@@ -70,12 +78,29 @@ def request_label(*, actor, data):
     carrier = str(data['order'].get('carrier','')).strip()
     image=data.get('image')
     if symbol:=data.get('symbol'):
-        from barcode import Code128
-        from barcode.writer import ImageWriter
-        if not isinstance(symbol,dict) or symbol.get('type')!='128' or not isinstance(symbol.get('content'),str) or not re.fullmatch(r'[\x20-\x7e]{1,100}',symbol['content']):
+        if not isinstance(symbol,dict) or symbol.get('type') not in ('128','QR') or not isinstance(symbol.get('content'),str):
             raise ValidationError('Неподдерживаемые данные исходного кода Avito.')
         output=BytesIO()
-        Code128(symbol['content'],writer=ImageWriter()).write(output,options={'module_width':0.25,'module_height':12,'quiet_zone':3,'font_size':8,'dpi':300})
+        content=symbol['content']
+        if symbol['type']=='128':
+            from barcode import Code128
+            from barcode.writer import ImageWriter
+            if not re.fullmatch(r'[\x20-\x7e]{1,100}',content):
+                raise ValidationError('Неподдерживаемые данные исходного кода Avito.')
+            Code128(content,writer=ImageWriter()).write(output,options={'module_width':0.25,'module_height':12,'quiet_zone':3,'font_size':8,'dpi':300})
+        else:
+            import qrcode
+            # Содержимое берётся из исходного генератора Avito, без числового
+            # преобразования: начальные нули и UTF-8 должны остаться неизменными.
+            try:
+                encoded=content.encode('utf-8')
+                if not 1<=len(encoded)<=2048:raise ValueError
+                qr=qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_M,box_size=8,border=4)
+                qr.add_data(encoded,optimize=0)
+                qr.make(fit=True)
+                qr.make_image(fill_color='black',back_color='white').save(output,format='PNG')
+            except (ValueError,UnicodeError,qrcode.exceptions.DataOverflowError):
+                raise ValidationError('Некорректное содержимое исходного QR Avito.') from None
         image=base64.b64encode(output.getvalue()).decode()
     pdf = label_pdf(image, carrier)
     from .market_fulfillment import _printer_target

@@ -245,3 +245,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Локальный Telegram-токен: не входит в Git и образы контейнера.
+.telegram-staff-bot-token
+.telegram-*

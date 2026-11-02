@@ -22,6 +22,7 @@ urlpatterns = [
     path("", views.order_list, name="list"),
     path("new/", views.order_upload, name="upload"),
     path("new/stock/", stock_order_views.stock_order_create, name="stock_create"),
+    path("trips/<int:trip_pk>/stock/new/", stock_order_views.stock_order_create, name="trip_stock_create"),
     path("new/preview/", views.order_preview, name="preview"),
     path("<int:pk>/", views.order_detail, name="detail"),
     path("<int:pk>/export/", views.order_export, name="export"),

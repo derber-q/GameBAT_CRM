@@ -21,7 +21,10 @@ def _nearest(query, state, now):
 def queue_snapshot(code, *, now, enabled=True):
     data = {'current_action': 'Нет данных', 'current_started_at': None, 'next_action': 'Не запланировано',
             'next_at': None, 'overdue': False, 'last_task_success_at': None, 'task_error': ''}
-    if code == 'print':
+    if code == 'telegram_staff':
+        from telegram_bots.monitoring import queue_snapshot as telegram_snapshot
+        data.update(telegram_snapshot())
+    elif code == 'print':
         from sales.models import MarketPrintJob
         jobs = MarketPrintJob.objects.all()
         job = jobs.exclude(state__in=['done', 'error', 'uncertain']).order_by('pk').first()

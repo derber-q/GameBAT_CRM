@@ -26,11 +26,18 @@
       titles:Array.from(row.querySelectorAll('[data-marker="images-row"] img[alt]')).map(n => normalize(n.alt)).filter(Boolean),
       status:normalize(row.querySelector('[data-marker="order-status"]')?.textContent)};
   }
-  function labelData() {
-    const img = Array.from(document.images).find(image => {
+  function labelImage() {
+    const images=Array.from(document.images).filter(image => {
       try { const u = new URL(image.src); return ['avito.ru','www.avito.ru','m.avito.ru'].includes(u.hostname) && u.pathname === '/web/1/barcode/generate'; }
       catch { return false; }
     });
+    const visible=images.filter(image=>{
+      const rect=image.getBoundingClientRect();
+      return rect.width>0&&rect.height>0&&getComputedStyle(image).visibility==='visible';
+    });
+    return visible.find(image=>image.complete&&image.naturalWidth>0)||visible[0]||images[0];
+  }
+  function labelData(img=labelImage()) {
     if (!img) return null;
     // Контекст названия берётся из блока отправки, а не меню/рекламы сайта.
     const text = normalize(document.body.innerText);
@@ -38,9 +45,36 @@
     const carrier = /Почт[аы]/i.test(heading) ? 'Почта России' : carriers.find(c => heading.toLowerCase().includes(c.toLowerCase()));
     return {source:img.src, carrier:carrier || ''};
   }
+  async function captureArea() {
+    const img=labelImage();
+    if(!img)throw new Error('На странице нет исходного изображения отправительного кода.');
+    img.scrollIntoView({block:'center',inline:'center',behavior:'instant'});
+    let timeout;
+    try{
+      await Promise.race([img.decode(),new Promise((resolve,reject)=>{
+        timeout=setTimeout(()=>reject(new Error('Avito не загрузил изображение отправительного кода.')),15000);
+      })]);
+    }catch{
+      throw new Error('Avito не загрузил изображение отправительного кода. Откройте мобильный заказ и проверьте код.');
+    }finally{clearTimeout(timeout);}
+    await new Promise(resolve=>setTimeout(resolve,100));
+    const rect=img.getBoundingClientRect();
+    const hidden=getComputedStyle(img);
+    if(!img.complete||img.naturalWidth<20||img.naturalHeight<20||rect.width<20||rect.height<20||
+      rect.width>1000||rect.height>1000||hidden.visibility!=='visible'||Number(hidden.opacity)===0||
+      rect.left<0||rect.top<0||rect.right>innerWidth+1||rect.bottom>innerHeight+1)
+      throw new Error('Изображение отправительного кода не отображается целиком.');
+    const cover=document.elementFromPoint(rect.left+rect.width/2,rect.top+rect.height/2);
+    if(cover&&cover!==img&&!cover.contains(img))throw new Error('Отправительный код закрыт другим элементом Avito.');
+    return {ok:true,label:labelData(img),clip:{x:rect.left+scrollX,y:rect.top+scrollY,width:rect.width,height:rect.height,scale:1}};
+  }
   globalThis.ResourceAvitoOrders = {rowData, labelData};
   chrome.runtime.onMessage.addListener((message, sender, reply) => {
-    if (sender.id !== chrome.runtime.id || sender.tab || message?.type !== 'resource-orders:label') return false;
+    if (sender.id !== chrome.runtime.id || sender.tab || !['resource-orders:label','resource-orders:label_capture'].includes(message?.type)) return false;
+    if(message.type==='resource-orders:label_capture'){
+      captureArea().then(reply,error=>reply({ok:false,message:error.message||'Не удалось прочитать изображение кода Avito.'}));
+      return true;
+    }
     reply({ok:true, label:labelData()});
   });
   if (!['avito.ru','www.avito.ru','m.avito.ru'].includes(location.hostname) || !location.pathname.startsWith('/orders')) return;

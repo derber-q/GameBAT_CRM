@@ -1,6 +1,7 @@
 """Создание складского импортного заказа без Excel и совместимость загрузки."""
 from decimal import Decimal
 from uuid import uuid4
+from unittest.mock import patch
 
 from django.contrib.auth.models import Permission
 from django.test import TestCase
@@ -136,6 +137,99 @@ class StockOrderFormTests(TestCase):
         self.assertTrue(all(row['previous_trip_quantity'] == 0
             for group in response.context['groups'] for row in group['rows']))
 
+    def test_trip_form_uses_preceding_trip_and_creates_order_in_selected_trip(self):
+        old = self.order('stock', 7, 4)
+        previous = create_trip(actor=self.user, order_ids=[old.pk], creation_key=uuid4())
+        target = create_trip(actor=self.user, order_ids=[], creation_key=uuid4(), allow_empty=True)
+        create_trip(actor=self.user, order_ids=[], creation_key=uuid4(), allow_empty=True)
+        url = reverse('orders:trip_stock_create', args=[target.pk])
+        response = self.client.get(url)
+        self.assertEqual(response.context['previous_trip'].pk, previous.pk)
+        self.assertEqual(response.context['target_trip'].pk, target.pk)
+        rows = {row['item'].product_kind: row for group in response.context['groups'] for row in group['rows']}
+        self.assertEqual(rows['cd']['previous_trip_quantity'], 7)
+        self.assertContains(self.client.get(reverse('orders:list')), url)
+        self.assertContains(self.client.get(reverse('orders:trip_detail', args=[target.pk])), url)
+        response = self.client.post(url, self.data(trip_revision=target.revision))
+        self.assertRedirects(response, reverse('orders:preview'))
+        self.assertContains(self.client.get(reverse('orders:preview')), url)
+        back = self.client.get(url)
+        self.assertEqual(back.context['form'][f'quantity_{self.cd_source.pk}'].value(), 3)
+        self.client.post(reverse('orders:preview'))
+        order = CustomerProcurementOrder.objects.latest('pk')
+        self.assertEqual(order.trip_id, target.pk)
+        self.assertTrue(target.source_orders.filter(pk=order.pk).exists())
+        self.assertEqual(target.lines.get(cd=self.cd).quantity, 3)
+        target.refresh_from_db()
+        self.assertEqual(target.price_list_id, self.price.pk)
+        self.assertEqual(CashTransaction.objects.count(), 0)
+        self.assertEqual(Supply.objects.count(), 0)
+
+    def test_trip_form_first_trip_has_no_previous_and_restricts_price_list(self):
+        order = self.order('stock', 2)
+        target = create_trip(actor=self.user, order_ids=[order.pk], creation_key=uuid4())
+        url = reverse('orders:trip_stock_create', args=[target.pk])
+        response = self.client.get(url)
+        self.assertIsNone(response.context['previous_trip'])
+        self.assertEqual(response.context['price_list'].pk, self.price.pk)
+        self.assertEqual(list(response.context['choice_form'].fields['price_list'].queryset), [self.price])
+        response = self.client.post(url, self.data(price_list=999999, trip_revision=target.revision))
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn('procurement_order_import_draft', self.client.session)
+
+    def test_trip_form_revision_conflict_rolls_back_created_order(self):
+        target = create_trip(actor=self.user, order_ids=[], creation_key=uuid4(), allow_empty=True)
+        url = reverse('orders:trip_stock_create', args=[target.pk])
+        self.client.post(url, self.data(trip_revision=target.revision))
+        other = self.order('stock', 1)
+        from .trips import add_orders_to_trip
+        add_orders_to_trip(actor=self.user, batch_id=target.pk, order_ids=[other.pk], revision=target.revision)
+        before = CustomerProcurementOrder.objects.count()
+        response = self.client.post(reverse('orders:preview'))
+        self.assertContains(response, 'Рейс уже изменён')
+        self.assertEqual(CustomerProcurementOrder.objects.count(), before)
+
+    def test_trip_form_requires_management_permissions_also_at_confirmation(self):
+        target = create_trip(actor=self.user, order_ids=[], creation_key=uuid4(), allow_empty=True)
+        url = reverse('orders:trip_stock_create', args=[target.pk])
+        self.client.post(url, self.data(trip_revision=target.revision))
+        self.client.force_login(self.employee('orders.create_order', 'price.view_supplier_prices'))
+        self.assertEqual(self.client.get(url).status_code, 403)
+        self.assertEqual(self.client.post(url, self.data(trip_revision=0)).status_code, 403)
+        session = self.client.session
+        session['procurement_order_import_draft'] = {
+            'price_list_id': self.price.pk, 'recipient': '', 'comment': '',
+            'lines': [{'price_list_item_id': self.cd_source.pk, 'prepayment_quantity': 1, 'postpayment_quantity': 0}],
+            'purpose': 'stock', 'entry_method': 'form', 'target_trip_id': target.pk,
+            'target_trip_revision': 0,
+        }
+        session.save()
+        self.assertEqual(self.client.post(reverse('orders:preview')).status_code, 403)
+        self.assertEqual(CustomerProcurementOrder.objects.count(), 0)
+
+    def test_trip_form_failed_assignment_does_not_leave_unassigned_order(self):
+        from django.core.exceptions import ValidationError
+        target = create_trip(actor=self.user, order_ids=[], creation_key=uuid4(), allow_empty=True)
+        url = reverse('orders:trip_stock_create', args=[target.pk])
+        self.client.post(url, self.data(trip_revision=target.revision))
+        with patch('orders.trips.assign_order_to_trip', side_effect=ValidationError('Распределение отклонено')):
+            self.assertContains(self.client.post(reverse('orders:preview')), 'Распределение отклонено')
+        self.assertEqual(CustomerProcurementOrder.objects.count(), 0)
+        self.assertEqual(target.lines.count(), 0)
+        self.assertEqual(target.source_orders.count(), 0)
+
+    def test_trip_arrival_after_preview_blocks_order_creation(self):
+        from django.utils import timezone
+        from .arrival_models import TripArrival
+        target = create_trip(actor=self.user, order_ids=[], creation_key=uuid4(), allow_empty=True)
+        url = reverse('orders:trip_stock_create', args=[target.pk])
+        self.client.post(url, self.data(trip_revision=target.revision))
+        TripArrival.objects.create(trip=target, usdt_aed=4, usdt_rub=80, actual_delivery=0,
+            arrived_at=timezone.now(), arrived_by=self.user)
+        self.assertContains(self.client.post(reverse('orders:preview')), 'Рейс приехал')
+        self.assertEqual(CustomerProcurementOrder.objects.count(), 0)
+        self.assertEqual(self.client.get(url).status_code, 302)
+
     def test_preview_back_and_creation_share_existing_stock_order_service(self):
         response = self.client.post(self.url, self.data())
         self.assertRedirects(response, reverse("orders:preview"))
@@ -230,13 +324,14 @@ class StockOrderFormTests(TestCase):
         self.assertEqual(self.client.post(reverse("orders:preview")).status_code, 403)
         self.assertFalse(CustomerProcurementOrder.objects.exists())
 
-    def test_import_page_buttons_point_to_specific_price_and_excel_stays(self):
+    def test_import_history_links_to_version_and_actions_stay_on_version_page(self):
         response = self.client.get(reverse("price:imports"))
-        self.assertContains(response, f'{self.url}?price_list={self.price.pk}')
-        self.assertContains(response, "Заказ на склад через форму")
-        self.assertContains(response, reverse("price:procurement_stock_export", args=[self.price.pk]))
+        self.assertContains(response, reverse('price:procurement_detail', args=[self.price.pk]))
+        self.assertNotContains(response, f'{self.url}?price_list={self.price.pk}')
+        self.assertNotContains(response, reverse("price:procurement_stock_export", args=[self.price.pk]))
         detail = self.client.get(reverse("price:procurement_detail", args=[self.price.pk]))
         self.assertContains(detail, f'{self.url}?price_list={self.price.pk}')
+        self.assertContains(detail, reverse('price:procurement_stock_export', args=[self.price.pk]))
         employee = self.employee("orders.create_order", "price.view_price_page")
         self.client.force_login(employee)
         self.assertNotContains(self.client.get(reverse("price:imports")), self.url)

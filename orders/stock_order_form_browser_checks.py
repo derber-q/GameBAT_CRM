@@ -19,6 +19,56 @@ from .trips import create_trip
 
 class StockOrderFormBrowserChecks(StaticLiveServerTestCase):
     @patch.dict(os.environ, {"DJANGO_ALLOW_ASYNC_UNSAFE": "true"})
+    def test_trip_button_previous_quantities_and_assignment_on_two_widths(self):
+        create_stock_form_fixture(self)
+        self.client.force_login(self.user)
+        old = create_customer_procurement_order(actor=self.user, price_list_id=self.price.pk,
+            recipient='Склад прошлого рейса', comment='', purpose='stock', lines=[{
+                'price_list_item_id': self.cd_source.pk, 'prepayment_quantity': 7, 'postpayment_quantity': 0}])
+        previous = create_trip(actor=self.user, order_ids=[old.pk], creation_key=uuid4())
+        target = create_trip(actor=self.user, order_ids=[], creation_key=uuid4(), allow_empty=True)
+        url = reverse('orders:trip_stock_create', args=[target.pk])
+        output = Path(settings.BASE_DIR) / 'outputs/stock-order-form-browser'
+        output.mkdir(parents=True, exist_ok=True)
+        with sync_playwright() as pw, closing(connections['default']):
+            browser = pw.chromium.launch()
+            for width in (1280, 390):
+                context = browser.new_context(viewport={'width': width, 'height': 900})
+                context.add_cookies([{'name': settings.SESSION_COOKIE_NAME,
+                    'value': self.client.cookies[settings.SESSION_COOKIE_NAME].value, 'url': self.live_server_url}])
+                context.route('**/*', lambda route: route.continue_() if route.request.url.startswith(
+                    self.live_server_url + '/') else route.abort())
+                context.route('**/crm/api/exchange-rates/', lambda route: route.fulfill(json={'rates': {}, 'available': False}))
+                page = context.new_page()
+                errors = []
+                page.on('pageerror', lambda error: errors.append(str(error)))
+                page.goto(self.live_server_url + reverse('orders:list'))
+                button = page.locator(f'a[href="{url}"]')
+                button.hover()
+                page.screenshot(path=str(output / f'trip-list-{width}.png'), full_page=True)
+                button.click()
+                expect(page.locator('[data-stock-order-previous-trip]')).to_contain_text(f'№{previous.pk}')
+                cd = page.locator(f'[name="quantity_{self.cd_source.pk}"]')
+                expect(page.locator('[data-stock-order-row]').filter(has=cd).locator(
+                    '[data-stock-order-previous-quantity]')).to_have_text('7')
+                cd.fill('1')
+                page.locator('[name="recipient"]').fill(f'Рейс форма {width}')
+                self.assertLessEqual(page.evaluate('document.documentElement.scrollWidth'), width)
+                page.screenshot(path=str(output / f'trip-form-{width}.png'), full_page=True)
+                page.get_by_role('button', name='Проверить и показать состав', exact=True).click()
+                expect(page.get_by_text(f'Заказ будет создан для рейса №{target.pk}', exact=False)).to_be_visible()
+                page.get_by_role('link', name='Изменить состав', exact=True).click()
+                expect(page).to_have_url(self.live_server_url + url + f'?price_list={self.price.pk}')
+                expect(cd).to_have_value('1')
+                page.get_by_role('button', name='Проверить и показать состав', exact=True).click()
+                page.get_by_role('button', name='Создать заказ', exact=True).click()
+                order = CustomerProcurementOrder.objects.get(recipient=f'Рейс форма {width}')
+                self.assertEqual(order.trip_id, target.pk)
+                self.assertEqual(errors, [])
+                context.close()
+            browser.close()
+
+    @patch.dict(os.environ, {"DJANGO_ALLOW_ASYNC_UNSAFE": "true"})
     def test_import_page_form_preview_back_and_creation_on_two_widths(self):
         create_stock_form_fixture(self)
         self.client.force_login(self.user)
@@ -41,6 +91,10 @@ class StockOrderFormBrowserChecks(StaticLiveServerTestCase):
                 errors = []
                 page.on("pageerror", lambda error: errors.append(str(error)))
                 page.goto(self.live_server_url + reverse("price:imports"))
+                history = page.locator('.price-history').filter(
+                    has=page.get_by_role('heading', name='Последние версии', exact=True))
+                expect(history.locator('a.button')).to_have_count(0)
+                page.locator(f'a[href="{reverse("price:procurement_detail", args=[self.price.pk])}"]').click()
                 page.locator(f'a[href="{reverse("orders:stock_create")}?price_list={self.price.pk}"]').click()
                 expect(page.get_by_role("heading", name="Заказ на склад через форму", exact=True)).to_be_visible()
                 self.assertLessEqual(page.evaluate("document.documentElement.scrollWidth"), width)

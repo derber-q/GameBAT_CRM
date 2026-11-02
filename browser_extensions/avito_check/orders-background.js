@@ -60,22 +60,44 @@
     return u.href;
   }
   async function imageFromOrder(order){
-    async function extract(label){
+    async function extract(label,target){
       const source=codeURL(label.source),symbol=new URL(source);
       // Для Code128 используем подтверждённые Avito тип и payload. Номер из списка не угадывается.
       if(symbol.searchParams.get('barcodeType')==='128')return {symbol:{type:'128',content:symbol.searchParams.get('content')},carrier:label.carrier||order.carrier};
-      const response=await fetch(source,{credentials:'include',redirect:'error',signal:AbortSignal.timeout(15000)});
-      if(!response.ok||!/^image\/(png|jpeg)/.test(response.headers.get('content-type')||''))throw new Error('Avito не отдал изображение кода.');
-      const bytes=new Uint8Array(await response.arrayBuffer());
-      if(bytes.length>1500000)throw new Error('Слишком большое изображение кода.');
-      let binary='';for(let i=0;i<bytes.length;i+=8192)binary+=String.fromCharCode(...bytes.subarray(i,i+8192));
-      return {image:btoa(binary),carrier:label.carrier||order.carrier};
+      const kind=(symbol.searchParams.get('barcodeType')||'').toUpperCase().replace(/[_-]/g,'');
+      if(['QR','QRCODE'].includes(kind))return {symbol:{type:'QR',content:symbol.searchParams.get('content')},carrier:label.carrier||order.carrier};
+      // QR и другие символы могут приходить как SVG или через защищённый redirect.
+      // Берём только показанное изображение из собственной временной вкладки:
+      // повторный fetch из service worker не нужен, SVG не передаётся в CRM.
+      if(!target)return null;
+      let ready;
+      try{ready=await chrome.tabs.sendMessage(target.tabId,{type:'resource-orders:label_capture'});}
+      catch{throw new Error('Прервалась связь с мобильным заказом Avito. Повторите попытку.');}
+      if(!ready?.ok)throw new Error((ready?.message||'Не удалось подготовить изображение отправительного кода Avito.')+
+        ' Формат кода: '+(symbol.searchParams.get('barcodeType')||'не указан').slice(0,40)+'.');
+      if(codeURL(ready.label?.source)!==source)throw new Error('Код Avito изменился во время чтения. Повторите попытку.');
+      const clip=ready.clip;
+      if(!clip||!['x','y','width','height'].every(key=>typeof clip[key]==='number'&&Number.isFinite(clip[key]))||
+        clip.x<0||clip.y<0||clip.x>100000||clip.y>100000||clip.width<20||clip.height<20||clip.width>1000||clip.height>1000)
+        throw new Error('Некорректные размеры изображения отправительного кода Avito.');
+      const current=await chrome.tabs.get(target.tabId);
+      if(!ResourceAvito.isAvito(current.url)||new URL(current.url).pathname!=='/orders/'+order.order_id)
+        throw new Error('Avito перенаправил временную вкладку заказа.');
+      let screenshot;
+      try{
+        screenshot=await chrome.debugger.sendCommand(target,'Page.captureScreenshot',{
+          format:'png',fromSurface:true,captureBeyondViewport:true,
+          clip:{x:clip.x,y:clip.y,width:clip.width,height:clip.height,scale:1}});
+      }catch{throw new Error('Не удалось получить изображение кода из мобильной вкладки Avito.');}
+      if(typeof screenshot?.data!=='string'||!screenshot.data||screenshot.data.length>2*1024*1024)
+        throw new Error('Avito не отдал допустимое изображение отправительного кода.');
+      return {image:screenshot.data,carrier:ready.label.carrier||label.carrier||order.carrier};
     }
     // Уже открытый мобильный заказ можно прочитать без новой навигации/эмуляции.
     for(const current of await chrome.tabs.query({})){
       if(!ResourceAvito.isAvito(current.url)||new URL(current.url).pathname!=='/orders/'+order.order_id)continue;
       let result;try{result=await chrome.tabs.sendMessage(current.id,{type:'resource-orders:label'});}catch{continue;}
-      if(result?.label)return extract(result.label);
+      if(result?.label){const found=await extract(result.label);if(found)return found;}
     }
     const tab=await chrome.tabs.create({url:'about:blank',active:false});
     const target={tabId:tab.id};
@@ -103,7 +125,7 @@
         if(!ResourceAvito.isAvito(current.url)||u.pathname!=='/orders/'+order.order_id){reason='Avito перенаправил страницу';continue;}
         let result;try{result=await chrome.tabs.sendMessage(tab.id,{type:'resource-orders:label'});}catch{reason='расширение не подключилось к мобильной странице';continue;}
         if(!result?.label){reason='в мобильном заказе нет исходного кода';continue;}
-        return extract(result.label);
+        return await extract(result.label,target);
       }
       throw new Error('Не удалось прочитать код: '+reason+'. Откройте мобильный заказ и проверьте доступность штрихкода/QR.');
     }finally{

@@ -45,6 +45,8 @@ class WindowsProcesses:
         if service not in SERVICES or sys.platform != 'win32':
             raise ValueError('Unsupported worker')
         command = ['run_label_print_worker'] if service == 'print' else ['run_integration_worker', '--service', service]
+        if service == 'telegram_staff':
+            command = ['run_telegram_staff_bot']
         folder = Path(settings.BASE_DIR) / 'outputs/localhost'
         folder.mkdir(parents=True, exist_ok=True)
         with (folder / f'{instance}.stdout.log').open('ab') as stdout, (folder / f'{instance}.stderr.log').open('ab') as stderr:

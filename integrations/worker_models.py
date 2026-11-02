@@ -6,7 +6,8 @@ from django.db.models import Q
 
 
 SERVICE_CHOICES = [('avito', 'Avito'), ('yandex', 'Яндекс Маркет'),
-                   ('google', 'Google Sheets'), ('print', 'Печать этикеток')]
+                   ('google', 'Google Sheets'), ('print', 'Печать этикеток'),
+                   ('telegram_staff', 'Telegram — сотрудники')]
 
 
 class WorkerController(models.Model):
@@ -35,7 +36,7 @@ class WorkerProcess(models.Model):
 
 
 class WorkerService(models.Model):
-    code = models.CharField(primary_key=True, max_length=12, choices=SERVICE_CHOICES)
+    code = models.CharField(primary_key=True, max_length=20, choices=SERVICE_CHOICES)
     expected = models.CharField(max_length=20, default='unconfigured')
     status = models.CharField(max_length=20, default='unknown')
     heartbeat_at = models.DateTimeField(null=True, blank=True)
@@ -56,7 +57,7 @@ class WorkerService(models.Model):
 class WorkerCommand(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     request_id = models.UUIDField()
-    service = models.CharField(max_length=12, choices=SERVICE_CHOICES)
+    service = models.CharField(max_length=20, choices=SERVICE_CHOICES)
     actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
     state = models.CharField(max_length=16, default='queued')
     result = models.CharField(max_length=40, blank=True)

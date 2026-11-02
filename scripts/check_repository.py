@@ -19,6 +19,7 @@ PRIVATE_DIRECTORIES = {
 PRIVATE_NAMES = {
     '.django-secret-key', '.integration-encryption-key', '.resource-token-encryption-key',
     '.yandex-market-key', '.label-printer.json', '.ds_store', 'thumbs.db',
+    '.telegram-staff-bot-token',
 }
 SQLITE_HEADER = b'SQLite format 3\x00'
 
@@ -30,7 +31,7 @@ def violations(path: str, content: bytes) -> list[str]:
     reasons = []
     if any(part.lower() in PRIVATE_DIRECTORIES for part in parts[:-1]):
         reasons.append('локальные данные, среда или генерируемые артефакты')
-    if name in PRIVATE_NAMES or (name.startswith('.env') and name != '.env.example'):
+    if name in PRIVATE_NAMES or name.startswith('.telegram-') or (name.startswith('.env') and name != '.env.example'):
         reasons.append('локальный секрет или конфигурация рабочего места')
     if re.search(r'\.(?:sqlite\w*|db)(?:$|[.-])|\.(?:bak|pyc|pyo|log)$', name):
         reasons.append('база данных, резервная копия, байткод или журнал')
@@ -38,6 +39,8 @@ def violations(path: str, content: bytes) -> list[str]:
         reasons.append('содержимое SQLite независимо от расширения')
     if re.search(rb'(?m)^-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----\s*$', content):
         reasons.append('закрытый криптографический ключ')
+    if re.search(rb'(?<![A-Za-z0-9_])[0-9]{5,20}:[A-Za-z0-9_-]{30,100}(?![A-Za-z0-9_-])', content):
+        reasons.append('потенциальный токен Telegram независимо от имени файла')
     return reasons
 
 

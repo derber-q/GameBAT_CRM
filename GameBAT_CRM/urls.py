@@ -29,6 +29,7 @@ def crm_entry(request):
 
 
 urlpatterns = [
+    path('crm/integrations/telegram/', include('telegram_bots.urls')),
     path('crm/print-agent/', include('sales.print_agent_urls')),
     path("", crm_entry, name="root"),
     # Existing marketplace notification URL is externally configured and stays stable.

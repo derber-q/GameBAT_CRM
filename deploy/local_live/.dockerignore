@@ -1,3 +1,5 @@
 *
 !Dockerfile
 !requirements.txt
+# Telegram использует локальный bind/секрет, но ключ не должен попадать в образ.
+.telegram-*

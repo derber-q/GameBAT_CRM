@@ -19,7 +19,7 @@ def install(base, root):
     forbidden = tuple((base/name).resolve() for name in (
         'protected_media','backups','db.sqlite3','db.sqlite3-wal','db.sqlite3-shm',
         '.django-secret-key','.integration-encryption-key','.resource-token-encryption-key',
-        '.yandex-market-key','.label-printer.json','.env'))
+        '.yandex-market-key','.label-printer.json','.telegram-staff-bot-token','.env'))
     def check_path(path, *, database=False):
         if isinstance(path, int):
             return
