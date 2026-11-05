@@ -12,6 +12,7 @@ import subprocess
 
 
 PRIVATE_DIRECTORIES = {
+    '.local-backup-cache', '.local-app-artifacts',
     'backups', 'outputs', 'output', 'tmp', 'reports', 'protected_media',
     '.venv', 'venv', 'env', 'node_modules', '__pycache__', 'staticfiles',
     '.tools', '.pytest_cache', '.ruff_cache', '.mypy_cache',
@@ -33,11 +34,11 @@ def violations(path: str, content: bytes) -> list[str]:
         reasons.append('локальные данные, среда или генерируемые артефакты')
     if name in PRIVATE_NAMES or name.startswith('.telegram-') or (name.startswith('.env') and name != '.env.example'):
         reasons.append('локальный секрет или конфигурация рабочего места')
-    if re.search(r'\.(?:sqlite\w*|db)(?:$|[.-])|\.(?:bak|pyc|pyo|log)$', name):
+    if re.search(r'\.(?:sqlite\w*|db)(?:$|[.-])|\.(?:bak|backup|pyc|pyo|log)$|\.recovery\.pem$', name):
         reasons.append('база данных, резервная копия, байткод или журнал')
     if content.startswith(SQLITE_HEADER):
         reasons.append('содержимое SQLite независимо от расширения')
-    if re.search(rb'(?m)^-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----\s*$', content):
+    if re.search(rb'(?m)^-----BEGIN (?:RSA |EC |OPENSSH |ENCRYPTED )?PRIVATE KEY-----\s*$', content):
         reasons.append('закрытый криптографический ключ')
     if re.search(rb'(?<![A-Za-z0-9_])[0-9]{5,20}:[A-Za-z0-9_-]{30,100}(?![A-Za-z0-9_-])', content):
         reasons.append('потенциальный токен Telegram независимо от имени файла')

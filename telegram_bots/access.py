@@ -18,13 +18,27 @@ class BotDenied(ValidationError):
 
 def check_access(access, *, require_link=True):
     """Новый User на каждой проверке исключает устаревший кэш Django permissions."""
+    try:
+        access.refresh_from_db()
+    except StaffBotAccess.DoesNotExist:
+        raise BotDenied() from None
     user = get_user_model().objects.filter(pk=access.user_id, is_active=True).first()
     bot = StaffBot.objects.get(pk=access.bot_id)
     if (bot.code != 'staff' or not bot.enabled or not access.allowed or access.revoked_at
             or (require_link and not access.telegram_user_id) or not user
-            or not user.has_perm('telegram_bots.use_staff_bot')
-            or not user.has_perm('price.generate_wholesale_price')):
+            or not user.has_perm('telegram_bots.use_staff_bot')):
         raise BotDenied()
+    return user
+
+
+def check_function_access(access, function, *, require_link=True):
+    from .menu import FUNCTIONS, SUPPLIER_TEMPLATES
+    user = check_access(access, require_link=require_link)
+    item = FUNCTIONS.get(function)
+    if item is None or not item.allowed(user):
+        message = ('У вас нет разрешения на скачивание шаблонов поставщиков.'
+            if function == SUPPLIER_TEMPLATES.code else 'У вас нет разрешения на формирование оптового прайса.')
+        raise BotDenied('function_denied', message)
     return user
 
 

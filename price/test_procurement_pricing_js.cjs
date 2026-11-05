@@ -9,6 +9,7 @@ function field(value = '', readOnly = false) {
     value, readOnly, disabled: false, validationMessage: '', events: {},
     classList: classes(), parentElement: {classList: classes()},
     setCustomValidity(message) { this.validationMessage = message; },
+    reportValidity() { return !this.validationMessage; },
     addEventListener(name, callback) { this.events[name] = callback; },
     enter(value) { this.value = value; this.events.input(); },
   };
@@ -34,12 +35,19 @@ function environment(specifications = [{}]) {
     if (spec.offers) {
       const supplier = field(String(spec.selectedSupplier ?? spec.offers[0].id));
       supplier.dataset = {initialId: supplier.value};
-      supplier.options = spec.offers.map(offer => ({value: String(offer.id), dataset: {base: offer.base}}));
+      supplier.options = spec.offers.map(offer => ({value: String(offer.id), dataset: {base: offer.base,
+        originalAed: offer.price, manualAed: offer.manual ?? offer.price,
+        manualActive: String(!!offer.manual), canOverride: 'true'}}));
       Object.defineProperty(supplier, 'selectedOptions', {get() {return this.options.filter(option => option.value === this.value);}});
       supplier.choose = function(value) {this.value = String(value); this.events.change();};
       fields['supplier-select'] = supplier;
     }
-    return {fields, dataset: {base: spec.base ?? '1000.00', itemId: String(index + 1), surchargeMode: spec.mode ?? 'tiered', productKind: spec.kind ?? 'cd'},
+    if (spec.manualUI) {
+      fields['manual-price-toggle'] = field(); fields['manual-price-toggle'].checked = false;
+      fields['manual-price'] = field(); fields['manual-price-field'] = {hidden: true};
+    }
+    return {fields, dataset: {base: spec.base ?? '1000.00', itemId: String(index + 1), surchargeMode: spec.mode ?? 'tiered', productKind: spec.kind ?? 'cd',
+      usdtAed: spec.usdtAed ?? '3.67', usdtRub: spec.usdtRub ?? '90', aedRub: spec.aedRub ?? '24.523161', pricingInitial: 'snapshot'},
       offers,
       querySelectorAll() {return offers;},
       querySelector(selector) { return fields[selector.slice(6, -1)]; }};
@@ -69,8 +77,10 @@ function environment(specifications = [{}]) {
     querySelectorAll(selector) { return selector === '.procurement-pricing-form' ? [form] : rows; },
     querySelector() { return dialog; },
   };
-  vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../static/js/procurement-pricing.js'), 'utf8'), {document});
-  return {rows, form, payload, inputs, dialog, buttons, confirmed};
+  const sandbox = {document};
+  const source = fs.readFileSync(path.join(__dirname, '../static/js/procurement-pricing.js'), 'utf8');
+  vm.runInNewContext(source.replace('  const postpaymentFor', '  globalThis.testSupplierBase = supplierBase;\n  const postpaymentFor'), sandbox);
+  return {rows, form, payload, inputs, dialog, buttons, confirmed, convert: sandbox.testSupplierBase};
 }
 
 const env = environment([{}, {}]);
@@ -316,3 +326,53 @@ const preciseOffers = environment([{offers: [
 ]}]).rows[0];
 assert.deepEqual(expensiveFlags(preciseOffers), [false, true, true]);
 console.log('CD: красная подсветка проигравших при разнице >=5 AED, смена победителя, точность 6 знаков и исключение техники: OK');
+
+const manualEnv = environment([{manualUI: true, base: '245.23', delivery: '5.00', markup: '123.45', offers: [
+  {id: 1, price: '10', base: '245.23'}, {id: 2, price: '15', base: '367.85'},
+]}]);
+const manualRow = manualEnv.rows[0], mf = manualRow.fields;
+mf['manual-price-toggle'].checked = true; mf['manual-price-toggle'].events.change();
+assert.equal(mf['manual-price-field'].hidden, false);
+assert.equal(mf['manual-price'].value, '10');
+mf['manual-price'].enter('12.50');
+assert.equal(manualRow.dataset.base, '306.54');
+assert.equal(mf.prepayment.value, '440.00');
+assert.equal(mf.postpayment.value, '500.00');
+assert.equal(mf.markup.value, '123.45');
+mf['supplier-select'].choose(2);
+assert.equal(mf['manual-price-toggle'].checked, false);
+assert.equal(manualRow.dataset.base, '367.85');
+mf['supplier-select'].choose(1);
+assert.equal(mf['manual-price-toggle'].checked, true);
+assert.equal(mf['manual-price'].value, '12.50');
+for (const bad of ['', '0', '-1', '1e3', 'NaN', '1.1234567', '100000000000000']) {
+  mf['manual-price'].enter(bad);
+  assert.notEqual(mf['manual-price'].validationMessage, '', bad);
+}
+mf['manual-price'].enter('12.500001');
+manualEnv.form.events.submit({preventDefault() {throw Error('valid form blocked');}});
+const manualPayload = JSON.parse(manualEnv.payload.value)['1'];
+assert.equal(manualPayload.manual_prices['1'].price_aed, '12.500001');
+assert.equal(manualPayload.pricing_initial, 'snapshot');
+console.log('Ручная AED: моментальный пересчёт BigInt, фиксированная наценка, черновики поставщиков и проверка ввода: OK');
+const conversion = environment().convert;
+for (const vector of JSON.parse(fs.readFileSync(path.join(__dirname, 'procurement_conversion_cases.json'), 'utf8'))) {
+  const value = conversion(vector.aed, {dataset: {usdtAed: vector.usdt_aed ?? '', usdtRub: vector.usdt_rub ?? '', aedRub: vector.aed_rub ?? ''}});
+  assert.equal(`${value / 100n}.${String(value % 100n).padStart(2, '0')}`, vector.rub, JSON.stringify(vector));
+}
+console.log('Общие для Python и JavaScript векторы ROUND_HALF_UP: OK');
+const incomplete = environment([{manualUI: true, offers: [
+  {id: 1, price: '10', base: '245.23'}, {id: 2, price: '15', base: '367.85'}]}]);
+const im = incomplete.rows[0].fields;
+im['manual-price-toggle'].checked = true; im['manual-price-toggle'].events.change();
+im['manual-price'].enter(''); im['supplier-select'].choose(2);
+let blocked = false;
+incomplete.form.events.submit({preventDefault() {blocked = true;}});
+assert.equal(blocked, true);
+assert.equal(im['supplier-select'].value, '1');
+assert.equal(im['manual-price'].value, '');
+im['manual-price-toggle'].checked = false; im['manual-price-toggle'].events.change();
+assert.equal(incomplete.rows[0].dataset.base, '245.23');
+assert.equal(im['manual-price'].disabled, true);
+assert.equal(im['manual-price'].validationMessage, '');
+console.log('Неполный черновик не теряется при переключении и блокирует сохранение; отключение возвращает исходную AED: OK');

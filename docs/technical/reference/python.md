@@ -4,7 +4,7 @@
 
 Справочник исходников и метаданных схемы, без рабочих записей/ключей. Перегенерация: `.venv/Scripts/python.exe scripts/build_technical_reference.py`.
 
-Функций/методов: **1693**.
+Функций/методов: **1742**.
 
 Вложенные функции, миграции и тесты не включены в этот индекс; их отдельная карта находится ниже в справочнике UI/проверок. Декораторы, docstring и вызываемые символы описывают контракт/зависимости, но не заменяют чтение тела перед изменением.
 
@@ -4177,17 +4177,17 @@ HTTP-обработчики: доступ, формы, вызов сервисо
 
 Статические вызовы: `_game_identity`, `normalize`.
 
-### `manual_search_url(product, kind)`
+### `manual_search_url(product, kind, scope='russia')`
 
 Исходник: `integrations/avito_check.py:320`.
 
 Коды фильтров сверены с формой поиска Avito; платформа остаётся в запросе.
 
-Статические вызовы: `_search_query`, `_variant`, `urlencode`.
+Статические вызовы: `ValueError`, `_search_query`, `_variant`, `urlencode`.
 
 ### `_search_candidates(client, query, product, kind, own_ids, page_limit, stats)`
 
-Исходник: `integrations/avito_check.py:343`.
+Исходник: `integrations/avito_check.py:346`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
@@ -4195,7 +4195,7 @@ HTTP-обработчики: доступ, формы, вызов сервисо
 
 ### `_fetch_listing(client, ad_id)`
 
-Исходник: `integrations/avito_check.py:368`.
+Исходник: `integrations/avito_check.py:371`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
@@ -4203,7 +4203,7 @@ HTTP-обработчики: доступ, формы, вызов сервисо
 
 ### `_validated_offer(product, kind, ad_id, brief, full)`
 
-Исходник: `integrations/avito_check.py:377`.
+Исходник: `integrations/avito_check.py:380`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
@@ -4211,7 +4211,7 @@ HTTP-обработчики: доступ, формы, вызов сервисо
 
 ### `_rank_candidates(client, product, kind, ordered, detail_limit, stats, *, force=False)`
 
-Исходник: `integrations/avito_check.py:403`.
+Исходник: `integrations/avito_check.py:406`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
@@ -4219,7 +4219,7 @@ HTTP-обработчики: доступ, формы, вызов сервисо
 
 ### `search_offers(product, kind, *, client=None, mode='economy', stats=None, force=False)`
 
-Исходник: `integrations/avito_check.py:447`.
+Исходник: `integrations/avito_check.py:450`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
@@ -4227,7 +4227,7 @@ HTTP-обработчики: доступ, формы, вызов сервисо
 
 ### `_check_signature(product, kind)`
 
-Исходник: `integrations/avito_check.py:460`.
+Исходник: `integrations/avito_check.py:463`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
@@ -4235,7 +4235,7 @@ HTTP-обработчики: доступ, формы, вызов сервисо
 
 ### `display_result(product, kind)`
 
-Исходник: `integrations/avito_check.py:467`.
+Исходник: `integrations/avito_check.py:470`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
@@ -4243,7 +4243,7 @@ HTTP-обработчики: доступ, формы, вызов сервисо
 
 ### `run_check(product, kind, *, client=None, mode='economy', force=False)`
 
-Исходник: `integrations/avito_check.py:476`.
+Исходник: `integrations/avito_check.py:479`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
@@ -4844,7 +4844,7 @@ HTTP-клиент реального Avito: авторизация, таймау
 
 ### `AvitoProductProfile.product(self)`
 
-Исходник: `integrations/models.py:162`.
+Исходник: `integrations/models.py:173`.
 
 Декораторы: `property`.
 
@@ -4852,7 +4852,7 @@ HTTP-клиент реального Avito: авторизация, таймау
 
 ### `AvitoProductProfile.product_kind(self)`
 
-Исходник: `integrations/models.py:166`.
+Исходник: `integrations/models.py:177`.
 
 Декораторы: `property`.
 
@@ -4860,7 +4860,7 @@ HTTP-клиент реального Avito: авторизация, таймау
 
 ### `AvitoProductProfile.product_id(self)`
 
-Исходник: `integrations/models.py:170`.
+Исходник: `integrations/models.py:181`.
 
 Декораторы: `property`.
 
@@ -4868,7 +4868,7 @@ HTTP-клиент реального Avito: авторизация, таймау
 
 ### `AvitoProductProfile.clean(self)`
 
-Исходник: `integrations/models.py:173`.
+Исходник: `integrations/models.py:184`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
@@ -4876,13 +4876,13 @@ HTTP-клиент реального Avito: авторизация, таймау
 
 ### `AvitoProductProfile.__str__(self)`
 
-Исходник: `integrations/models.py:183`.
+Исходник: `integrations/models.py:194`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
 ### `avito_photo_upload_to(instance, filename)`
 
-Исходник: `integrations/models.py:187`.
+Исходник: `integrations/models.py:198`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
@@ -4890,19 +4890,19 @@ HTTP-клиент реального Avito: авторизация, таймау
 
 ### `AvitoRemoteListing.__str__(self)`
 
-Исходник: `integrations/models.py:235`.
+Исходник: `integrations/models.py:246`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
 ### `AvitoListingConnection.__str__(self)`
 
-Исходник: `integrations/models.py:255`.
+Исходник: `integrations/models.py:266`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
 ### `GoogleSheetsIntegration.__str__(self)`
 
-Исходник: `integrations/models.py:377`.
+Исходник: `integrations/models.py:388`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
@@ -6582,6 +6582,257 @@ SIGTERM прекращает получение новых задач, но не
 
 Статические вызовы: `build_draft`, `request.session.get`.
 
+## `orders/customs_excel.py`
+
+Экспорт только загрузкой очищенного оригинала GameBAT; никаких новых листов.
+
+Импорты: `copy`, `customs_models`, `customs_service`, `datetime`, `django.core.exceptions`, `django.core.files.base`, `django.db`, `django.utils`, `hashlib`, `io`, `openpyxl`, `pathlib`.
+
+### `build_workbook(rows)`
+
+Исходник: `orders/customs_excel.py:19`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `ValidationError`, `any`, `copy`, `enumerate`, `heights.get`, `int`, `len`, `list`, `load_workbook`, `math.ceil`, `max`, `min`, `range`, `row.get`, `sheet.cell`, `sheet.delete_rows`, `sheet.unmerge_cells`, `str`, `str(cell.value).split`, `sum`, `timezone.now`, `timezone.now().replace`, `type`.
+
+### `export_manifest(*, actor, manifest, acknowledged=False)`
+
+Исходник: `orders/customs_excel.py:54`.
+
+Декораторы: `transaction.atomic`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `BytesIO`, `ContentFile`, `CustomsEvent.objects.create`, `CustomsManifestExport`, `TEMPLATE.read_bytes`, `ValidationError`, `any`, `build_workbook`, `build_workbook(rows).save`, `item.file.delete`, `item.file.save`, `item.save`, `len`, `manifest_rows`, `output.getvalue`, `require`, `row_warnings`, `sha256`, `sha256(TEMPLATE.read_bytes()).hexdigest`, `sha256(content).hexdigest`, `source_snapshot`, `str`, `timezone.localdate`, `timezone.localdate().isoformat`.
+
+## `orders/customs_forms.py`
+
+Настройка явных платформ/категорий без подмены номенклатуры.
+
+Импорты: `customs_models`, `django`.
+
+### `CustomsGroupForm.__init__(self, *args, **kwargs)`
+
+Исходник: `orders/customs_forms.py:16`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `getattr`, `self.instance.updated_at.isoformat`, `super`, `super().__init__`.
+
+### `CustomsGroupForm.clean(self)`
+
+Исходник: `orders/customs_forms.py:23`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `bool`, `data.get`, `forms.ValidationError`, `self.before.get`, `super`, `super().clean`.
+
+## `orders/customs_models.py`
+
+Изолированные таможенные документы; поля не участвуют в складском учёте.
+
+Импорты: `django.conf`, `django.core.exceptions`, `django.db`.
+
+### `CustomsValues.clean(self)`
+
+Исходник: `orders/customs_models.py:25`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `ValidationError`, `any`, `getattr`, `isinstance`, `re.fullmatch`, `re.search`, `super`, `super().clean`.
+
+### `CustomsGroup.__str__(self)`
+
+Исходник: `orders/customs_models.py:55`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+## `orders/customs_service.py`
+
+Фактические источники и изолированные редакции таможенной описи.
+
+Ни один сервис этого модуля не сохраняет рейс, прибытие, товар, Sale/Supply,
+остаток или денежную запись. Блокировки рейса используются только для согласованности.
+
+Импорты: `core.db_retry`, `customs_excel`, `customs_models`, `dataclasses`, `django.core.exceptions`, `django.db`, `django.db.models`, `django.utils`, `hashlib`, `models`, `trips`.
+
+### `require(actor, action='view')`
+
+Исходник: `orders/customs_service.py:23`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `PermissionDenied`, `actor.has_perm`.
+
+### `digest(value)`
+
+Исходник: `orders/customs_service.py:32`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `json.dumps`, `json.dumps(value, sort_keys=True, ensure_ascii=False, default=str).encode`, `sha256`, `sha256(json.dumps(value, sort_keys=True, ensure_ascii=False, default=str).encode()).hexdigest`.
+
+### `snapshot_name(row)`
+
+Исходник: `orders/customs_service.py:46`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+### `source_snapshot(trip_id, *, lock=False)`
+
+Исходник: `orders/customs_service.py:52`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `SourceSnapshot`, `SupplierOrderBatch.objects.select_for_update`, `TripArrival.objects.select_for_update`, `ValidationError`, `_assert_balances`, `any`, `arrival.rows.select_related`, `arrivals.filter`, `arrivals.filter(trip=trip).first`, `digest`, `isinstance`, `list`, `query.order_by`, `query.select_for_update`, `set`, `snapshot_name`, `sorted`, `sum`, `trip.lines.select_related`, `trip.lines.select_related('cd__platform', 'tech__brand', 'tech__product_type').order_by`, `trip.trip_orders.order_by`, `trip.trip_orders.order_by('pk').values_list`, `trips.get`.
+
+### `source_data(row)`
+
+Исходник: `orders/customs_service.py:90`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `dict`, `snapshot_name`.
+
+### `prepare_rows(snapshot)`
+
+Исходник: `orders/customs_service.py:98`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `CustomsGroup.objects.filter`, `CustomsProductDefaults.objects.filter`, `Q`, `ValidationError`, `by_platform.get`, `by_type.get`, `confirmed.add`, `digest`, `getattr`, `list`, `profiles.get`, `r['ru_description'].casefold`, `result.values`, `row['sources'].append`, `set`, `snapshot_name`, `sorted`, `source_data`, `sum`, `values.update`.
+
+### `latest_manifest(trip_id)`
+
+Исходник: `orders/customs_service.py:140`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `CustomsManifest.objects.filter`, `CustomsManifest.objects.filter(trip_id=trip_id).order_by`, `CustomsManifest.objects.filter(trip_id=trip_id).order_by('-revision').first`.
+
+### `manifest_rows(manifest)`
+
+Исходник: `orders/customs_service.py:144`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `getattr`, `line.sources.all`, `manifest.lines.prefetch_related`, `manifest.lines.prefetch_related('sources').all`, `rows.append`.
+
+### `row_warnings(rows)`
+
+Исходник: `orders/customs_service.py:156`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `'. '.join`, `enumerate`, `issues.append`, `warnings.append`.
+
+### `integer(value, label)`
+
+Исходник: `orders/customs_service.py:171`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `ValidationError`, `int`, `len`, `str`, `text.isascii`, `text.isdecimal`.
+
+### `apply_edits(rows, posted, actor)`
+
+Исходник: `orders/customs_service.py:178`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `CustomsManifestLine`, `ValidationError`, `any`, `data.get`, `dict`, `edited.add`, `edited.update`, `enumerate`, `integer`, `isinstance`, `len`, `line.clean`, `line.clean_fields`, `r.get`, `reason.strip`, `require`, `result.append`, `row.get`, `row.update`, `set`, `sorted`, `timezone.now`, `value.strip`.
+
+### `refresh_rows(old_rows, new_rows)`
+
+Исходник: `orders/customs_service.py:219`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `any`, `enumerate`, `identities`, `len`, `list`, `matches.append`, `set`, `sorted`, `sum`, `zip`.
+
+### `persist(snapshot, rows, actor, action)`
+
+Исходник: `orders/customs_service.py:246`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `CustomsEvent.objects.create`, `CustomsManifest.objects.create`, `CustomsManifestLine.objects.create`, `CustomsManifestSource.objects.create`, `ValidationError`, `enumerate`, `integer`, `latest_manifest`, `len`, `require`, `row_warnings`, `set`, `sum`.
+
+### `save_document(*, actor, trip_id, expected_revision, source_signature, rows, refresh=False, export=False, acknowledged=False)`
+
+Исходник: `orders/customs_service.py:276`.
+
+Декораторы: `retry_database_lock`; `transaction.atomic`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `ValidationError`, `apply_edits`, `export_manifest`, `integer`, `latest_manifest`, `manifest_rows`, `persist`, `prepare_rows`, `refresh_rows`, `require`, `row_warnings`, `source_snapshot`.
+
+### `save_defaults(*, actor, trip_id, expected_revision, source_signature, key, data, target, product_kind=None, product_id=None)`
+
+Исходник: `orders/customs_service.py:302`.
+
+Декораторы: `retry_database_lock`; `transaction.atomic`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `CustomsEvent.objects.create`, `CustomsGroup.objects.select_for_update`, `CustomsGroup.objects.select_for_update().get`, `CustomsProductDefaults`, `CustomsProductDefaults.objects.select_for_update`, `CustomsProductDefaults.objects.select_for_update().filter`, `CustomsProductDefaults.objects.select_for_update().filter(**lookup).first`, `ValidationError`, `apply_edits`, `getattr`, `integer`, `latest_manifest`, `manifest_rows`, `next`, `owner.full_clean`, `owner.save`, `require`, `set`, `setattr`, `sorted`, `source_snapshot`.
+
+### `download_existing(*, actor, trip_id, expected_revision, source_signature, acknowledged=False)`
+
+Исходник: `orders/customs_service.py:333`.
+
+Декораторы: `retry_database_lock`; `transaction.atomic`.
+
+Право скачивания не даёт права незаметно сохранять переданные правки.
+
+Статические вызовы: `ValidationError`, `export_manifest`, `integer`, `latest_manifest`, `require`, `source_snapshot`.
+
+## `orders/customs_views.py`
+
+HTML/JSON редактор и защищённые исторические файлы таможенной описи.
+
+Импорты: `core.decorators`, `customs_forms`, `customs_models`, `customs_service`, `django.contrib`, `django.core.exceptions`, `django.db`, `django.http`, `django.shortcuts`, `django.urls`, `django.views.decorators.cache`, `django.views.decorators.http`, `hashlib`, `models`.
+
+### `ui_rows(rows)`
+
+Исходник: `orders/customs_views.py:20`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `all`, `json.dumps`, `list`, `products.values`.
+
+### `editor(request, pk)`
+
+Исходник: `orders/customs_views.py:36`.
+
+Декораторы: `never_cache`; `require_http_methods(['GET', 'POST'])`; `permission_required_all('orders.view_customs_manifest')`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `' '.join`, `JsonResponse`, `SupplierOrderBatch.objects.trips`, `ValidationError`, `bool`, `data.get`, `data.get('product', '').split`, `dict`, `download_existing`, `get_object_or_404`, `int`, `isinstance`, `json.loads`, `latest_manifest`, `len`, `manifest_rows`, `permission_required_all`, `prepare_rows`, `render`, `request.GET.get`, `request.POST.get`, `request.user.has_perm`, `require`, `require_http_methods`, `reverse`, `row_warnings`, `save_defaults`, `save_document`, `source_snapshot`, `sum`, `trip.customs_manifests.select_related`, `trip.customs_manifests.select_related('created_by').prefetch_related`, `trip.customs_manifests.select_related('created_by').prefetch_related('exports').order_by`, `ui_rows`.
+
+### `download(request, pk)`
+
+Исходник: `orders/customs_views.py:98`.
+
+Декораторы: `never_cache`; `require_GET`; `permission_required_all('orders.view_customs_manifest', 'orders.download_customs_manifest')`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `CustomsManifestExport.objects.select_related`, `FileResponse`, `Http404`, `digest.hexdigest`, `digest.update`, `get_object_or_404`, `item.file.open`, `item.file.storage.exists`, `iter`, `len`, `permission_required_all`, `sha256`, `source.close`, `source.read`, `source.seek`.
+
+### `rules(request, pk=None)`
+
+Исходник: `orders/customs_views.py:114`.
+
+Декораторы: `never_cache`; `require_http_methods(['GET', 'POST'])`; `permission_required_all('orders.view_customs_manifest', 'orders.manage_customs_rules')`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `CustomsEvent.objects.create`, `CustomsGroup.objects.select_for_update`, `CustomsGroup.objects.select_for_update().get`, `CustomsGroup.objects.select_related`, `CustomsGroupForm`, `ValidationError`, `current.updated_at.isoformat`, `form.add_error`, `form.is_valid`, `form.save`, `get_object_or_404`, `isinstance`, `messages.success`, `permission_required_all`, `redirect`, `render`, `require_http_methods`, `rule.full_clean`, `rule.save`, `transaction.atomic`.
+
 ## `orders/forms.py`
 
 Серверная валидация пользовательского ввода и допустимого выбора импортных заказов и рейсов.
@@ -6848,13 +7099,37 @@ SIGTERM прекращает получение новых задач, но не
 
 Статические вызовы: `' '.join`, `PermissionDenied`, `_draft`, `messages.error`, `redirect`, `supply_form`.
 
+## `orders/management/commands/seed_customs_groups.py`
+
+Явные начальные правила платформ, без классификации по подстроке названия.
+
+Импорты: `catalog.models`, `django.contrib.auth`, `django.core.management.base`, `django.db`, `orders.customs_models`, `orders.customs_service`.
+
+### `Command.add_arguments(self, parser)`
+
+Исходник: `orders/management/commands/seed_customs_groups.py:20`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `parser.add_argument`.
+
+### `Command.handle(self, **options)`
+
+Исходник: `orders/management/commands/seed_customs_groups.py:22`.
+
+Декораторы: `transaction.atomic`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `CustomsEvent.objects.create`, `CustomsGroup`, `CustomsGroup.objects.filter`, `CustomsGroup.objects.filter(platform=platform).exists`, `Platform.objects.all`, `a.casefold`, `get_user_model`, `get_user_model().objects.get`, `group.full_clean`, `group.save`, `len`, `list`, `p.name.casefold`, `require`, `self.stdout.write`.
+
 ## `orders/models.py`
 
 Схема данных, ограничения БД и вычисляемые свойства состояния импортных заказов и рейсов.
 
 План закупки, фактическое поступление и проведённые Sale/Supply учитываются раздельно.
 
-Импорты: `arrival_models`, `catalog.models`, `decimal`, `django.conf`, `django.core.exceptions`, `django.core.validators`, `django.db`, `partners.models`, `price.models`, `warehouse.models`.
+Импорты: `arrival_models`, `catalog.models`, `customs_models`, `decimal`, `django.conf`, `django.core.exceptions`, `django.core.validators`, `django.db`, `partners.models`, `price.models`, `warehouse.models`.
 
 ### `TripOrderOperation.save(self, *args, **kwargs)`
 
@@ -7318,11 +7593,11 @@ SIGTERM прекращает получение новых задач, но не
 
 Ручной подбор закупки на склад из сохранённой версии импортного прайса.
 
-Импорты: `catalog.nomenclature_grouping`, `catalog.supplier_exclusions`, `django`, `django.db.models`, `models`, `price.models`, `warehouse.models`.
+Импорты: `catalog.nomenclature_grouping`, `catalog.supplier_exclusions`, `django`, `django.db.models`, `models`, `price.models`, `price.procurement_suppliers`, `warehouse.models`.
 
 ### `StockOrderCreateForm.__init__(self, *args, items, target_trip=None, **kwargs)`
 
-Исходник: `orders/stock_order_form.py:24`.
+Исходник: `orders/stock_order_form.py:25`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
@@ -7330,7 +7605,7 @@ SIGTERM прекращает получение новых задач, но не
 
 ### `StockOrderCreateForm.clean(self)`
 
-Исходник: `orders/stock_order_form.py:40`.
+Исходник: `orders/stock_order_form.py:41`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
@@ -7338,7 +7613,7 @@ SIGTERM прекращает получение новых задач, но не
 
 ### `StockOrderCreateForm.order_lines(self)`
 
-Исходник: `orders/stock_order_form.py:50`.
+Исходник: `orders/stock_order_form.py:51`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
@@ -7346,15 +7621,15 @@ SIGTERM прекращает получение новых задач, но не
 
 ### `stock_order_items(price_list)`
 
-Исходник: `orders/stock_order_form.py:56`.
+Исходник: `orders/stock_order_form.py:57`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
-Статические вызовы: `Q`, `exclusion_keys`, `len`, `list`, `price_list.items.select_related`, `price_list.items.select_related('cd__platform', 'cd__game_series', 'tech__brand', 'tech__product_type').filter`.
+Статические вызовы: `Q`, `exclusion_keys`, `len`, `list`, `prepare_supplier_choices`, `price_list.items.select_related`, `price_list.items.select_related('selected_supplier', 'cd__platform', 'cd__game_series', 'tech__brand', 'tech__product_type').prefetch_related`, `price_list.items.select_related('selected_supplier', 'cd__platform', 'cd__game_series', 'tech__brand', 'tech__product_type').prefetch_related('supplier_offers__supplier', 'supplier_price_overrides').filter`.
 
 ### `previous_trip_stock_quantities(target_trip=None)`
 
-Исходник: `orders/stock_order_form.py:66`.
+Исходник: `orders/stock_order_form.py:68`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
@@ -7362,7 +7637,7 @@ SIGTERM прекращает получение новых задач, но не
 
 ### `stock_order_groups(items, form, *, previous_trip_quantities=None)`
 
-Исходник: `orders/stock_order_form.py:82`.
+Исходник: `orders/stock_order_form.py:84`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
@@ -7754,7 +8029,7 @@ SIGTERM прекращает получение новых задач, но не
 
 ### `trip_line_update(request, pk, line_pk)`
 
-Исходник: `orders/trip_views.py:193`.
+Исходник: `orders/trip_views.py:194`.
 
 Декораторы: `require_POST`; `permission_required_all(*MANAGE_PERMISSIONS)`.
 
@@ -7764,7 +8039,7 @@ SIGTERM прекращает получение новых задач, но не
 
 ### `trip_full_export(request, pk)`
 
-Исходник: `orders/trip_views.py:216`.
+Исходник: `orders/trip_views.py:217`.
 
 Декораторы: `never_cache`; `require_GET`; `permission_required_all(*VIEW_PERMISSIONS, 'price.view_supplier_prices')`.
 
@@ -7774,7 +8049,7 @@ SIGTERM прекращает получение новых задач, но не
 
 ### `trip_export(request, pk, supplier_pk)`
 
-Исходник: `orders/trip_views.py:232`.
+Исходник: `orders/trip_views.py:233`.
 
 Декораторы: `never_cache`; `require_GET`; `permission_required_all(*VIEW_PERMISSIONS)`.
 
@@ -8984,11 +9259,11 @@ Partner, Supplier и SalesPlatform имеют разные роли; имя не
 
 Сохранённые предложения и расчёты закупочной версии не подменяются текущим прайсом.
 
-Импорты: `catalog.models`, `django.conf`, `django.core.validators`, `django.db`, `partners.models`.
+Импорты: `catalog.models`, `decimal`, `django.conf`, `django.core.validators`, `django.db`, `partners.models`.
 
 ### `PriceDocumentSettings.get_solo(cls)`
 
-Исходник: `price/models.py:45`.
+Исходник: `price/models.py:46`.
 
 Декораторы: `classmethod`.
 
@@ -8998,7 +9273,7 @@ Partner, Supplier и SalesPlatform имеют разные роли; имя не
 
 ### `PriceDocumentSettings.save(self, *args, **kwargs)`
 
-Исходник: `price/models.py:49`.
+Исходник: `price/models.py:50`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
@@ -9006,25 +9281,25 @@ Partner, Supplier и SalesPlatform имеют разные роли; имя не
 
 ### `PriceDocumentSettings.delete(self, *args, **kwargs)`
 
-Исходник: `price/models.py:53`.
+Исходник: `price/models.py:54`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
 ### `PriceDocumentSettings.__str__(self)`
 
-Исходник: `price/models.py:56`.
+Исходник: `price/models.py:57`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
 ### `ProcurementPriceList.__str__(self)`
 
-Исходник: `price/models.py:106`.
+Исходник: `price/models.py:107`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
 ### `ProcurementPriceListItem.product(self)`
 
-Исходник: `price/models.py:213`.
+Исходник: `price/models.py:214`.
 
 Декораторы: `property`.
 
@@ -9032,7 +9307,7 @@ Partner, Supplier и SalesPlatform имеют разные роли; имя не
 
 ### `ProcurementPriceListItem.product_id(self)`
 
-Исходник: `price/models.py:217`.
+Исходник: `price/models.py:218`.
 
 Декораторы: `property`.
 
@@ -9040,13 +9315,13 @@ Partner, Supplier и SalesPlatform имеют разные роли; имя не
 
 ### `ProcurementPriceListItem.__str__(self)`
 
-Исходник: `price/models.py:220`.
+Исходник: `price/models.py:221`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
 ### `ProcurementPriceListItem.effective_postpayment_surcharge_rub(self)`
 
-Исходник: `price/models.py:224`.
+Исходник: `price/models.py:225`.
 
 Декораторы: `property`.
 
@@ -9054,7 +9329,7 @@ Partner, Supplier и SalesPlatform имеют разные роли; имя не
 
 ### `ProcurementPriceListItem.configured_markup_rub(self)`
 
-Исходник: `price/models.py:230`.
+Исходник: `price/models.py:231`.
 
 Декораторы: `property`.
 
@@ -9062,7 +9337,7 @@ Partner, Supplier и SalesPlatform имеют разные роли; имя не
 
 ### `ProcurementPriceListItem.effective_postpayment_markup_rub(self)`
 
-Исходник: `price/models.py:234`.
+Исходник: `price/models.py:235`.
 
 Декораторы: `property`.
 
@@ -9070,7 +9345,7 @@ Partner, Supplier и SalesPlatform имеют разные роли; имя не
 
 ### `ProcurementPriceListItem.stock_unit_cost(self)`
 
-Исходник: `price/models.py:238`.
+Исходник: `price/models.py:239`.
 
 Декораторы: `property`.
 
@@ -9078,7 +9353,7 @@ Partner, Supplier и SalesPlatform имеют разные роли; имя не
 
 ### `ProcurementPriceListItem.postpayment_surcharge_mode(self)`
 
-Исходник: `price/models.py:243`.
+Исходник: `price/models.py:244`.
 
 Декораторы: `property`.
 
@@ -9124,11 +9399,30 @@ Partner, Supplier и SalesPlatform имеют разные роли; имя не
 
 Выбор поставщика из сохранённых предложений конкретной версии прайса.
 
-Импорты: `catalog.supplier_exclusions`, `decimal`, `django.core.exceptions`, `django.core.validators`, `types`.
+Импорты: `catalog.audit`, `catalog.models`, `catalog.supplier_exclusions`, `decimal`, `django.core.exceptions`, `django.core.validators`, `models`, `types`.
+
+### `pricing_snapshot(item)`
+
+Исходник: `price/procurement_suppliers.py:14`.
+
+Отпечаток всех расчётных полей и корректировок, включая невыбранных поставщиков.
+
+Это проверка актуальности формы, а не замена проверок прав и входных данных.
+Вызывающий код массово загружает обе связи, чтобы не создавать N+1.
+
+Статические вызовы: `getattr`, `hashlib.sha256`, `hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest`, `item.supplier_offers.all`, `item.supplier_price_overrides.all`, `json.dumps`, `json.dumps(data, sort_keys=True).encode`, `o.updated_at.isoformat`, `sorted`, `str`.
+
+### `manual_price(value)`
+
+Исходник: `price/procurement_suppliers.py:27`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `Decimal`, `DecimalValidator`, `DecimalValidator(max_digits=20, decimal_places=6)`, `ValidationError`, `len`, `re.fullmatch`, `str`, `str(value).strip`, `str(value).strip().replace`.
 
 ### `can_change_supplier(user)`
 
-Исходник: `price/procurement_suppliers.py:11`.
+Исходник: `price/procurement_suppliers.py:38`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
@@ -9136,7 +9430,7 @@ Partner, Supplier и SalesPlatform имеют разные роли; имя не
 
 ### `supplier_base_price(item, price_list, price_aed)`
 
-Исходник: `price/procurement_suppliers.py:17`.
+Исходник: `price/procurement_suppliers.py:44`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
@@ -9144,15 +9438,15 @@ Partner, Supplier и SalesPlatform имеют разные роли; имя не
 
 ### `prepare_supplier_choices(items, price_list)`
 
-Исходник: `price/procurement_suppliers.py:30`.
+Исходник: `price/procurement_suppliers.py:57`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
-Статические вызовы: `Decimal`, `SimpleNamespace`, `exclusion_keys`, `format`, `format(offer.price_aed, '.6f').rstrip`, `format(offer.price_aed, '.6f').rstrip('0').rstrip`, `item.supplier_choices.append`, `item.supplier_offers.all`, `list`, `offer.supplier.letter.casefold`, `offers.values`, `sorted`, `supplier_base_price`.
+Статические вызовы: `Decimal`, `SimpleNamespace`, `bool`, `exclusion_keys`, `format`, `format(value, '.6f').rstrip`, `format(value, '.6f').rstrip('0').rstrip`, `isinstance`, `item.supplier_choices.append`, `item.supplier_offers.all`, `item.supplier_price_overrides.all`, `label`, `list`, `offer.supplier.letter.casefold`, `offers.setdefault`, `offers.values`, `overrides.get`, `pricing_snapshot`, `sorted`, `supplier_base_price`.
 
 ### `_supplier_id(value)`
 
-Исходник: `price/procurement_suppliers.py:56`.
+Исходник: `price/procurement_suppliers.py:91`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
@@ -9160,21 +9454,21 @@ Partner, Supplier и SalesPlatform имеют разные роли; имя не
 
 ### `apply_supplier_choice(item, price_list, values, actor, excluded)`
 
-Исходник: `price/procurement_suppliers.py:63`.
+Исходник: `price/procurement_suppliers.py:98`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
-Статические вызовы: `ValidationError`, `_supplier_id`, `can_change_supplier`, `item.supplier_offers.all`, `next`, `supplier_base_price`.
+Статические вызовы: `ProcurementSupplierPriceOverride`, `ValidationError`, `_supplier_id`, `can_change_supplier`, `data.get`, `field_change`, `isinstance`, `item.supplier_offers.all`, `item.supplier_price_overrides.all`, `len`, `manual_price`, `manual_values.items`, `offers.get`, `override.full_clean`, `override.save`, `overrides.get`, `pricing_snapshot`, `record_product_changes`, `supplier_base_price`, `type`, `values.get`.
 
 ## `price/services.py`
 
 Закупочные версии, тарифы, предложения, память наценок и Decimal-расчёты; сохранение версии атомарно.
 
-Импорты: `catalog.audit`, `catalog.models`, `catalog.product_identifiers`, `catalog.supplier_exclusions`, `collections`, `decimal`, `django.core.exceptions`, `django.core.validators`, `django.db`, `django.db.models`, `models`, `postpayment_rules`, `pricing.models`, `procurement_suppliers`.
+Импорты: `catalog.audit`, `catalog.models`, `catalog.product_identifiers`, `catalog.supplier_exclusions`, `collections`, `core.db_retry`, `decimal`, `django.core.exceptions`, `django.core.validators`, `django.db`, `django.db.models`, `models`, `postpayment_rules`, `pricing.models`, `procurement_suppliers`.
 
 ### `decimal_value(value, *, precision=CENT, positive=False, nonnegative=False, label='Значение')`
 
-Исходник: `price/services.py:26`.
+Исходник: `price/services.py:27`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
@@ -9182,7 +9476,7 @@ Partner, Supplier и SalesPlatform имеют разные роли; имя не
 
 ### `validated_postpayment_surcharge(value)`
 
-Исходник: `price/services.py:40`.
+Исходник: `price/services.py:41`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
@@ -9190,7 +9484,7 @@ Partner, Supplier и SalesPlatform имеют разные роли; имя не
 
 ### `calculate_postpayment(prepayment, *, surcharge=None)`
 
-Исходник: `price/services.py:46`.
+Исходник: `price/services.py:47`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
@@ -9198,7 +9492,7 @@ Partner, Supplier и SalesPlatform имеют разные роли; имя не
 
 ### `round_customer_price(value)`
 
-Исходник: `price/services.py:59`.
+Исходник: `price/services.py:60`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
@@ -9206,7 +9500,7 @@ Partner, Supplier и SalesPlatform имеют разные роли; имя не
 
 ### `rounded_customer_prices(prepayment, *, surcharge=None)`
 
-Исходник: `price/services.py:69`.
+Исходник: `price/services.py:70`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
@@ -9214,7 +9508,7 @@ Partner, Supplier и SalesPlatform имеют разные роли; имя не
 
 ### `calculate_prepayment(postpayment, *, surcharge=None, rounded=False)`
 
-Исходник: `price/services.py:76`.
+Исходник: `price/services.py:77`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
@@ -9222,7 +9516,7 @@ Partner, Supplier и SalesPlatform имеют разные роли; имя не
 
 ### `_supplier_offers(*, lock=False)`
 
-Исходник: `price/services.py:101`.
+Исходник: `price/services.py:102`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
@@ -9230,7 +9524,7 @@ Partner, Supplier и SalesPlatform имеют разные роли; имя не
 
 ### `resolve_best_suppliers(offers=None)`
 
-Исходник: `price/services.py:118`.
+Исходник: `price/services.py:119`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
@@ -9238,7 +9532,7 @@ Partner, Supplier и SalesPlatform имеют разные роли; имя не
 
 ### `MissingProcurementWeights.__init__(self, products)`
 
-Исходник: `price/services.py:143`.
+Исходник: `price/services.py:144`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
@@ -9246,7 +9540,7 @@ Partner, Supplier и SalesPlatform имеют разные роли; имя не
 
 ### `get_missing_procurement_weights()`
 
-Исходник: `price/services.py:148`.
+Исходник: `price/services.py:149`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
@@ -9254,7 +9548,7 @@ Partner, Supplier и SalesPlatform имеют разные роли; имя не
 
 ### `_price_preferences(product_keys, *, lock=False)`
 
-Исходник: `price/services.py:156`.
+Исходник: `price/services.py:157`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
@@ -9262,7 +9556,7 @@ Partner, Supplier и SalesPlatform имеют разные роли; имя не
 
 ### `MissingProcurementSurcharges.__init__(self, products)`
 
-Исходник: `price/services.py:169`.
+Исходник: `price/services.py:170`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
@@ -9270,7 +9564,7 @@ Partner, Supplier и SalesPlatform имеют разные роли; имя не
 
 ### `get_missing_procurement_surcharges()`
 
-Исходник: `price/services.py:174`.
+Исходник: `price/services.py:175`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
@@ -9278,7 +9572,7 @@ Partner, Supplier и SalesPlatform имеют разные роли; имя не
 
 ### `_prepare_procurement_weights(*, winners, weights, actor)`
 
-Исходник: `price/services.py:184`.
+Исходник: `price/services.py:185`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
@@ -9286,7 +9580,7 @@ Partner, Supplier и SalesPlatform имеют разные роли; имя не
 
 ### `weighted_procurement_delivery(*, weight_grams, tariff, dollar_rate, label='Доставка')`
 
-Исходник: `price/services.py:216`.
+Исходник: `price/services.py:217`.
 
 Действующая весовая формула для прайса и сохранённых расчётов операций рейса.
 
@@ -9294,7 +9588,7 @@ Partner, Supplier и SalesPlatform имеют разные роли; имя не
 
 ### `procurement_delivery(*, product, kind, price_list)`
 
-Исходник: `price/services.py:222`.
+Исходник: `price/services.py:223`.
 
 Единый расчёт доставки единицы по зафиксированным тарифам прайса.
 
@@ -9302,7 +9596,7 @@ Partner, Supplier и SalesPlatform имеют разные роли; имя не
 
 ### `create_procurement_price_list(*, actor, exchange_rate_usdt_aed, exchange_rate_usdt_rub, delivery_general_usdt_per_kg, delivery_devices_usdt_per_kg, delivery_storage_usdt_per_kg, delivery_cd_rub, weights=None, postpayment_surcharges=None)`
 
-Исходник: `price/services.py:243`.
+Исходник: `price/services.py:244`.
 
 Декораторы: `transaction.atomic`.
 
@@ -9312,7 +9606,7 @@ Partner, Supplier и SalesPlatform имеют разные роли; имя не
 
 ### `NegativeProcurementMarkup.__init__(self, items)`
 
-Исходник: `price/services.py:382`.
+Исходник: `price/services.py:383`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
@@ -9320,7 +9614,7 @@ Partner, Supplier и SalesPlatform имеют разные роли; имя не
 
 ### `backfill_procurement_tech_surcharges(*, actor, price_list_id, apply=False)`
 
-Исходник: `price/services.py:388`.
+Исходник: `price/services.py:389`.
 
 Декораторы: `transaction.atomic`.
 
@@ -9330,9 +9624,9 @@ Partner, Supplier и SalesPlatform имеют разные роли; имя не
 
 ### `update_procurement_pricing(*, actor, price_list_id, rows, can_change_markup, can_change_delivery, negative_markup_confirmed=False)`
 
-Исходник: `price/services.py:430`.
+Исходник: `price/services.py:432`.
 
-Декораторы: `transaction.atomic`.
+Декораторы: `retry_database_lock`; `transaction.atomic`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
@@ -9524,21 +9818,21 @@ HTTP-обработчики: доступ, формы, вызов сервисо
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
-Статические вызовы: `Prefetch`, `ProcurementPriceList.objects.select_related`, `ProcurementPriceList.objects.select_related('created_by').prefetch_related`, `ProcurementPriceListItem.objects.select_related`, `ProcurementPriceListItem.objects.select_related('selected_supplier', 'cd__platform', 'tech__brand', 'tech__product_type').prefetch_related`, `can_change_supplier`, `get_object_or_404`, `ordered_procurement_items`, `permission_required_any`, `prepare_supplier_choices`, `price_list.customer_orders.exists`, `price_list.items.all`, `render`, `request.user.has_perm`.
+Статические вызовы: `Prefetch`, `ProcurementPriceList.objects.select_related`, `ProcurementPriceList.objects.select_related('created_by').prefetch_related`, `ProcurementPriceListItem.objects.select_related`, `ProcurementPriceListItem.objects.select_related('selected_supplier', 'cd__platform', 'tech__brand', 'tech__product_type').prefetch_related`, `can_change_supplier`, `get_object_or_404`, `ordered_procurement_items`, `permission_required_any`, `prepare_supplier_choices`, `price_list.customer_orders.exists`, `price_list.items.all`, `pricing_snapshot`, `render`, `request.user.has_perm`.
 
 ### `procurement_update(request, pk)`
 
-Исходник: `price/views.py:317`.
+Исходник: `price/views.py:320`.
 
 Декораторы: `require_POST`; `permission_required_any('price.change_procurement_markup', 'price.change_procurement_delivery')`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
-Статические вызовы: `' '.join`, `ValidationError`, `any`, `get_object_or_404`, `int`, `isinstance`, `json.dumps`, `json.loads`, `list`, `messages.error`, `messages.success`, `payload.items`, `payload.values`, `permission_required_any`, `price_list.items.values_list`, `redirect`, `render`, `request.POST.get`, `request.user.has_perm`, `set`, `str`, `update_procurement_pricing`.
+Статические вызовы: `' '.join`, `ValidationError`, `any`, `get_object_or_404`, `int`, `isinstance`, `json.dumps`, `json.loads`, `list`, `messages.error`, `messages.success`, `payload.items`, `payload.values`, `permission_required_any`, `price_list.items.values_list`, `redirect`, `render`, `request.POST.get`, `request.user.has_perm`, `rows[item_id].get`, `set`, `str`, `update_procurement_pricing`.
 
 ### `procurement_export(request, pk, product_kind=None)`
 
-Исходник: `price/views.py:369`.
+Исходник: `price/views.py:379`.
 
 Декораторы: `require_GET`; `permission_required_any('price.export_procurement_price_list')`.
 
@@ -9548,7 +9842,7 @@ HTTP-обработчики: доступ, формы, вызов сервисо
 
 ### `procurement_stock_export(request, pk)`
 
-Исходник: `price/views.py:380`.
+Исходник: `price/views.py:390`.
 
 Декораторы: `require_GET`; `permission_required_all('price.export_procurement_price_list', 'price.view_supplier_prices')`.
 
@@ -9614,35 +9908,51 @@ HTTP-обработчики: доступ, формы, вызов сервисо
 
 ## `pricing/avito_check_catalog.py`
 
-Единая выборка таблицы и ручной очереди Avito Check.
+Общая выборка CD/Tech для таблицы и этапов РФ/Ростова, без N+1.
 
-Импорты: `catalog.models`, `catalog.product_search`, `django.db.models`, `integrations.avito_check`.
+Импорты: `catalog.models`, `catalog.product_search`, `django.db.models`, `integrations.avito_check`, `integrations.models`, `price.models`.
 
-### `listed_products(*, query='', sort='name', product_id=None)`
+### `found_prices(product)`
 
-Исходник: `pricing/avito_check_catalog.py:9`.
+Исходник: `pricing/avito_check_catalog.py:14`.
+
+Профиль и обе цены уже загружены listed_products одним prefetch.
+
+Статические вызовы: `product.avito_profile.manual_prices.all`.
+
+### `listed_products(*, query='', sort='name', product_id=None, kind=None)`
+
+Исходник: `pricing/avito_check_catalog.py:19`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
-Статические вызовы: `CD.objects.filter`, `CD.objects.filter(avito_profile__connection__isnull=False).select_related`, `CD.objects.filter(avito_profile__connection__isnull=False).select_related('avito_profile__manual_price', 'platform', 'game_series').annotate`, `CD.objects.filter(avito_profile__connection__isnull=False).select_related('avito_profile__manual_price', 'platform', 'game_series').annotate(physical_stock=Sum('warehouse_stocks__quantity')).filter`, `Sum`, `dated.sort`, `filter_products_by_text`, `getattr`, `p.name.casefold`, `products.filter`, `sorted`.
+Статические вызовы: `AvitoListingConnection.objects.filter`, `Exists`, `OuterRef`, `Sum`, `dated.sort`, `filter_products_by_text`, `found_prices`, `model.objects.annotate`, `model.objects.annotate(has_listing=Exists(AvitoListingConnection.objects.filter(**{'profile__' + current + '_id': OuterRef('pk')}))).filter`, `model.objects.annotate(has_listing=Exists(AvitoListingConnection.objects.filter(**{'profile__' + current + '_id': OuterRef('pk')}))).filter(has_listing=True).select_related`, `model.objects.annotate(has_listing=Exists(AvitoListingConnection.objects.filter(**{'profile__' + current + '_id': OuterRef('pk')}))).filter(has_listing=True).select_related('avito_profile', *relations).prefetch_related`, `model.objects.annotate(has_listing=Exists(AvitoListingConnection.objects.filter(**{'profile__' + current + '_id': OuterRef('pk')}))).filter(has_listing=True).select_related('avito_profile', *relations).prefetch_related('avito_profile__manual_prices').annotate`, `model.objects.annotate(has_listing=Exists(AvitoListingConnection.objects.filter(**{'profile__' + current + '_id': OuterRef('pk')}))).filter(has_listing=True).select_related('avito_profile', *relations).prefetch_related('avito_profile__manual_prices').annotate(physical_stock=Sum('warehouse_stocks__quantity')).filter`, `product.name.casefold`, `products.filter`, `result.extend`, `result.sort`.
 
-### `manual_product_data(product)`
+### `import_costs()`
 
-Исходник: `pricing/avito_check_catalog.py:26`.
+Исходник: `pricing/avito_check_catalog.py:47`.
+
+Сохранённая база + доставка последней обычной версии, без отката к старой.
+
+Статические вызовы: `ProcurementPriceList.objects.filter`, `ProcurementPriceList.objects.filter(is_trip_addition=False).first`, `price.items.only`.
+
+### `manual_product_data(product, scope)`
+
+Исходник: `pricing/avito_check_catalog.py:56`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
-Статические вызовы: `found.recorded_at.isoformat`, `getattr`, `manual_search_url`, `str`.
+Статические вызовы: `found.recorded_at.isoformat`, `found_prices`, `found_prices(product).get`, `manual_search_url`, `str`.
 
 ## `pricing/avito_check_views.py`
 
 Последовательная ручная проверка цен связанных с Avito товаров.
 
-Импорты: `avito_check_catalog`, `catalog.audit`, `catalog.models`, `core.decorators`, `decimal`, `django.conf`, `django.contrib`, `django.core.cache`, `django.core.exceptions`, `django.db`, `django.db.models`, `django.http`, `django.middleware.csrf`, `django.shortcuts`, `django.template.loader`, `django.urls`, `django.utils`, `django.views.decorators.cache`, `django.views.decorators.http`, `integrations.avito_check`, `integrations.models`, `integrations.reef_api`, `services`, `warnings`.
+Импорты: `avito_check_catalog`, `catalog.audit`, `catalog.models`, `core.db_retry`, `core.decorators`, `decimal`, `django.conf`, `django.contrib`, `django.core.cache`, `django.core.exceptions`, `django.db`, `django.db.models`, `django.http`, `django.middleware.csrf`, `django.shortcuts`, `django.template.loader`, `django.urls`, `django.utils`, `django.views.decorators.cache`, `django.views.decorators.http`, `integrations.avito_check`, `integrations.models`, `integrations.reef_api`, `services`, `warnings`.
 
 ### `_item(kind, pk, items=None)`
 
-Исходник: `pricing/avito_check_views.py:30`.
+Исходник: `pricing/avito_check_views.py:33`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
@@ -9650,7 +9960,7 @@ HTTP-обработчики: доступ, формы, вызов сервисо
 
 ### `_page_context(request, items, index, *, posted=None)`
 
-Исходник: `pricing/avito_check_views.py:36`.
+Исходник: `pricing/avito_check_views.py:39`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
@@ -9658,17 +9968,17 @@ HTTP-обработчики: доступ, формы, вызов сервисо
 
 ### `page(request)`
 
-Исходник: `pricing/avito_check_views.py:54`.
+Исходник: `pricing/avito_check_views.py:57`.
 
 Декораторы: `require_GET`; `permission_required_any('pricing.view_pricing')`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
-Статические вызовы: `getattr`, `len`, `listed_products`, `manual_search_url`, `permission_required_any`, `product_price_warnings`, `render`, `request.GET.get`, `request.GET.get('q', '').strip`, `request.user.has_perm`, `rows.append`, `wholesale_margin`.
+Статические вызовы: `all`, `costs.get`, `found_prices`, `import_costs`, `len`, `listed_products`, `manual_search_url`, `permission_required_any`, `prices.get`, `prices[scope].recorded_at.isoformat`, `product_price_warnings`, `render`, `request.GET.get`, `request.GET.get('q', '').strip`, `request.user.has_perm`, `rows.append`, `wholesale_margin`.
 
 ### `manual_context(request)`
 
-Исходник: `pricing/avito_check_views.py:80`.
+Исходник: `pricing/avito_check_views.py:91`.
 
 Декораторы: `require_GET`; `never_cache`; `permission_required_all('pricing.view_pricing', 'pricing.change_retail_price')`.
 
@@ -9678,17 +9988,27 @@ HTTP-обработчики: доступ, формы, вызов сервисо
 
 ### `save_found_price(request)`
 
-Исходник: `pricing/avito_check_views.py:99`.
+Исходник: `pricing/avito_check_views.py:113`.
 
 Декораторы: `require_POST`; `permission_required_all('pricing.view_pricing', 'pricing.change_retail_price')`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
-Статические вызовы: `' '.join`, `AvitoManualPrice.objects.select_for_update`, `AvitoManualPrice.objects.select_for_update().filter`, `AvitoManualPrice.objects.select_for_update().filter(profile=product.avito_profile).first`, `AvitoManualPrice.objects.update_or_create`, `JsonResponse`, `Sum`, `ValidationError`, `_parse_price`, `int`, `isinstance`, `model.objects.select_related`, `model.objects.select_related('avito_profile').filter`, `permission_required_all`, `previous.recorded_at.isoformat`, `products.annotate`, `products.annotate(physical_stock=Sum('warehouse_stocks__quantity')).filter`, `products.get`, `record_product_changes`, `recorded_at.isoformat`, `request.POST.get`, `request.POST.get('price', '').strip`, `request.POST.get('price', '').strip().replace`, `str`, `timezone.localtime`, `timezone.localtime(found.recorded_at).strftime`, `timezone.now`, `transaction.atomic`, `{'cd': CD, 'tech': Tech}.get`.
+Статические вызовы: `' '.join`, `JsonResponse`, `ValidationError`, `_parse_price`, `_save_found`, `int`, `isinstance`, `len`, `permission_required_all`, `product_id.isascii`, `product_id.isdecimal`, `request.POST.get`, `request.POST.get('price', '').strip`, `request.POST.get('price', '').strip().replace`, `{'cd': CD, 'tech': Tech}.get`.
+
+### `_save_found(request, model, pk, kind, scope, value)`
+
+Исходник: `pricing/avito_check_views.py:141`.
+
+Декораторы: `retry_database_lock`; `transaction.atomic`.
+
+Цена и аудит атомарны; версия сравнивается только внутри выбранной географии.
+
+Статические вызовы: `AvitoManualPrice`, `AvitoManualPrice.objects.filter`, `AvitoManualPrice.objects.select_for_update`, `AvitoManualPrice.objects.select_for_update().filter`, `AvitoManualPrice.objects.select_for_update().filter(profile=product.avito_profile, scope=scope).first`, `AvitoProductProfile.objects.select_for_update`, `AvitoProductProfile.objects.select_for_update().get`, `JsonResponse`, `Sum`, `all`, `format`, `found.full_clean`, `found.save`, `model.objects.select_related`, `model.objects.select_related('avito_profile').filter`, `now.isoformat`, `previous.recorded_at.isoformat`, `products.annotate`, `products.annotate(physical_stock=Sum('warehouse_stocks__quantity')).filter`, `products.get`, `record_product_changes`, `request.POST.get`, `str`, `timezone.localtime`, `timezone.localtime(now).strftime`, `timezone.now`.
 
 ### `automatic_page(request)`
 
-Исходник: `pricing/avito_check_views.py:142`.
+Исходник: `pricing/avito_check_views.py:178`.
 
 Декораторы: `require_GET`; `permission_required_any('pricing.view_pricing')`.
 
@@ -9698,7 +10018,7 @@ HTTP-обработчики: доступ, формы, вызов сервисо
 
 ### `_parse_price(value)`
 
-Исходник: `pricing/avito_check_views.py:155`.
+Исходник: `pricing/avito_check_views.py:191`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
@@ -9706,7 +10026,7 @@ HTTP-обработчики: доступ, формы, вызов сервисо
 
 ### `next_product(request)`
 
-Исходник: `pricing/avito_check_views.py:169`.
+Исходник: `pricing/avito_check_views.py:205`.
 
 Декораторы: `require_POST`; `permission_required_any('pricing.view_pricing')`.
 
@@ -9716,7 +10036,7 @@ HTTP-обработчики: доступ, формы, вызов сервисо
 
 ### `check_product(request)`
 
-Исходник: `pricing/avito_check_views.py:200`.
+Исходник: `pricing/avito_check_views.py:236`.
 
 Декораторы: `require_POST`; `permission_required_any('pricing.view_pricing')`.
 
@@ -12138,7 +12458,7 @@ Machine API: только отдельный Bearer, без cookie-аутент�
 
 Атомарные назначения агенту; HTTP/Windows никогда не вызываются внутри транзакции.
 
-Импорты: `avito_shipping`, `core.external_policy`, `datetime`, `django.conf`, `django.core.exceptions`, `django.db`, `django.utils`, `market_fulfillment`, `models`, `yandex_market.services`.
+Импорты: `avito_shipping`, `core.external_policy`, `crm_backups.models`, `datetime`, `django.conf`, `django.core.exceptions`, `django.db`, `django.utils`, `market_fulfillment`, `models`, `yandex_market.services`.
 
 ### `AgentError.__init__(self, code, status=409)`
 
@@ -12152,11 +12472,11 @@ Machine API: только отдельный Bearer, без cookie-аутент�
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
-Статические вызовы: `PrintAgent.objects.filter`, `ValidationError`, `getattr`, `len`, `list`, `query.filter`, `require_live_operation`, `str`, `uuid.UUID`.
+Статические вызовы: `PrintAgent.objects.filter`, `PrintRouting.objects.filter`, `PrintRouting.objects.filter(pk=1).first`, `ValidationError`, `getattr`, `len`, `list`, `query.filter`, `require_live_operation`, `str`, `uuid.UUID`.
 
 ### `_session(agent, instance)`
 
-Исходник: `sales/print_agents.py:37`.
+Исходник: `sales/print_agents.py:40`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
@@ -12164,7 +12484,7 @@ Machine API: только отдельный Bearer, без cookie-аутент�
 
 ### `heartbeat(agent_id, instance, data)`
 
-Исходник: `sales/print_agents.py:43`.
+Исходник: `sales/print_agents.py:46`.
 
 Декораторы: `transaction.atomic`.
 
@@ -12174,7 +12494,7 @@ Machine API: только отдельный Bearer, без cookie-аутент�
 
 ### `_audit(job, action, **details)`
 
-Исходник: `sales/print_agents.py:64`.
+Исходник: `sales/print_agents.py:67`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
@@ -12182,7 +12502,7 @@ Machine API: только отдельный Bearer, без cookie-аутент�
 
 ### `_expire(job, now)`
 
-Исходник: `sales/print_agents.py:70`.
+Исходник: `sales/print_agents.py:73`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
@@ -12190,7 +12510,7 @@ Machine API: только отдельный Bearer, без cookie-аутент�
 
 ### `expire_job(pk)`
 
-Исходник: `sales/print_agents.py:86`.
+Исходник: `sales/print_agents.py:89`.
 
 Декораторы: `transaction.atomic`.
 
@@ -12200,7 +12520,7 @@ Machine API: только отдельный Bearer, без cookie-аутент�
 
 ### `claim(agent_id, instance)`
 
-Исходник: `sales/print_agents.py:92`.
+Исходник: `sales/print_agents.py:95`.
 
 Декораторы: `transaction.atomic`.
 
@@ -12210,7 +12530,7 @@ Machine API: только отдельный Bearer, без cookie-аутент�
 
 ### `owned_job(agent_id, instance, request_id, *, lock=False)`
 
-Исходник: `sales/print_agents.py:114`.
+Исходник: `sales/print_agents.py:117`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
@@ -12218,7 +12538,7 @@ Machine API: только отдельный Bearer, без cookie-аутент�
 
 ### `result(agent_id, instance, request_id, data)`
 
-Исходник: `sales/print_agents.py:127`.
+Исходник: `sales/print_agents.py:130`.
 
 Декораторы: `transaction.atomic`.
 
@@ -12228,7 +12548,7 @@ Machine API: только отдельный Bearer, без cookie-аутент�
 
 ### `snapshot()`
 
-Исходник: `sales/print_agents.py:174`.
+Исходник: `sales/print_agents.py:177`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
@@ -12236,7 +12556,7 @@ Machine API: только отдельный Bearer, без cookie-аутент�
 
 ### `resolve(request_id, actor, decision)`
 
-Исходник: `sales/print_agents.py:188`.
+Исходник: `sales/print_agents.py:191`.
 
 Декораторы: `transaction.atomic`.
 
@@ -13628,7 +13948,7 @@ HTTP-обработчики: доступ, формы, вызов сервисо
 
 Одноразовая привязка числового Telegram ID; контакты User.telegram не используются.
 
-Импорты: `core.db_retry`, `datetime`, `django.contrib.auth`, `django.contrib.auth.models`, `django.core.exceptions`, `django.db`, `django.utils`, `models`.
+Импорты: `core.db_retry`, `datetime`, `django.contrib.auth`, `django.contrib.auth.models`, `django.core.exceptions`, `django.db`, `django.utils`, `menu`, `models`.
 
 ### `BotDenied.__init__(self, category='denied', message='Доступ закрыт. Проверьте привязку и разрешения в CRM.')`
 
@@ -13644,11 +13964,19 @@ HTTP-обработчики: доступ, формы, вызов сервисо
 
 Новый User на каждой проверке исключает устаревший кэш Django permissions.
 
-Статические вызовы: `BotDenied`, `StaffBot.objects.get`, `get_user_model`, `get_user_model().objects.filter`, `get_user_model().objects.filter(pk=access.user_id, is_active=True).first`, `user.has_perm`.
+Статические вызовы: `BotDenied`, `StaffBot.objects.get`, `access.refresh_from_db`, `get_user_model`, `get_user_model().objects.filter`, `get_user_model().objects.filter(pk=access.user_id, is_active=True).first`, `user.has_perm`.
+
+### `check_function_access(access, function, *, require_link=True)`
+
+Исходник: `telegram_bots/access.py:34`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `BotDenied`, `FUNCTIONS.get`, `check_access`, `item.allowed`.
 
 ### `authorize(bot, telegram_id)`
 
-Исходник: `telegram_bots/access.py:31`.
+Исходник: `telegram_bots/access.py:45`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
@@ -13656,7 +13984,7 @@ HTTP-обработчики: доступ, формы, вызов сервисо
 
 ### `issue_link(user, bot)`
 
-Исходник: `telegram_bots/access.py:40`.
+Исходник: `telegram_bots/access.py:54`.
 
 Декораторы: `retry_database_lock`; `transaction.atomic`.
 
@@ -13666,7 +13994,7 @@ HTTP-обработчики: доступ, формы, вызов сервисо
 
 ### `consume_link(bot, token, telegram_id, username='')`
 
-Исходник: `telegram_bots/access.py:58`.
+Исходник: `telegram_bots/access.py:72`.
 
 Вызывается внутри атомарного приёма update с блокировкой конкретного бота.
 
@@ -13674,7 +14002,7 @@ HTTP-обработчики: доступ, формы, вызов сервисо
 
 ### `set_employee_access(actor, bot, user, allowed)`
 
-Исходник: `telegram_bots/access.py:81`.
+Исходник: `telegram_bots/access.py:95`.
 
 Декораторы: `retry_database_lock`; `transaction.atomic`.
 
@@ -13800,15 +14128,23 @@ HTTP-обработчики: доступ, формы, вызов сервисо
 
 Тонкий адаптер существующего Excel; формулы и отбор товаров остаются в price.excel.
 
-Импорты: `access`, `django.conf`, `django.core.exceptions`, `django.utils`, `price.excel`, `warehouse.models`.
+Импорты: `access`, `django.conf`, `django.core.exceptions`, `django.utils`, `menu`, `partners.models`, `price.excel`, `warehouse.models`.
 
 ### `wholesale_document(access, warehouse_id)`
 
-Исходник: `telegram_bots/documents.py:10`.
+Исходник: `telegram_bots/documents.py:12`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
-Статические вызовы: `ValidationError`, `Warehouse.objects.filter`, `Warehouse.objects.filter(pk=warehouse_id).exists`, `check_access`, `generate_wholesale_price_xlsx`, `getattr`, `len`, `timezone.localdate`.
+Статические вызовы: `ValidationError`, `Warehouse.objects.filter`, `Warehouse.objects.filter(pk=warehouse_id).exists`, `check_function_access`, `generate_wholesale_price_xlsx`, `getattr`, `len`, `timezone.localdate`.
+
+### `supplier_documents(access, supplier_id)`
+
+Исходник: `telegram_bots/documents.py:22`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `BotDenied`, `Supplier.objects.filter`, `Supplier.objects.filter(pk=supplier_id).first`, `ValidationError`, `check_function_access`, `documents.append`, `generate_supplier_template`, `getattr`, `len`.
 
 ## `telegram_bots/forms.py`
 
@@ -13836,11 +14172,11 @@ HTTP-обработчики: доступ, формы, вызов сервисо
 
 Приём update сохраняет квитанцию и задание до сетевого ответа; XLSX здесь не строится.
 
-Импорты: `access`, `core.db_retry`, `datetime`, `django.db`, `django.utils`, `menu`, `models`, `warehouse.models`.
+Импорты: `access`, `core.db_retry`, `datetime`, `django.db`, `django.utils`, `menu`, `models`, `partners.models`, `warehouse.models`.
 
 ### `_positive_id(value)`
 
-Исходник: `telegram_bots/handlers.py:12`.
+Исходник: `telegram_bots/handlers.py:13`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
@@ -13848,31 +14184,47 @@ HTTP-обработчики: доступ, формы, вызов сервисо
 
 ### `_private_context(update)`
 
-Исходник: `telegram_bots/handlers.py:16`.
+Исходник: `telegram_bots/handlers.py:17`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
 Статические вызовы: `_positive_id`, `callback.get`, `chat.get`, `isinstance`, `message.get`, `sender.get`, `update.get`.
 
-### `_request_price(bot, access, warehouse_id, receipt, chat_id)`
+### `_request_job(bot, access, receipt, chat_id, *, function, **target)`
 
-Исходник: `telegram_bots/handlers.py:31`.
+Исходник: `telegram_bots/handlers.py:32`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
-Статические вызовы: `BotDenied`, `StaffBotJob.objects.create`, `StaffBotJob.objects.filter`, `StaffBotJob.objects.filter(access=access, created_at__gt=timezone.now() - timedelta(seconds=bot.cooldown_seconds)).exists`, `StaffBotJob.objects.filter(access=access, state__in=['queued', 'generating', 'sending']).exists`, `Warehouse.objects.filter`, `Warehouse.objects.filter(pk=warehouse_id).exists`, `timedelta`, `timezone.now`.
+Статические вызовы: `BotDenied`, `StaffBotJob.objects.create`, `StaffBotJob.objects.filter`, `StaffBotJob.objects.filter(access=access, created_at__gt=timezone.now() - timedelta(seconds=bot.cooldown_seconds)).exists`, `StaffBotJob.objects.filter(access=access, state__in=['queued', 'generating', 'sending']).exists`, `timedelta`, `timezone.now`.
+
+### `_request_price(bot, access, warehouse_id, receipt, chat_id)`
+
+Исходник: `telegram_bots/handlers.py:42`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `BotDenied`, `Warehouse.objects.filter`, `Warehouse.objects.filter(pk=warehouse_id).exists`, `_request_job`, `check_function_access`.
+
+### `_request_supplier_templates(bot, access, supplier_id, receipt, chat_id)`
+
+Исходник: `telegram_bots/handlers.py:50`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `BotDenied`, `StaffBotJobDocument.objects.create`, `Supplier.objects.select_for_update`, `Supplier.objects.select_for_update().filter`, `Supplier.objects.select_for_update().filter(pk=supplier_id).first`, `_request_job`, `check_function_access`, `supplier_label`.
 
 ### `_dispatch(bot, update, receipt)`
 
-Исходник: `telegram_bots/handlers.py:43`.
+Исходник: `telegram_bots/handlers.py:61`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
-Статические вызовы: `BotDenied`, `Warehouse.objects.order_by`, `_private_context`, `_request_price`, `authorize`, `callback.get`, `consume_link`, `data.split`, `data.startswith`, `int`, `isinstance`, `len`, `list`, `main_menu`, `message.get`, `sender.get`, `text.split`, `text.split(' ', 1)[1].strip`, `text.startswith`, `value.isascii`, `value.isdecimal`, `warehouse_menu`.
+Статические вызовы: `BotDenied`, `Supplier.objects.order_by`, `Warehouse.objects.order_by`, `_positive_id`, `_private_context`, `_request_price`, `_request_supplier_templates`, `authorize`, `callback.get`, `check_function_access`, `consume_link`, `data.split`, `data.startswith`, `int`, `isinstance`, `len`, `list`, `main_menu`, `message.get`, `sender.get`, `supplier_menu`, `text.split`, `text.split(' ', 1)[1].strip`, `text.startswith`, `value.isascii`, `value.isdecimal`, `warehouse_menu`.
 
 ### `accept_update(bot_id, update)`
 
-Исходник: `telegram_bots/handlers.py:73`.
+Исходник: `telegram_bots/handlers.py:107`.
 
 Декораторы: `retry_database_lock`; `transaction.atomic`.
 
@@ -13884,11 +14236,11 @@ HTTP-обработчики: доступ, формы, вызов сервисо
 
 Один исполнитель XLSX, отдельный от polling. Неопределённая отправка не повторяется.
 
-Импорты: `access`, `client`, `core.db_retry`, `django.core.exceptions`, `django.db`, `django.utils`, `documents`, `models`.
+Импорты: `access`, `client`, `core.db_retry`, `django.core.exceptions`, `django.db`, `django.utils`, `documents`, `menu`, `models`, `partners.models`.
 
 ### `claim_job(bot_id)`
 
-Исходник: `telegram_bots/jobs.py:14`.
+Исходник: `telegram_bots/jobs.py:16`.
 
 Декораторы: `retry_database_lock`; `transaction.atomic`.
 
@@ -13898,7 +14250,9 @@ HTTP-обработчики: доступ, формы, вызов сервисо
 
 ### `finish_job(job, state, category='', message_id=None)`
 
-Исходник: `telegram_bots/jobs.py:22`.
+Исходник: `telegram_bots/jobs.py:25`.
+
+Декораторы: `retry_database_lock`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
@@ -13906,19 +14260,93 @@ HTTP-обработчики: доступ, формы, вызов сервисо
 
 ### `run_job(job, client, *, owner=None)`
 
-Исходник: `telegram_bots/jobs.py:28`.
+Исходник: `telegram_bots/jobs.py:31`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
-Статические вызовы: `BotDenied`, `StaffBotAccess.objects.get`, `TelegramError`, `access.refresh_from_db`, `bot.refresh_from_db`, `check_access`, `client.document`, `client.message`, `finish_job`, `isinstance`, `job.save`, `result.get`, `timezone.now`, `wholesale_document`.
+Статические вызовы: `_run_supplier_job`, `_run_wholesale_job`.
+
+### `_check_job_access(job, owner=None)`
+
+Исходник: `telegram_bots/jobs.py:39`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `BotDenied`, `StaffBotAccess.objects.get`, `Supplier.objects.filter`, `Supplier.objects.filter(pk=job.supplier_id).exists`, `check_function_access`, `timezone.now`.
+
+### `_run_wholesale_job(job, client, *, owner=None)`
+
+Исходник: `telegram_bots/jobs.py:53`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `StaffBotAccess.objects.get`, `TelegramError`, `_check_job_access`, `check_function_access`, `client.document`, `client.message`, `finish_job`, `isinstance`, `job.save`, `result.get`, `wholesale_document`.
+
+### `finish_document(document, state, category='', message_id=None)`
+
+Исходник: `telegram_bots/jobs.py:86`.
+
+Декораторы: `retry_database_lock`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `document.save`, `timezone.now`.
+
+### `_send_supplier_document(document, client, chat_id, filename, content)`
+
+Исходник: `telegram_bots/jobs.py:92`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `TelegramError`, `client.document`, `document.save`, `finish_document`, `isinstance`, `result.get`, `timezone.now`.
+
+### `_finish_supplier_job(job, category='')`
+
+Исходник: `telegram_bots/jobs.py:112`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `all`, `any`, `finish_job`, `job.documents.values_list`, `len`, `list`.
+
+### `_notify_supplier_result(job, client)`
+
+Исходник: `telegram_bots/jobs.py:125`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `StaffBotAccess.objects.get`, `check_access`, `client.message`.
+
+### `_run_supplier_job(job, client, *, owner=None)`
+
+Исходник: `telegram_bots/jobs.py:149`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `ValidationError`, `_check_job_access`, `_finish_supplier_job`, `_notify_supplier_result`, `_recover_supplier_job`, `_send_supplier_document`, `any`, `job.documents.all`, `job.save`, `rows.values`, `set`, `supplier_documents`.
+
+### `_recover_supplier_job(job)`
+
+Исходник: `telegram_bots/jobs.py:180`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `_finish_supplier_job`, `finish_document`, `job.documents.filter`.
 
 ### `recover_interrupted(bot_id)`
 
-Исходник: `telegram_bots/jobs.py:73`.
+Исходник: `telegram_bots/jobs.py:186`.
 
 Вызывается только после получения эксклюзивной аренды и блокировки процесса.
 
-Статические вызовы: `StaffBotJob.objects.filter`, `finish_job`.
+Статические вызовы: `StaffBotJob.objects.filter`, `_recover_supplier_job`, `finish_job`, `recovered.append`.
+
+### `notify_recovered_jobs(jobs, client)`
+
+Исходник: `telegram_bots/jobs.py:198`.
+
+Вызывается только после проверки личности бота и отсутствия webhook.
+
+Статические вызовы: `_notify_supplier_result`.
 
 ## `telegram_bots/management/commands/run_telegram_staff_bot.py`
 
@@ -13948,17 +14376,41 @@ HTTP-обработчики: доступ, формы, вызов сервисо
 
 Импорты: `dataclasses`.
 
-### `main_menu(user)`
+### `BotFunction.allowed(self, user)`
 
-Исходник: `telegram_bots/menu.py:16`.
+Исходник: `telegram_bots/menu.py:11`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
-Статические вызовы: `FUNCTIONS.values`, `user.has_perm`.
+Статические вызовы: `user.has_perms`.
+
+### `main_menu(user)`
+
+Исходник: `telegram_bots/menu.py:21`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `FUNCTIONS.values`, `item.allowed`.
+
+### `supplier_label(supplier, user)`
+
+Исходник: `telegram_bots/menu.py:30`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `user.has_perm`.
+
+### `supplier_menu(suppliers, user)`
+
+Исходник: `telegram_bots/menu.py:34`.
+
+Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
+
+Статические вызовы: `supplier_label`.
 
 ### `warehouse_menu(warehouses)`
 
-Исходник: `telegram_bots/menu.py:23`.
+Исходник: `telegram_bots/menu.py:40`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
@@ -13980,7 +14432,7 @@ HTTP-обработчики: доступ, формы, вызов сервисо
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
-Статические вызовы: `ERROR_LABELS.get`, `Max`, `StaffBot.objects.filter`, `StaffBot.objects.filter(code='staff').first`, `StaffBotJob.objects.filter`, `StaffBotJob.objects.filter(bot=bot, state='done').aggregate`, `StaffBotJob.objects.filter(bot=bot, state__in=['error', 'uncertain']).exists`, `StaffBotJob.objects.filter(bot=bot, state__in=['queued', 'generating', 'sending']).first`, `job.get_state_display`.
+Статические вызовы: `ERROR_LABELS.get`, `Max`, `StaffBot.objects.filter`, `StaffBot.objects.filter(code='staff').first`, `StaffBotJob.objects.filter`, `StaffBotJob.objects.filter(bot=bot, state='done').aggregate`, `StaffBotJob.objects.filter(bot=bot, state__in=['error', 'uncertain', 'partial']).exists`, `StaffBotJob.objects.filter(bot=bot, state__in=['queued', 'generating', 'sending']).first`, `job.get_state_display`.
 
 ## `telegram_bots/urls.py`
 
@@ -13992,11 +14444,11 @@ HTTP-обработчики: доступ, формы, вызов сервисо
 
 Настройки только superuser; сотрудник видит лишь собственную привязку.
 
-Импорты: `access`, `accounts.views`, `client`, `configuration`, `django.conf`, `django.contrib`, `django.contrib.auth`, `django.contrib.auth.decorators`, `django.core.exceptions`, `django.db`, `django.shortcuts`, `django.views.decorators.cache`, `django.views.decorators.debug`, `django.views.decorators.http`, `forms`, `integrations.worker_models`, `integrations.worker_monitoring`, `models`, `monitoring`.
+Импорты: `access`, `accounts.views`, `client`, `configuration`, `django.conf`, `django.contrib`, `django.contrib.auth`, `django.contrib.auth.decorators`, `django.core.exceptions`, `django.db`, `django.shortcuts`, `django.views.decorators.cache`, `django.views.decorators.debug`, `django.views.decorators.http`, `forms`, `integrations.worker_models`, `integrations.worker_monitoring`, `menu`, `models`, `monitoring`.
 
 ### `_stub(request)`
 
-Исходник: `telegram_bots/views.py:24`.
+Исходник: `telegram_bots/views.py:25`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
@@ -14004,17 +14456,17 @@ HTTP-обработчики: доступ, формы, вызов сервисо
 
 ### `dashboard(request)`
 
-Исходник: `telegram_bots/views.py:32`.
+Исходник: `telegram_bots/views.py:33`.
 
 Декораторы: `sensitive_post_parameters('token')`; `superuser_required`; `never_cache`; `require_http_methods(['GET', 'POST'])`.
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
-Статические вызовы: `ERROR_LABELS.get`, `STATUS_LABELS.get`, `StaffBot`, `StaffBot.objects.filter`, `StaffBot.objects.filter(code='staff').first`, `StaffBotAccess.objects.filter`, `StaffBotAccess.objects.filter(bot=bot).select_related`, `StaffBotForm`, `StaffBotJob.objects.filter`, `StaffBotJob.objects.filter(bot=bot).select_related`, `TelegramClient`, `TelegramError`, `WorkerService.objects.filter`, `WorkerService.objects.filter(code='telegram_staff').first`, `_stub`, `bool`, `bot.username.lower`, `by_user.get`, `client.call`, `client.close`, `expected_status`, `form.add_error`, `form.cleaned_data.get`, `form.is_valid`, `form.save`, `get_object_or_404`, `get_user_model`, `get_user_model().objects.order_by`, `getattr`, `isinstance`, `issue_link`, `list`, `logger.info`, `me.get`, `messages.error`, `messages.success`, `read_token`, `redirect`, `render`, `request.POST.get`, `require_http_methods`, `save_token`, `sensitive_post_parameters`, `set_employee_access`, `str`, `str(me.get('username', '')).lower`, `sum`, `token_configured`, `user.has_perm`, `webhook.get`.
+Статические вызовы: `ERROR_LABELS.get`, `STATUS_LABELS.get`, `SUPPLIER_TEMPLATES.allowed`, `StaffBot`, `StaffBot.objects.filter`, `StaffBot.objects.filter(code='staff').first`, `StaffBotAccess.objects.filter`, `StaffBotAccess.objects.filter(bot=bot).select_related`, `StaffBotForm`, `StaffBotJob.objects.filter`, `StaffBotJob.objects.filter(bot=bot).select_related`, `StaffBotJob.objects.filter(bot=bot).select_related('access__user', 'warehouse', 'supplier').prefetch_related`, `TelegramClient`, `TelegramError`, `WorkerService.objects.filter`, `WorkerService.objects.filter(code='telegram_staff').first`, `_stub`, `bool`, `bot.username.lower`, `by_user.get`, `client.call`, `client.close`, `expected_status`, `form.add_error`, `form.cleaned_data.get`, `form.is_valid`, `form.save`, `get_object_or_404`, `get_user_model`, `get_user_model().objects.order_by`, `getattr`, `isinstance`, `issue_link`, `list`, `logger.info`, `me.get`, `messages.error`, `messages.success`, `read_token`, `redirect`, `render`, `request.POST.get`, `require_http_methods`, `save_token`, `sensitive_post_parameters`, `set_employee_access`, `str`, `str(me.get('username', '')).lower`, `sum`, `token_configured`, `user.has_perm`, `webhook.get`.
 
 ### `connection(request)`
 
-Исходник: `telegram_bots/views.py:105`.
+Исходник: `telegram_bots/views.py:108`.
 
 Декораторы: `login_required`; `never_cache`; `require_http_methods(['GET', 'POST'])`.
 
@@ -14068,7 +14520,7 @@ Long polling и исполнитель используют разные сое�
 
 Подробности реализации — в исходнике; бизнес-сценарий определяет модуль и вызывающий сервис.
 
-Статические вызовы: `StaffBot.objects.get`, `TelegramError`, `accept_update`, `bot.username.lower`, `client.call`, `client.close`, `client_factory`, `close_old_connections`, `connection_state`, `connections.close_all`, `dispatch_reply`, `executor.is_alive`, `executor.join`, `executor.start`, `executor_stop.set`, `expected_status`, `isinstance`, `lease`, `me.get`, `min`, `read_token`, `recover_interrupted`, `require_live_operation`, `stop.is_set`, `stop.wait`, `str`, `str(me.get('username', '')).lower`, `threading.Event`, `threading.Thread`, `webhook.get`.
+Статические вызовы: `StaffBot.objects.get`, `TelegramError`, `accept_update`, `bot.username.lower`, `client.call`, `client.close`, `client_factory`, `close_old_connections`, `connection_state`, `connections.close_all`, `dispatch_reply`, `executor.is_alive`, `executor.join`, `executor.start`, `executor_stop.set`, `expected_status`, `isinstance`, `lease`, `me.get`, `min`, `notify_recovered_jobs`, `read_token`, `recover_interrupted`, `require_live_operation`, `stop.is_set`, `stop.wait`, `str`, `str(me.get('username', '')).lower`, `threading.Event`, `threading.Thread`, `webhook.get`.
 
 ## `warehouse/admin.py`
 

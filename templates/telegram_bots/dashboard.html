@@ -7,7 +7,7 @@
 <section class="panel">
   <h2>Бот сотрудников</h2>
   <p>Режим: {{ gamebat_environment }} · {% if bot.enabled %}Включён{% else %}Отключён{% endif %} · Токен: {% if token_configured %}Настроен{% else %}Не настроен{% endif %}</p>
-  <p>Функция: Скачать оптовый прайс наличия. Привязано сотрудников: {{ linked_count }}.</p>
+  <p>Функции: оптовый прайс наличия и шаблоны поставщиков с ценами. Привязано сотрудников: {{ linked_count }}.</p>
   <p>Обработчик: <a href="{% url 'integrations:workers' %}">{{ worker_label }}</a>. Последняя активность: {{ bot.last_poll_at|date:'d.m.Y H:i:s'|default:'Нет данных' }}.</p>
   {% if connection_error %}<p class="error-text" role="alert">{{ connection_error }}</p>{% endif %}
   <form method="post">{% csrf_token %}<input type="hidden" name="action" value="save">{{ form.as_p }}<button class="button" type="submit">Сохранить настройки</button></form>
@@ -16,13 +16,13 @@
 </section>
 {% if bot.pk %}
 <section class="panel"><h2>Доступ сотрудников</h2>
-<p class="muted">Разрешение бота не выдаёт право формирования оптового прайса. Отключение отзывает привязку и все одноразовые ссылки.</p>
-<div class="table-scroll"><table><thead><tr><th>Сотрудник</th><th>Оптовый прайс</th><th>Бот</th><th>Telegram</th><th>Действие</th></tr></thead><tbody>
-{% for item in employees %}<tr><td>{{ item.user }}{% if not item.user.is_active %} · Неактивен{% endif %}</td><td>{{ item.can_price|yesno:'Разрешён,Нет права' }}</td><td>{{ item.access.allowed|yesno:'Разрешён,Отключён' }}</td><td>{{ item.access.username|default:'Не привязан' }}</td><td><form method="post">{% csrf_token %}<input type="hidden" name="user_id" value="{{ item.user.pk }}">{% if item.access.allowed %}<button class="button button-danger" name="action" value="revoke">Отключить и отвязать</button>{% if not item.access.telegram_user_id %}<button class="button button-secondary" name="action" value="link">Ссылка подключения</button>{% endif %}{% else %}<button class="button" name="action" value="allow">Разрешить бота</button>{% endif %}</form></td></tr>{% endfor %}
+<p class="muted">Разрешение бота не выдаёт права его функций. Для шаблонов нужны скачивание шаблона поставщика и просмотр закупочных цен; право оптового прайса проверяется отдельно. Отключение отзывает привязку и все одноразовые ссылки.</p>
+<div class="table-scroll"><table><thead><tr><th>Сотрудник</th><th>Оптовый прайс</th><th>Шаблоны с ценами</th><th>Бот</th><th>Telegram</th><th>Действие</th></tr></thead><tbody>
+{% for item in employees %}<tr><td>{{ item.user }}{% if not item.user.is_active %} · Неактивен{% endif %}</td><td>{{ item.can_price|yesno:'Разрешён,Нет права' }}</td><td>{{ item.can_templates|yesno:'Разрешены,Нет прав' }}</td><td>{{ item.access.allowed|yesno:'Разрешён,Отключён' }}</td><td>{{ item.access.username|default:'Не привязан' }}</td><td><form method="post">{% csrf_token %}<input type="hidden" name="user_id" value="{{ item.user.pk }}">{% if item.access.allowed %}<button class="button button-danger" name="action" value="revoke">Отключить и отвязать</button>{% if not item.access.telegram_user_id %}<button class="button button-secondary" name="action" value="link">Ссылка подключения</button>{% endif %}{% else %}<button class="button" name="action" value="allow">Разрешить бота</button>{% endif %}</form></td></tr>{% endfor %}
 </tbody></table></div>
 </section>
-<section class="panel"><h2>Последние запросы прайса</h2><div class="table-scroll"><table><thead><tr><th>Дата</th><th>Сотрудник</th><th>Склад</th><th>Начало / окончание</th><th>Результат</th></tr></thead><tbody>
-{% for job in jobs %}<tr><td>{{ job.created_at|date:'d.m.Y H:i:s' }}</td><td>{{ job.access.user }}</td><td>{{ job.warehouse.name|default:'Склад удалён' }}</td><td>{{ job.started_at|date:'H:i:s'|default:'—' }} / {{ job.finished_at|date:'H:i:s'|default:'—' }}</td><td>{{ job.get_state_display }}{% if job.error_category %} · {{ job.error_category }}{% endif %}</td></tr>{% empty %}<tr><td colspan="5">Запросов пока нет.</td></tr>{% endfor %}
+<section class="panel"><h2>Последние запросы документов</h2><div class="table-scroll"><table><thead><tr><th>Дата</th><th>Операция</th><th>Сотрудник</th><th>Склад / поставщик</th><th>Документы</th><th>Начало / окончание</th><th>Общий итог</th></tr></thead><tbody>
+{% for job in jobs %}<tr><td>{{ job.created_at|date:'d.m.Y H:i:s' }}</td><td>{{ job.get_function_display }}</td><td>{{ job.access.user }}</td><td>{% if job.function == 'supplier_price_templates' %}{{ job.supplier.name|default:'Поставщик удалён' }}{% else %}{{ job.warehouse.name|default:'Склад удалён' }}{% endif %}</td><td>{% for document in job.documents.all %}<div>{{ document.get_product_kind_display }}: {{ document.get_state_display }}{% if document.telegram_message_id %} · №{{ document.telegram_message_id }}{% endif %}</div>{% empty %}—{% endfor %}</td><td>{{ job.started_at|date:'H:i:s'|default:'—' }} / {{ job.finished_at|date:'H:i:s'|default:'—' }}</td><td>{{ job.get_state_display }}{% if job.error_category %} · {{ job.error_category }}{% endif %}</td></tr>{% empty %}<tr><td colspan="7">Запросов пока нет.</td></tr>{% endfor %}
 </tbody></table></div></section>
 {% endif %}
 {% endblock %}

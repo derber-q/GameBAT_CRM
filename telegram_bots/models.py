@@ -59,6 +59,10 @@ class StaffBotUpdate(models.Model):
 
 
 class StaffBotJob(models.Model):
+    class Function(models.TextChoices):
+        WHOLESALE = 'wholesale_stock_price', 'Оптовый прайс наличия'
+        SUPPLIER_TEMPLATES = 'supplier_price_templates', 'Шаблоны поставщика с ценами'
+
     class State(models.TextChoices):
         QUEUED = 'queued', 'В очереди'
         GENERATING = 'generating', 'Формируется'
@@ -66,11 +70,14 @@ class StaffBotJob(models.Model):
         DONE = 'done', 'Отправлен'
         ERROR = 'error', 'Ошибка'
         UNCERTAIN = 'uncertain', 'Результат отправки неизвестен'
+        PARTIAL = 'partial', 'Частично отправлен'
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     bot = models.ForeignKey(StaffBot, on_delete=models.CASCADE)
     access = models.ForeignKey(StaffBotAccess, on_delete=models.PROTECT)
     warehouse = models.ForeignKey('warehouse.Warehouse', null=True, on_delete=models.SET_NULL)
+    function = models.CharField(max_length=40, choices=Function.choices, default=Function.WHOLESALE)
+    supplier = models.ForeignKey('partners.Supplier', null=True, blank=True, on_delete=models.SET_NULL)
     update = models.OneToOneField(StaffBotUpdate, on_delete=models.PROTECT)
     chat_id = models.BigIntegerField()
     state = models.CharField(max_length=16, choices=State.choices, default=State.QUEUED, db_index=True)
@@ -83,4 +90,31 @@ class StaffBotJob(models.Model):
     class Meta:
         ordering = ['created_at']
         constraints = [models.UniqueConstraint(fields=['access'],
-            condition=Q(state__in=['queued', 'generating', 'sending']), name='telegram_one_active_price')]
+            condition=Q(state__in=['queued', 'generating', 'sending']), name='telegram_one_active_price'),
+            models.CheckConstraint(condition=(
+                Q(function='wholesale_stock_price', supplier__isnull=True)
+                | Q(function='supplier_price_templates', warehouse__isnull=True)),
+                name='telegram_job_function_target')]
+
+
+class StaffBotJobDocument(models.Model):
+    """Подтверждение каждого sendDocument; Excel и его содержимое в БД не сохраняются."""
+    class State(models.TextChoices):
+        PENDING = 'pending', 'Не отправлен'
+        SENDING = 'sending', 'Отправляется'
+        DONE = 'done', 'Отправлен'
+        ERROR = 'error', 'Ошибка'
+        UNCERTAIN = 'uncertain', 'Результат неизвестен'
+
+    job = models.ForeignKey(StaffBotJob, on_delete=models.CASCADE, related_name='documents')
+    product_kind = models.CharField(max_length=4, choices=[('cd', 'Диски'), ('tech', 'Техника')])
+    state = models.CharField(max_length=16, choices=State.choices, default=State.PENDING)
+    telegram_message_id = models.BigIntegerField(null=True, blank=True)
+    error_category = models.CharField(max_length=40, blank=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['product_kind']
+        constraints = [models.UniqueConstraint(fields=['job', 'product_kind'], name='telegram_one_document_kind'),
+            models.CheckConstraint(condition=Q(product_kind__in=['cd', 'tech']), name='telegram_document_kind')]

@@ -3,6 +3,7 @@
 .stock-order-page .section-heading > div { display: block; }
 .stock-order-page .section-heading { gap: 16px; }
 .stock-order-page .compact-search { max-width: 100%; }
+.stock-order-page .stock-order-supplier-prices { max-width: 240px; }
 @media (max-width: 600px) {
   .stock-order-page [data-stock-order-form] table,
   .stock-order-page [data-stock-order-group] { display: block; }
@@ -19,8 +20,9 @@
     min-width: 0; padding: 0; border: 0; text-align: left; white-space: normal;
   }
   .stock-order-page [data-stock-order-row] td:first-child { grid-column: 1 / -1; }
-  .stock-order-page [data-stock-order-quantity-cell] { grid-column: 1; grid-row: 2; }
-  .stock-order-page [data-stock-order-line-total] { grid-column: 2; grid-row: 2; }
+  .stock-order-page .stock-order-supplier-prices { grid-column: 1 / -1; max-width: none; }
+  .stock-order-page [data-stock-order-quantity-cell] { grid-column: 1; grid-row: 3; }
+  .stock-order-page [data-stock-order-line-total] { grid-column: 2; grid-row: 3; }
   .stock-order-page [data-stock-order-row] td[data-label]::before {
     content: attr(data-label); display: block; color: var(--gb-text-muted);
     font-size: 11px; margin-bottom: 5px;

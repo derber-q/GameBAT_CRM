@@ -16,6 +16,7 @@ SECRET_VARIABLES = (
     'DATABASE_URL', 'DATABASE_NAME', 'DATABASE_HOST', 'DATABASE_PASSWORD',
     'GAMEBAT_DATABASE_PATH', 'GAMEBAT_MEDIA_ROOT', 'LABEL_PRINTER_CONFIG_PATH',
     'GAMEBAT_TELEGRAM_STAFF_BOT_TOKEN',
+    'GAMEBAT_BACKUP_ROOT','GAMEBAT_APP_ARTIFACT_ROOT',
 )
 
 
@@ -90,6 +91,7 @@ def apply_test_settings(values, base_dir):
         SESSION_COOKIE_NAME='resource_test_session_'+instance[:8], CSRF_COOKIE_NAME='resource_test_csrf_'+instance[:8],
         SESSION_COOKIE_DOMAIN=None, CSRF_COOKIE_DOMAIN=None,
         MEDIA_ROOT=root/'media', STATIC_ROOT=root/'static', FILE_UPLOAD_TEMP_DIR=str(root/'tmp'),
+        CRM_BACKUP_ROOT=root/'backup-fixtures',CRM_APP_ARTIFACT_ROOT=root/'application-fixtures',
         INTEGRATION_ENCRYPTION_KEY='', INTEGRATION_ENCRYPTION_KEY_FILE=root/'secrets/integrations.key',
         RESOURCE_TOKEN_ENCRYPTION_KEY=(root/'secrets/storefront.key').read_text('utf-8'),
         YANDEX_MARKET_API_KEY='', YANDEX_MARKET_KEY_FILE=root/'secrets/yandex.key',

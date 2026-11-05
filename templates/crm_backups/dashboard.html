@@ -1,0 +1,19 @@
+{% extends 'base.html' %}
+{% block body_class %}responsive-crm-page{% endblock %}
+{% block content %}
+<div class="page-header"><div><p class="eyebrow">АДМИНИСТРИРОВАНИЕ</p><h1>Резервное копирование</h1></div><a class="button button-secondary" href="{% url 'crm_backups:devices' %}">Устройства</a></div>
+<div class="panel"><h2>Состояние</h2>
+{% for notice in notices %}<p class="error-text">{{ notice }}</p>{% endfor %}
+<p>Последняя проверенная загрузка на устройстве: {{ last_saved.downloaded_at|default:'Пока не подтверждена' }}</p>
+<p>{% if config.enabled %}{% if worker_ok %}Обработчик на связи.{% else %}<strong class="error-text">Обработчик не на связи. Снимки могут быть пропущены.</strong>{% endif %}{% else %}Резервирование выключено.{% endif %}</p>
+<p>Последняя связь: {{ config.last_worker_at|default:'—' }} · Устройство: {{ device.name|default:'Не подключено' }}{% if device %} · {{ device.last_seen_at|default:'Ещё не выходило на связь' }}{% endif %}</p>
+<form method="post">{% csrf_token %}<input type="hidden" name="action" value="create"><input type="hidden" name="request_id" value="{{ request_id }}"><button class="button" type="submit">Создать резервную копию сейчас</button></form>
+<p class="muted">Это только заявка. Полный архив получает единственное авторизованное устройство; публичной ссылки нет. Скачать файл недостаточно: восстановление проверяется отдельно.</p>
+</div>
+<div class="panel"><h2>Расписание и ключ владельца</h2><p>В CRM передаётся только публичный ключ. Приватный ключ и пароль храните отдельно, включая копию вне компьютера магазина. При смене ключа сохраняйте прежние ключи для старых архивов.</p>
+<form method="post">{% csrf_token %}<input type="hidden" name="action" value="save">{{ form.as_p }}<button class="button" type="submit">Сохранить настройки</button></form></div>
+<div class="panel"><h2>История копий</h2><div class="table-scroll"><table><thead><tr><th>Создана / UUID</th><th>Состояние</th><th>Версия / окружение</th><th>Размер</th><th>Завершено на сервере</th><th>Проверено устройством</th><th>Ошибка</th></tr></thead><tbody>
+{% for job in jobs %}<tr><td>{{ job.created_at }}<br><small>{{ job.pk }}</small></td><td>{{ job.state_label }}</td><td>{{ job.metadata.sha|slice:':7'|default:'Неизвестна' }}{% if job.metadata.dirty %}<br>Есть незакоммиченные изменения{% endif %}<br>{{ job.metadata.database_engine }}</td><td>{{ job.size|filesizeformat }}</td><td>{{ job.finished_at|default:'—' }}</td><td>{{ job.downloaded_at|default:'—' }}</td><td>{{ job.error_label }}</td></tr>{% empty %}<tr><td colspan="7">Копий пока нет.</td></tr>{% endfor %}
+</tbody></table></div></div>
+<div class="panel"><button type="button" class="button button-secondary" data-collapse-toggle aria-controls="backup-event-history" aria-expanded="false">Журнал резервирования</button><div id="backup-event-history" class="collapsible-content" hidden><table><thead><tr><th>Время</th><th>Действие</th><th>Инициатор</th></tr></thead><tbody>{% for event in events %}<tr><td>{{ event.created_at }}</td><td>{{ event.action }}</td><td>{{ event.actor|default:'Обработчик' }}</td></tr>{% endfor %}</tbody></table></div></div>
+{% endblock %}

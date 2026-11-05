@@ -14,10 +14,25 @@ document.addEventListener("DOMContentLoaded", () => {
     return `${value < 0n ? "-" : ""}${absolute / 100n}.${String(absolute % 100n).padStart(2, "0")}`;
   };
   const parseSupplierPrice = (value) => {
-    const text = String(value).trim();
+    const text = String(value).trim().replace(',', '.');
+    if (text.length > 32) return null;
     if (!/^\d+(?:\.\d{1,6})?$/.test(text)) return null;
     const [whole, fraction = ''] = text.split('.');
-    return BigInt(whole) * 1000000n + BigInt(fraction.padEnd(6, '0'));
+    const result = BigInt(whole) * 1000000n + BigInt(fraction.padEnd(6, '0'));
+    return result > 0n && result <= maxMoney ? result : null;
+  };
+  // AED и оба курса — миллионные доли. USDT не округляется;
+  // ROUND_HALF_UP выполняется ровно один раз на границе копейки RUB.
+  const supplierBase = (aed, row) => {
+    const price = parseSupplierPrice(aed);
+    const ua = parseSupplierPrice(row.dataset.usdtAed), ur = parseSupplierPrice(row.dataset.usdtRub);
+    const rate = parseSupplierPrice(row.dataset.aedRub);
+    if (price === null) return null;
+    const denominator = ua !== null && ur !== null ? ua * 1000000n : 1000000000000n;
+    if (!(ua !== null && ur !== null) && rate === null) return null;
+    const numerator = price * (ua !== null && ur !== null ? ur : rate) * 100n;
+    const result = (numerator + denominator / 2n) / denominator;
+    return result <= maxMoney ? result : null;
   };
   const postpaymentFor = (value, surcharge = null) => value + (surcharge ?? (value < 200000n ? 6000n : (value < 300000n ? 8000n : 10000n)));
   const roundCustomerPrice = (value) => ((value + 999n) / 1000n) * 1000n;
@@ -103,6 +118,17 @@ document.addEventListener("DOMContentLoaded", () => {
       if (!field.readOnly) recalculate(field);
     }));
     const supplier = row.querySelector('[data-supplier-select]');
+    const manualToggle = row.querySelector('[data-manual-price-toggle]');
+    const manualInput = row.querySelector('[data-manual-price]');
+    const manualField = row.querySelector('[data-manual-price-field]');
+    const manualDrafts = {};
+    if (manualToggle && supplier) {
+      for (const option of supplier.options) {
+        if (option.dataset.canOverride === 'true') manualDrafts[option.value] = {
+          enabled: option.dataset.manualActive === 'true', price_aed: option.dataset.manualAed,
+        };
+      }
+    }
     const highlightSupplierOffers = () => {
       const offers = Array.from(row.querySelectorAll('[data-supplier-offer]'));
       const selectedOffer = offers.find((offer) => supplier
@@ -115,11 +141,86 @@ document.addEventListener("DOMContentLoaded", () => {
       });
     };
     highlightSupplierOffers();
+    const selectOffer = () => row.querySelectorAll('[data-supplier-offer]').forEach((offer) => {
+      const selected = offer.dataset.supplierId === supplier.value;
+      offer.classList.toggle('is-selected', selected);
+      offer.setAttribute('aria-current', String(selected));
+    });
+    const updateManualOffers = () => {
+      row.querySelectorAll('[data-supplier-offer]').forEach(offer => {
+        const draft = manualDrafts[offer.dataset.supplierId];
+        const manual = !!draft?.enabled;
+        const aed = manual ? draft.price_aed : offer.dataset.originalPriceAed;
+        offer.dataset.priceAed = aed;
+        if (offer.dataset.supplierLetter !== undefined) {
+          const price = parseSupplierPrice(aed);
+          const label = price === null ? '—' : `${price / 1000000n}${price % 1000000n ? '.' + String(price % 1000000n).padStart(6, '0').replace(/0+$/, '') : ''}`;
+          offer.textContent = `${offer.dataset.supplierLetter}–${label}${manual ? ' ✎' : ''}`;
+          offer.title = `${manual ? 'Ручная цена. Исходное предложение: ' + offer.dataset.originalPriceAed + ' AED' : ''}${offer.classList.contains('is-excluded') ? ' · Поставщик исключён из подбора товара' : ''}`;
+        }
+      });
+      highlightSupplierOffers();
+    };
+    const showManual = () => {
+      if (!manualToggle) return;
+      const draft = manualDrafts[supplier.value];
+      manualToggle.disabled = supplier.disabled || !draft;
+      manualToggle.checked = !!draft?.enabled;
+      manualField.hidden = !manualToggle.checked;
+      manualInput.disabled = supplier.disabled || !manualToggle.checked;
+      manualInput.value = draft?.price_aed ?? '';
+      manualInput.setCustomValidity('');
+    };
+    const applyManual = () => {
+      if (supplier.disabled) return;
+      const draft = manualDrafts[supplier.value];
+      const option = supplier.selectedOptions[0];
+      const base = draft?.enabled ? supplierBase(draft.price_aed, row) : supplierBase(option?.dataset.originalAed, row);
+      manualInput.setCustomValidity('');
+      if (base === null) {
+        const message = 'Моя цена AED: укажите число больше нуля, до 6 знаков после запятой и в пределах допустимой суммы.';
+        manualInput.setCustomValidity(message);
+        if (error) error.textContent = message;
+        return false;
+      }
+      row.dataset.base = formatMoney(base);
+      recalculate(markup);
+      updateManualOffers();
+      return true;
+    };
+    if (manualToggle && supplier) {
+      showManual();
+      manualToggle.addEventListener('change', () => {
+        if (manualToggle.disabled) return;
+        manualDrafts[supplier.value].enabled = manualToggle.checked;
+        showManual();applyManual();
+      });
+      manualInput.addEventListener('input', () => {
+        if (manualInput.disabled) return;
+        manualDrafts[supplier.value].price_aed = manualInput.value;
+        applyManual();
+      });
+      row.manualDrafts = manualDrafts;
+      row.validateManualPrices = () => {
+        for (const [id, draft] of Object.entries(manualDrafts)) {
+          if (draft.enabled && supplierBase(draft.price_aed, row) === null) {
+            supplier.value = id;showManual();selectOffer();applyManual();
+            manualInput.reportValidity();return false;
+          }
+        }
+        return true;
+      };
+    }
     supplier?.addEventListener('change', () => {
       if (supplier.disabled) return;
       supplier.setCustomValidity('');
+      selectOffer();
       const option = supplier.selectedOptions[0];
-      const base = option ? parseMoney(option.dataset.base) : null;
+      if (manualToggle) {
+        showManual();
+        if (!applyManual()) return;
+      }
+      const base = manualToggle ? parseMoney(row.dataset.base) : (option ? parseMoney(option.dataset.base) : null);
       if (base === null) {
         supplier.setCustomValidity('Не удалось прочитать цену поставщика. Обновите страницу.');
         if (error) error.textContent = supplier.validationMessage;
@@ -127,11 +228,6 @@ document.addEventListener("DOMContentLoaded", () => {
       }
       // База каждого сохранённого предложения рассчитана сервером в копейках.
       row.dataset.base = formatMoney(base);
-      row.querySelectorAll('[data-supplier-offer]').forEach((offer) => {
-        const selected = offer.dataset.supplierId === supplier.value;
-        offer.classList.toggle('is-selected', selected);
-        offer.setAttribute('aria-current', String(selected));
-      });
       highlightSupplierOffers();
       recalculate(markup);
     });
@@ -156,6 +252,9 @@ document.addEventListener("DOMContentLoaded", () => {
       });
     }
     form.addEventListener("submit", (event) => {
+      for (const row of form.querySelectorAll('[data-procurement-row]')) {
+        if (row.validateManualPrices && !row.validateManualPrices()) { event.preventDefault(); return; }
+      }
       const negatives = [...form.querySelectorAll("[data-markup]")].filter(field => {
         const value = parseMoney(field.value, true);
         return value !== null && value < 0n;
@@ -183,9 +282,11 @@ document.addEventListener("DOMContentLoaded", () => {
           surcharge_mode: row.dataset.surchargeMode,
         };
         const supplier = row.querySelector('[data-supplier-select]');
+        if (row.dataset.pricingInitial) rows[row.dataset.itemId].pricing_initial = row.dataset.pricingInitial;
         if (supplier) {
           rows[row.dataset.itemId].supplier_id = supplier.value;
           rows[row.dataset.itemId].supplier_initial_id = supplier.dataset.initialId;
+          if (!supplier.disabled && row.manualDrafts && Object.keys(row.manualDrafts).length) rows[row.dataset.itemId].manual_prices = row.manualDrafts;
         }
       });
       // Один параметр формы позволяет сохранять большие прайсы без лимита числа полей.

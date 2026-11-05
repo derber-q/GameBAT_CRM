@@ -8,7 +8,7 @@ from django.contrib.staticfiles.testing import StaticLiveServerTestCase
 from django.test import Client, override_settings
 from playwright.sync_api import sync_playwright, expect
 from accounts.models import User
-from .models import StaffBot
+from .models import StaffBot, StaffBotAccess, StaffBotJob, StaffBotJobDocument, StaffBotUpdate
 
 
 class TelegramBrowserChecks(StaticLiveServerTestCase):
@@ -19,7 +19,15 @@ class TelegramBrowserChecks(StaticLiveServerTestCase):
         admin = User.objects.create_superuser('bot-ui-admin')
         employee = User.objects.create_user('bot-ui-employee')
         employee.user_permissions.add(Permission.objects.get(codename='generate_wholesale_price'))
-        StaffBot.objects.create(username='StaffTestBot', enabled=True)
+        bot = StaffBot.objects.create(username='StaffTestBot', enabled=True)
+        from partners.models import Supplier
+        supplier = Supplier.objects.create(name='Поставщик журнала', letter='A')
+        access = StaffBotAccess.objects.create(bot=bot, user=admin, allowed=True, telegram_user_id=500)
+        receipt = StaffBotUpdate.objects.create(bot=bot, update_id=500)
+        job = StaffBotJob.objects.create(bot=bot, access=access, update=receipt, chat_id=500,
+            function='supplier_price_templates', supplier=supplier, state='partial')
+        StaffBotJobDocument.objects.create(job=job, product_kind='cd', state='done', telegram_message_id=101)
+        StaffBotJobDocument.objects.create(job=job, product_kind='tech', state='error', error_category='forbidden')
         self.client.force_login(admin)
         employee_client = Client()
         employee_client.force_login(employee)
@@ -38,6 +46,10 @@ class TelegramBrowserChecks(StaticLiveServerTestCase):
             page.goto(self.live_server_url + '/crm/integrations/telegram/')
             expect(page.get_by_role('heading', name='Бот сотрудников', exact=True)).to_be_visible()
             expect(page.locator('[name="token"]')).to_have_attribute('type', 'password')
+            expect(page.get_by_role('columnheader', name='Шаблоны с ценами', exact=True)).to_be_visible()
+            expect(page.get_by_text('Диски: Отправлен', exact=False)).to_be_visible()
+            expect(page.get_by_text('Техника: Ошибка', exact=True)).to_be_visible()
+            expect(page.get_by_text('Частично отправлен', exact=True)).to_be_visible()
             row = page.locator('tr').filter(has_text=employee.username)
             row.get_by_role('button', name='Разрешить бота', exact=True).click()
             expect(row.get_by_role('button', name='Ссылка подключения', exact=True)).to_be_visible()

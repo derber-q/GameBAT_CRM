@@ -25,11 +25,12 @@ def queue_snapshot():
         data['task_error'] = ERROR_LABELS.get(bot.error_category, 'Ошибка Telegram. Проверьте настройки.' if bot.error_category else '')
         job = StaffBotJob.objects.filter(bot=bot, state__in=['queued', 'generating', 'sending']).first()
         if job:
-            data['next_action'] = 'Формирование оптового прайса' if job.state == 'queued' else job.get_state_display()
+            data['next_action'] = ('Формирование шаблонов поставщика' if job.function == 'supplier_price_templates'
+                else 'Формирование оптового прайса') if job.state == 'queued' else job.get_state_display()
             data['next_at'] = job.created_at
             if job.state != 'queued':
                 data['current_action'], data['current_started_at'] = job.get_state_display(), job.started_at
-        if StaffBotJob.objects.filter(bot=bot, state__in=['error', 'uncertain']).exists():
+        if StaffBotJob.objects.filter(bot=bot, state__in=['error', 'uncertain', 'partial']).exists():
             data['task_error'] = data['task_error'] or 'Есть ошибки или неизвестные результаты отправки. Проверьте журнал Telegram-бота.'
     except (OperationalError, ProgrammingError):
         pass

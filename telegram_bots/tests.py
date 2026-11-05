@@ -21,7 +21,7 @@ from catalog.models import CD, Platform
 from warehouse.models import Warehouse, CDWarehouseStock
 from price.excel import import_wholesale_price_to_sale, generate_wholesale_price_xlsx
 from sales.models import Sale
-from .access import BotDenied, issue_link, consume_link, authorize, set_employee_access
+from .access import BotDenied, issue_link, consume_link, authorize, set_employee_access, check_function_access
 from .client import TelegramClient, TelegramError
 from .configuration import save_token, read_token, expected_status, token_configured
 from .documents import wholesale_document
@@ -81,7 +81,7 @@ class StaffBotTests(TestCase):
         self.bot = StaffBot.objects.create(username='StaffTestBot', enabled=True, cooldown_seconds=30)
         self.access = StaffBotAccess.objects.create(bot=self.bot, user=self.user, allowed=True,
             telegram_user_id=101, linked_at=timezone.now())
-        self.wh = Warehouse.objects.first()
+        self.wh = Warehouse.objects.first() or Warehouse.objects.create(name='Тестовый склад')
         self.wh.name = 'Тестовый склад'
         self.wh.save()
         for other in Warehouse.objects.exclude(pk=self.wh.pk):
@@ -128,8 +128,13 @@ class StaffBotTests(TestCase):
                 self.access.allowed = state != 'not_allowed'
                 self.access.revoked_at = timezone.now() if state == 'revoked' else None
                 self.access.save()
-                with self.assertRaises(BotDenied):
-                    authorize(self.bot, 101)
+                if state == 'no_price':
+                    authorize(self.bot, 101)  # Общий допуск теперь не требует права отдельной функции.
+                    with self.assertRaises(BotDenied):
+                        check_function_access(self.access, WHOLESALE.code)
+                else:
+                    with self.assertRaises(BotDenied):
+                        authorize(self.bot, 101)
 
     def test_forged_callbacks_and_missing_warehouse(self):
         for i, data in enumerate(['arbitrary_action', WHOLESALE.code + ':999999', WHOLESALE.code + ':-1', WHOLESALE.code + ':1;DROP'], 1):

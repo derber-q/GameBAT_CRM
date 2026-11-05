@@ -8,6 +8,7 @@
   let root;
   let title;
   let progress;
+  let geography;
   let input;
   let status;
   let form;
@@ -73,6 +74,8 @@
       toggle.setAttribute('aria-label', body.hidden ? 'Развернуть панель' : 'Свернуть панель');
     });
     title = element('h2', 'Загрузка товара…', body);
+    geography = element('p', '', body);
+    geography.dataset.productScope = '';
     progress = element('p', '', body);
     progress.className = 'progress';
     form = element('form', '', body);
@@ -109,6 +112,7 @@
   function done(completed) {
     picker.setMinimum('');
     title.textContent = 'Проверка списка завершена';
+    geography.textContent = '';
     progress.textContent = `Сохранено цен: ${completed}. Можно вернуться в Avito Check.`;
     form.hidden = true;
     controls.hidden = true;
@@ -125,7 +129,8 @@
       if (result.done) { done(result.completed); return; }
       product = result.product;
       title.textContent = product.name;
-      progress.textContent = `Товар ${result.index} из ${result.total} · сохранено: ${result.completed}`;
+      geography.textContent = `${product.kind === 'tech' ? 'Техника' : 'Диск'} · ${product.scope_label}`;
+      progress.textContent = `Проверка ${result.index} из ${result.total} · сохранено: ${result.completed}`;
       input.value = product.price;
       picker.setMinimum(input.value);
       input.placeholder = product.price ? '' : 'Цена ещё не указана';
@@ -144,7 +149,8 @@
       const price = action === 'save' ? ResourceAvito.price(input.value) : '';
       pending(true);
       showStatus(action === 'save' ? 'Сохранение…' : 'Переход…', true);
-      const result = await send(action, {productId: product.id, price, version: product.recorded_at});
+      const result = await send(action, {productId: product.id, kind: product.kind, scope: product.scope,
+        price, version: product.recorded_at});
       if (result.done) done(result.completed);
       else if (ResourceAvito.isAvito(result.nextUrl)) location.assign(result.nextUrl);
       else throw new Error('Некорректная ссылка следующего товара. Обновите панель.');

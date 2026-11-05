@@ -317,21 +317,24 @@ def _search_query(product, kind):
     return normalize(_game_identity(product)) + " " + product.platform.name
 
 
-def manual_search_url(product, kind):
+def manual_search_url(product, kind, scope='russia'):
     """Коды фильтров сверены с формой поиска Avito; платформа остаётся в запросе."""
     from django.conf import settings
     if settings.GAMEBAT_ENV == 'local_test':
         return '#test-external-action-blocked'
+    if scope not in ('russia','rostov'):
+        raise ValueError('Неизвестная география ручного поиска.')
+    geography='all' if scope=='russia' else 'rostov-na-donu'
     query = _search_query(product, kind)
     if kind != "cd":
-        return "https://www.avito.ru/all?" + urlencode({"q": query + " новый", "localPriority": 0})
+        return f"https://www.avito.ru/{geography}?" + urlencode({"q": query + " новый", "localPriority": 0})
     platforms = _variant(product.platform.name)[1]
     # 110390=431231: новое; 191956=3358159: физический;
     # 167162=3270848: диск, 3270849: картридж. Остальные фильтры не заданы.
     filters = ("ASgBAgICBESSAsYJ7LwN_tE09LMUgqOPA6i3F573mQM"
                if platforms & {"switch", "switch2"}
                else "ASgBAgICBESSAsYJ7LwN_tE09LMUgKOPA6i3F573mQM")
-    path = ("https://www.avito.ru/all/igry_pristavki_i_programmy/"
+    path = (f"https://www.avito.ru/{geography}/igry_pristavki_i_programmy/"
             "igry_pristavki_i_programmy/igry_dlya_pristavok/"
             "fizicheskii-ASgBAgICAkSSAsYJqLcXnveZAw")
     return path + "?" + urlencode({

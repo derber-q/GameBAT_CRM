@@ -23,5 +23,16 @@
     if (BigInt(rubles) * 100n + BigInt(cents.padEnd(2, '0')) <= 0n) throw new Error('Цена должна быть больше нуля.');
     return text;
   }
-  globalThis.ResourceAvito = Object.freeze({isCrm, isAvito, price});
+  function identity(value) {
+    if (!Number.isSafeInteger(value?.productId) || value.productId <= 0 ||
+        !['cd', 'tech'].includes(value.kind) || !['russia', 'rostov'].includes(value.scope)) {
+      throw new Error('Обновите расширение и страницу CRM: нужны тип товара и география.');
+    }
+    return {productId: value.productId, kind: value.kind, scope: value.scope};
+  }
+  function key(value) {
+    const item = identity(value);
+    return `${item.kind}:${item.productId}:${item.scope}`;
+  }
+  globalThis.ResourceAvito = Object.freeze({isCrm, isAvito, price, identity, key});
 })();

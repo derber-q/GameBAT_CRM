@@ -4,7 +4,13 @@
 .procurement-supplier-offer.is-selected { color: #14532d; background: #dcfce7; border-color: #86efac; font-weight: 700; }
 .procurement-supplier-offer.is-selected::before { content: "✓ "; }
 .procurement-supplier-offer.is-excluded:not(.is-selected) { color: #64748b; text-decoration: line-through; }
-.procurement-supplier-offer.is-expensive:not(.is-selected) { color: #b91c1c; background: #fef2f2; border-color: #fecaca; }
+.procurement-supplier-offer.is-expensive:not(.is-selected):not(.is-excluded) { color: #b91c1c; background: #fef2f2; border-color: #fecaca; }
 .procurement-supplier-select { min-width: 135px; max-width: 240px; }
 .procurement-table .procurement-total-cost { width: 1%; padding-left: 8px; padding-right: 8px; white-space: nowrap; }
 .procurement-table th.procurement-total-cost > span { display: block; }
+.procurement-manual-price { max-width: 240px; margin-top: 5px; font-size: 11px; }
+.procurement-manual-price > label { display: block; line-height: 1.3; margin-top: 4px; }
+.procurement-manual-price input[type="checkbox"] { width: auto; margin: 0 3px 0 0; vertical-align: middle; }
+.procurement-manual-price [data-manual-price-field] { display: flex; align-items: center; gap: 6px; }
+.procurement-manual-price [data-manual-price-field][hidden] { display: none; }
+.procurement-manual-price [data-manual-price] { min-width: 0; width: 110px; padding: 5px; }

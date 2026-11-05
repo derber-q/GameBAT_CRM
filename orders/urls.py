@@ -5,9 +5,14 @@ from django.urls import path
 
 from . import views, trip_views, stock_order_views, trip_price_views, trip_invoice_views
 from . import trip_addition_views, fulfillment_views, arrival_views
+from . import customs_views
 
 app_name = "orders"
 urlpatterns = [
+    path('customs/rules/',customs_views.rules,name='customs_rules'),
+    path('customs/rules/<int:pk>/',customs_views.rules,name='customs_rule_edit'),
+    path('customs/files/<uuid:pk>/',customs_views.download,name='customs_download'),
+    path('trips/<int:pk>/customs/',customs_views.editor,name='customs'),
     path('trips/new/', trip_views.trip_empty_create, name='trip_empty_create'),
     path('trips/<int:pk>/orders/add/', trip_views.trip_add_orders, name='trip_add_orders'),
     path('trips/<int:pk>/arrival/',arrival_views.update_arrival,name='trip_arrival'),

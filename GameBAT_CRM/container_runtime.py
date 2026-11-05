@@ -12,7 +12,7 @@ def run_services(root, *, restart_delay=3, shutdown_timeout=240):
     stop = threading.Event()
     previous = {sig: signal.signal(sig, lambda *_: stop.set())
                 for sig in (signal.SIGTERM, signal.SIGINT)}
-    web = controller = None
+    web = controller = backup = None
     group = None
     result = 0
     try:
@@ -34,6 +34,14 @@ def run_services(root, *, restart_delay=3, shutdown_timeout=240):
                 controller = subprocess.Popen([sys.executable, '-u', str(root/'manage.py'),
                     'run_worker_supervisor'], cwd=root, process_group=group)
                 print(f'container_controller_started pid={controller.pid}', flush=True)
+            # Независимая упаковка не блокирует цикл контроля прежних пяти
+            # сервисов. Это исполнитель, а не второй supervisor.
+            if backup is None or backup.poll() is not None:
+                if backup is not None and stop.wait(restart_delay):
+                    break
+                backup = subprocess.Popen([sys.executable, '-u', str(root/'manage.py'),
+                    'run_backup_worker'], cwd=root, process_group=group)
+                print(f'container_backup_started pid={backup.pid}', flush=True)
             stop.wait(.2)
     finally:
         if group is not None:
@@ -43,7 +51,7 @@ def run_services(root, *, restart_delay=3, shutdown_timeout=240):
                 pass
             deadline = time.monotonic()+shutdown_timeout
             while True:
-                for child in (web, controller):
+                for child in (web, controller, backup):
                     if child is not None:
                         child.poll()
                 try:
@@ -56,7 +64,7 @@ def run_services(root, *, restart_delay=3, shutdown_timeout=240):
                     result = 1
                     break
                 time.sleep(.1)
-            for child in (web, controller):
+            for child in (web, controller, backup):
                 if child is not None:
                     child.wait()
         for sig, handler in previous.items():

@@ -102,7 +102,14 @@ class AvitoCheckListingCache(models.Model):
 
 
 class AvitoManualPrice(models.Model):
-    profile = models.OneToOneField("AvitoProductProfile", on_delete=models.CASCADE, related_name="manual_price")
+    """Независимый ручной минимум одной географии; не результат ReefAPI и не цена продажи."""
+
+    class Scope(models.TextChoices):
+        RUSSIA = 'russia', 'Россия'
+        ROSTOV = 'rostov', 'Ростов-на-Дону'
+
+    profile = models.ForeignKey("AvitoProductProfile", on_delete=models.CASCADE, related_name="manual_prices")
+    scope = models.CharField('География', max_length=8, choices=Scope.choices, default=Scope.RUSSIA)
     price = models.DecimalField("Найденная минимальная цена", max_digits=20, decimal_places=2)
     recorded_at = models.DateTimeField("Дата добавления")
     recorded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
@@ -110,7 +117,11 @@ class AvitoManualPrice(models.Model):
     class Meta:
         verbose_name = "найденная цена Avito"
         verbose_name_plural = "найденные цены Avito"
-        constraints = [models.CheckConstraint(condition=Q(price__gt=0), name="avito_manual_price_positive")]
+        constraints = [
+            models.CheckConstraint(condition=Q(price__gt=0), name="avito_manual_price_positive"),
+            models.UniqueConstraint(fields=('profile', 'scope'), name='avito_manual_profile_scope'),
+            models.CheckConstraint(condition=Q(scope__in=['russia', 'rostov']), name='avito_manual_scope_supported'),
+        ]
 
 
 class AvitoProductProfile(models.Model):

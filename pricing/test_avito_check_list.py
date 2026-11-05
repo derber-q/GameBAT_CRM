@@ -28,7 +28,7 @@ class AvitoCheckListTests(TestCase):
 
     def save_price(self, price="3499.50", **extra):
         return self.client.post(reverse("pricing:avito_check_found_price"), {
-            "kind": "cd", "product_id": self.cd.pk, "price": price, **extra,
+            "kind": "cd", "scope": "russia", "product_id": self.cd.pk, "price": price, **extra,
         })
 
     def test_list_includes_only_linked_products_with_physical_stock(self):
@@ -41,12 +41,12 @@ class AvitoCheckListTests(TestCase):
         with patch("integrations.avito_check.ReefApiClient") as api:
             response = self.client.get(reverse("pricing:avito_check"))
         api.assert_not_called()
-        self.assertEqual(response.context["total"], 1)
-        for title in (self.cd.name, "Автоматическая проверка", "Обновлена", "Ручной поиск"):
+        self.assertEqual(response.context["total"], 2)
+        for title in (self.cd.name, "Автоматическая проверка", "Обновлена", "Поиск · РФ", "Поиск · Ростов"):
             self.assertContains(response, title)
         self.assertContains(response, "Опт / наценка, ₽")
         self.assertContains(response, 'data-wholesale-margin-value title="Оптовая цена минус себестоимость">1000,00</span>')
-        self.assertNotContains(response, tech.name)
+        self.assertContains(response, tech.name)
         self.assertNotContains(response, archived.name)
         self.assertNotContains(response, "Unlinked game")
         self.assertNotContains(response, 'id="avito-check-run"')

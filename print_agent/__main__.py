@@ -13,6 +13,7 @@ from .driver import WindowsDriver
 from .engine import Engine
 from .journal import Journal
 from .transport import API, TransportError
+from .profiles import printer_lock
 
 
 def default_config():
@@ -56,7 +57,7 @@ def main():
         print('Принтер доступен.' if driver.available() else 'Принтер недоступен.')
         return
     state=args.config.parent
-    with exclusive(state/'agent.lock'):
+    with exclusive(state/'agent.lock'), printer_lock(config['printer_name'],state):
         journal=Journal(state/'journal.sqlite3',config['agent_id'])
         engine=Engine(api,journal,driver,config['printer_name'])
         stop=threading.Event()

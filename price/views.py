@@ -39,7 +39,7 @@ from .forms import (
     WholesaleWarehousePriceForm,
 )
 from .models import PriceDocumentSettings, ProcurementPriceList, ProcurementPriceListItem
-from .procurement_suppliers import can_change_supplier, prepare_supplier_choices
+from .procurement_suppliers import can_change_supplier, prepare_supplier_choices, pricing_snapshot
 from .procurement_ordering import ordered_procurement_items
 from .services import (
     MissingProcurementWeights, MissingProcurementSurcharges, NegativeProcurementMarkup, create_procurement_price_list,
@@ -288,7 +288,7 @@ def procurement_detail(request, pk):
             # JOIN внутри выборки строк не создаёт длинную цепочку OR на SQLite.
             Prefetch("items", queryset=ProcurementPriceListItem.objects.select_related(
                 "selected_supplier", "cd__platform", "tech__brand", "tech__product_type",
-            ).prefetch_related('supplier_offers__supplier')),
+            ).prefetch_related('supplier_offers__supplier', 'supplier_price_overrides')),
         ), pk=pk,
     )
     can_view_supplier_prices = (
@@ -297,6 +297,9 @@ def procurement_detail(request, pk):
     items = ordered_procurement_items(price_list.items.all())
     if can_view_supplier_prices:
         prepare_supplier_choices(items, price_list)
+    else:
+        for item in items:
+            item.pricing_initial = pricing_snapshot(item)
     locked = price_list.customer_orders.exists()
     return render(request, "price/procurement_detail.html", {
         "price_list": price_list,
@@ -343,6 +346,13 @@ def procurement_update(request, pk):
                     rows[item_id]["surcharge_mode"] = request.POST.get(f"surcharge_mode_{item_id}", "fixed")
                 if f"supplier_{item_id}" in request.POST:
                     rows[item_id]['supplier_id'] = request.POST[f'supplier_{item_id}']
+                if f"pricing_initial_{item_id}" in request.POST:
+                    rows[item_id]['pricing_initial'] = request.POST[f'pricing_initial_{item_id}']
+                if f"manual_enabled_{item_id}" in request.POST:
+                    rows[item_id]['manual_prices'] = {rows[item_id].get('supplier_id', ''): {
+                        'enabled': request.POST[f'manual_enabled_{item_id}'] == 'true',
+                        'price_aed': request.POST.get(f'manual_aed_{item_id}', ''),
+                    }}
         update_procurement_pricing(
             actor=request.user, price_list_id=pk, rows=rows,
             can_change_markup=request.user.is_superuser or request.user.has_perm("price.change_procurement_markup"),

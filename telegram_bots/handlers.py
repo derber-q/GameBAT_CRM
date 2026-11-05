@@ -4,9 +4,10 @@ from django.db import transaction
 from django.utils import timezone
 from core.db_retry import retry_database_lock
 from warehouse.models import Warehouse
-from .access import BotDenied, authorize, consume_link
-from .menu import WHOLESALE, main_menu, warehouse_menu
-from .models import StaffBot, StaffBotUpdate, StaffBotJob
+from partners.models import Supplier
+from .access import BotDenied, authorize, consume_link, check_function_access
+from .menu import WHOLESALE, SUPPLIER_TEMPLATES, main_menu, warehouse_menu, supplier_menu, supplier_label
+from .models import StaffBot, StaffBotUpdate, StaffBotJob, StaffBotJobDocument
 
 
 def _positive_id(value):
@@ -28,16 +29,33 @@ def _private_context(update):
     return message, sender, callback or {}
 
 
-def _request_price(bot, access, warehouse_id, receipt, chat_id):
-    if not Warehouse.objects.filter(pk=warehouse_id).exists():
-        raise BotDenied('warehouse_missing', 'Склад не найден. Откройте меню заново.')
+def _request_job(bot, access, receipt, chat_id, *, function, **target):
     if StaffBotJob.objects.filter(access=access, state__in=['queued', 'generating', 'sending']).exists():
-        raise BotDenied('busy', 'Ваш прайс уже формируется или отправляется. Дождитесь результата.')
+        raise BotDenied('busy', 'Документы уже формируются или отправляются.')
     if StaffBotJob.objects.filter(access=access,
             created_at__gt=timezone.now() - timedelta(seconds=bot.cooldown_seconds)).exists():
         raise BotDenied('rate_limited', 'Слишком частые запросы. Повторите немного позже.')
-    StaffBotJob.objects.create(bot=bot, access=access, warehouse_id=warehouse_id, update=receipt, chat_id=chat_id)
+    return StaffBotJob.objects.create(bot=bot, access=access, update=receipt, chat_id=chat_id,
+        function=function, **target)
+
+
+def _request_price(bot, access, warehouse_id, receipt, chat_id):
+    check_function_access(access, WHOLESALE.code)
+    if not Warehouse.objects.filter(pk=warehouse_id).exists():
+        raise BotDenied('warehouse_missing', 'Склад не найден. Откройте меню заново.')
+    _request_job(bot, access, receipt, chat_id, function=WHOLESALE.code, warehouse_id=warehouse_id)
     return {'text': 'Формирую актуальный оптовый прайс…'}
+
+
+def _request_supplier_templates(bot, access, supplier_id, receipt, chat_id):
+    user = check_function_access(access, SUPPLIER_TEMPLATES.code)
+    supplier = Supplier.objects.select_for_update().filter(pk=supplier_id).first()
+    if supplier is None:
+        raise BotDenied('supplier_missing', 'Поставщик не найден. Откройте список заново.')
+    job = _request_job(bot, access, receipt, chat_id, function=SUPPLIER_TEMPLATES.code, supplier_id=supplier.pk)
+    for kind in ('cd', 'tech'):
+        StaffBotJobDocument.objects.create(job=job, product_kind=kind)
+    return {'text': f'Формирую шаблоны поставщика {supplier_label(supplier, user)} с последними сохранёнными ценами…'}
 
 
 def _dispatch(bot, update, receipt):
@@ -53,8 +71,24 @@ def _dispatch(bot, update, receipt):
     access, user = authorize(bot, chat_id)
     data = callback.get('data') if callback else None
     if data == 'menu' or (not callback and text.split(' ', 1)[0] in ['/start', '/menu', '/help']):
-        return {'text': 'Добро пожаловать в ReSOURCE.\nВыберите необходимую функцию.', 'reply_markup': main_menu(user)}
+        menu = main_menu(user)
+        return {'text': ('Добро пожаловать в ReSOURCE.\nВыберите необходимую функцию.'
+            if 'keyboard' in menu else 'У вас пока нет доступных функций. Обратитесь к администратору CRM.'),
+            'reply_markup': menu}
+    if data == SUPPLIER_TEMPLATES.code or (not callback and text == SUPPLIER_TEMPLATES.title):
+        user = check_function_access(access, SUPPLIER_TEMPLATES.code)
+        suppliers = list(Supplier.objects.order_by('letter', 'pk'))
+        if not suppliers:
+            raise BotDenied('no_suppliers', 'В CRM пока нет доступных поставщиков.')
+        return {'text': 'Выберите поставщика, для которого нужно скачать шаблоны с последними ценами:',
+            'reply_markup': supplier_menu(suppliers, user)}
+    if isinstance(data, str) and data.startswith(SUPPLIER_TEMPLATES.code + ':'):
+        check_function_access(access, SUPPLIER_TEMPLATES.code)
+        value = data.split(':', 1)[1]
+        if value.isascii() and value.isdecimal() and len(value) <= 19 and _positive_id(int(value)):
+            return _request_supplier_templates(bot, access, int(value), receipt, chat_id)
     if data == WHOLESALE.code or (not callback and text == WHOLESALE.title):
+        check_function_access(access, WHOLESALE.code)
         warehouses = list(Warehouse.objects.order_by('name', 'pk'))
         if not warehouses:
             raise BotDenied('no_warehouse', 'В CRM пока нет доступных складов.')

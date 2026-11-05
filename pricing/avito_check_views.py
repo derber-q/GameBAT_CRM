@@ -5,7 +5,7 @@ from django.contrib import messages
 from django.conf import settings
 from django.core.cache import cache
 from django.core.exceptions import PermissionDenied, ValidationError
-from django.db import transaction
+from django.db import transaction, OperationalError
 from django.db.models import Sum
 from django.http import JsonResponse
 from django.middleware.csrf import get_token
@@ -23,7 +23,10 @@ from integrations.avito_check import display_result, manual_search_url, queue, r
 from integrations.models import AvitoManualPrice, AvitoPriceCheckResult, ReefApiCredential
 from integrations.reef_api import ReefApiError
 from .services import update_product_prices
-from .avito_check_catalog import listed_products, manual_product_data
+from .avito_check_catalog import (
+    SCOPES, SCOPE_LABELS, WARNING, found_prices, import_costs, listed_products, manual_product_data,
+)
+from core.db_retry import retry_database_lock
 from .warnings import product_price_warnings, wholesale_margin
 
 
@@ -60,17 +63,25 @@ def page(request):
     can_change_wholesale = request.user.is_superuser or request.user.has_perm("pricing.change_wholesale_price")
     rows = []
     products = listed_products(query=query, sort=sort)
+    latest_price, costs = import_costs()
     for product in products:
-        found = getattr(product.avito_profile, "manual_price", None)
-        rows.append({"kind": "cd", "type": "cd", "product": product, "found": found,
+        kind = product._meta.model_name
+        prices = found_prices(product)
+        regions = [{
+            'scope': scope, 'label': SCOPE_LABELS[scope], 'found': prices.get(scope),
+            'version': prices[scope].recorded_at.isoformat() if scope in prices else '',
+            'manual_url': manual_search_url(product, kind, scope),
+        } for scope in SCOPES]
+        rows.append({"kind": kind, "type": kind, "product": product, "regions": regions,
+                     "import_cost": costs.get((kind, product.pk)),
+                     "scope_warning": WARNING if all(k in prices for k in SCOPES) and prices['russia'].price > prices['rostov'].price else "",
                      "wholesale_margin": wholesale_margin(product.wholesale_price, product.cost),
                      "warnings": product_price_warnings(product),
                      "can_change_avito": can_change_avito and not product.is_archived,
-                     "can_change_wholesale": can_change_wholesale and not product.is_archived,
-                     "manual_url": manual_search_url(product, "cd")})
+                     "can_change_wholesale": can_change_wholesale and not product.is_archived})
     return render(request, "pricing/avito_check_list.html", {
         "rows": rows, "query": query, "sort": sort, "total": len(rows),
-        "can_record": can_change_avito,
+        "can_record": can_change_avito, "latest_import_price": latest_price,
     })
 
 
@@ -81,16 +92,19 @@ def manual_context(request):
     if settings.GAMEBAT_ENV == 'local_test':
         return JsonResponse({'ok':False, 'message':'ТЕСТОВЫЙ РЕЖИМ: живой сценарий расширения запрещён.'}, status=403)
     product_id = request.GET.get('product_id')
+    kind, scope = request.GET.get('kind'), request.GET.get('scope')
     if product_id is not None:
         if not product_id.isascii() or not product_id.isdecimal() or len(product_id) > 18:
             return JsonResponse({'ok': False, 'message': 'Некорректный товар.'}, status=400)
-        products = listed_products(product_id=int(product_id))
+        if kind not in ('cd', 'tech') or scope not in SCOPES:
+            return JsonResponse({'ok': False, 'message': 'Обновите расширение: нужны тип товара и география.'}, status=400)
+        products = listed_products(product_id=int(product_id), kind=kind)
         if not products:
             return JsonResponse({'ok': False, 'message': 'Товар выбыл из Avito Check: нет остатка или привязки.'}, status=404)
-        data = {'product': manual_product_data(products[0])}
+        data = {'product': manual_product_data(products[0], scope)}
     else:
         products = listed_products(query=request.GET.get('q', '').strip(), sort=request.GET.get('sort', 'name'))
-        data = {'items': [manual_product_data(product) for product in products]}
+        data = {'items': [manual_product_data(product, scope) for product in products for scope in SCOPES]}
     return JsonResponse({'ok': True, 'csrf_token': get_token(request), **data})
 
 
@@ -98,43 +112,65 @@ def manual_context(request):
 @permission_required_all("pricing.view_pricing", "pricing.change_retail_price")
 def save_found_price(request):
     if settings.GAMEBAT_ENV == 'local_test' and request.POST.get('manual_queue') == '1':
-        return JsonResponse({'ok':False, 'message':'ТЕСТОВЫЙ РЕЖИМ: запись из живого расширения запрещена.'}, status=403)
-    kind = request.POST.get("kind")
-    model = {"cd": CD, "tech": Tech}.get(kind)
+        return JsonResponse({'ok':False, 'message':'ТЕСТОВЫЙ РЕЖИМ: запись из живого расширения запрещена.'},status=403)
+    kind, scope = request.POST.get('kind'), request.POST.get('scope')
+    model = {'cd': CD, 'tech': Tech}.get(kind)
+    if model is None or scope not in SCOPES:
+        return JsonResponse({'ok': False, 'message': 'Обновите страницу и расширение: укажите тип товара и географию.'}, status=400)
     try:
-        pk = int(request.POST.get("product_id", ""))
-        value = _parse_price(request.POST.get("price", "").strip().replace(",", "."))
-        if model is None or value is None or value <= 0:
-            raise ValidationError("Укажите найденную цену больше нуля.")
+        product_id = request.POST.get('product_id', '')
+        if not product_id.isascii() or not product_id.isdecimal() or len(product_id) > 18:
+            raise ValidationError('Некорректный товар.')
+        pk = int(product_id)
+        value = _parse_price(request.POST.get('price', '').strip().replace(',', '.'))
+        if value is None or value <= 0:
+            raise ValidationError('Укажите найденную цену больше нуля.')
         if request.POST.get('manual_queue') == '1' and 'expected_recorded_at' not in request.POST:
             raise ValidationError('Обновите панель перед сохранением цены.')
-        with transaction.atomic():
-            products = model.objects.select_related("avito_profile").filter(avito_profile__connection__isnull=False)
-            if request.POST.get('manual_queue') == '1':
-                products = products.annotate(physical_stock=Sum('warehouse_stocks__quantity')).filter(physical_stock__gt=0)
-            product = products.get(pk=pk)
-            previous = AvitoManualPrice.objects.select_for_update().filter(profile=product.avito_profile).first()
-            if 'expected_recorded_at' in request.POST:
-                current_version = previous.recorded_at.isoformat() if previous else ''
-                if request.POST['expected_recorded_at'] != current_version:
-                    return JsonResponse({'ok': False, 'message': 'Минимальная цена уже изменена. Обновите панель и проверьте её снова.'}, status=409)
-            old_price = str(previous.price) if previous else ""
-            recorded_at = timezone.now()
-            found, _ = AvitoManualPrice.objects.update_or_create(profile=product.avito_profile, defaults={
-                "price": value, "recorded_at": recorded_at, "recorded_by": request.user,
-            })
-            record_product_changes(actor=request.user, instance=product, source=ProductChangeEvent.Source.CRM, changes=[
-                {"field_name": "avito_found_price", "field_label": "Найденная минимальная цена Avito",
-                 "old_value": old_price, "new_value": str(value)},
-                {"field_name": "avito_found_price_at", "field_label": "Дата ручной проверки Avito",
-                 "old_value": previous.recorded_at.isoformat() if previous else "", "new_value": recorded_at.isoformat()},
-            ])
+        return _save_found(request, model, pk, kind, scope, value)
     except (ValueError, TypeError, ValidationError) as exc:
-        return JsonResponse({"ok": False, "message": " ".join(exc.messages) if isinstance(exc, ValidationError) else "Некорректные данные."}, status=400)
+        return JsonResponse({'ok': False, 'message': ' '.join(exc.messages) if isinstance(exc, ValidationError) else 'Некорректные данные.'}, status=400)
     except (CD.DoesNotExist, Tech.DoesNotExist):
-        return JsonResponse({"ok": False, "message": "Товар не найден или больше не связан с Avito."}, status=404)
-    return JsonResponse({"ok": True, "price": str(found.price),
-                         "recorded_at": timezone.localtime(found.recorded_at).strftime("%d.%m.%Y %H:%M")})
+        return JsonResponse({'ok': False, 'message': 'Товар не найден, выбыл из списка или больше не связан с Avito.'}, status=404)
+    except OperationalError:
+        return JsonResponse({'ok': False, 'message': 'База занята. Повторите сохранение.'}, status=409)
+
+
+@retry_database_lock
+@transaction.atomic
+def _save_found(request, model, pk, kind, scope, value):
+    """Цена и аудит атомарны; версия сравнивается только внутри выбранной географии."""
+    from integrations.models import AvitoProductProfile
+    products = model.objects.select_related('avito_profile').filter(avito_profile__connection__isnull=False)
+    if request.POST.get('manual_queue') == '1':
+        products = products.annotate(physical_stock=Sum('warehouse_stocks__quantity')).filter(physical_stock__gt=0)
+    product = products.get(pk=pk)
+    # Блокировка профиля защищает и первое создание цены при отсутствии строки scope.
+    # SQLite повторяет целую транзакцию через retry_database_lock, PostgreSQL блокирует строку.
+    AvitoProductProfile.objects.select_for_update().get(pk=product.avito_profile.pk)
+    previous = AvitoManualPrice.objects.select_for_update().filter(profile=product.avito_profile, scope=scope).first()
+    old_price = str(previous.price) if previous else ''
+    old_time = previous.recorded_at.isoformat() if previous else ''
+    if 'expected_recorded_at' in request.POST and request.POST['expected_recorded_at'] != old_time:
+        return JsonResponse({'ok': False, 'message': 'Минимальная цена этой географии уже изменена. Обновите панель и проверьте её снова.'}, status=409)
+    now = timezone.now()
+    found = previous or AvitoManualPrice(profile=product.avito_profile, scope=scope)
+    found.price, found.recorded_at, found.recorded_by = value, now, request.user
+    found.full_clean()
+    found.save()
+    record_product_changes(actor=request.user, instance=product, source=ProductChangeEvent.Source.CRM, changes=[
+        {'field_name': 'avito_found_price_' + scope, 'field_label': 'Минимальная цена Avito · ' + SCOPE_LABELS[scope],
+         'old_value': old_price, 'new_value': str(value)},
+        {'field_name': 'avito_found_price_at_' + scope, 'field_label': 'Дата ручной проверки Avito · ' + SCOPE_LABELS[scope],
+         'old_value': old_time, 'new_value': now.isoformat()},
+    ])
+    prices = {price.scope: price.price for price in AvitoManualPrice.objects.filter(profile=product.avito_profile)}
+    warning = WARNING if all(key in prices for key in SCOPES) and prices['russia'] > prices['rostov'] else ''
+    return JsonResponse({
+        'ok': True, 'kind': kind, 'product_id': pk, 'scope': scope, 'price': format(found.price, '.2f'),
+        'recorded_at': timezone.localtime(now).strftime('%d.%m.%Y %H:%M'),
+        'recorded_at_version': now.isoformat(), 'warning': warning,
+    })
 
 
 @require_GET

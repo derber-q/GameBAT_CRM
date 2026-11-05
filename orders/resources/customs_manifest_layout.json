@@ -1,0 +1,185 @@
+{
+  "sheet": "ОПИСАНИЕ",
+  "headers": [
+    "N",
+    "Код ТН ВЭД*",
+    "МАРКИРОВКА",
+    "Описание на русском языке*",
+    "Описание на английском*",
+    "МАТЕРИАЛ",
+    "Страна*",
+    "ПРОИЗВОДИТЕЛЬ",
+    "Кол-во*",
+    "Ед.*"
+  ],
+  "grand_total": "GRAND TOTAL",
+  "theme_sha256": "26084747287b6a50ce3a0bff869b694574cf2657c7c9a304632c72425504e49d",
+  "styles": [
+    [
+      {
+        "font": "<font><name val=\"Arial Cyr\" /><charset val=\"204\" /><sz val=\"10\" /></font>",
+        "fill": "<fill><patternFill /></fill>",
+        "border": "<border><left style=\"thin\"><color auto=\"1\" /></left><right style=\"thin\"><color auto=\"1\" /></right><top style=\"thin\"><color auto=\"1\" /></top><bottom style=\"thin\"><color auto=\"1\" /></bottom><diagonal /></border>",
+        "alignment": "<alignment horizontal=\"center\" vertical=\"center\" />",
+        "number_format": "General"
+      },
+      {
+        "font": "<font><name val=\"Arial\" /><charset val=\"204\" /><family val=\"2\" /><b val=\"1\" /><sz val=\"10\" /></font>",
+        "fill": "<fill><patternFill /></fill>",
+        "border": "<border><left style=\"thin\"><color auto=\"1\" /></left><right style=\"thin\"><color auto=\"1\" /></right><top style=\"thin\"><color auto=\"1\" /></top><bottom style=\"thin\"><color auto=\"1\" /></bottom><diagonal /></border>",
+        "alignment": "<alignment horizontal=\"center\" vertical=\"center\" />",
+        "number_format": "General"
+      },
+      {
+        "font": "<font><name val=\"Arial\" /><charset val=\"204\" /><family val=\"2\" /><b val=\"1\" /><sz val=\"10\" /></font>",
+        "fill": "<fill><patternFill /></fill>",
+        "border": "<border><left style=\"thin\"><color auto=\"1\" /></left><right style=\"thin\"><color auto=\"1\" /></right><top style=\"thin\"><color auto=\"1\" /></top><bottom style=\"thin\"><color auto=\"1\" /></bottom><diagonal /></border>",
+        "alignment": "<alignment horizontal=\"center\" vertical=\"center\" />",
+        "number_format": "General"
+      },
+      {
+        "font": "<font><name val=\"Arial\" /><charset val=\"204\" /><family val=\"2\" /><b val=\"1\" /><sz val=\"10\" /></font>",
+        "fill": "<fill><patternFill /></fill>",
+        "border": "<border><left style=\"thin\"><color auto=\"1\" /></left><right style=\"thin\"><color auto=\"1\" /></right><top style=\"thin\"><color auto=\"1\" /></top><bottom style=\"thin\"><color auto=\"1\" /></bottom><diagonal /></border>",
+        "alignment": "<alignment vertical=\"center\" />",
+        "number_format": "General"
+      },
+      {
+        "font": "<font><name val=\"Arial\" /><charset val=\"204\" /><family val=\"2\" /><b val=\"1\" /><sz val=\"10\" /></font>",
+        "fill": "<fill><patternFill /></fill>",
+        "border": "<border><left style=\"thin\"><color auto=\"1\" /></left><right style=\"thin\"><color auto=\"1\" /></right><top style=\"thin\"><color auto=\"1\" /></top><bottom style=\"thin\"><color auto=\"1\" /></bottom><diagonal /></border>",
+        "alignment": "<alignment vertical=\"center\" />",
+        "number_format": "General"
+      },
+      {
+        "font": "<font><name val=\"Arial\" /><charset val=\"204\" /><family val=\"2\" /><b val=\"1\" /><sz val=\"9\" /></font>",
+        "fill": "<fill><patternFill /></fill>",
+        "border": "<border><left style=\"thin\"><color auto=\"1\" /></left><right style=\"thin\"><color auto=\"1\" /></right><top style=\"thin\"><color auto=\"1\" /></top><bottom style=\"thin\"><color auto=\"1\" /></bottom><diagonal /></border>",
+        "alignment": "<alignment horizontal=\"center\" vertical=\"center\" />",
+        "number_format": "General"
+      },
+      {
+        "font": "<font><name val=\"Arial\" /><charset val=\"204\" /><family val=\"2\" /><b val=\"1\" /><sz val=\"10\" /></font>",
+        "fill": "<fill><patternFill /></fill>",
+        "border": "<border><left style=\"thin\"><color auto=\"1\" /></left><right style=\"thin\"><color auto=\"1\" /></right><top style=\"thin\"><color auto=\"1\" /></top><bottom style=\"thin\"><color auto=\"1\" /></bottom><diagonal /></border>",
+        "alignment": "<alignment horizontal=\"center\" vertical=\"center\" />",
+        "number_format": "General"
+      },
+      {
+        "font": "<font><name val=\"Arial\" /><charset val=\"204\" /><family val=\"2\" /><b val=\"1\" /><sz val=\"10\" /></font>",
+        "fill": "<fill><patternFill /></fill>",
+        "border": "<border><left style=\"thin\"><color auto=\"1\" /></left><right style=\"thin\"><color auto=\"1\" /></right><top style=\"thin\"><color auto=\"1\" /></top><bottom style=\"thin\"><color auto=\"1\" /></bottom><diagonal /></border>",
+        "alignment": "<alignment horizontal=\"center\" vertical=\"center\" />",
+        "number_format": "General"
+      },
+      {
+        "font": "<font><name val=\"Arial\" /><charset val=\"204\" /><family val=\"2\" /><b val=\"1\" /><sz val=\"10\" /></font>",
+        "fill": "<fill><patternFill /></fill>",
+        "border": "<border><left style=\"thin\"><color auto=\"1\" /></left><right style=\"thin\"><color auto=\"1\" /></right><top style=\"thin\"><color auto=\"1\" /></top><bottom style=\"thin\"><color auto=\"1\" /></bottom><diagonal /></border>",
+        "alignment": "<alignment horizontal=\"center\" vertical=\"center\" />",
+        "number_format": "General"
+      },
+      {
+        "font": "<font><name val=\"Arial\" /><charset val=\"204\" /><family val=\"2\" /><b val=\"1\" /><sz val=\"10\" /></font>",
+        "fill": "<fill><patternFill /></fill>",
+        "border": "<border><left style=\"thin\"><color auto=\"1\" /></left><right style=\"thin\"><color auto=\"1\" /></right><top style=\"thin\"><color auto=\"1\" /></top><bottom style=\"thin\"><color auto=\"1\" /></bottom><diagonal /></border>",
+        "alignment": "<alignment horizontal=\"center\" vertical=\"center\" />",
+        "number_format": "General"
+      }
+    ],
+    [
+      {
+        "font": "<font><name val=\"Calibri\" /><charset val=\"204\" /><family val=\"2\" /><color theme=\"1\" /><sz val=\"18\" /><scheme val=\"minor\" /></font>",
+        "fill": "<fill><patternFill patternType=\"solid\"><fgColor theme=\"9\" tint=\"0.3998229926450392\" /><bgColor indexed=\"64\" /></patternFill></fill>",
+        "border": "<border><left style=\"thin\"><color auto=\"1\" /></left><right style=\"thin\"><color auto=\"1\" /></right><top style=\"thin\"><color auto=\"1\" /></top><bottom style=\"thin\"><color auto=\"1\" /></bottom><diagonal /></border>",
+        "alignment": "<alignment horizontal=\"center\" vertical=\"center\" />",
+        "number_format": "General"
+      },
+      {
+        "font": "<font><name val=\"Arial Cyr\" /><charset val=\"204\" /><sz val=\"10\" /></font>",
+        "fill": "<fill><patternFill /></fill>",
+        "border": "<border><left /><right /><top style=\"thin\"><color auto=\"1\" /></top><bottom style=\"thin\"><color auto=\"1\" /></bottom><diagonal /></border>",
+        "alignment": "<alignment />",
+        "number_format": "General"
+      },
+      {
+        "font": "<font><name val=\"Arial Cyr\" /><charset val=\"204\" /><sz val=\"10\" /></font>",
+        "fill": "<fill><patternFill /></fill>",
+        "border": "<border><left /><right /><top style=\"thin\"><color auto=\"1\" /></top><bottom style=\"thin\"><color auto=\"1\" /></bottom><diagonal /></border>",
+        "alignment": "<alignment />",
+        "number_format": "General"
+      },
+      {
+        "font": "<font><name val=\"Arial Cyr\" /><charset val=\"204\" /><sz val=\"10\" /></font>",
+        "fill": "<fill><patternFill /></fill>",
+        "border": "<border><left /><right /><top style=\"thin\"><color auto=\"1\" /></top><bottom style=\"thin\"><color auto=\"1\" /></bottom><diagonal /></border>",
+        "alignment": "<alignment />",
+        "number_format": "General"
+      },
+      {
+        "font": "<font><name val=\"Arial Cyr\" /><charset val=\"204\" /><sz val=\"10\" /></font>",
+        "fill": "<fill><patternFill /></fill>",
+        "border": "<border><left /><right /><top style=\"thin\"><color auto=\"1\" /></top><bottom style=\"thin\"><color auto=\"1\" /></bottom><diagonal /></border>",
+        "alignment": "<alignment />",
+        "number_format": "General"
+      },
+      {
+        "font": "<font><name val=\"Arial Cyr\" /><charset val=\"204\" /><sz val=\"10\" /></font>",
+        "fill": "<fill><patternFill /></fill>",
+        "border": "<border><left /><right /><top style=\"thin\"><color auto=\"1\" /></top><bottom style=\"thin\"><color auto=\"1\" /></bottom><diagonal /></border>",
+        "alignment": "<alignment />",
+        "number_format": "General"
+      },
+      {
+        "font": "<font><name val=\"Arial Cyr\" /><charset val=\"204\" /><sz val=\"10\" /></font>",
+        "fill": "<fill><patternFill /></fill>",
+        "border": "<border><left /><right /><top style=\"thin\"><color auto=\"1\" /></top><bottom style=\"thin\"><color auto=\"1\" /></bottom><diagonal /></border>",
+        "alignment": "<alignment />",
+        "number_format": "General"
+      },
+      {
+        "font": "<font><name val=\"Arial Cyr\" /><charset val=\"204\" /><sz val=\"10\" /></font>",
+        "fill": "<fill><patternFill /></fill>",
+        "border": "<border><left /><right /><top style=\"thin\"><color auto=\"1\" /></top><bottom style=\"thin\"><color auto=\"1\" /></bottom><diagonal /></border>",
+        "alignment": "<alignment />",
+        "number_format": "General"
+      },
+      {
+        "font": "<font><name val=\"Arial Cyr\" /><charset val=\"204\" /><sz val=\"10\" /></font>",
+        "fill": "<fill><patternFill /></fill>",
+        "border": "<border><left /><right /><top style=\"thin\"><color auto=\"1\" /></top><bottom style=\"thin\"><color auto=\"1\" /></bottom><diagonal /></border>",
+        "alignment": "<alignment />",
+        "number_format": "General"
+      },
+      {
+        "font": "<font><name val=\"Arial Cyr\" /><charset val=\"204\" /><sz val=\"10\" /></font>",
+        "fill": "<fill><patternFill /></fill>",
+        "border": "<border><left /><right style=\"thin\"><color auto=\"1\" /></right><top style=\"thin\"><color auto=\"1\" /></top><bottom style=\"thin\"><color auto=\"1\" /></bottom><diagonal /></border>",
+        "alignment": "<alignment />",
+        "number_format": "General"
+      }
+    ]
+  ],
+  "widths": {
+    "A": 4.5,
+    "B": 11.1640625,
+    "C": 21.83203125,
+    "D": 54.1640625,
+    "E": 60.1640625,
+    "F": 20.33203125,
+    "G": 13.5,
+    "H": 14.1640625,
+    "I": 8.33203125,
+    "J": 5.5,
+    "K": 9.1640625,
+    "L": 9.0,
+    "M": 12.0,
+    "N": 9.0
+  },
+  "heights": {
+    "4": 34.75,
+    "5": 24.0
+  },
+  "page_setup": "<pageSetup orientation=\"portrait\" paperSize=\"9\" />",
+  "page_margins": "<pageMargins left=\"0.7\" right=\"0.7\" top=\"0.75\" bottom=\"0.75\" header=\"0.3\" footer=\"0.3\" />"
+}

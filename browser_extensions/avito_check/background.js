@@ -20,18 +20,21 @@ async function bridge(state, action, data = {}) {
 
 async function start(message, sender) {
   if (!ResourceAvito.isCrm(sender.url)) throw new Error('Начните ручной поиск на странице Avito Check.');
+  const selected = ResourceAvito.key(message);
   const state = {crmTab: sender.tab.id, origin: new URL(sender.url).origin};
   const response = await bridge(state, 'queue', {query: String(message.query || ''), sort: message.sort});
   if (!Array.isArray(response.items) || response.items.length > 10000) throw new Error('Некорректная очередь CRM.');
   const seen = new Set();
   state.items = response.items.map(item => {
-    if (!Number.isSafeInteger(item.id) || item.id <= 0 || seen.has(item.id) || !ResourceAvito.isAvito(item.search_url)) {
+    const identity = ResourceAvito.identity({...item, productId: item.id});
+    const itemKey = ResourceAvito.key(identity);
+    if (seen.has(itemKey) || !ResourceAvito.isAvito(item.search_url)) {
       throw new Error('Некорректный товар в очереди CRM.');
     }
-    seen.add(item.id);
-    return {id: item.id, search_url: item.search_url};
+    seen.add(itemKey);
+    return {...identity, search_url: item.search_url};
   });
-  state.index = state.items.findIndex(item => item.id === message.productId);
+  state.index = state.items.findIndex(item => ResourceAvito.key(item) === selected);
   if (state.index < 0) throw new Error('Товар выбыл из текущего списка. Обновите Avito Check.');
   state.completed = 0;
   const tab = await chrome.tabs.create({url: 'about:blank', active: true});
@@ -53,19 +56,27 @@ async function handle(message, sender) {
   const key = String(sender.tab.id);
   const state = (await chrome.storage.session.get(key))[key];
   if (!state) return {ok: true, inactive: true};
+  // Очереди прежней версии не имеют составного ключа: продолжать их небезопасно.
+  if (!Array.isArray(state.items) || !Number.isSafeInteger(state.index) || state.index < 0) {
+    throw new Error('Начните ручной поиск из обновлённой страницы CRM снова.');
+  }
+  state.items.forEach(item => ResourceAvito.identity(item));
   const progress = {index: state.index + 1, total: state.items.length, completed: state.completed,
     crmUrl: state.origin + '/crm/pricing/avito-check/'};
   if (state.index >= state.items.length) return {ok: true, done: true, ...progress};
   const current = state.items[state.index];
+  const identity = ResourceAvito.identity(current);
   if (message.type === PREFIX + 'current') {
-    const response = await bridge(state, 'product', {productId: current.id});
-    if (response.product?.id !== current.id) throw new Error('CRM вернула другой товар. Обновите панель.');
+    const response = await bridge(state, 'product', identity);
+    if (ResourceAvito.key({...response.product, productId: response.product?.id}) !== ResourceAvito.key(identity)) {
+      throw new Error('CRM вернула другой товар или географию. Обновите панель.');
+    }
     return {ok: true, product: response.product, ...progress};
   }
-  if (message.productId !== current.id) throw new Error('Товар уже изменился. Обновите панель перед сохранением.');
+  if (ResourceAvito.key(message) !== ResourceAvito.key(identity)) throw new Error('Товар или география уже изменились. Обновите панель перед сохранением.');
   if (message.type === PREFIX + 'save') {
     const price = ResourceAvito.price(message.price);
-    await bridge(state, 'save', {productId: current.id, price, version: String(message.version || '')});
+    await bridge(state, 'save', {...identity, price, version: String(message.version || '')});
     state.completed += 1;
   } else if (message.type !== PREFIX + 'skip') {
     throw new Error('Неизвестная команда.');

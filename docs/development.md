@@ -1,7 +1,14 @@
 # Карта кода для сопровождения
 
-Telegram сотрудников: `telegram_bots/` — доступ, меню, адаптер прежнего Excel,
-квитанции updates и очередь. `run_telegram_staff_bot` встроен как `telegram_staff`
+Local Agent/резервирование: `local_agent/`, `crm_backups/`, сборщики
+`scripts/build_local_agent.py`, `scripts/package_avito_extension.py`.
+Перед изменением формата/согласованности выполнять `crm_backups.test_snapshot`,
+`test_restore_business` и регрессию печати; [контракт](local_agent_design.md).
+Сборки, архивы и recovery keys остаются вне Git.
+
+Telegram сотрудников: `telegram_bots/` — доступ, меню, адаптеры прежних генераторов
+оптового Excel/шаблонов поставщика, квитанции updates и очередь с отдельными
+подтверждениями файлов комплекта. `run_telegram_staff_bot` встроен как `telegram_staff`
 в существующий мониторинг; задания не меняют склад/продажи.
 [Устройство, права и запрет Telegram в local_test](telegram_staff_bot.md).
 

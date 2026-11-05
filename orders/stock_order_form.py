@@ -5,6 +5,7 @@ from django.db.models import Q, Sum
 from catalog.nomenclature_grouping import nomenclature_product_groups
 from catalog.supplier_exclusions import exclusion_keys
 from price.models import ProcurementPriceList
+from price.procurement_suppliers import prepare_supplier_choices
 from warehouse.models import CDWarehouseStock, TechWarehouseStock
 from .models import CustomerProcurementOrder, CustomerProcurementOrderItem, SupplierOrderBatch
 
@@ -55,12 +56,13 @@ class StockOrderCreateForm(forms.Form):
 
 def stock_order_items(price_list):
     items = list(price_list.items.select_related(
-        "cd__platform", "cd__game_series", "tech__brand", "tech__product_type",
-    ).filter(Q(cd__is_archived=False) | Q(tech__is_archived=False)))
+        "selected_supplier", "cd__platform", "cd__game_series", "tech__brand", "tech__product_type",
+    ).prefetch_related('supplier_offers__supplier', 'supplier_price_overrides').filter(
+        Q(cd__is_archived=False) | Q(tech__is_archived=False)))
     excluded = exclusion_keys((item.product_kind, item.product_id) for item in items)
     allowed = [item for item in items if (item.product_kind, item.product_id, item.selected_supplier_id) not in excluded]
     price_list.excluded_item_count = len(items) - len(allowed)
-    return allowed
+    return prepare_supplier_choices(allowed, price_list)
 
 
 def previous_trip_stock_quantities(target_trip=None):

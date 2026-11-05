@@ -36,6 +36,7 @@ ALLOWED_HOSTS = [
 ]
 
 INSTALLED_APPS = [
+    'crm_backups.apps.CRMBackupsConfig',
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -62,6 +63,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    'crm_backups.window.BackupWindowMiddleware',
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -127,6 +129,8 @@ STATICFILES_DIRS = [BASE_DIR / "static"]
 STATIC_ROOT = BASE_DIR / "staticfiles"
 MEDIA_ROOT = BASE_DIR / "protected_media"
 MEDIA_URL = "/protected-media/"
+CRM_BACKUP_ROOT = Path(os.environ.get('GAMEBAT_BACKUP_ROOT', BASE_DIR / '.local-backup-cache'))
+CRM_APP_ARTIFACT_ROOT = Path(os.environ.get('GAMEBAT_APP_ARTIFACT_ROOT', BASE_DIR / '.local-app-artifacts'))
 INTEGRATION_ENCRYPTION_KEY = os.environ.get("INTEGRATION_ENCRYPTION_KEY", "")
 INTEGRATION_ENCRYPTION_KEY_FILE = BASE_DIR / ".integration-encryption-key"
 def _resource_token_encryption_key():

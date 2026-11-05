@@ -48,6 +48,23 @@ class StaffWorkerTests(TransactionTestCase):
         self.assertEqual(StaffBotJob.objects.count(), 1)
         self.assertTrue(any('уже' in result['text'] for result in results))
 
+    def test_concurrent_supplier_and_wholesale_share_one_active_slot(self):
+        from partners.models import Supplier
+        supplier = Supplier.objects.create(name='Поставщик потока', letter='A')
+        self.user.user_permissions.add(*Permission.objects.filter(content_type__app_label='price',
+            codename__in=['download_supplier_template', 'view_supplier_prices']))
+        codes = [f'supplier_price_templates:{supplier.pk}', f'wholesale_stock_price:{self.wh.pk}']
+        def receive(index):
+            close_old_connections()
+            try:
+                return accept_update(self.bot.pk, update(index + 1, data=codes[index]))
+            finally:
+                connections.close_all()
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(receive, [0, 1]))
+        self.assertEqual(StaffBotJob.objects.count(), 1)
+        self.assertTrue(any('уже' in result['text'] for result in results))
+
     def test_polling_continues_while_document_is_generated(self):
         started, release, stop = threading.Event(), threading.Event(), threading.Event()
         bot_id, wh_id = self.bot.pk, self.wh.pk

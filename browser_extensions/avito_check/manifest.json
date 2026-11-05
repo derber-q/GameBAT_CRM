@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ReSOURCE · Avito Check",
-  "version": "1.6.4",
+  "version": "1.7.0",
   "description": "Avito Check, создание продаж CRM из заказов и печать отправительных стикеров.",
   "permissions": ["storage", "debugger"],
   "host_permissions": ["http://127.0.0.1/*", "http://localhost/*", "http://192.168.0.131/*", "https://avito.ru/*", "https://www.avito.ru/*", "https://m.avito.ru/*"],

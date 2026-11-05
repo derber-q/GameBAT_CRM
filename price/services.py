@@ -7,6 +7,7 @@ from django.core.exceptions import ValidationError
 from django.core.validators import DecimalValidator
 from django.db import transaction
 from django.db.models import Q
+from core.db_retry import retry_database_lock
 
 from catalog.models import ProductChangeEvent, ProductType, Tech
 from catalog.audit import field_change, record_product_changes
@@ -426,6 +427,7 @@ def backfill_procurement_tech_surcharges(*, actor, price_list_id, apply=False):
     return changes
 
 
+@retry_database_lock
 @transaction.atomic
 def update_procurement_pricing(
     *, actor, price_list_id, rows, can_change_markup, can_change_delivery, negative_markup_confirmed=False,
@@ -439,7 +441,7 @@ def update_procurement_pricing(
     items = {
         item.pk: item
         for item in ProcurementPriceListItem.objects.select_for_update().filter(price_list=price_list)
-            .select_related('selected_supplier', 'cd', 'tech').prefetch_related('supplier_offers__supplier')
+            .select_related('selected_supplier', 'cd', 'tech').prefetch_related('supplier_offers__supplier', 'supplier_price_overrides')
     }
     if set(rows) != set(items):
         raise ValidationError("Состав закупочного прайса изменён или передан не полностью.")

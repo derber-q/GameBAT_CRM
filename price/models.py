@@ -2,6 +2,7 @@
 
 Сохранённые предложения и расчёты закупочной версии не подменяются текущим прайсом."""
 import uuid
+from decimal import Decimal
 
 from django.conf import settings
 from django.core.validators import MinValueValidator
@@ -254,6 +255,23 @@ class ProcurementSupplierOffer(models.Model):
         constraints = [
             models.UniqueConstraint(fields=("price_list_item", "supplier"), name="unique_procurement_supplier_offer"),
             models.CheckConstraint(condition=models.Q(price_aed__gt=0), name="procurement_supplier_offer_positive"),
+        ]
+
+
+class ProcurementSupplierPriceOverride(models.Model):
+    """Ручная цена версии; импортированное предложение сохраняется отдельно."""
+    price_list_item = models.ForeignKey(ProcurementPriceListItem, on_delete=models.PROTECT,
+        related_name='supplier_price_overrides')
+    supplier = models.ForeignKey(Supplier, on_delete=models.PROTECT, related_name='procurement_price_overrides')
+    price_aed = models.DecimalField(max_digits=20, decimal_places=6, validators=[MinValueValidator(Decimal('0.000001'))])
+    active = models.BooleanField(default=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=('price_list_item','supplier'), name='unique_procurement_price_override'),
+            models.CheckConstraint(condition=models.Q(price_aed__gt=0), name='procurement_override_positive'),
         ]
 
 

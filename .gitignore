@@ -249,3 +249,10 @@ __marimo__/
 # Локальный Telegram-токен: не входит в Git и образы контейнера.
 .telegram-staff-bot-token
 .telegram-*
+
+# Полные зашифрованные архивы, секрет владельца и опубликованные сборки — вне Git.
+.local-backup-cache/
+.local-app-artifacts/
+*.backup
+*.recovery.pem
+*.backup-worker.lock

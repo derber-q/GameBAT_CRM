@@ -162,3 +162,24 @@ class PrintAgentProtocolTests(TestCase):
         self.post('heartbeat',body);self.assertEqual(snapshot()[0]['problem_id'],first)
         self.connect();self.post('heartbeat',body)
         self.assertNotEqual(snapshot()[0]['problem_id'],first)
+
+    def test_second_printer_cannot_claim_or_download_first_printer_job(self):
+        second=PrintAgent.objects.create(name='Second',printer_name='Other',token_hash=hashlib.sha256(b'other-token').hexdigest())
+        headers={**self.headers,'HTTP_AUTHORIZATION':'Bearer other-token','HTTP_X_PRINT_AGENT':str(second.pk),
+                 'HTTP_X_PRINT_SESSION':str(uuid.uuid4())}
+        self.assertEqual(self.post('heartbeat',{'version':'1','printer_name':'Other','printer_available':True},headers=headers).status_code,200)
+        self.assertIsNone(self.post('claim',headers=headers).json()['job'])
+        self.connect();self.claim()
+        response=self.client.get(f'/crm/print-agent/jobs/{self.job.request_id}/document/',**headers)
+        self.assertEqual(response.status_code,404)
+
+    def test_manual_retry_preserves_target_after_default_printer_changes(self):
+        from crm_backups.models import PrintRouting
+        from sales.print_agents import resolve
+        second=PrintAgent.objects.create(name='Second',printer_name='Other',token_hash=hashlib.sha256(b'other-token').hexdigest())
+        PrintRouting.objects.create(pk=1,default_agent=second)
+        self.job.state='uncertain';self.job.save()
+        resolve(self.job.request_id,self.actor,'not_printed')
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.agent_id,self.agent.pk)
+        self.assertEqual(self.job.printer_name,'Fake printer')

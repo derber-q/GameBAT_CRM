@@ -184,6 +184,7 @@ def trip_detail(request, pk):
         'can_add_goods': manager and request.user.has_perm('orders.create_order') and not batch._arrival_locked,
         'can_assign_orders': can_assign, 'price_editor': price_editor, 'can_manage_invoices': manager,
         'financial': financial, 'financial_error': financial_error,
+        'can_view_customs': request.user.has_perm('orders.view_customs_manifest'),
         "can_view_supplier_prices": request.user.is_superuser or request.user.has_perm("price.view_supplier_prices"),
     })
 

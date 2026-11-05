@@ -17,6 +17,7 @@ from .configuration import TEST_MESSAGE, read_token, save_token, token_configure
 from .forms import StaffBotForm
 from .models import StaffBot, StaffBotAccess, StaffBotJob
 from .monitoring import ERROR_LABELS
+from .menu import SUPPLIER_TEMPLATES
 
 logger = logging.getLogger('gamebat.business')
 
@@ -83,7 +84,8 @@ def dashboard(request):
     accesses = list(StaffBotAccess.objects.filter(bot=bot).select_related('user')) if bot.pk else []
     by_user = {row.user_id: row for row in accesses}
     employees = [{'user': user, 'access': by_user.get(user.pk),
-                  'can_price': user.has_perm('price.generate_wholesale_price')}
+                  'can_price': user.has_perm('price.generate_wholesale_price'),
+                  'can_templates': SUPPLIER_TEMPLATES.allowed(user)}
                  for user in get_user_model().objects.order_by('username')]
     from integrations.worker_models import WorkerService
     from integrations.worker_monitoring import STATUS_LABELS
@@ -94,7 +96,8 @@ def dashboard(request):
         'linked_count': sum(bool(a.telegram_user_id) and a.allowed for a in accesses),
         'worker_label': STATUS_LABELS.get(worker.status, 'Нет данных') if worker else 'Не запущен',
         'connection_error': ERROR_LABELS.get(bot.error_category, bot.error_category),
-        'jobs': StaffBotJob.objects.filter(bot=bot).select_related('access__user', 'warehouse')[:30] if bot.pk else []})
+        'jobs': StaffBotJob.objects.filter(bot=bot).select_related('access__user', 'warehouse', 'supplier')
+            .prefetch_related('documents')[:30] if bot.pk else []})
     response['Referrer-Policy'] = 'same-origin'
     return response
 

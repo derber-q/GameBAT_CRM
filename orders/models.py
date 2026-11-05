@@ -458,3 +458,5 @@ class SupplierTripChange(models.Model):
 
 
 from .arrival_models import TripArrival, TripCostRow  # noqa: E402,F401
+from .customs_models import (CustomsGroup, CustomsProductDefaults, CustomsManifest, CustomsManifestLine,
+    CustomsManifestSource, CustomsManifestExport, CustomsEvent)  # noqa: E402,F401

@@ -1,13 +1,11 @@
 /* ReSOURCE: Оформление ручной таблицы Avito Check. Стили не заменяют серверные учётные проверки. */
 /* Размеры ограничены таблицей Avito Check; название получает всю свободную ширину. */
-.avito-list-table { width: 100%; min-width: 1120px; table-layout: fixed; }
+.avito-list-table { width: 100%; min-width: 1420px; table-layout: fixed; }
 .avito-list-table .avito-col-cost { width: 112px; }
 .avito-list-table .avito-col-price { width: 114px; }
 .avito-list-table .avito-col-wholesale { width: 194px; }
 .avito-list-table .avito-col-save { width: 92px; }
-.avito-list-table .avito-col-found { width: 124px; }
-.avito-list-table .avito-col-date { width: 104px; }
-.avito-list-table .avito-col-search { width: 138px; }
+.avito-list-table .avito-col-found { width: 170px; }
 .avito-list-table th, .avito-list-table td { padding: 9px 8px; white-space: normal; vertical-align: middle; }
 .avito-list-table th { line-height: 1.35; }
 .avito-list-table .avito-product-name { line-height: 1.4; overflow-wrap: anywhere; }
@@ -26,3 +24,7 @@
 .avito-list-filters .form-actions { align-items: end; gap: 12px; flex-wrap: wrap; }
 .avito-list-filters .field:first-child { flex: 1 1 300px; }
 .avito-list-filters .muted { margin: 8px 0 0; font-size: 12px; }
+
+.avito-list-table .avito-col-stock { width: 90px; }
+.avito-check-page [data-scope-warning] { margin-top: 6px; color: #aa6410; }
+.avito-check-page .table-scroll { max-width:100%; overflow-x:auto; }

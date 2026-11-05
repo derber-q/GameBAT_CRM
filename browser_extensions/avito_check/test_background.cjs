@@ -8,7 +8,12 @@ function runtime(saved = {}) {
   const tabs = new Map([[1, {id: 1, url: 'http://127.0.0.1:8000/crm/pricing/avito-check/'}]]);
   const calls = [];
   const data = structuredClone(saved);
-  const items = [1, 2].map(id => ({id, name: 'Игра ' + id, price: '100.25', recorded_at: 'old', search_url: 'https://www.avito.ru/all?q=game' + id}));
+  // Один числовой ID у CD и Tech: безопасность зависит от всего составного ключа.
+  const items = ['cd', 'tech'].flatMap(kind => ['russia', 'rostov'].map(scope => ({
+    id: 1, kind, scope, name: kind, price: scope === 'russia' ? '100.25' : '',
+    recorded_at: scope === 'russia' ? 'old' : '',
+    search_url: `https://www.avito.ru/${scope === 'russia' ? 'all' : 'rostov-na-donu'}?q=${kind}`
+  })));
   let failSave = false;
   const chrome = {runtime: {id: 'test-extension', onMessage: {addListener(fn) { listener = fn; }}},
     storage: {session: {
@@ -22,7 +27,8 @@ function runtime(saved = {}) {
       async sendMessage(id, message) {
         calls.push(['bridge', message]);
         if (message.action === 'queue') return {ok: true, items};
-        if (message.action === 'product') return {ok: true, product: items.find(p => p.id === message.productId)};
+        if (message.action === 'product') return {ok: true, product: items.find(p =>
+          p.id === message.productId && p.kind === message.kind && p.scope === message.scope)};
         if (failSave) return {ok: false, message: 'CRM не сохранила цену'};
         return {ok: true};
       }, onRemoved: {addListener() {}}
@@ -32,7 +38,7 @@ function runtime(saved = {}) {
   vm.runInContext(fs.readFileSync(path.join(__dirname, 'background.js'), 'utf8'), context);
   const sender = (tabId = 2, url = 'https://www.avito.ru/all?q=game1') => ({id: chrome.runtime.id, frameId: 0, tab: {id: tabId}, url});
   const send = (action, message = {}, from = sender()) => new Promise(resolve => {
-    assert.equal(listener({type: 'resource-avito:' + action, ...message}, from, resolve), true);
+    assert.equal(listener({type: 'resource-avito:' + action, kind: 'cd', scope: 'russia', ...message}, from, resolve), true);
   });
   return {send, sender, tabs, calls, items, data, protocol: context.ResourceAvito, setFailSave(value) { failSave = value; }};
 }
@@ -59,8 +65,13 @@ function runtime(saved = {}) {
   const saveCalls = app.calls.filter(([kind, msg]) => kind === 'bridge' && msg.action === 'save');
   assert.equal(saveCalls.at(-1)[1].price, '99.50');
   assert.equal(saveCalls.at(-1)[1].version, 'old');
-  assert.equal((await app.send('current')).product.id, 2);
-  assert.equal((await app.send('skip', {productId: 2})).done, true);
+  assert.equal((await app.send('current')).product.scope, 'rostov');
+  assert.equal((await app.send('current')).product.price, '');
+  assert.equal((await app.send('skip', {productId: 1, scope: 'rostov'})).ok, true);
+  assert.equal((await app.send('current')).product.kind, 'tech');
+  assert.equal((await app.send('save', {productId: 1, price: '200'})).ok, false);
+  assert.equal((await app.send('skip', {productId: 1, kind: 'tech'})).ok, true);
+  assert.equal((await app.send('skip', {productId: 1, kind: 'tech', scope: 'rostov'})).done, true);
   assert.equal((await app.send('current')).completed, 1);
   assert.equal((await app.send('current', {}, app.sender(99))).inactive, true);
   assert.equal((await app.send('start', {productId: 1})).ok, false);
@@ -76,5 +87,20 @@ function runtime(saved = {}) {
   invalid.items[0].search_url = 'https://evil.example/';
   assert.equal((await invalid.send('start', {productId: 1}, invalid.sender(1, invalid.tabs.get(1).url))).ok, false);
   assert.equal(invalid.tabs.size, 1);
+  const clicked = runtime();
+  assert.equal((await clicked.send('start', {productId: 1, kind: 'tech', scope: 'rostov'}, clicked.sender(1, clicked.tabs.get(1).url))).ok, true);
+  assert.equal(clicked.data['2'].index, 3);
+  const legacy = runtime();
+  assert.equal((await legacy.send('start', {productId: 1, scope: undefined}, legacy.sender(1, legacy.tabs.get(1).url))).ok, false);
+  const parallel = runtime();
+  const crm = parallel.sender(1, parallel.tabs.get(1).url);
+  await parallel.send('start', {productId: 1}, crm);
+  await parallel.send('start', {productId: 1, kind: 'tech', scope: 'rostov'}, crm);
+  await parallel.send('skip', {productId: 1});
+  assert.equal(parallel.data['2'].index, 1);
+  assert.equal(parallel.data['3'].index, 3);
+  assert.equal((await parallel.send('current', {}, parallel.sender(3))).product.kind, 'tech');
+  assert.equal((await parallel.send('save', {productId: 1, scope: 'rostov', price: '10'}, parallel.sender(3))).ok, false);
+  assert.equal(parallel.data['3'].index, 3);
   console.log('Avito extension: queue, exact money, prefill, failed/duplicate saves, restart and origin guards OK');
 })().catch(error => { console.error(error); process.exitCode = 1; });

@@ -23,7 +23,10 @@ class AgentError(Exception):
 def configured_agent():
     require_live_operation('print_agent_configuration')
     query = PrintAgent.objects.filter(enabled=True)
-    if value := getattr(settings, 'PRINT_AGENT_ID', ''):
+    from crm_backups.models import PrintRouting
+    route = PrintRouting.objects.filter(pk=1).first()
+    selected = route.default_agent_id if route else None
+    if value := selected or getattr(settings, 'PRINT_AGENT_ID', ''):
         try:
             query = query.filter(pk=uuid.UUID(str(value)))
         except ValueError:
@@ -201,8 +204,14 @@ def resolve(request_id, actor, decision):
     else:
         job.state='pending'
         job.printer_job_id=job.spooled_at=job.agent_claim=job.agent_claimed_at=None
-        from .market_fulfillment import _printer_target
-        target=_printer_target()
-        job.printer_name,job.print_backend,job.agent=target['printer_name'],target['print_backend'],target.get('agent')
+        # Сотрудник разрешил повтор после проверки бумаги, но не перевод на
+        # другой принтер. Сохраняем назначение уже созданного задания.
+        if job.print_backend=='agent':
+            if not job.agent or not job.agent.enabled or job.agent.printer_name!=job.printer_name:
+                raise ValidationError('Прежнее устройство недоступно. Восстановите его настройки перед повтором.')
+        else:
+            from .market_fulfillment import _printer_target
+            target=_printer_target()
+            job.printer_name,job.print_backend,job.agent=target['printer_name'],target['print_backend'],target.get('agent')
     job.save(update_fields=['state','printed_at','last_error','lease','printer_job_id','spooled_at','agent_claim','agent_claimed_at','printer_name','print_backend','agent','updated_at'])
     return job

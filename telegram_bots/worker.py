@@ -9,7 +9,7 @@ from integrations.worker_runtime import AlreadyRunning
 from .client import TelegramClient, TelegramError
 from .configuration import read_token, expected_status
 from .handlers import accept_update
-from .jobs import claim_job, run_job, recover_interrupted
+from .jobs import claim_job, run_job, recover_interrupted, notify_recovered_jobs
 from .models import StaffBot
 
 
@@ -79,7 +79,7 @@ def run_polling(bot_id, owner, stop, *, client_factory=TelegramClient, once=Fals
     executor_stop = threading.Event()
     executor = None
     try:
-        recover_interrupted(bot_id)
+        recovered = recover_interrupted(bot_id)
         # Никаких deleteWebhook: существующий webhook требует решения администратора.
         me = client.call('getMe')
         bot = StaffBot.objects.get(pk=bot_id)
@@ -88,6 +88,7 @@ def run_polling(bot_id, owner, stop, *, client_factory=TelegramClient, once=Fals
         webhook = client.call('getWebhookInfo')
         if not isinstance(webhook, dict) or webhook.get('url'):
             raise TelegramError('webhook')
+        notify_recovered_jobs(recovered, client)
         executor = threading.Thread(target=job_loop, args=(bot_id, executor_stop, owner, client_factory), name='telegram-documents')
         executor.start()
         failures, blocked = 0, False

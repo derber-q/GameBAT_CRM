@@ -28,7 +28,7 @@ class AvitoManualQueueTests(TestCase):
         self.assertTrue(item['search_url'].startswith('https://www.avito.ru/'))
         self.assertNotIn('csrf_token', item)
         AvitoManualPrice.objects.all().delete()
-        item = self.client.get(self.context_url(), {'product_id':self.cd.pk}).json()['product']
+        item = self.client.get(self.context_url(), {'product_id':self.cd.pk,'kind':'cd','scope':'russia'}).json()['product']
         self.assertEqual((item['price'], item['recorded_at']), ('', ''))
 
     def test_queue_search_order_and_stock_link_guards(self):
@@ -37,14 +37,14 @@ class AvitoManualQueueTests(TestCase):
         CDWarehouseStock.objects.create(cd=other, warehouse=self.warehouse, quantity=1)
         AvitoManualPrice.objects.create(profile=other.avito_profile, price=1,
             recorded_at=timezone.now(), recorded_by=self.user)
-        self.assertEqual([p['id'] for p in self.client.get(self.context_url()).json()['items']], [other.pk,self.cd.pk])
-        self.assertEqual([p['id'] for p in self.client.get(self.context_url(), {'sort':'newest'}).json()['items']], [other.pk,self.cd.pk])
+        self.assertEqual([p['id'] for p in self.client.get(self.context_url()).json()['items']], [other.pk,other.pk,self.cd.pk,self.cd.pk])
+        self.assertEqual([p['id'] for p in self.client.get(self.context_url(), {'sort':'newest'}).json()['items']], [other.pk,other.pk,self.cd.pk,self.cd.pk])
         BarcodeRegistry.objects.create(product_kind='cd', cd=self.cd, value='0012345600')
-        self.assertEqual([p['id'] for p in self.client.get(self.context_url(), {'q':'0012345600'}).json()['items']], [self.cd.pk])
+        self.assertEqual([p['id'] for p in self.client.get(self.context_url(), {'q':'0012345600'}).json()['items']], [self.cd.pk,self.cd.pk])
         stock = self.cd.warehouse_stocks.get()
         stock.quantity=0
         stock.save(update_fields=('quantity',))
-        self.assertEqual(self.client.get(self.context_url(), {'product_id':self.cd.pk}).status_code,404)
+        self.assertEqual(self.client.get(self.context_url(), {'product_id':self.cd.pk,'kind':'cd','scope':'russia'}).status_code,404)
         other.avito_profile.connection.delete()
         self.assertEqual(self.client.get(self.context_url()).json()['items'],[])
 
@@ -78,6 +78,6 @@ class AvitoManualQueueTests(TestCase):
         data=guarded.get(self.context_url()).json()
         self.assertTrue(data['csrf_token'])
         url=reverse('pricing:avito_check_found_price')
-        payload={'kind':'cd','product_id':self.cd.pk,'price':'100','manual_queue':'1','expected_recorded_at':''}
+        payload={'kind':'cd','scope':'russia','product_id':self.cd.pk,'price':'100','manual_queue':'1','expected_recorded_at':''}
         self.assertEqual(guarded.post(url,payload).status_code,403)
         self.assertEqual(guarded.post(url,payload,HTTP_X_CSRFTOKEN=data['csrf_token']).status_code,200)

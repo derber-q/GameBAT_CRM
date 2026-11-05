@@ -4,9 +4,115 @@
 
 Справочник исходников и метаданных схемы, без рабочих записей/ключей. Перегенерация: `.venv/Scripts/python.exe scripts/build_technical_reference.py`.
 
-Записей URL: **298**.
+Записей URL: **312**.
 
 Admin свёрнут в один вход. URL включает HTML, JSON, команды и файлы; не каждый маршрут является страницей. Проверки внутри сервиса/формы дополняют показанные декораторы.
+
+## `/crm/backups/apps/`
+
+Имя: `crm_backups:applications`.
+
+Обработчик: `crm_backups.application_views.applications`.
+
+Исходник: `crm_backups/application_views.py:17`.
+
+Декораторы: `login_required`; `never_cache`; `require_GET`.
+
+Прямые шаблоны: `crm_backups/applications.html`.
+
+## `/crm/backups/apps/download/<uuid:pk>/`
+
+Имя: `crm_backups:app_download`.
+
+Обработчик: `crm_backups.application_views.download`.
+
+Исходник: `crm_backups/application_views.py:26`.
+
+Декораторы: `login_required`; `never_cache`; `require_GET`.
+
+## `/crm/backups/`
+
+Имя: `crm_backups:dashboard`.
+
+Обработчик: `crm_backups.views.dashboard`.
+
+Исходник: `crm_backups/views.py:41`.
+
+Декораторы: `superuser_required`; `never_cache`; `require_http_methods(['GET', 'POST'])`.
+
+Прямые шаблоны: `crm_backups/dashboard.html`, `crm_backups/stub.html`.
+
+## `/crm/backups/devices/`
+
+Имя: `crm_backups:devices`.
+
+Обработчик: `crm_backups.views.devices`.
+
+Исходник: `crm_backups/views.py:81`.
+
+Декораторы: `sensitive_post_parameters('registration')`; `superuser_required`; `never_cache`; `require_http_methods(['GET', 'POST'])`.
+
+Прямые шаблоны: `crm_backups/devices.html`, `crm_backups/stub.html`.
+
+## `/crm/backups/api/enroll/`
+
+Имя: `crm_backups:enroll`.
+
+Обработчик: `crm_backups.api.registration`.
+
+Исходник: `crm_backups/api.py:74`.
+
+Декораторы: `device_api('POST', registration=True)`.
+
+## `/crm/backups/api/heartbeat/`
+
+Имя: `crm_backups:heartbeat`.
+
+Обработчик: `crm_backups.api.heartbeat`.
+
+Исходник: `crm_backups/api.py:80`.
+
+Декораторы: `device_api('POST')`; `transaction.atomic`.
+
+## `/crm/backups/api/status/`
+
+Имя: `crm_backups:status`.
+
+Обработчик: `crm_backups.api.status`.
+
+Исходник: `crm_backups/api.py:102`.
+
+Декораторы: `device_api('GET')`.
+
+## `/crm/backups/api/create/`
+
+Имя: `crm_backups:create`.
+
+Обработчик: `crm_backups.api.create`.
+
+Исходник: `crm_backups/api.py:107`.
+
+Декораторы: `device_api('POST')`.
+
+## `/crm/backups/api/jobs/<uuid:pk>/download/`
+
+Имя: `crm_backups:download`.
+
+Обработчик: `crm_backups.api.download`.
+
+Исходник: `crm_backups/api.py:120`.
+
+Декораторы: `device_api('GET')`.
+
+## `/crm/backups/api/jobs/<uuid:pk>/confirm/`
+
+Имя: `crm_backups:confirm`.
+
+Обработчик: `crm_backups.api.confirm`.
+
+Исходник: `crm_backups/api.py:150`.
+
+Декораторы: `device_api('POST')`; `transaction.atomic`.
 
 ## `/crm/integrations/telegram/`
 
@@ -14,7 +120,7 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 
 Обработчик: `telegram_bots.views.dashboard`.
 
-Исходник: `telegram_bots/views.py:28`.
+Исходник: `telegram_bots/views.py:29`.
 
 Декораторы: `sensitive_post_parameters('token')`; `superuser_required`; `never_cache`; `require_http_methods(['GET', 'POST'])`.
 
@@ -26,7 +132,7 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 
 Обработчик: `telegram_bots.views.connection`.
 
-Исходник: `telegram_bots/views.py:102`.
+Исходник: `telegram_bots/views.py:105`.
 
 Декораторы: `login_required`; `never_cache`; `require_http_methods(['GET', 'POST'])`.
 
@@ -832,7 +938,7 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 
 Обработчик: `pricing.avito_check_views.page`.
 
-Исходник: `pricing/avito_check_views.py:52`.
+Исходник: `pricing/avito_check_views.py:55`.
 
 Декораторы: `require_GET`; `permission_required_any('pricing.view_pricing')`.
 
@@ -844,7 +950,7 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 
 Обработчик: `pricing.avito_check_views.automatic_page`.
 
-Исходник: `pricing/avito_check_views.py:140`.
+Исходник: `pricing/avito_check_views.py:176`.
 
 Декораторы: `require_GET`; `permission_required_any('pricing.view_pricing')`.
 
@@ -856,7 +962,7 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 
 Обработчик: `pricing.avito_check_views.save_found_price`.
 
-Исходник: `pricing/avito_check_views.py:97`.
+Исходник: `pricing/avito_check_views.py:111`.
 
 Декораторы: `require_POST`; `permission_required_all('pricing.view_pricing', 'pricing.change_retail_price')`.
 
@@ -866,7 +972,7 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 
 Обработчик: `pricing.avito_check_views.manual_context`.
 
-Исходник: `pricing/avito_check_views.py:77`.
+Исходник: `pricing/avito_check_views.py:88`.
 
 Декораторы: `require_GET`; `never_cache`; `permission_required_all('pricing.view_pricing', 'pricing.change_retail_price')`.
 
@@ -876,7 +982,7 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 
 Обработчик: `pricing.avito_check_views.next_product`.
 
-Исходник: `pricing/avito_check_views.py:167`.
+Исходник: `pricing/avito_check_views.py:203`.
 
 Декораторы: `require_POST`; `permission_required_any('pricing.view_pricing')`.
 
@@ -888,7 +994,7 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 
 Обработчик: `pricing.avito_check_views.check_product`.
 
-Исходник: `pricing/avito_check_views.py:198`.
+Исходник: `pricing/avito_check_views.py:234`.
 
 Декораторы: `require_POST`; `permission_required_any('pricing.view_pricing')`.
 
@@ -1050,7 +1156,7 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 
 Обработчик: `price.views.procurement_stock_export`.
 
-Исходник: `price/views.py:378`.
+Исходник: `price/views.py:388`.
 
 Декораторы: `require_GET`; `permission_required_all('price.export_procurement_price_list', 'price.view_supplier_prices')`.
 
@@ -1060,7 +1166,7 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 
 Обработчик: `price.views.procurement_update`.
 
-Исходник: `price/views.py:315`.
+Исходник: `price/views.py:318`.
 
 Декораторы: `require_POST`; `permission_required_any('price.change_procurement_markup', 'price.change_procurement_delivery')`.
 
@@ -1072,7 +1178,7 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 
 Обработчик: `price.views.procurement_export`.
 
-Исходник: `price/views.py:367`.
+Исходник: `price/views.py:377`.
 
 Декораторы: `require_GET`; `permission_required_any('price.export_procurement_price_list')`.
 
@@ -1082,7 +1188,7 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 
 Обработчик: `price.views.procurement_export`.
 
-Исходник: `price/views.py:367`.
+Исходник: `price/views.py:377`.
 
 Декораторы: `require_GET`; `permission_required_any('price.export_procurement_price_list')`.
 
@@ -1401,6 +1507,52 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 Исходник: `sales/statistics_views.py:49`.
 
 Декораторы: `permission_required_all('sales.view_sales_statistics', 'sales.export_sales_statistics')`.
+
+## `/crm/orders/customs/rules/`
+
+Имя: `orders:customs_rules`.
+
+Обработчик: `orders.customs_views.rules`.
+
+Исходник: `orders/customs_views.py:111`.
+
+Декораторы: `never_cache`; `require_http_methods(['GET', 'POST'])`; `permission_required_all('orders.view_customs_manifest', 'orders.manage_customs_rules')`.
+
+Прямые шаблоны: `orders/customs_rules.html`.
+
+## `/crm/orders/customs/rules/<int:pk>/`
+
+Имя: `orders:customs_rule_edit`.
+
+Обработчик: `orders.customs_views.rules`.
+
+Исходник: `orders/customs_views.py:111`.
+
+Декораторы: `never_cache`; `require_http_methods(['GET', 'POST'])`; `permission_required_all('orders.view_customs_manifest', 'orders.manage_customs_rules')`.
+
+Прямые шаблоны: `orders/customs_rules.html`.
+
+## `/crm/orders/customs/files/<uuid:pk>/`
+
+Имя: `orders:customs_download`.
+
+Обработчик: `orders.customs_views.download`.
+
+Исходник: `orders/customs_views.py:95`.
+
+Декораторы: `never_cache`; `require_GET`; `permission_required_all('orders.view_customs_manifest', 'orders.download_customs_manifest')`.
+
+## `/crm/orders/trips/<int:pk>/customs/`
+
+Имя: `orders:customs`.
+
+Обработчик: `orders.customs_views.editor`.
+
+Исходник: `orders/customs_views.py:33`.
+
+Декораторы: `never_cache`; `require_http_methods(['GET', 'POST'])`; `permission_required_all('orders.view_customs_manifest')`.
+
+Прямые шаблоны: `orders/customs.html`.
 
 ## `/crm/orders/trips/new/`
 
@@ -1740,7 +1892,7 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 
 Обработчик: `orders.trip_views.trip_full_export`.
 
-Исходник: `orders/trip_views.py:213`.
+Исходник: `orders/trip_views.py:214`.
 
 Декораторы: `never_cache`; `require_GET`; `permission_required_all(*VIEW_PERMISSIONS, 'price.view_supplier_prices')`.
 
@@ -1750,7 +1902,7 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 
 Обработчик: `orders.trip_views.trip_line_update`.
 
-Исходник: `orders/trip_views.py:191`.
+Исходник: `orders/trip_views.py:192`.
 
 Декораторы: `require_POST`; `permission_required_all(*MANAGE_PERMISSIONS)`.
 
@@ -1780,7 +1932,7 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 
 Обработчик: `orders.trip_views.trip_export`.
 
-Исходник: `orders/trip_views.py:229`.
+Исходник: `orders/trip_views.py:230`.
 
 Декораторы: `never_cache`; `require_GET`; `permission_required_all(*VIEW_PERMISSIONS)`.
 

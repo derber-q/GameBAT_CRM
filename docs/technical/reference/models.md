@@ -4,7 +4,7 @@
 
 Справочник исходников и метаданных схемы, без рабочих записей/ключей. Перегенерация: `.venv/Scripts/python.exe scripts/build_technical_reference.py`.
 
-Конкретных собственных моделей: **134**.
+Конкретных собственных моделей: **143**.
 
 Метаданные моделей не показывают значения записей. `blank/null/editable` не заменяют ограничения формы, permissions и проверки сервиса. `on_delete=CASCADE` не означает разрешённое пользовательское удаление документа.
 
@@ -1617,6 +1617,26 @@ Permissions: []. Стандартные: ('add', 'change', 'delete', 'view').
 
 Ограничения: `[<UniqueConstraint: fields=('price_list_item', 'supplier') name='unique_procurement_supplier_offer'>, <CheckConstraint: condition=(AND: ('price_aed__gt', 0)) name='procurement_supplier_offer_positive'>]`; unique_together: `()`.
 
+## `price.ProcurementSupplierPriceOverride` — procurement supplier price override
+
+Ручная цена версии; импортированное предложение сохраняется отдельно.
+
+Таблица `price_procurementsupplierpriceoverride`; порядок `[]`.
+
+| Поле | Тип/параметры | Назначение/связь |
+| --- | --- | --- |
+| `id` | BigAutoField; null=False; blank=True; editable=True | ID |
+| `price_list_item` | ForeignKey; null=False; blank=False; editable=True | price list item → price.ProcurementPriceListItem; on_delete=PROTECT |
+| `supplier` | ForeignKey; null=False; blank=False; editable=True | supplier → partners.Supplier; on_delete=PROTECT |
+| `price_aed` | DecimalField; null=False; blank=False; editable=True; max_digits=20; decimal_places=6 | price aed |
+| `active` | BooleanField; null=False; blank=False; editable=True | active |
+| `updated_at` | DateTimeField; null=False; blank=True; editable=False | updated at |
+| `updated_by` | ForeignKey; null=False; blank=False; editable=True | updated by → accounts.User; on_delete=PROTECT |
+
+Permissions: []. Стандартные: ('add', 'change', 'delete', 'view').
+
+Ограничения: `[<UniqueConstraint: fields=('price_list_item', 'supplier') name='unique_procurement_price_override'>, <CheckConstraint: condition=(AND: ('price_aed__gt', 0)) name='procurement_override_positive'>]`; unique_together: `()`.
+
 ## `price.ProcurementPricePreference` — сохранённая наценка закупочного прайса
 
 Память пользовательской наценки/предпочтений товара для следующих версий.
@@ -1965,6 +1985,197 @@ Permissions: []. Стандартные: ().
 
 Ограничения: `[<UniqueConstraint: fields=('arrival', 'allocation', 'portion') name='unique_arrival_allocation_portion'>, <CheckConstraint: condition=(AND: ('actual_quantity__lte', F(original_quantity)), ('original_quantity__gt', 0)) name='trip_actual_not_above_ordered'>, <CheckConstraint: condition=(AND: ('delivery_total__gte', 0), ('final_total__gte', 0), ('preliminary_delivery__gte', 0), ('purchase_unit_cost__gte', 0)) name='trip_cost_amounts_nonnegative'>]`; unique_together: `()`.
 
+## `orders.CustomsGroup` — customs group
+
+CustomsGroup(id, number, hs_code, marking, ru_description, en_description, material, country, manufacturer, unit, confirmed_fields, name, medium, platform, product_type, active, updated_at, updated_by)
+
+Таблица `orders_customsgroup`; порядок `('name', 'pk')`.
+
+| Поле | Тип/параметры | Назначение/связь |
+| --- | --- | --- |
+| `id` | BigAutoField; null=False; blank=True; editable=True | ID |
+| `number` | CharField; null=False; blank=True; editable=True; max_length=32 | N |
+| `hs_code` | CharField; null=False; blank=True; editable=True; max_length=10 | Код ТН ВЭД |
+| `marking` | CharField; null=False; blank=True; editable=True; max_length=255 | Маркировка |
+| `ru_description` | TextField; null=False; blank=True; editable=True; max_length=2000 | Описание на русском |
+| `en_description` | TextField; null=False; blank=True; editable=True; max_length=2000 | Описание на английском |
+| `material` | CharField; null=False; blank=True; editable=True; max_length=120 | Материал |
+| `country` | CharField; null=False; blank=True; editable=True; max_length=80 | Страна |
+| `manufacturer` | CharField; null=False; blank=True; editable=True; max_length=255 | Производитель |
+| `unit` | CharField; null=False; blank=False; editable=True; max_length=24 | Единица |
+| `confirmed_fields` | JSONField; null=False; blank=True; editable=True | confirmed fields |
+| `name` | CharField; null=False; blank=False; editable=True; max_length=160 | Название группы |
+| `medium` | CharField; null=False; blank=False; editable=True; max_length=16 | Тип товара/носителя; choices: disc → Игровой диск; cartridge → Игровой картридж; tech → Техника |
+| `platform` | OneToOneField; null=True; blank=True; editable=True | platform → catalog.Platform; on_delete=PROTECT |
+| `product_type` | OneToOneField; null=True; blank=True; editable=True | product type → catalog.ProductType; on_delete=PROTECT |
+| `active` | BooleanField; null=False; blank=False; editable=True | active |
+| `updated_at` | DateTimeField; null=False; blank=True; editable=False | updated at |
+| `updated_by` | ForeignKey; null=False; blank=False; editable=True | updated by → accounts.User; on_delete=PROTECT |
+
+Permissions: []. Стандартные: ().
+
+Ограничения: `[<CheckConstraint: condition=(OR: (AND: ('platform__isnull', False), ('product_type__isnull', True)), (AND: ('platform__isnull', True), ('product_type__isnull', False))) name='customs_group_one_reference'>]`; unique_together: `()`.
+
+## `orders.CustomsProductDefaults` — customs product defaults
+
+CustomsProductDefaults(id, number, hs_code, marking, ru_description, en_description, material, country, manufacturer, unit, confirmed_fields, cd, tech, updated_at, updated_by)
+
+Таблица `orders_customsproductdefaults`; порядок `[]`.
+
+| Поле | Тип/параметры | Назначение/связь |
+| --- | --- | --- |
+| `id` | BigAutoField; null=False; blank=True; editable=True | ID |
+| `number` | CharField; null=False; blank=True; editable=True; max_length=32 | N |
+| `hs_code` | CharField; null=False; blank=True; editable=True; max_length=10 | Код ТН ВЭД |
+| `marking` | CharField; null=False; blank=True; editable=True; max_length=255 | Маркировка |
+| `ru_description` | TextField; null=False; blank=True; editable=True; max_length=2000 | Описание на русском |
+| `en_description` | TextField; null=False; blank=True; editable=True; max_length=2000 | Описание на английском |
+| `material` | CharField; null=False; blank=True; editable=True; max_length=120 | Материал |
+| `country` | CharField; null=False; blank=True; editable=True; max_length=80 | Страна |
+| `manufacturer` | CharField; null=False; blank=True; editable=True; max_length=255 | Производитель |
+| `unit` | CharField; null=False; blank=False; editable=True; max_length=24 | Единица |
+| `confirmed_fields` | JSONField; null=False; blank=True; editable=True | confirmed fields |
+| `cd` | OneToOneField; null=True; blank=True; editable=True | cd → catalog.CD; on_delete=CASCADE |
+| `tech` | OneToOneField; null=True; blank=True; editable=True | tech → catalog.Tech; on_delete=CASCADE |
+| `updated_at` | DateTimeField; null=False; blank=True; editable=False | updated at |
+| `updated_by` | ForeignKey; null=False; blank=False; editable=True | updated by → accounts.User; on_delete=PROTECT |
+
+Permissions: []. Стандартные: ().
+
+Ограничения: `[<CheckConstraint: condition=(OR: (AND: ('cd__isnull', False), ('tech__isnull', True)), (AND: ('cd__isnull', True), ('tech__isnull', False))) name='customs_defaults_one_product'>]`; unique_together: `()`.
+
+## `orders.CustomsManifest` — customs manifest
+
+Каждое сохранение создаёт новую редакцию, прежние строки остаются в истории.
+
+Таблица `orders_customsmanifest`; порядок `('-revision',)`.
+
+| Поле | Тип/параметры | Назначение/связь |
+| --- | --- | --- |
+| `id` | BigAutoField; null=False; blank=True; editable=True | ID |
+| `trip` | ForeignKey; null=False; blank=False; editable=True | trip → orders.SupplierOrderBatch; on_delete=PROTECT |
+| `arrival` | ForeignKey; null=True; blank=False; editable=True | arrival → orders.TripArrival; on_delete=PROTECT |
+| `source_kind` | CharField; null=False; blank=False; editable=True; max_length=8 | source kind; choices: planned → Состав рейса; actual → Фактическое прибытие |
+| `revision` | PositiveIntegerField; null=False; blank=False; editable=True | revision |
+| `arrival_revision` | PositiveIntegerField; null=False; blank=False; editable=True | arrival revision |
+| `trip_revision` | PositiveIntegerField; null=False; blank=False; editable=True | trip revision |
+| `source_signature` | CharField; null=False; blank=False; editable=True; max_length=64 | source signature |
+| `arrived_at` | DateTimeField; null=True; blank=False; editable=True | arrived at |
+| `source_total` | PositiveBigIntegerField; null=False; blank=False; editable=True | source total |
+| `edited_total` | PositiveBigIntegerField; null=False; blank=False; editable=True | edited total |
+| `reviewed_order_ids` | JSONField; null=False; blank=False; editable=True | reviewed order ids |
+| `status` | CharField; null=False; blank=False; editable=True; max_length=16 | status; choices: prepared → Подготовлена; review → Требует проверки |
+| `created_by` | ForeignKey; null=False; blank=False; editable=True | created by → accounts.User; on_delete=PROTECT |
+| `created_at` | DateTimeField; null=False; blank=True; editable=False | created at |
+
+Permissions: [('view_customs_manifest', 'Таможенная опись: просмотр'), ('change_customs_manifest', 'Таможенная опись: подготовка и редактирование'), ('download_customs_manifest', 'Таможенная опись: скачивание'), ('manage_customs_rules', 'Таможенная опись: общие правила и подтверждение характеристик'), ('approve_customs_quantity', 'Таможенная опись: подтверждение отличия количества')]. Стандартные: ().
+
+Ограничения: `[<UniqueConstraint: fields=('trip', 'revision') name='customs_manifest_trip_revision'>]`; unique_together: `()`.
+
+## `orders.CustomsManifestLine` — customs manifest line
+
+CustomsManifestLine(id, number, hs_code, marking, ru_description, en_description, material, country, manufacturer, unit, confirmed_fields, manifest, group, stable_key, position, expected_quantity, quantity, quantity_reason, quantity_confirmed, quantity_approved_by, quantity_approved_at, edited_fields, review_notes)
+
+Таблица `orders_customsmanifestline`; порядок `('position', 'pk')`.
+
+| Поле | Тип/параметры | Назначение/связь |
+| --- | --- | --- |
+| `id` | BigAutoField; null=False; blank=True; editable=True | ID |
+| `number` | CharField; null=False; blank=True; editable=True; max_length=32 | N |
+| `hs_code` | CharField; null=False; blank=True; editable=True; max_length=10 | Код ТН ВЭД |
+| `marking` | CharField; null=False; blank=True; editable=True; max_length=255 | Маркировка |
+| `ru_description` | TextField; null=False; blank=True; editable=True; max_length=2000 | Описание на русском |
+| `en_description` | TextField; null=False; blank=True; editable=True; max_length=2000 | Описание на английском |
+| `material` | CharField; null=False; blank=True; editable=True; max_length=120 | Материал |
+| `country` | CharField; null=False; blank=True; editable=True; max_length=80 | Страна |
+| `manufacturer` | CharField; null=False; blank=True; editable=True; max_length=255 | Производитель |
+| `unit` | CharField; null=False; blank=False; editable=True; max_length=24 | Единица |
+| `confirmed_fields` | JSONField; null=False; blank=True; editable=True | confirmed fields |
+| `manifest` | ForeignKey; null=False; blank=False; editable=True | manifest → orders.CustomsManifest; on_delete=CASCADE |
+| `group` | ForeignKey; null=True; blank=True; editable=True | group → orders.CustomsGroup; on_delete=SET_NULL |
+| `stable_key` | CharField; null=False; blank=False; editable=True; max_length=64 | stable key |
+| `position` | PositiveIntegerField; null=False; blank=False; editable=True | position |
+| `expected_quantity` | PositiveBigIntegerField; null=False; blank=False; editable=True | expected quantity |
+| `quantity` | PositiveBigIntegerField; null=False; blank=False; editable=True | quantity |
+| `quantity_reason` | CharField; null=False; blank=True; editable=True; max_length=500 | quantity reason |
+| `quantity_confirmed` | BooleanField; null=False; blank=False; editable=True | quantity confirmed |
+| `quantity_approved_by` | ForeignKey; null=True; blank=False; editable=True | quantity approved by → accounts.User; on_delete=PROTECT |
+| `quantity_approved_at` | DateTimeField; null=True; blank=False; editable=True | quantity approved at |
+| `edited_fields` | JSONField; null=False; blank=True; editable=True | edited fields |
+| `review_notes` | TextField; null=False; blank=True; editable=True; max_length=2000 | review notes |
+
+Permissions: []. Стандартные: ().
+
+Ограничения: `[<UniqueConstraint: fields=('manifest', 'stable_key') name='customs_line_unique_key'>]`; unique_together: `()`.
+
+## `orders.CustomsManifestSource` — customs manifest source
+
+SET_NULL сохраняет историю и не блокирует штатное пересоздание строк прибытия.
+
+Таблица `orders_customsmanifestsource`; порядок `[]`.
+
+| Поле | Тип/параметры | Назначение/связь |
+| --- | --- | --- |
+| `id` | BigAutoField; null=False; blank=True; editable=True | ID |
+| `manifest` | ForeignKey; null=False; blank=False; editable=True | manifest → orders.CustomsManifest; on_delete=CASCADE |
+| `line` | ForeignKey; null=False; blank=False; editable=True | line → orders.CustomsManifestLine; on_delete=CASCADE |
+| `arrival_row` | ForeignKey; null=True; blank=False; editable=True | arrival row → orders.TripCostRow; on_delete=SET_NULL |
+| `trip_line` | ForeignKey; null=True; blank=False; editable=True | trip line → orders.SupplierOrderBatchLine; on_delete=SET_NULL |
+| `source_kind` | CharField; null=False; blank=False; editable=True; max_length=8 | source kind; choices: planned → Состав рейса; actual → Фактическое прибытие |
+| `source_row_id` | PositiveBigIntegerField; null=False; blank=False; editable=True | source row id |
+| `product_kind` | CharField; null=False; blank=False; editable=True; max_length=8 | product kind; choices: cd → CD; tech → Tech |
+| `product_id_snapshot` | PositiveBigIntegerField; null=False; blank=False; editable=True | product id snapshot |
+| `product_name_snapshot` | CharField; null=False; blank=False; editable=True; max_length=255 | product name snapshot |
+| `cd` | ForeignKey; null=True; blank=False; editable=True | cd → catalog.CD; on_delete=SET_NULL |
+| `tech` | ForeignKey; null=True; blank=False; editable=True | tech → catalog.Tech; on_delete=SET_NULL |
+| `actual_quantity` | PositiveBigIntegerField; null=False; blank=False; editable=True | actual quantity |
+
+Permissions: []. Стандартные: ().
+
+Ограничения: `[<UniqueConstraint: fields=('manifest', 'source_row_id') name='customs_source_once_per_manifest'>]`; unique_together: `()`.
+
+## `orders.CustomsManifestExport` — customs manifest export
+
+CustomsManifestExport(id, manifest, actor, created_at, file, filename, sha256, template_sha256, size, acknowledged_warnings)
+
+Таблица `orders_customsmanifestexport`; порядок `('-created_at',)`.
+
+| Поле | Тип/параметры | Назначение/связь |
+| --- | --- | --- |
+| `id` | UUIDField; null=False; blank=False; editable=False; max_length=32 | id |
+| `manifest` | ForeignKey; null=False; blank=False; editable=True | manifest → orders.CustomsManifest; on_delete=PROTECT |
+| `actor` | ForeignKey; null=False; blank=False; editable=True | actor → accounts.User; on_delete=PROTECT |
+| `created_at` | DateTimeField; null=False; blank=True; editable=False | created at |
+| `file` | FileField; null=False; blank=False; editable=True; max_length=100 | file |
+| `filename` | CharField; null=False; blank=False; editable=True; max_length=180 | filename |
+| `sha256` | CharField; null=False; blank=False; editable=True; max_length=64 | sha256 |
+| `template_sha256` | CharField; null=False; blank=False; editable=True; max_length=64 | template sha256 |
+| `size` | PositiveBigIntegerField; null=False; blank=False; editable=True | size |
+| `acknowledged_warnings` | JSONField; null=False; blank=False; editable=True | acknowledged warnings |
+
+Permissions: []. Стандартные: ().
+
+Ограничения: `[]`; unique_together: `()`.
+
+## `orders.CustomsEvent` — customs event
+
+CustomsEvent(id, manifest, actor, created_at, action, details)
+
+Таблица `orders_customsevent`; порядок `('-created_at', '-pk')`.
+
+| Поле | Тип/параметры | Назначение/связь |
+| --- | --- | --- |
+| `id` | BigAutoField; null=False; blank=True; editable=True | ID |
+| `manifest` | ForeignKey; null=True; blank=False; editable=True | manifest → orders.CustomsManifest; on_delete=SET_NULL |
+| `actor` | ForeignKey; null=False; blank=False; editable=True | actor → accounts.User; on_delete=PROTECT |
+| `created_at` | DateTimeField; null=False; blank=True; editable=False | created at |
+| `action` | CharField; null=False; blank=False; editable=True; max_length=32 | action |
+| `details` | JSONField; null=False; blank=False; editable=True | details |
+
+Permissions: []. Стандартные: ().
+
+Ограничения: `[]`; unique_together: `()`.
+
 ## `integrations.WorkerController` — worker controller
 
 WorkerController(id, mode, instance, heartbeat_at, incident, incident_started_at, error)
@@ -2156,21 +2367,22 @@ Permissions: []. Стандартные: ('add', 'change', 'delete', 'view').
 
 ## `integrations.AvitoManualPrice` — найденная цена Avito
 
-AvitoManualPrice(id, profile, price, recorded_at, recorded_by)
+Независимый ручной минимум одной географии; не результат ReefAPI и не цена продажи.
 
 Таблица `integrations_avitomanualprice`; порядок `[]`.
 
 | Поле | Тип/параметры | Назначение/связь |
 | --- | --- | --- |
 | `id` | BigAutoField; null=False; blank=True; editable=True | ID |
-| `profile` | OneToOneField; null=False; blank=False; editable=True | profile → integrations.AvitoProductProfile; on_delete=CASCADE |
+| `profile` | ForeignKey; null=False; blank=False; editable=True | profile → integrations.AvitoProductProfile; on_delete=CASCADE |
+| `scope` | CharField; null=False; blank=False; editable=True; max_length=8 | География; choices: russia → Россия; rostov → Ростов-на-Дону |
 | `price` | DecimalField; null=False; blank=False; editable=True; max_digits=20; decimal_places=2 | Найденная минимальная цена |
 | `recorded_at` | DateTimeField; null=False; blank=False; editable=True | Дата добавления |
 | `recorded_by` | ForeignKey; null=True; blank=False; editable=True | recorded by → accounts.User; on_delete=SET_NULL |
 
 Permissions: []. Стандартные: ('add', 'change', 'delete', 'view').
 
-Ограничения: `[<CheckConstraint: condition=(AND: ('price__gt', 0)) name='avito_manual_price_positive'>]`; unique_together: `()`.
+Ограничения: `[<CheckConstraint: condition=(AND: ('price__gt', 0)) name='avito_manual_price_positive'>, <UniqueConstraint: fields=('profile', 'scope') name='avito_manual_profile_scope'>, <CheckConstraint: condition=(AND: ('scope__in', ['russia', 'rostov'])) name='avito_manual_scope_supported'>]`; unique_together: `()`.
 
 ## `integrations.AvitoProductProfile` — Avito-профиль товара
 
@@ -2473,7 +2685,7 @@ Permissions: []. Стандартные: ('add', 'change', 'delete', 'view').
 
 ## `telegram_bots.StaffBotJob` — staff bot job
 
-StaffBotJob(id, bot, access, warehouse, update, chat_id, state, created_at, started_at, finished_at, error_category, telegram_message_id)
+StaffBotJob(id, bot, access, warehouse, function, supplier, update, chat_id, state, created_at, started_at, finished_at, error_category, telegram_message_id)
 
 Таблица `telegram_bots_staffbotjob`; порядок `['created_at']`.
 
@@ -2483,9 +2695,11 @@ StaffBotJob(id, bot, access, warehouse, update, chat_id, state, created_at, star
 | `bot` | ForeignKey; null=False; blank=False; editable=True | bot → telegram_bots.StaffBot; on_delete=CASCADE |
 | `access` | ForeignKey; null=False; blank=False; editable=True | access → telegram_bots.StaffBotAccess; on_delete=PROTECT |
 | `warehouse` | ForeignKey; null=True; blank=False; editable=True | warehouse → warehouse.Warehouse; on_delete=SET_NULL |
+| `function` | CharField; null=False; blank=False; editable=True; max_length=40 | function; choices: wholesale_stock_price → Оптовый прайс наличия; supplier_price_templates → Шаблоны поставщика с ценами |
+| `supplier` | ForeignKey; null=True; blank=True; editable=True | supplier → partners.Supplier; on_delete=SET_NULL |
 | `update` | OneToOneField; null=False; blank=False; editable=True | update → telegram_bots.StaffBotUpdate; on_delete=PROTECT |
 | `chat_id` | BigIntegerField; null=False; blank=False; editable=True | chat id |
-| `state` | CharField; null=False; blank=False; editable=True; max_length=16 | state; choices: queued → В очереди; generating → Формируется; sending → Отправляется; done → Отправлен; error → Ошибка; uncertain → Результат отправки неизвестен |
+| `state` | CharField; null=False; blank=False; editable=True; max_length=16 | state; choices: queued → В очереди; generating → Формируется; sending → Отправляется; done → Отправлен; error → Ошибка; uncertain → Результат отправки неизвестен; partial → Частично отправлен |
 | `created_at` | DateTimeField; null=False; blank=True; editable=False | created at |
 | `started_at` | DateTimeField; null=True; blank=True; editable=True | started at |
 | `finished_at` | DateTimeField; null=True; blank=True; editable=True | finished at |
@@ -2494,7 +2708,28 @@ StaffBotJob(id, bot, access, warehouse, update, chat_id, state, created_at, star
 
 Permissions: []. Стандартные: ('add', 'change', 'delete', 'view').
 
-Ограничения: `[<UniqueConstraint: fields=('access',) name='telegram_one_active_price' condition=(AND: ('state__in', ['queued', 'generating', 'sending']))>]`; unique_together: `()`.
+Ограничения: `[<UniqueConstraint: fields=('access',) name='telegram_one_active_price' condition=(AND: ('state__in', ['queued', 'generating', 'sending']))>, <CheckConstraint: condition=(OR: (AND: ('function', 'wholesale_stock_price'), ('supplier__isnull', True)), (AND: ('function', 'supplier_price_templates'), ('warehouse__isnull', True))) name='telegram_job_function_target'>]`; unique_together: `()`.
+
+## `telegram_bots.StaffBotJobDocument` — staff bot job document
+
+Подтверждение каждого sendDocument; Excel и его содержимое в БД не сохраняются.
+
+Таблица `telegram_bots_staffbotjobdocument`; порядок `['product_kind']`.
+
+| Поле | Тип/параметры | Назначение/связь |
+| --- | --- | --- |
+| `id` | BigAutoField; null=False; blank=True; editable=True | ID |
+| `job` | ForeignKey; null=False; blank=False; editable=True | job → telegram_bots.StaffBotJob; on_delete=CASCADE |
+| `product_kind` | CharField; null=False; blank=False; editable=True; max_length=4 | product kind; choices: cd → Диски; tech → Техника |
+| `state` | CharField; null=False; blank=False; editable=True; max_length=16 | state; choices: pending → Не отправлен; sending → Отправляется; done → Отправлен; error → Ошибка; uncertain → Результат неизвестен |
+| `telegram_message_id` | BigIntegerField; null=True; blank=True; editable=True | telegram message id |
+| `error_category` | CharField; null=False; blank=True; editable=True; max_length=40 | error category |
+| `started_at` | DateTimeField; null=True; blank=True; editable=True | started at |
+| `finished_at` | DateTimeField; null=True; blank=True; editable=True | finished at |
+
+Permissions: []. Стандартные: ('add', 'change', 'delete', 'view').
+
+Ограничения: `[<UniqueConstraint: fields=('job', 'product_kind') name='telegram_one_document_kind'>, <CheckConstraint: condition=(AND: ('product_kind__in', ['cd', 'tech'])) name='telegram_document_kind'>]`; unique_together: `()`.
 
 ## `yandex_market.Integration` — integration
 

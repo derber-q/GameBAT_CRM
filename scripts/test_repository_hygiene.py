@@ -63,6 +63,13 @@ class RepositoryHygieneTests(unittest.TestCase):
         self.assertEqual(len(result), 4)
         self.assertNotIn('do-not-print', repr(result))
 
+    def test_full_archives_recovery_keys_and_private_artifact_stores_are_rejected(self):
+        self.stage('archive/full.backup',b'RESOURCE-BACKUP-1\nfictional-encrypted-data')
+        self.stage('keys/owner.recovery.pem',b'-----BEGIN ENCRYPTED PRIVATE KEY-----\nfictional\n')
+        self.stage('.local-backup-cache/fragment',b'private')
+        self.stage('.local-app-artifacts/release.zip',b'PK fictional')
+        self.assertEqual(len(check_index(self.root)),4)
+
 
 if __name__ == '__main__':
     unittest.main()

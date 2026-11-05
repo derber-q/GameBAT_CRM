@@ -1,0 +1,22 @@
+/* Редактор самостоятельного таможенного документа, без финансовых колонок. */
+.customs-summary { display:flex; flex-wrap:wrap; gap:12px 28px; }
+.customs-summary > span { min-width:0; max-width:100%; overflow-wrap:anywhere; }
+.customs-page .heading-actions { flex-wrap:wrap; }
+.customs-page .table-scroll { max-width:100%; overflow-x:auto; }
+.customs-table { min-width:1550px; table-layout:fixed; }
+.customs-table th:nth-child(1),.customs-table th:nth-child(10) { width:60px; }
+.customs-table th:nth-child(2) { width:110px; }
+.customs-table th:nth-child(3) { width:130px; }
+.customs-table th:nth-child(4),.customs-table th:nth-child(5) { width:290px; }
+.customs-table th:nth-child(6),.customs-table th:nth-child(8) { width:150px; }
+.customs-table th:nth-child(7) { width:110px; }
+.customs-table th:nth-child(9) { width:180px; }
+.customs-table td { vertical-align:top; padding:8px; white-space:normal; }
+.customs-table textarea,.customs-table input:not([type=checkbox]),.customs-table select { width:100%; min-width:0; max-width:100%; box-sizing:border-box; }
+.customs-table textarea { resize:vertical; min-height:65px; }
+.customs-check { display:flex; align-items:flex-start; gap:7px; font-size:12px; margin:8px 0; }
+.customs-check input[type=checkbox] { width:auto; flex-shrink:0; margin:2px 0 0; }
+.customs-defaults { display:flex; flex-wrap:wrap; gap:5px; margin-top:8px; }
+.customs-sources { padding-left:18px; font-size:11px; }
+.customs-quantity-difference td:nth-child(9) { background:#fff1d6; }
+.customs-table [aria-invalid=true] { border-color:#c62828; background:#fff5f5; }

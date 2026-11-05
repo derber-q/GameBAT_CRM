@@ -26,20 +26,32 @@
       const data = await request('manual-context/?' + params);
       return {ok: true, items: data.items};
     }
-    if (!Number.isSafeInteger(message.productId) || message.productId <= 0) throw new Error('Некорректный товар.');
-    const context = await request('manual-context/?product_id=' + message.productId);
+    const identity = ResourceAvito.identity(message);
+    const params = new URLSearchParams({product_id: String(identity.productId), kind: identity.kind, scope: identity.scope});
+    const context = await request('manual-context/?' + params);
+    if (ResourceAvito.key({...context.product, productId: context.product?.id}) !== ResourceAvito.key(identity)) {
+      throw new Error('CRM вернула другой товар или географию. Обновите панель.');
+    }
     if (message.action === 'product') return {ok: true, product: context.product};
     if (message.action !== 'save') throw new Error('Неизвестная команда CRM.');
-    const body = new URLSearchParams({kind: 'cd', product_id: String(message.productId),
+    const body = new URLSearchParams({kind: identity.kind, scope: identity.scope, product_id: String(identity.productId),
       price: ResourceAvito.price(message.price), manual_queue: '1', expected_recorded_at: String(message.version || '')});
     const saved = await request('found-price/', {method: 'POST', body,
       headers: {'X-CSRFToken': context.csrf_token, 'Accept': 'application/json'}});
+    if (ResourceAvito.key({...saved, productId: saved.product_id}) !== ResourceAvito.key(identity)) {
+      throw new Error('Ответ сохранения относится к другому товару или географии. Обновите CRM.');
+    }
     const form = Array.from(document.querySelectorAll('[data-found-price-form]')).find(
-      item => item.querySelector('[name="product_id"]')?.value === String(message.productId));
+      item => item.dataset.productId === String(identity.productId) &&
+        item.dataset.kind === identity.kind && item.dataset.scope === identity.scope);
     if (form) {
       form.querySelector('[name="price"]').value = saved.price;
       form.querySelector('[data-save-status]').textContent = 'Сохранено из расширения';
-      form.closest('[data-found-price-row]').querySelector('[data-found-date]').textContent = saved.recorded_at;
+      form.querySelector('[name="expected_recorded_at"]').value = saved.recorded_at_version;
+      form.closest('[data-scope-cell]').querySelector('[data-found-date]').textContent = saved.recorded_at;
+      const warning = form.closest('[data-found-price-row]').querySelector('[data-scope-warning]');
+      warning.textContent = saved.warning || '';
+      warning.hidden = !saved.warning;
     }
     return {ok: true};
   }
@@ -68,7 +80,8 @@
     try {
       const params = new URLSearchParams(location.search);
       const response = await chrome.runtime.sendMessage({type: prefix + 'start',
-        productId: Number(link.dataset.avitoManualProduct), query: params.get('q') || '', sort: params.get('sort') || 'name'});
+        productId: Number(link.dataset.avitoManualProduct), kind: link.dataset.kind, scope: link.dataset.scope,
+        query: params.get('q') || '', sort: params.get('sort') || 'name'});
       if (!response?.ok) throw new Error(response?.message || 'Расширение не ответило.');
       status.textContent = '';
     } catch (error) { status.textContent = error.message || 'Обновите вкладку после установки расширения.'; }

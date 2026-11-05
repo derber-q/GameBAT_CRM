@@ -11,7 +11,10 @@
 
 ## Основные тематические контракты
 
+- Local Agent: [инструкция](local_agent.md), [контракт](local_agent_design.md), [проверки 03.11.2026](local_agent_report_20261103.md).
+
 - Telegram сотрудников: [права, привязки, Excel и worker](telegram_staff_bot.md), [согласованная установка](telegram_staff_bot_installation.md).
+- Шаблоны поставщиков в Telegram: [реализация, проверки и порядок включения](telegram_supplier_templates_report_20261102.md).
 
 - Заказы Avito в расширении: [создание продажи, связь и отправительные стикеры](avito_browser_orders.md).
 
@@ -19,7 +22,7 @@
 - Закупки: [выбор поставщика](procurement_supplier_selection.md), [группировка Excel](procurement_excel_grouping.md), [постоплата](procurement_postpayment.md), [закупка на склад](stock_procurement_orders.md).
 - Приход/продажа: [ожидающий приход](pending_supply_edit.md), [оплата](sale_payments.md), [системные позиции](system_operations.md), [накладная](sale_invoice_excel.md), [партнёры/долги](partners.md).
 - Реализация: [партийные действия](consignment_row_actions.md), [Excel-отчёт](consignment_excel.md).
-- Интеграции: [Avito Check](avito_check.md), [необходимые действия](avito_required_actions.md), [Яндекс FBS](yandex_market.md), [FBS-формула](fbs_pricing.md), [сборка/печать](market_scan_fulfillment.md), [внимание сотрудника](market_staff_alerts.md).
+- Интеграции: [Avito Check](avito_check.md), [отчёт CD/Tech и РФ/Ростов](avito_scopes_report_20261103.md), [необходимые действия](avito_required_actions.md), [Яндекс FBS](yandex_market.md), [FBS-формула](fbs_pricing.md), [сборка/печать](market_scan_fulfillment.md), [внимание сотрудника](market_staff_alerts.md).
 - Каталог/склад: [новинки/поставщики](catalog_procurement_controls.md), [порядок товаров](product_display_order.md), [ревизия](warehouse_revision.md).
 - Витрины: [оптовая](resource_wholesale.md), [розничная](resource_retail.md), [каталог](resource_catalog.md), [мобильная оболочка](resource_mobile.md).
 

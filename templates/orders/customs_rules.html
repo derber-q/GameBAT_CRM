@@ -1,0 +1,8 @@
+{% extends 'base.html' %}
+{% block title %}Таможенные правила · ReSOURCE{% endblock %}
+{% block body_class %}responsive-crm-page{% endblock %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">Характеристики для будущих описи</p><h1>Таможенные правила</h1></div><a class="button button-secondary" href="{% url 'orders:list' %}">К рейсам</a></div>
+<section class="panel"><p>Привяжите группу к конкретной платформе игр или категории техники. Неизвестные платформы автоматически не классифицируются. Для группы игр задайте общее русское описание. Производителя и код ТН ВЭД заполняйте только после проверки. Правила не изменяют сохранённые редакции документов.</p><h2>{% if editing %}Изменить: {{ editing.name }}{% else %}Новая группа{% endif %}</h2><form method="post" class="stacked-form">{% csrf_token %}{{ form.as_p }}<button class="button" type="submit">Сохранить правило</button>{% if editing %}<a class="button button-secondary" href="{% url 'orders:customs_rules' %}">Новая группа</a>{% endif %}</form></section>
+<section class="panel table-panel"><h2>Настроенные группы</h2><div class="table-scroll"><table><thead><tr><th>Группа</th><th>Связь</th><th>Носитель</th><th>Состояние</th><th></th></tr></thead><tbody>{% for group in groups %}<tr><td>{{ group.name }}</td><td>{{ group.platform|default:group.product_type }}</td><td>{{ group.get_medium_display }}</td><td>{{ group.active|yesno:'Включена,Выключена' }}</td><td><a href="{% url 'orders:customs_rule_edit' group.pk %}">Изменить</a></td></tr>{% empty %}<tr><td colspan="5">Правила пока не настроены. Создайте явные связи с платформами.</td></tr>{% endfor %}</tbody></table></div></section>
+{% endblock %}

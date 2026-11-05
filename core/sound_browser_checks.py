@@ -33,22 +33,26 @@ class SoundButtonBrowserChecks(StaticLiveServerTestCase):
         self.pw.stop()
         self.assertEqual(self.errors, [])
 
-    def test_one_icon_enables_both_channels_without_test_buttons_or_page_panels(self):
+    def test_one_icon_enables_all_channels_without_test_buttons_or_page_panels(self):
         page = self.page
         expect(self.button).to_have_count(1)
         expect(page.locator('[data-market-sound-enable], [data-avito-sound-enable]')).to_have_count(0)
         expect(self.button).to_have_attribute('aria-label', 'Включить звуковые уведомления')
+        # Все разрешённые каналы получают общий усиленный ресурс с новой версией кэша.
+        expected_sound = '/static/audio/yandex-new-order.mp3?v=20261102-1'
+        self.assertEqual(page.locator('[data-sound-url]').evaluate_all(
+            'nodes => nodes.map(node => node.dataset.soundUrl)'), [expected_sound] * 3)
         for panel in page.locator('.notification-state').all():
             self.assertEqual(panel.bounding_box()['height'], 0)
         self.button.click()
         expect(self.button).to_have_attribute('aria-pressed', 'true')
         expect(self.button).to_be_disabled()
-        self.assertEqual(sorted(page.evaluate('window.__audioEvents.map(event => event.channel)')), ['avito', 'market'])
+        self.assertEqual(sorted(page.evaluate('window.__audioEvents.map(event => event.channel)')), ['avito', 'market', 'workers'])
         self.assertEqual(page.evaluate('localStorage.getItem("resource.avito.sound.v1")'), 'true')
         self.assertTrue(page.evaluate('window.GameBAT.marketAlertState ? new window.GameBAT.marketAlertState.IndexedState().enabled() : false'))
         # Включённая кнопка больше не запускает проверочный сигнал.
         self.button.evaluate('node => node.click()')
-        self.assertEqual(page.evaluate('window.__audioEvents.length'), 2)
+        self.assertEqual(page.evaluate('window.__audioEvents.length'), 3)
         output = Path(settings.BASE_DIR) / 'outputs/sound-icon-20261027'
         output.mkdir(parents=True, exist_ok=True)
         for width in (1440, 390, 320):
@@ -67,6 +71,8 @@ class SoundButtonBrowserChecks(StaticLiveServerTestCase):
             page.screenshot(path=str(output / f'header-{width}.png'))
         page.reload()
         expect(self.button).to_have_attribute('aria-pressed', 'true')
+        self.assertEqual(page.locator('[data-sound-url]').evaluate_all(
+            'nodes => nodes.map(node => node.dataset.soundUrl)'), [expected_sound] * 3)
         expect(self.button).to_be_disabled()
         self.assertEqual(page.evaluate('window.__audioEvents.length'), 0)
         page.goto(self.live_server_url + reverse('admin:index'))
@@ -86,7 +92,7 @@ class SoundButtonBrowserChecks(StaticLiveServerTestCase):
         self.button.click()
         expect(self.button).to_have_attribute('aria-pressed', 'true')
         expect(self.button).to_be_disabled()
-        self.assertEqual(self.page.evaluate('window.__audioEvents.length'), 2)
+        self.assertEqual(self.page.evaluate('window.__audioEvents.length'), 3)
 
     def test_new_market_order_still_plays_automatically_after_enabling(self):
         from django.utils import timezone

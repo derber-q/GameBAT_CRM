@@ -1,5 +1,5 @@
 {% load static %}
-<aside class="market-alert-panel notification-state" data-worker-monitor data-status-url="{% url 'integrations:worker_status' %}" data-user="{{ user.pk }}" data-sound-url="{% static 'audio/yandex-new-order.mp3' %}">
+<aside class="market-alert-panel notification-state" data-worker-monitor data-status-url="{% url 'integrations:worker_status' %}" data-user="{{ user.pk }}" data-sound-url="{% static 'audio/yandex-new-order.mp3' %}?v=20261102-1">
   <span role="status" data-worker-audio-status>Звук предупреждений об обработчиках ещё не включён.</span>
   <span role="status" data-worker-feed-status></span>
 </aside>
