@@ -65,3 +65,15 @@ def revoke(actor, device_id):
     device=BackupDevice.objects.select_for_update().get(pk=device_id)
     device.active_slot=None; device.revoked_at=timezone.now(); device.save(update_fields=['active_slot','revoked_at'])
     audit('device_revoked',actor=actor,device=str(device.pk))
+
+
+@retry_database_lock
+@transaction.atomic
+def set_manual_request_permission(actor, device_id, allowed):
+    """Разрешение текущему компьютеру без ротации токена и повторного подключения."""
+    require_live_operation('backup_enrollment');administrator(actor);locked_config()
+    device=BackupDevice.objects.select_for_update().get(pk=device_id,active_slot=1)
+    device.can_request=bool(allowed)
+    device.save(update_fields=['can_request'])
+    audit('device_manual_permission_changed',actor=actor,device=str(device.pk),allowed=device.can_request)
+    return device

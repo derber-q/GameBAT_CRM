@@ -108,6 +108,18 @@
     stockReference.className = "help-text";
     stockReference.dataset.supplyStockReference = "true";
     productCell.append(stockReference);
+    const codesReference = document.createElement("div");
+    codesReference.className = "help-text";
+    codesReference.dataset.supplyGameCodes = "true";
+    codesReference.setAttribute("aria-live", "polite");
+    productCell.append(codesReference);
+    function showGameCodes(result) {
+      const isCD = result?.type === 'cd' || result?.product_type === 'cd';
+      codesReference.hidden = !isCD;
+      codesReference.textContent = isCD ? `CUSA / PPSA: ${String(result.cusa_ppsa_code || '').trim() || '—'}` : '';
+    }
+    showGameCodes(value);
+    search.addEventListener('input', () => showGameCodes(null));
     if (value.product_id) {
       row.dataset.supplyProductType = value.product_type;
       row.dataset.supplyProductId = String(value.product_id);
@@ -325,6 +337,7 @@
           const data = await response.json().catch(() => ({}));
           if (!response.ok || !data.ok) throw new Error(data.error || "Не удалось сохранить CUSA / PPSA.");
           result.cusa_ppsa_code = data.cusa_ppsa_code;
+          showGameCodes(result);
           type.value = result.type;
           id.value = result.id;
           hideWeightPrompt();
@@ -389,6 +402,7 @@
     row.append(productCell, supplierCell, quantityCell, costCell, removeButton(row));
     lines.append(row);
     const selectProduct = (result, metadata = {}) => {
+      showGameCodes(result);
       if (tripEditable) tripRow.value = '';
       if (result) {
         row.dataset.supplyProductType = result.type;

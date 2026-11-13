@@ -76,7 +76,7 @@ def main():
     if sys.platform != 'linux' or not Path('/.dockerenv').is_file() or os.environ.get('GAMEBAT_ENV') != 'local_live':
         raise SystemExit('Этот запуск разрешён только в Linux-контейнере local_live.')
     root = Path(__file__).resolve().parent.parent
-    for command in (['migrate', '--check'], ['configure_worker_monitoring']):
+    for command in (['migrate', '--check'], ['configure_worker_monitoring', '--new-boot']):
         subprocess.run([sys.executable, str(root/'manage.py'), *command], cwd=root, check=True)
     return run_services(root)
 

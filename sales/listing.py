@@ -8,7 +8,7 @@ from .market_controls import with_market_controls, market_context
 
 WHOLESALE_TYPES = ('wholesale', 'wholesale_pickup', 'wholesale_delivery')
 CHANNELS = ((Sale.SaleType.YANDEX_MARKET, 'Яндекс Маркет'), (Sale.SaleType.WHOLESALE, 'Опт'),
-            (Sale.SaleType.AVITO, 'Авито'), (Sale.SaleType.RETAIL, 'Розница'))
+            (Sale.SaleType.AVITO, 'Авито'), (Sale.SaleType.RETAIL, 'Розница'), (Sale.SaleType.DIGITAL, 'Цифровые продажи'))
 
 
 def sales_queryset():
@@ -36,6 +36,9 @@ def status_context(sale, user, editable=True):
         user.is_superuser or user.has_perm('sales.advance_order_status')) else None
     payment = editable and can_mark_paid(sale) and (
         user.is_superuser or user.has_perm('sales.mark_sale_paid'))
+    if sale.sale_type == Sale.SaleType.DIGITAL:
+        order = None
+        payment = payment and user.has_perm('digital_sales.complete_digital_sales')
     items, has_more_items = _items_preview(sale)
     return {
         'sale': sale, 'version': sale.updated_at.isoformat(), 'next_order': order,
@@ -61,7 +64,7 @@ def list_groups(request, state):
     if state == 'incomplete':
         labels = dict(CHANNELS)
         kinds = [(kind, labels[kind]) for kind in (Sale.SaleType.WHOLESALE, Sale.SaleType.AVITO,
-            Sale.SaleType.YANDEX_MARKET, Sale.SaleType.RETAIL)]
+            Sale.SaleType.YANDEX_MARKET, Sale.SaleType.RETAIL, Sale.SaleType.DIGITAL)]
     if state == 'completed':
         kinds.append((Sale.SaleType.CONSIGNMENT, 'Реализация'))
     for kind, label in kinds:

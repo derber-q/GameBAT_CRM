@@ -9,10 +9,11 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST, require_http_methods
 from core.decorators import permission_required_any
 from catalog.product_identifiers import set_product_weight
+from catalog.product_ordering import cd_order_key, tech_price_order
 from .models import SupplierOrderBatch, CustomerProcurementOrder
 from .arrival_models import TripArrival
 from .arrival import (ArrivalForm, arrival_preview, confirm_arrival, unconfirm_arrival,
-    require_arrival_permissions, reduce_received)
+    require_arrival_permissions, reduce_received, unconfirm_block_reason)
 from .arrival_documents import build_draft, form_rows, create_arrival_sale, create_arrival_supply
 from .arrival_finalization import readiness, finalization_rows, finalize_arrival, distribute_arrival
 from .operation_changes import ChangesConfirmationRequired
@@ -29,7 +30,7 @@ def missing_weights(batch):
 
 
 def panel_context(request, batch):
-    arrival=TripArrival.objects.filter(trip=batch).first()
+    arrival=TripArrival.current.filter(trip=batch).first()
     initial=request.session.get(f'arrival_parameters_{batch.pk}',{})
     return {'arrival':arrival,'arrival_form':ArrivalForm(initial=initial),
         'arrival_weights':missing_weights(batch) if not arrival or not arrival.arrived else [],
@@ -38,7 +39,8 @@ def panel_context(request, batch):
         'arrival_can_manage':all(request.user.has_perm(p) for p in
             ('orders.view_order_detail','orders.generate_supplier_orders','price.view_supplier_prices')),
         'arrival_can_finalize':request.user.has_perm('supplies.finalize_supply'),
-        'arrival_can_unset':bool(arrival and arrival.arrived and not batch.trip_orders.filter(operations__calculation__arrival_id=arrival.pk).exists())}
+        'arrival_unset_block_reason':unconfirm_block_reason(arrival) if arrival and arrival.arrived else '',
+        'arrival_can_unset':bool(arrival and arrival.arrived and not unconfirm_block_reason(arrival))}
 
 
 @require_POST
@@ -49,7 +51,9 @@ def update_arrival(request, pk):
     action=request.POST.get('action')
     try:
         if action=='unset':
-            arrival=get_object_or_404(TripArrival,trip=batch)
+            arrival=get_object_or_404(TripArrival.current,trip=batch)
+            if str(arrival.pk) != request.POST.get('arrival_id'):
+                raise ValidationError('Прибытие изменилось. Обновите страницу рейса перед отменой.')
             unconfirm_arrival(actor=request.user,arrival_id=arrival.pk,expected_revision=request.POST.get('revision'))
             messages.success(request,'Отметка прибытия снята. Курсы и доставка доступны для нового расчёта.')
         else:
@@ -106,7 +110,7 @@ def receipt(request, pk):
     from .fulfillment import require_permissions
     order=get_object_or_404(CustomerProcurementOrder,pk=pk)
     require_permissions(request.user,order)
-    arrival=get_object_or_404(TripArrival,trip_id=order.trip_id,arrived_at__isnull=False)
+    arrival=get_object_or_404(TripArrival.current,trip_id=order.trip_id,arrived_at__isnull=False)
     if request.method=='POST':
         try:
             ids=request.POST.getlist('cost_row')
@@ -118,8 +122,15 @@ def receipt(request, pk):
             messages.error(request,' '.join(exc.messages) if isinstance(exc,ValidationError) else 'База занята. Повторите сверку.')
         else: messages.success(request,'Состав сверен. Вся фактическая доставка рейса перераспределена.')
         return redirect('orders:arrival_receipt',pk=pk)
+    rows=arrival.rows.filter(order=order).select_related('cd__platform','tech__brand','tech__product_type','supplier')
+    # Как в оптовом XLSX: техника по брендам/типам/моделям, затем диски по платформам.
+    # Поставщик различает повторные строки товара, но не определяет порядок товаров.
+    rows=sorted(rows,key=lambda row: (
+        (0,tech_price_order(row.tech,for_excel=True)[0]) if row.tech_id else (1,cd_order_key(row.cd)),
+        row.supplier_id,row.pk,
+    ))
     return render(request,'orders/arrival_receipt.html',{'order':order,'arrival':arrival,
-        'rows':arrival.rows.filter(order=order).select_related('cd','tech','supplier'),
+        'rows':rows,
         'operation':order.operations.filter(active=True).select_related('sale','supply').first()})
 
 
@@ -212,7 +223,7 @@ def _prices(post, arrival):
 def finalization(request, pk):
     from supplies.views import _parse_finalization_post
     require_arrival_permissions(request.user,finalization=True)
-    arrival=get_object_or_404(TripArrival,trip_id=pk,arrived_at__isnull=False)
+    arrival=get_object_or_404(TripArrival.current,trip_id=pk,arrived_at__isnull=False)
     if request.method=='POST':
         try:
             finalize_arrival(actor=request.user,arrival_id=arrival.pk,expected_revision=request.POST.get('revision_number'),
@@ -236,7 +247,7 @@ def finalization(request, pk):
 @permission_required_any('supplies.finalize_supply')
 def finalization_auto(request, pk):
     from supplies.views import _parse_finalization_post
-    arrival=get_object_or_404(TripArrival,trip_id=pk)
+    arrival=get_object_or_404(TripArrival.current,trip_id=pk,arrived_at__isnull=False)
     try:
         selected=set()
         for raw in request.POST.getlist('selected_product'):

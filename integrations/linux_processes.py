@@ -1,5 +1,6 @@
 """Локальные процессы одного Linux PID namespace; доступ к Docker socket не нужен."""
 import os
+import signal
 from pathlib import Path
 import subprocess
 import sys
@@ -34,12 +35,16 @@ class LinuxProcesses:
                 if command == 'run_integration_worker':
                     service = self._option(args, '--service') or 'all'
                     services = ['avito', 'yandex', 'google'] if service == 'all' else [service]
-                    if any(s not in SERVICES[:3] for s in services):
+                    if any(s not in ('avito', 'yandex', 'google', 'digital_prices') for s in services):
                         continue
                 elif command in ('run_label_print_worker', 'run_worker_supervisor'):
                     services = ['print' if command == 'run_label_print_worker' else 'supervisor']
                 elif command == 'run_telegram_staff_bot':
                     services = ['telegram_staff']
+                elif command == 'run_telegram_digital_bot':
+                    services = ['telegram_digital']
+                elif command == 'run_telegram_opt_bot':
+                    services = ['telegram_opt']
                 else:
                     continue
                 instance = self._option(args, '--worker-instance')
@@ -62,6 +67,24 @@ class LinuxProcesses:
                 return args[i+1]
         return ''
 
+    def stop_verified(self, row):
+        """Только SIGTERM подтверждённому worker этой установки; без принудительного убийства/дубля."""
+        require_live_operation('linux_process_launch')
+        if (not row.get('instance') or row.get('services') == ['supervisor'] or
+                not hasattr(os, 'pidfd_open') or not hasattr(signal, 'pidfd_send_signal')):
+            return False
+        try:
+            descriptor = os.pidfd_open(row['pid'])
+        except ProcessLookupError:
+            return False
+        try:
+            if row not in self.inventory():
+                return False
+            signal.pidfd_send_signal(descriptor, signal.SIGTERM)
+            return True
+        finally:
+            os.close(descriptor)
+
     def launch(self, service, instance):
         require_live_operation('linux_process_launch')
         if service not in SERVICES or sys.platform != 'linux':
@@ -70,6 +93,10 @@ class LinuxProcesses:
         command = ['run_label_print_worker'] if service == 'print' else ['run_integration_worker', '--service', service]
         if service == 'telegram_staff':
             command = ['run_telegram_staff_bot']
+        if service == 'telegram_digital':
+            command = ['run_telegram_digital_bot']
+        if service == 'telegram_opt':
+            command = ['run_telegram_opt_bot']
         folder = Path(settings.WORKER_RUNTIME_DIR).parent
         folder.mkdir(parents=True, exist_ok=True)
         with (folder/f'{instance}.stdout.log').open('ab') as stdout, (folder/f'{instance}.stderr.log').open('ab') as stderr:

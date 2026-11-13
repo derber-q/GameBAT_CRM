@@ -23,9 +23,11 @@ def queue_snapshot():
             return data
         data['last_task_success_at'] = StaffBotJob.objects.filter(bot=bot, state='done').aggregate(at=Max('finished_at'))['at']
         data['task_error'] = ERROR_LABELS.get(bot.error_category, 'Ошибка Telegram. Проверьте настройки.' if bot.error_category else '')
+        if bot.error_category in ('timeout', 'network', 'rate_limited'):
+            data['next_action'] = 'Восстановление связи с Telegram'
         job = StaffBotJob.objects.filter(bot=bot, state__in=['queued', 'generating', 'sending']).first()
         if job:
-            data['next_action'] = ('Формирование шаблонов поставщика' if job.function == 'supplier_price_templates'
+            data['next_action'] = ('Формирование PNG-прайсов GameBAT' if job.function == 'digital_price_images' else 'Формирование шаблонов поставщика' if job.function == 'supplier_price_templates'
                 else 'Формирование оптового прайса') if job.state == 'queued' else job.get_state_display()
             data['next_at'] = job.created_at
             if job.state != 'queued':

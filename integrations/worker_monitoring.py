@@ -11,18 +11,32 @@ from core.db_retry import retry_database_lock
 from .worker_models import WorkerController, WorkerService, WorkerProcess, WorkerCommand, WorkerEvent, SERVICE_CHOICES
 from .worker_policy import expected_services
 from .worker_runtime import SERVICES, STALE_SECONDS, START_SECONDS, STABLE_SECONDS, RETRY_SECONDS, MAX_FAILURES
+from .worker_health import process_health
 
 logger = logging.getLogger('gamebat.business')
 STATUS_LABELS = {'running': 'Работает', 'recovering': 'Восстанавливается', 'stopped': 'Остановлен',
                  'paused': 'Автовосстановление приостановлено', 'disabled': 'Отключён',
-                 'unconfigured': 'Не настроен', 'unknown': 'Статус неизвестен'}
+                 'unconfigured': 'Не настроен', 'unknown': 'Статус неизвестен',
+                 'degraded': 'Работа не подтверждена', 'blocked': 'Требуется настройка'}
 EXPECTED_LABELS = {'required': 'Должен работать', 'disabled': 'Отключён', 'unconfigured': 'Не настроен'}
 ERROR_LABELS = {'inventory': 'Сведения о процессах недоступны. Повторный запуск заблокирован.',
                 'unconfirmed': 'Процесс обнаружен, но его активность не подтверждена. Повторный запуск заблокирован.',
                 'launch_failed': 'Не удалось запустить обработчик. Проверьте локальный журнал запуска.',
                 'exited': 'Обработчик завершился до подтверждения стабильной работы.',
-                'timeout': 'Запуск не подтверждён в отведённое время.',
-                'controller': 'Контроллер недоступен. Повторно запустите штатный ярлык CRM.'}
+                'timeout': 'Работа не подтверждена: превышено время ожидания ответа.',
+                'controller': 'Контроллер недоступен. Повторно запустите штатный ярлык CRM.',
+                'checking': 'Ожидается первый успешный рабочий цикл этого процесса.',
+                'not_verified': 'Давно не было успешного рабочего цикла. Наличие процесса не подтверждает работу.',
+                'stalled': 'Рабочий цикл не отвечает. Запрошена безопасная остановка; новый процесс не создаётся до завершения старого.',
+                'executor_stalled': 'Исполнитель Telegram-документов давно не завершал цикл. Ожидается безопасное восстановление.',
+                'network': 'Нет соединения с внешним сервисом; обработчик повторяет подключение.',
+                'rate_limited': 'Сервис ограничил запросы; ожидается повторное подключение.',
+                'database': 'База временно занята; цикл будет повторён.',
+                'unauthorized': 'Сервис отклонил токен. Проверьте настройки.',
+                'wrong_bot': 'Токен относится к другому Telegram-боту.',
+                'webhook': 'У Telegram-бота настроен другой получатель webhook.',
+                'conflict': 'Другой процесс получает обновления этого Telegram-бота.',
+                'configuration': 'Ошибка защищённой конфигурации. Проверьте настройки.'}
 RESULT_LABELS = {'queued': 'Команда принята', 'running': 'Запуск выполняется',
                  'confirmed': 'Работа подтверждена', 'error': 'Ошибка', 'skipped': 'Запуск не требуется'}
 
@@ -118,11 +132,15 @@ def supervise_once(adapter, *, now=None, instance=None):
         service.expected, service.observed_at = policy.get(code, 'unconfigured'), now
         command = WorkerCommand.objects.filter(service=code, state__in=['queued', 'running']).first()
         matches = [row for row in rows or [] if code in row['services']]
-        active = next((process for process in processes if process.ready and code in process.services
+        observed = next((process for process in processes if code in process.services
             and _fresh(process.heartbeat_at, now) and any(
                 process.pid == row['pid'] and process.birth == row['birth'] and bool(row['birth'])
                 and (not row['instance'] or str(process.instance) == row['instance']) for row in matches)), None)
-        service.heartbeat_at = active.heartbeat_at if active else service.heartbeat_at
+        health_status, health_error = process_health(observed, code, now)
+        active = observed if health_status == 'running' else None
+        service.heartbeat_at = observed.heartbeat_at if observed else service.heartbeat_at
+        if observed and active is None:
+            service.stable_instance = observed.instance
         if service.expected != 'required':
             service.status, service.error = service.expected, ''
             service.incident = service.incident_started_at = None
@@ -149,6 +167,24 @@ def supervise_once(adapter, *, now=None, instance=None):
             else:
                 service.status = 'running'
                 _finish(command, 'confirmed', 'confirmed', now)
+        elif observed:
+            service.stable_since = None
+            service.status, service.error = health_status, health_error
+            if health_status == 'blocked':
+                _finish(command, 'error', health_error, now)
+            if (health_error in ('stalled', 'executor_stalled') and before[2] not in ('stalled', 'executor_stalled') and not service.auto_paused
+                    and service.failures < MAX_FAILURES and hasattr(adapter, 'stop_verified')):
+                own = next((row for row in matches if row['pid'] == observed.pid and
+                            row['birth'] == observed.birth and row['instance'] == str(observed.instance)), None)
+                try:
+                    stopped = bool(own and adapter.stop_verified(own))
+                except (OSError, ValueError):
+                    stopped = False
+                    service.status, service.error = 'unknown', 'unconfirmed'
+                if stopped:
+                    _failed(service, command, health_error, now)
+                    service.status = 'degraded'
+                    event(service, 'stop_requested', 'stalled', command)
         elif matches:
             service.stable_since = None
             if service.launch_started_at and now - service.launch_started_at < timedelta(seconds=START_SECONDS):
@@ -208,15 +244,22 @@ def supervise_once(adapter, *, now=None, instance=None):
         service.save()
 
 
-def monitoring_snapshot(*, now=None, with_history=False):
+def monitoring_snapshot(*, now=None, with_history=False, include_queues=True):
     """GET только читает локальные таблицы; не планирует работу и не проверяет API."""
     from .worker_schedule import queue_snapshot
+    supplied_now = now is not None
     now = now or timezone.now()
     controller = WorkerController.objects.filter(pk=1).first()
     managed = bool(controller and controller.mode == 'managed')
-    controller_ok = bool(controller and _fresh(controller.heartbeat_at, now) and not controller.error)
     policy = expected_services() if managed else dict.fromkeys(SERVICES, 'disabled')
     known = {row.code: row for row in WorkerService.objects.all()}
+    processes = {row.instance: row for row in WorkerProcess.objects.filter(
+        heartbeat_at__gte=now - timedelta(seconds=STALE_SECONDS))}
+    if not supplied_now:
+        # Heartbeat/наблюдение могли обновиться между началом снимка и SELECT.
+        # Проверяем прочитанные отметки относительно окончания чтения, как supervisor.
+        now = timezone.now()
+    controller_ok = bool(controller and _fresh(controller.heartbeat_at, now) and not controller.error)
     services, incidents = [], []
     for code, name in SERVICE_CHOICES:
         row = known.get(code)
@@ -225,16 +268,24 @@ def monitoring_snapshot(*, now=None, with_history=False):
             row.status if row and controller_ok and _fresh(row.observed_at, now) else 'unknown')
         if status == 'running' and not _fresh(row.heartbeat_at, now):
             status = 'unknown'
+        process = (processes.get(row.launch_instance) or processes.get(row.stable_instance)) if row else None
+        health_status, health_error = process_health(process, code, now)
+        if expected == 'required' and status == 'running' and health_status != 'running':
+            status = health_status
         alarm = expected == 'required' and status != 'running'
         if alarm and row and row.incident:
             incidents.append({'id': str(row.incident), 'started_at': row.incident_started_at})
-        queue = queue_snapshot(code, now=now, enabled=expected == 'required')
+        queue = queue_snapshot(code, now=now, enabled=expected == 'required') if include_queues else {}
         services.append({'code': code, 'name': name, 'expected': expected,
             'expected_label': EXPECTED_LABELS[expected], 'status': status, 'status_label': STATUS_LABELS[status],
             'alarm': alarm, 'incident': str(row.incident) if row and row.incident else None,
             'heartbeat_at': row.heartbeat_at if row else None, 'last_started_at': row.last_started_at if row else None,
+            'progress_at': process.progress_at if process else None,
+            'verified_at': process.verified_at if process else None,
+            'executor_at': process.executor_at if process else None,
             'failures': row.failures if row else 0, 'paused': bool(row and (row.auto_paused or row.failures >= MAX_FAILURES)),
-            'error': ERROR_LABELS.get(row.error, '') if row else '',
+            'error': ERROR_LABELS.get((health_error if process else row.error if row else '') if expected == 'required' else '',
+                                    'Работа обработчика не подтверждена.' if health_error and expected == 'required' else ''),
             'can_start': expected == 'required' and status in ('stopped', 'paused'), **queue})
     controller_alarm = managed and not controller_ok
     if controller_alarm:
@@ -268,7 +319,8 @@ def history_snapshot():
     kinds = {'command_requested': 'Ручная команда', 'incident_opened': 'Обнаружена проблема',
              'launch_requested': 'Запрошен запуск', 'launch_failed': 'Запуск не подтверждён',
              'state_changed': 'Изменение состояния', 'recovered': 'Работа восстановлена',
-             'controller_started': 'Запущен контроллер'}
+             'controller_started': 'Запущен контроллер', 'stop_requested': 'Безопасное восстановление зависшего процесса',
+             'boot_check': 'Проверка при загрузке контейнера'}
     names = {**dict(SERVICE_CHOICES), 'supervisor': 'Контроллер'}
     return [{'created_at': item.created_at, 'service': names.get(item.service, item.service),
              'kind': kinds.get(item.kind, 'Событие контроля'),

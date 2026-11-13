@@ -164,9 +164,9 @@ class CustomerProcurementOrder(models.Model):
         if not self.trip_id:
             return self.get_status_display()
         from .arrival_models import TripArrival
-        arrival = getattr(self,'_trip_arrival',None) if hasattr(self,'_trip_arrival') else TripArrival.objects.filter(trip_id=self.trip_id,arrived_at__isnull=False).first()
+        arrival = getattr(self,'_trip_arrival',None) if hasattr(self,'_trip_arrival') else TripArrival.current.filter(trip_id=self.trip_id,arrived_at__isnull=False).first()
         if arrival:
-            if self.pk in arrival.reviewed_orders and not self.arrival_rows.filter(actual_quantity__gt=0).exists():
+            if self.pk in arrival.reviewed_orders and not self.arrival_rows.filter(arrival=arrival,actual_quantity__gt=0).exists():
                 return 'Не поступил'
             return 'Выполнен' if self.status==self.Status.COMPLETED else 'В обработке' if self.fulfillment_processing else 'Доступен'
         if self.status == self.Status.COMPLETED:

@@ -10,6 +10,7 @@ from partners.customers import PartnerChoiceField
 
 
 CHANNEL_CHOICES = (
+    ("digital", "Цифровые продажи"),
     ("retail", "Розница"),
     ("wholesale", "Оптовые"),
     ("avito", "Avito"),

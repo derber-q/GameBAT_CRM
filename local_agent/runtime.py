@@ -8,7 +8,7 @@ from pathlib import Path
 from . import VERSION
 from .journal import BackupJournal
 from .downloads import download,cleanup
-from .transport import BackupAPI
+from .transport import BackupAPI,error_message
 from print_agent.__main__ import exclusive
 
 
@@ -50,17 +50,23 @@ class Runtime:
                 config=self.get_config()
                 try:
                     if config.get('backup_enabled') and config.get('backup_token'):
-                        api=BackupAPI(config,self.session);api.heartbeat()
+                        api=BackupAPI(config,self.session);hello=api.heartbeat()
+                        setup=hello.get('setup',{})
+                        if setup:self.report('backup_setup',setup)
                         # UUID команды сохраняется ДО HTTP и переживает перезапуск.
                         command_path=self.folder/'backup-request.json'
                         pending=None
                         if command_path.exists():
                             pending=json.loads(command_path.read_text())
-                            if not pending.get('job_id'):
+                            ready=not setup or setup.get('enabled') and setup.get('key_ready') and setup.get('can_request')
+                            if not pending.get('job_id') and ready:
                                 response=api.create(uuid.UUID(pending['request_id']))
                                 pending['job_id']=str(uuid.UUID(response['id']))
                                 self.save_request(pending)
                         jobs=api.status()
+                        if not jobs:
+                            self.report('backup','Подключено. Ожидаем первую резервную копию.' if setup.get('enabled') and setup.get('key_ready') else
+                                        'Подключено. Завершите настройку резервного копирования.')
                         if pending:
                             terminal=next((j for j in jobs if j['id']==pending.get('job_id') and j['state'] in ('error','expired','skipped')),None)
                             if terminal:
@@ -95,7 +101,7 @@ class Runtime:
                             cleanup(config['backup_folder'],journal,keep=int(config.get('keep',7)),days=int(config.get('days',0)),
                                 weekly=int(config.get('weekly',0)),enabled=config.get('cleanup_enabled',False))
                     else: self.report('backup','Резервирование выключено или устройство не подключено.')
-                except Exception as exc: self.report('backup','Ошибка: '+type(exc).__name__+f' (HTTP {getattr(exc,"status",0)}). История сохранена.')
+                except Exception as exc:self.report('backup',error_message(exc))
                 self.stop.wait(15)
         finally: journal.close()
 

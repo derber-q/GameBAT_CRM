@@ -1,0 +1,4 @@
+{% load l10n %}
+<span data-amount-mode="{{ mode }}"{% if row.pricing_mode != mode %} hidden{% endif %}>
+{% if editable %}<input form="{{ row.form_id }}" name="{{ field }}" value="{{ amount|default_if_none:''|unlocalize }}" inputmode="decimal" aria-label="{{ label }}: {{ row.name }}" placeholder="{% if selected_buyer %}Из общего: {{ display_amount|default_if_none:'не задана' }}{% else %}Не задана{% endif %}">{% else %}{% if display_amount or display_amount == 0 %}{{ display_amount }}{% else %}{{ amount|default_if_none:'—' }}{% endif %}{% endif %}<small>{{ label }}</small>
+</span>

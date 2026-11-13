@@ -70,7 +70,7 @@ def _draft(request):
         raise ValidationError('Откройте новую форму из заказа после подтверждения прибытия рейса.')
     order=get_object_or_404(CustomerProcurementOrder,pk=draft['order_id'])
     require_permissions(request.user,order)
-    if not TripArrival.objects.filter(pk=draft['arrival_id'],trip_id=order.trip_id,arrived_at__isnull=False).exists():
+    if not TripArrival.current.filter(pk=draft['arrival_id'],trip_id=order.trip_id,arrived_at__isnull=False).exists():
         raise ValidationError('Прибытие рейса не подтверждено. Откройте страницу рейса.')
     return order,draft
 

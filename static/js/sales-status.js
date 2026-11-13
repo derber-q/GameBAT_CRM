@@ -26,9 +26,12 @@
     select.value = select.dataset.current; // Never display an unconfirmed status.
     if (busy || value === select.dataset.current) return;
     const row = select.closest('[data-sale-row]');
+    const digital = row.dataset.paymentMethod === 'bank_card';
     pending = {row, field: select.dataset.statusField, value};
     question.textContent = `${row.dataset.saleId}: изменить статус ${pending.field === 'order' ? 'заказа' : 'оплаты'} с «${select.options[select.selectedIndex].textContent}» на «${selectedLabel}»?`;
-    cashField.hidden = !(pending.field === 'payment');
+    cashField.hidden = pending.field !== 'payment' || digital;
+    cash.disabled = digital;
+    if (digital && pending.field === 'payment') question.textContent += ' Сумма продажи будет списана с цифрового баланса покупателя.';
     cash.value = ''; cash.min = row.dataset.partnerId || row.dataset.consignmentReport ? '0' : row.dataset.total; cash.placeholder = row.dataset.total;
     if (partnerField && partnerChoice) {
       const enabled = pending.field === 'payment' && row.dataset.canSelectPaymentPartner === '1';
@@ -47,7 +50,7 @@
     const data = new FormData(form);
     const partnerId = row.dataset.partnerId || (partnerChoice && !partnerChoice.disabled ? partnerChoice.value : '');
     if (partnerChoice && !partnerChoice.disabled) data.set('settlement_partner_id', partnerChoice.value);
-    if (action.field === 'payment' && partnerId) {
+    if (action.field === 'payment' && partnerId && row.dataset.paymentMethod !== 'bank_card') {
       try {
         const settlement = await window.GameBAT.confirmPartnerSettlement({partnerId,
           saleId: row.dataset.saleRow, total: row.dataset.total, received: cash.value,

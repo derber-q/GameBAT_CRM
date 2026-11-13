@@ -54,8 +54,11 @@ class ArrivalDocumentTests(ArrivalDocumentFixture, TestCase):
         cancel_sale(actor=self.user, sale_id=sale.pk, comment='Проверка источников')
         self.no_stock_change()
         self.arrival.refresh_from_db()
-        with self.assertRaises(ValidationError):
-            unconfirm_arrival(actor=self.user, arrival_id=self.arrival.pk, expected_revision=self.arrival.revision)
+        unconfirm_arrival(actor=self.user, arrival_id=self.arrival.pk, expected_revision=self.arrival.revision)
+        self.arrival.refresh_from_db()
+        self.assertFalse(self.arrival.arrived)
+        self.assertTrue(self.arrival.cancelled_at)
+        self.assertTrue(sale.cd_items.filter(trip_cost_row__arrival=self.arrival).exists())
 
     def test_premature_completion_is_rejected_on_backend(self):
         self.arrival = self.arrive()

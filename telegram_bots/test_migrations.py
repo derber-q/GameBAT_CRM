@@ -36,4 +36,7 @@ class SupplierTemplateMigrationTests(TransactionTestCase):
             self.assertEqual(new.get_model('telegram_bots', 'StaffBot').objects.get(pk=bot.pk).next_update_id, 701)
             self.assertEqual(new.get_model('telegram_bots', 'StaffBotAccess').objects.get(pk=access.pk).telegram_user_id, 123)
         finally:
-            MigrationExecutor(connection).migrate(self.after)
+            # Зависимые приложения также откатываются вместе с исторической схемой.
+            # Возвращаем весь граф, иначе следующие тесты теряют цифровые таблицы.
+            restore = MigrationExecutor(connection)
+            restore.migrate(restore.loader.graph.leaf_nodes())

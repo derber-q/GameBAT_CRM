@@ -10,6 +10,10 @@
   const applyButton = form.querySelector("[data-apply-finalization]");
   const autoButton = form.querySelector("[data-auto-distribute]");
   const errorBox = form.querySelector("[data-finalization-error]");
+  const bulkButton = form.querySelector("[data-bulk-cost-apply]");
+  const bulkAmount = form.querySelector("[data-bulk-cost-amount]");
+  const bulkOperation = form.querySelector("[data-bulk-cost-operation]");
+  const bulkStatus = form.querySelector("[data-bulk-cost-status]");
 
   const parseCents = (raw) => {
     const value = String(raw ?? "").trim().replace(",", ".");
@@ -35,7 +39,7 @@
     row.classList.toggle("is-manual", source === "manual");
     row.classList.toggle("is-auto", source === "auto");
     badge.textContent = source === "manual" ? "Вручную" : (source === "auto" ? "Авто" : "");
-    if (source === "manual") {
+    if (source === "manual" && !bulkButton) {
       checkbox.checked = false;
       checkbox.disabled = true;
     } else {
@@ -96,6 +100,62 @@
     });
   });
 
+  if (bulkButton && bulkAmount && bulkOperation) {
+    bulkButton.addEventListener("click", () => {
+      errorBox.textContent = "";
+      bulkStatus.textContent = "";
+      if (autoButton.disabled) return;
+      const amount = parseCents(bulkAmount.value);
+      if (amount === null || amount <= 0n || amount > 99999999999999999999n) {
+        errorBox.textContent = "Укажите положительную сумму в рублях с точностью до копеек.";
+        bulkAmount.focus();
+        return;
+      }
+      if (!["add", "subtract"].includes(bulkOperation.value)) {
+        errorBox.textContent = "Выберите действие: прибавить или вычесть.";
+        return;
+      }
+      const selected = rows.filter(row => {
+        const checkbox = row.querySelector('input[name="selected_product"]');
+        return checkbox.checked && !checkbox.disabled;
+      });
+      if (!selected.length) {
+        errorBox.textContent = "Выделите хотя бы одну строку для изменения себестоимости.";
+        return;
+      }
+      const delta = bulkOperation.value === "add" ? amount : -amount;
+      const changes = [];
+      // Сначала проверяем все строки: ошибочная сумма не должна изменить часть выбора.
+      for (const row of selected) {
+        const input = row.querySelector(".finalization-cost-input");
+        const current = parseCents(input.value);
+        if (current === null || parseCents(row.dataset.baselineCost) === null) {
+          errorBox.textContent = "Исправьте некорректную себестоимость в выделенных строках.";
+          return;
+        }
+        const corrected = current + delta;
+        if (corrected < 0n || corrected > 99999999999999999999n) {
+          errorBox.textContent = "Действие не выполнено: себестоимость одной из строк выйдет за допустимые границы. Отрицательная себестоимость запрещена.";
+          return;
+        }
+        changes.push({row, input, corrected});
+      }
+      changes.forEach(({row, input, corrected}) => {
+        input.value = `${corrected / 100n}.${(corrected % 100n).toString().padStart(2, "0")}`;
+        setSource(row, corrected === parseCents(row.dataset.baselineCost) ? "unchanged" : "manual");
+      });
+      bulkAmount.value = "";
+      refresh();
+      bulkStatus.textContent = `Применено к строкам: ${changes.length}. ${formatCents(delta)} за единицу.`;
+    });
+    bulkAmount.addEventListener("keydown", event => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        bulkButton.click();
+      }
+    });
+  }
+
   autoButton.addEventListener("click", async () => {
     errorBox.textContent = "";
     const state = refresh();
@@ -104,6 +164,7 @@
       return;
     }
     autoButton.disabled = true;
+    if (bulkButton) bulkButton.disabled = true;
     try {
       const response = await fetch(form.dataset.autoUrl, {
         method: "POST",
@@ -124,6 +185,7 @@
       errorBox.textContent = error.message;
     } finally {
       autoButton.disabled = false;
+      if (bulkButton) bulkButton.disabled = false;
     }
   });
 

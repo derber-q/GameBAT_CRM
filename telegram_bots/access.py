@@ -32,11 +32,12 @@ def check_access(access, *, require_link=True):
 
 
 def check_function_access(access, function, *, require_link=True):
-    from .menu import FUNCTIONS, SUPPLIER_TEMPLATES
+    from .menu import FUNCTIONS, SUPPLIER_TEMPLATES, BUYER_BALANCE
     user = check_access(access, require_link=require_link)
     item = FUNCTIONS.get(function)
     if item is None or not item.allowed(user):
-        message = ('У вас нет разрешения на скачивание шаблонов поставщиков.'
+        message = ('У вас нет разрешения на отправку баланса покупателю.' if function == BUYER_BALANCE.code else
+            'У вас нет разрешения на скачивание шаблонов поставщиков.'
             if function == SUPPLIER_TEMPLATES.code else 'У вас нет разрешения на формирование оптового прайса.')
         raise BotDenied('function_denied', message)
     return user

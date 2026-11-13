@@ -1,0 +1,3 @@
+{% if sale.is_postpayment and sale.sale_type == 'wholesale' and not sale.procurement_prepaid_amount %}{% if sale.partner_id or payment_partners %}
+<div class="field"><label for="sale-prepayment-method">Способ подтверждения оплаты</label><select id="sale-prepayment-method" name="payment_method" data-prepayment-choice><option value="{{ sale.payment_method }}">{{ sale.get_payment_method_display }}</option><option value="prepayment_account">Счёт предоплаты</option></select><span class="help-text">Со счёта предоплаты спишется полная стоимость продажи. Недостаточный баланс не допускается.</span></div>
+{% endif %}{% endif %}

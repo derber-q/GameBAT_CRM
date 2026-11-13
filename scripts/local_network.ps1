@@ -51,7 +51,7 @@ function Get-GameBATServerProcesses {
 function Test-GameBATIntegrationWorker {
     param(
         [Parameter(Mandatory)][string]$ProjectDir,
-        [Parameter(Mandatory)][ValidateSet('avito', 'yandex', 'google')][string]$Service
+        [Parameter(Mandatory)][ValidateSet('avito', 'yandex', 'google', 'digital_prices')][string]$Service
     )
     return @((Get-GameBATWorkerProcesses -ProjectDir $ProjectDir) | Where-Object {
         $_.services -contains $Service
@@ -62,7 +62,7 @@ function Get-GameBATWorkerProcesses {
     param([Parameter(Mandatory)][string]$ProjectDir)
     $project = $ProjectDir.TrimEnd('\')
     $pythonPattern = '^"?' + [Regex]::Escape((Join-Path $project '.venv\Scripts\python.exe')) + '"?\s+'
-    $managePattern = '(?:^|\s)"?(?:' + [Regex]::Escape($project + '\') + ')?manage\.py"?\s+(run_integration_worker|run_label_print_worker|run_worker_supervisor|run_telegram_staff_bot)(?:\s|$)'
+    $managePattern = '(?:^|\s)"?(?:' + [Regex]::Escape($project + '\') + ')?manage\.py"?\s+(run_integration_worker|run_label_print_worker|run_worker_supervisor|run_telegram_staff_bot|run_telegram_digital_bot|run_telegram_opt_bot)(?:\s|$)'
     # Ошибка CIM не означает пустой список: контроллер обязан запретить запуск.
     foreach ($worker in @(Get-CimInstance Win32_Process -ErrorAction Stop)) {
         if ($worker.Name -notmatch '^python' -or $worker.CommandLine -notmatch $pythonPattern) { continue }
@@ -73,8 +73,10 @@ function Get-GameBATWorkerProcesses {
             'run_label_print_worker' { $services = @('print') }
             'run_worker_supervisor' { $services = @('supervisor') }
             'run_telegram_staff_bot' { $services = @('telegram_staff') }
+            'run_telegram_digital_bot' { $services = @('telegram_digital') }
+            'run_telegram_opt_bot' { $services = @('telegram_opt') }
             'run_integration_worker' {
-                $selection = [Regex]::Match($worker.CommandLine, '--service(?:=|\s+)["'']?(all|avito|yandex|google)\b', 'IgnoreCase')
+                $selection = [Regex]::Match($worker.CommandLine, '--service(?:=|\s+)["'']?(all|avito|yandex|google|digital_prices)\b', 'IgnoreCase')
                 if (-not $selection.Success -or $selection.Groups[1].Value -eq 'all') {
                     $services = @('avito', 'yandex', 'google')
                 } else { $services = @($selection.Groups[1].Value.ToLowerInvariant()) }

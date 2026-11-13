@@ -39,7 +39,7 @@ def operation_actions(actor, orders):
     orders = list(orders)
     trip_ids = {order.trip_id for order in orders if order.trip_id}
     from .arrival_models import TripArrival
-    arrivals = {arrival.trip_id:arrival for arrival in TripArrival.objects.filter(trip_id__in=trip_ids,arrived_at__isnull=False)}
+    arrivals = {arrival.trip_id:arrival for arrival in TripArrival.current.filter(trip_id__in=trip_ids,arrived_at__isnull=False)}
     suppliers, accepted = defaultdict(set), defaultdict(set)
     for batch_id, supplier_id in SupplierOrderBatchLine.objects.filter(batch_id__in=trip_ids, quantity__gt=0).values_list('batch_id','supplier_id'):
         suppliers[batch_id].add(supplier_id)
@@ -55,7 +55,7 @@ def operation_actions(actor, orders):
         except PermissionDenied:
             order.can_review_arrival=False
         missing = bool(order._trip_arrival and order.pk in order._trip_arrival.reviewed_orders
-            and not order.arrival_rows.filter(actual_quantity__gt=0).exists())
+            and not order.arrival_rows.filter(arrival=order._trip_arrival,actual_quantity__gt=0).exists())
         order.can_create_operation = available(order) and bool(order._trip_arrival) and not missing
         if order.can_create_operation:
             try:
@@ -299,6 +299,9 @@ def synchronize(operation, *, actor=None):
     if cancelled:
         operation.active = False
         operation.save(update_fields=('active',))
+        if operation.calculation.get('arrival_id'):
+            from .arrival_documents import restore_operation_quantities
+            restore_operation_quantities(operation, actor=actor)
     old = order.status
     order.status = order.Status.CREATED if cancelled else order.Status.COMPLETED if completed else order.Status.RECEIVING
     if operation.supply_id:

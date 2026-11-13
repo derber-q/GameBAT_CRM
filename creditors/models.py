@@ -19,6 +19,9 @@ class Creditor(models.Model):
         editable=False,
     )
     description = models.TextField("Описание", blank=True)
+    prepayment_balance = models.DecimalField(
+        "Предоплата", max_digits=20, decimal_places=2, default=0, db_default=0, editable=False,
+    )
     created_at = models.DateTimeField("Создан", auto_now_add=True)
     updated_at = models.DateTimeField("Обновлён", auto_now=True)
 
@@ -26,6 +29,9 @@ class Creditor(models.Model):
         ordering = ("name", "id")
         verbose_name = "кредитор"
         verbose_name_plural = "кредиторы"
+        constraints = [models.CheckConstraint(
+            condition=models.Q(prepayment_balance__gte=0), name="creditor_prepayment_nonnegative",
+        )]
         permissions = [
             ("view_creditors", "Может просматривать кредиторов"),
             ("change_debt", "Может изменять задолженность кредиторов"),
@@ -63,6 +69,8 @@ class CreditorTransaction(models.Model):
         REPAYMENT = "repayment", "Погашение долга партнёра"
         OFFSET = "offset", "Взаимозачёт долга GameBAT"
         SALE_DEBT = "sale_debt", "Продажа партнёру в долг"
+        SALE_ADVANCE = "sale_advance", "Зачисление аванса партнёра"
+        PREPAYMENT_TRANSFER = "prepayment_transfer", "Перенос на счёт предоплаты"
         REVERSAL = "reversal", "Отмена расчёта по продаже"
 
     kind = models.CharField("Тип операции", max_length=20, choices=Kind.choices, default=Kind.ADJUSTMENT, db_default=Kind.ADJUSTMENT)
@@ -114,3 +122,52 @@ class CreditorTransaction(models.Model):
 
     def __str__(self):
         return f"{self.creditor}: {self.old_debt} → {self.new_debt}"
+
+
+class PrepaymentTransaction(models.Model):
+    """Отдельный журнал предоплаты: пополнение, внутренний перенос, оплата и её сторно."""
+
+    class Kind(models.TextChoices):
+        DEPOSIT = "deposit", "Внесение предоплаты"
+        TRANSFER = "transfer", "Перенос из отрицательного долга"
+        PAYMENT = "payment", "Оплата продажи предоплатой"
+        REVERSAL = "reversal", "Возврат предоплаты при отмене"
+
+    creditor = models.ForeignKey(Creditor, on_delete=models.PROTECT, related_name="prepayment_transactions")
+    kind = models.CharField("Операция", max_length=16, choices=Kind.choices)
+    old_balance = models.DecimalField("Предоплата до", max_digits=20, decimal_places=2)
+    new_balance = models.DecimalField("Предоплата после", max_digits=20, decimal_places=2)
+    delta = models.DecimalField("Изменение", max_digits=20, decimal_places=2)
+    amount = models.DecimalField("Сумма", max_digits=20, decimal_places=2)
+    warehouse = models.ForeignKey(Warehouse, on_delete=models.PROTECT, related_name="prepayment_transactions")
+    money_source_type = models.CharField("Источник", max_length=8, choices=CreditorTransaction.MoneySourceType.choices)
+    cash_transaction = models.OneToOneField(CashTransaction, null=True, blank=True, on_delete=models.PROTECT,
+                                            related_name="prepayment_transaction")
+    debt_transaction = models.OneToOneField(CreditorTransaction, null=True, blank=True, on_delete=models.PROTECT,
+                                            related_name="prepayment_transaction")
+    sale = models.ForeignKey("sales.Sale", null=True, blank=True, on_delete=models.PROTECT,
+                             related_name="prepayment_movements")
+    reversal_of = models.OneToOneField("self", null=True, blank=True, on_delete=models.PROTECT,
+                                      related_name="reversal")
+    operation_key = models.CharField(max_length=80, unique=True, editable=False)
+    partner_name_snapshot = models.CharField("Партнёр на момент операции", max_length=255)
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="prepayment_transactions")
+    comment = models.TextField("Комментарий", blank=True)
+    created_at = models.DateTimeField("Дата", auto_now_add=True)
+
+    class Meta:
+        ordering = ("-created_at", "-pk")
+        verbose_name = "операция предоплаты"
+        verbose_name_plural = "операции предоплаты"
+        constraints = [
+            models.CheckConstraint(condition=models.Q(old_balance__gte=0, new_balance__gte=0, amount__gt=0),
+                                   name="prepay_tx_positive_balances"),
+            models.CheckConstraint(condition=models.Q(delta=Round(models.F("new_balance") - models.F("old_balance"), 2)),
+                                   name="prepay_tx_delta_matches"),
+            models.CheckConstraint(condition=(models.Q(kind="payment", delta=-models.F("amount")) |
+                models.Q(kind__in=("deposit", "transfer", "reversal"), delta=models.F("amount"))),
+                                   name="prepay_tx_direction"),
+            models.CheckConstraint(condition=(models.Q(money_source_type__in=("cash", "safe"), cash_transaction__isnull=False) |
+                models.Q(money_source_type__in=("bank", "offset"), cash_transaction__isnull=True)),
+                                   name="prepay_tx_source_consistent"),
+        ]

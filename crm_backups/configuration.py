@@ -37,6 +37,15 @@ def recovery_secrets():
         'SECRET_KEY', 'INTEGRATION_ENCRYPTION_KEY', 'RESOURCE_TOKEN_ENCRYPTION_KEY',
         'YANDEX_MARKET_API_KEY')}
     result['TELEGRAM_STAFF_BOT_TOKEN'] = os.environ.get('GAMEBAT_TELEGRAM_STAFF_BOT_TOKEN', '')
+    result['TELEGRAM_DIGITAL_BOT_TOKEN'] = os.environ.get('GAMEBAT_TELEGRAM_DIGITAL_BOT_TOKEN', '')
+    result['TELEGRAM_OPT_BOT_TOKEN'] = os.environ.get('GAMEBAT_TELEGRAM_OPT_BOT_TOKEN', '')
+    result['DIGITAL_SALES_KEY'] = os.environ.get('GAMEBAT_DIGITAL_SALES_KEY', '')
+    from digital_sales.crypto import key_path
+    digital_key = key_path()
+    if digital_key.is_symlink() or digital_key.is_junction():
+        raise ValueError('Ссылка вместо ключа цифровых товаров запрещена.')
+    if not result['DIGITAL_SALES_KEY'] and digital_key.is_file():
+        result['DIGITAL_SALES_KEY'] = digital_key.read_text('ascii').strip()
     if not result['INTEGRATION_ENCRYPTION_KEY']:
         path = Path(settings.INTEGRATION_ENCRYPTION_KEY_FILE)
         if path.is_file(): result['INTEGRATION_ENCRYPTION_KEY'] = path.read_text('ascii').strip()
@@ -45,6 +54,8 @@ def recovery_secrets():
         'yandex-market-key': getattr(settings, 'YANDEX_MARKET_KEY_FILE', ''),
         'google-service-account.json': getattr(settings, 'GOOGLE_SERVICE_ACCOUNT_FILE', ''),
         'telegram-staff-bot-token': getattr(settings, 'TELEGRAM_STAFF_TOKEN_FILE', settings.BASE_DIR / '.telegram-staff-bot-token'),
+        'telegram-digital-bot-token': getattr(settings, 'TELEGRAM_DIGITAL_TOKEN_FILE', settings.BASE_DIR / '.telegram-digital-bot-token'),
+        'telegram-opt-bot-token': getattr(settings, 'TELEGRAM_OPT_TOKEN_FILE', settings.BASE_DIR / '.telegram-opt-bot-token'),
         'label-printer.json': getattr(settings,'LABEL_PRINTER_CONFIG_PATH',settings.BASE_DIR / '.label-printer.json'),
     }
     for name, value in paths.items():
@@ -68,7 +79,8 @@ def columns():
             if isinstance(field, models.FileField):
                 file_columns.append((model._meta.db_table, field.column))
             if field.name.startswith('encrypted_'):
-                key = 'RESOURCE_TOKEN_ENCRYPTION_KEY' if model._meta.app_label == 'resource_storefront' else 'INTEGRATION_ENCRYPTION_KEY'
+                key = ('DIGITAL_SALES_KEY' if model._meta.app_label == 'digital_sales' else
+                       'RESOURCE_TOKEN_ENCRYPTION_KEY' if model._meta.app_label == 'resource_storefront' else 'INTEGRATION_ENCRYPTION_KEY')
                 encrypted.append((model._meta.db_table, field.column, key))
     return file_columns, encrypted
 

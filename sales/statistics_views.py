@@ -9,6 +9,7 @@ from core.decorators import permission_required_all, permission_required_any
 from .statistics_excel import render_statistics_workbook
 from .statistics_forms import SaleStatisticsFilterForm
 from .statistics_service import build_sales_statistics_report
+from .inventory_statistics import build_inventory_statistics
 
 
 def _filter_form(request):
@@ -34,6 +35,7 @@ def statistics_index(request):
     params.pop("product_page", None)
     params.pop("operation_page", None)
     return render(request, "sales/statistics.html", {
+        'inventory': build_inventory_statistics(),
         "form": form, "report": report, "sale_page": sale_page, "product_page": product_page,
         'operation_page': Paginator(report.operations, 50).get_page(request.GET.get('operation_page')) if report else None,
         "filter_query": params.urlencode(), "today": timezone.localdate().isoformat(),

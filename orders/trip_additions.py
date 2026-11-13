@@ -41,7 +41,7 @@ def addition_price_list(batch, calculation_price_list_id=None):
 def prepare_addition(*, batch, lines, partner_ids=(), allocations=None, require_partners=True,
                      calculation_price_list_id=None):
     from .arrival_models import TripArrival
-    if TripArrival.objects.filter(trip=batch,arrived_at__isnull=False).exists():
+    if TripArrival.current.filter(trip=batch,arrived_at__isnull=False).exists():
         raise ValidationError('После прибытия нельзя добавлять закупочные позиции в этот рейс. Создайте отдельный заказ.')
     price_list = addition_price_list(batch, calculation_price_list_id)
     rate = price_list.exchange_rate_aed_rub

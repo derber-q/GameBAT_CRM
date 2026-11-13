@@ -27,8 +27,11 @@ class Command(BaseCommand):
                         process_print_jobs(stop=stop)
                         from sales.avito_shipping import process_jobs
                         process_jobs(stop=stop)
+                        if heartbeat:
+                            heartbeat.progress()
                     except OperationalError:
-                        pass
+                        if heartbeat:
+                            heartbeat.progress(verified=False, error='database')
                     finally:
                         if heartbeat:
                             heartbeat.action = 'idle'

@@ -1,0 +1,33 @@
+/* Каталог целиком: слайды и постоянные цвета регионов повторяют PNG. */
+.digital-price-actions{display:flex;flex-wrap:wrap;gap:12px;align-items:end}
+.digital-price-actions label{display:flex;flex-direction:column;gap:5px}
+.digital-price-actions form{margin:0}
+.digital-price-actions .digital-check{flex-direction:row;align-items:center;padding-bottom:10px}
+.digital-slide-nav{display:flex;flex-wrap:wrap;gap:8px;margin:20px 0}
+.digital-slide-nav a{padding:7px 10px;background:var(--surface,#fff);border:1px solid #d6e1e8;border-radius:5px}
+.digital-slide-nav small{margin-left:5px;color:#65778e}
+.digital-slide{scroll-margin-top:85px;margin:24px 0}
+.digital-slide-heading{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:12px}
+.digital-slide-heading h2{margin:0;font-size:21px}
+.digital-slide-heading span{color:#65778e;font-size:13px}
+.digital-blocks{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-items:start}
+.digital-block.panel{padding:0;overflow:hidden;border:1px solid var(--digital-color);margin:0;min-width:0}
+.digital-block-heading{margin:0;padding:12px 14px;background:var(--digital-color);color:var(--digital-foreground);font-size:16px;display:flex;justify-content:space-between;gap:10px}
+.digital-block-heading small{white-space:nowrap;font-size:12px;font-weight:400}
+.digital-products-table{width:100%;table-layout:fixed;margin:0;font-size:13px}
+.digital-products-table th,.digital-products-table td{padding:9px 8px;vertical-align:top;overflow-wrap:anywhere}
+.digital-products-table thead{background:color-mix(in srgb,var(--digital-color) 10%,white)}
+.digital-products-table th:first-child{width:29%}
+.digital-products-table td small{display:block;color:#65778e;font-size:11px;line-height:1.4;margin-top:4px}
+.digital-products-table input:not([type=hidden]){width:100%;min-width:0;padding:7px 6px;font-size:13px;box-sizing:border-box}
+.digital-products-table .button{padding:7px 8px;font-size:11px;white-space:normal;min-width:0}
+.digital-products-table .digital-subgroup th{background:color-mix(in srgb,var(--digital-color) 12%,white);color:#243c50;padding:7px 10px}
+[data-digital-markup]{margin:0}
+[data-save-status]{display:block;font-size:11px;margin-top:4px;overflow-wrap:anywhere}
+[data-save-status][data-error="1"]{color:#b2233a}
+.digital-products-table [data-price-preview]{color:#176b4c;font-weight:600}
+.digital-products-table [data-price-preview][hidden]{display:none}
+.digital-products-table [data-amount-mode][hidden]{display:none}
+.digital-products-table select[name=pricing_mode]{width:100%;margin-top:6px;padding:5px;font-size:12px}
+@media(max-width:1100px){.digital-blocks{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:600px){.digital-slide-heading{align-items:flex-start;flex-direction:column;gap:4px}.digital-products-table{min-width:560px}.digital-block-heading{font-size:14px}.digital-price-actions label{max-width:100%}}

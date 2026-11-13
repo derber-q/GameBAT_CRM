@@ -21,6 +21,8 @@ PRIVATE_NAMES = {
     '.django-secret-key', '.integration-encryption-key', '.resource-token-encryption-key',
     '.yandex-market-key', '.label-printer.json', '.ds_store', 'thumbs.db',
     '.telegram-staff-bot-token',
+    '.digital-sales-key', '.telegram-digital-bot-token',
+    '.telegram-opt-bot-token',
 }
 SQLITE_HEADER = b'SQLite format 3\x00'
 

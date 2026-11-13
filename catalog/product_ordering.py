@@ -90,6 +90,13 @@ def cd_order_key(product):
     return platform_order_key(platform), normalized_order_name(product.name), product.pk
 
 
+def wholesale_product_order_key(product, *, kind):
+    """Порядок оптового XLSX в плоском списке, без изменения состава и снимков строк."""
+    if kind == 'tech':
+        return 0, tech_price_order(product, for_excel=True)[0]
+    return 1, cd_order_key(product)
+
+
 def tech_brand_groups(items, *, product_of=lambda item: item):
     """Группирует уже разрешённые строки по бренду и типу, сохраняя поля строк."""
     brands = OrderedDict()

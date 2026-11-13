@@ -6,7 +6,7 @@ from core.db_retry import retry_database_lock
 from .access import check_access, check_function_access, BotDenied
 from .client import TelegramError
 from .documents import wholesale_document, supplier_documents
-from .menu import WHOLESALE, SUPPLIER_TEMPLATES
+from .menu import WHOLESALE, SUPPLIER_TEMPLATES, DIGITAL_PRICES
 from .models import StaffBotJob, StaffBotAccess, StaffBotJobDocument
 from partners.models import Supplier
 
@@ -31,6 +31,9 @@ def finish_job(job, state, category='', message_id=None):
 def run_job(job, client, *, owner=None):
     if job.state != 'generating':
         return
+    if job.function == DIGITAL_PRICES.code:
+        from digital_prices.telegram import run_job as run_digital_prices_job
+        return run_digital_prices_job(job, client, owner=owner)
     if job.function == SUPPLIER_TEMPLATES.code:
         return _run_supplier_job(job, client, owner=owner)
     return _run_wholesale_job(job, client, owner=owner)
@@ -187,7 +190,11 @@ def recover_interrupted(bot_id):
     """Вызывается только после получения эксклюзивной аренды и блокировки процесса."""
     recovered = []
     for job in StaffBotJob.objects.filter(bot_id=bot_id, state__in=['generating', 'sending']):
-        if job.function == SUPPLIER_TEMPLATES.code:
+        if job.function == DIGITAL_PRICES.code:
+            from digital_prices.telegram import recover_job
+            recover_job(job)
+            recovered.append(job)
+        elif job.function == SUPPLIER_TEMPLATES.code:
             _recover_supplier_job(job)
             recovered.append(job)
         else:
@@ -198,4 +205,8 @@ def recover_interrupted(bot_id):
 def notify_recovered_jobs(jobs, client):
     """Вызывается только после проверки личности бота и отсутствия webhook."""
     for job in jobs:
-        _notify_supplier_result(job, client)
+        if job.function == DIGITAL_PRICES.code:
+            from digital_prices.telegram import notify_result
+            notify_result(job, client)
+        else:
+            _notify_supplier_result(job, client)

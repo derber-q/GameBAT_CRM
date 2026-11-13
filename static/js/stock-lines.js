@@ -33,7 +33,9 @@
     const priceTypeInput = form.dataset.priceSelectId ? document.getElementById(form.dataset.priceSelectId) : null;
     const paymentInput = form.dataset.paymentSelectId ? document.getElementById(form.dataset.paymentSelectId) : null;
     const saleTypeInput = form.dataset.saleTypeSelectId ? document.getElementById(form.dataset.saleTypeSelectId) : null;
+    const customerInput = form.querySelector('[name="customer"]');
     const totalOutput = form.querySelector("[data-sale-intermediate-total]");
+    const unitsOutput = form.querySelector("[data-sale-units-total]");
     const commissionOutput = form.querySelector("[data-sale-commission-total]");
     const netTotalOutput = form.querySelector("[data-sale-net-total]");
     const commissionSummaryRows = form.querySelectorAll("[data-avito-commission-summary]");
@@ -45,6 +47,23 @@
     const barcodeFeedback = form.querySelector("[data-sale-barcode-feedback]");
     const showSaleInventory = form.dataset.showSaleInventory === "true";
     const wholeMoney = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 });
+    function consignmentPartnerId() {
+      const type = saleTypeInput ? saleTypeInput.value : form.dataset.fixedSaleType;
+      return type === 'wholesale' && /^[1-9]\d*$/.test(customerInput?.value || '') ? customerInput.value : '';
+    }
+    function consignmentChoices() {
+      const partnerId = consignmentPartnerId();
+      return partnerId ? consignmentOptions.filter(option => String(option.partner_id) === partnerId) : [];
+    }
+    function syncConsignmentAccess() {
+      const available = consignmentChoices().length > 0 && !fixedComposition && !tripEditable && !tripArrival &&
+        !form.querySelector('[name="consignment_report"]');
+      addConsignmentButtons.forEach(button => {
+        button.hidden = !available;
+        button.style.display = available ? '' : 'none';
+      });
+      body.querySelectorAll('.sale-consignment-line').forEach(row => row.refreshConsignmentOptions?.());
+    }
     function cents(raw) {
       const match = String(raw ?? "").trim().replace(",", ".").match(/^(-?)(\d+)(?:\.(\d{1,2}))?$/);
       if (!match) return null;
@@ -174,26 +193,7 @@
       const productCell = document.createElement("td");
       const select = document.createElement("select");
       select.required = true;
-      const empty = new Option("Выберите площадку и товар", "");
-      select.append(empty);
-      consignmentOptions.forEach((option) => {
-        const element = new Option(option.label, `${option.kind}:${option.stock_id}`);
-        element.dataset.kind = option.kind;
-        element.dataset.stockId = option.stock_id;
-        element.dataset.quantity = option.quantity;
-        element.dataset.unitPrice = option.unit_price;
-        select.append(element);
-      });
       const initialValue = value.stock_id ? `${value.product_kind}:${value.stock_id}` : "";
-      if (initialValue && ![...select.options].some((option) => option.value === initialValue)) {
-        const historical = new Option(value.label || "Историческая партия реализации", initialValue);
-        historical.dataset.kind = value.product_kind;
-        historical.dataset.stockId = value.stock_id;
-        historical.dataset.quantity = value.quantity || 0;
-        historical.dataset.unitPrice = value.unit_price || 0;
-        select.append(historical);
-      }
-      select.value = initialValue;
       const kind = document.createElement("input"); kind.type = "hidden"; kind.name = "consignment_product_type";
       const stockId = document.createElement("input"); stockId.type = "hidden"; stockId.name = "consignment_stock_id";
       productCell.append(select, kind, stockId);
@@ -218,13 +218,37 @@
         const option = select.selectedOptions[0];
         kind.value = option?.dataset.kind || "";
         stockId.value = option?.dataset.stockId || "";
-        row.dataset.fixedUnitPrice = option?.dataset.unitPrice || value.unit_price || "";
+        row.dataset.fixedUnitPrice = option?.dataset.unitPrice || "";
         recalculate();
       };
+      const refreshOptions = (selectedValue = select.value) => {
+        const partnerId = consignmentPartnerId();
+        select.replaceChildren(new Option(partnerId ? 'Выберите товар площадки партнёра' : 'Выберите оптовую продажу и партнёра с площадкой', ''));
+        consignmentChoices().forEach(option => {
+          const element = new Option(option.label, `${option.kind}:${option.stock_id}`);
+          element.dataset.kind = option.kind;
+          element.dataset.stockId = option.stock_id;
+          element.dataset.quantity = option.quantity;
+          element.dataset.unitPrice = option.unit_price;
+          select.append(element);
+        });
+        // Проданная до нуля партия остаётся доступна своей уже существующей строке,
+        // но не переносится при смене партнёра и не появляется в новых строках.
+        if (selectedValue && selectedValue === initialValue && partnerId && String(value.partner_id) === partnerId &&
+            ![...select.options].some(option => option.value === selectedValue)) {
+          const historical = new Option(value.label || 'Историческая партия реализации', initialValue);
+          Object.assign(historical.dataset, {kind:value.product_kind, stockId:value.stock_id,
+            quantity:value.quantity || 0, unitPrice:value.unit_price || 0});
+          select.append(historical);
+        }
+        select.value = [...select.options].some(option => option.value === selectedValue) ? selectedValue : '';
+        applySelection();
+      };
+      row.refreshConsignmentOptions = () => refreshOptions();
       select.addEventListener("change", applySelection); quantity.addEventListener("input", recalculate);
       row.append(productCell, priceCell, discountCell, quantityCell, costCell, totalCell, commissionCell, ...inventoryCells, removeCell);
       labelSaleRow(row);
-      body.append(row); applySelection();
+      body.append(row); refreshOptions(initialValue);
     }
 
     function selectedPrice(row) {
@@ -346,6 +370,7 @@
       syncCashReceivedVisibility();
       syncCommissionVisibility();
       let total = 0n;
+      let totalUnits = 0n;
       let totalCommission = 0n;
       const selectedQuantities = new Map();
       if (showSaleInventory) {
@@ -366,6 +391,12 @@
             ? row.querySelector('input[name="consignment_quantity"]')
             : row.querySelector('input[name="quantity"]'));
         const quantity = moneyQuantity(quantityInput);
+        const selectedProduct = row.classList.contains("sale-custom-line")
+          ? row.querySelector('input[name="custom_name"]')?.value.trim()
+          : row.classList.contains("sale-consignment-line")
+            ? row.querySelector('input[name="consignment_stock_id"]')?.value
+            : row.querySelector('input[name="product_id"]')?.value;
+        if (selectedProduct && row.dataset.systemKind !== 'EXPENSE') totalUnits += quantity;
         const basePrice = selectedBasePrice(row);
         const price = selectedPrice(row);
         const priceOutput = row.querySelector("[data-unit-price]");
@@ -412,6 +443,7 @@
         }
       });
       if (totalOutput) totalOutput.textContent = `${formatMoney(total)} ₽`;
+      if (unitsOutput) unitsOutput.textContent = `${wholeMoney.format(totalUnits)} шт.`;
       if (commissionOutput) commissionOutput.textContent = `${formatMoney(totalCommission)} ₽`;
       if (netTotalOutput) netTotalOutput.textContent = `${formatMoney(total - totalCommission)} ₽`;
     }
@@ -483,9 +515,21 @@
       const hint = form.querySelector("[data-payment-workflow]");
       if (hint) hint.textContent = paymentInput.value === 'partner_debt'
         ? "Продажа будет завершена, её стоимость увеличит долг партнёра. В кассу поступит 0 ₽."
+        : paymentInput.value === 'prepayment_account'
+        ? "Продажа будет завершена и оплачена со счёта предоплаты партнёра. Новые деньги в кассу не поступают."
         : immediate
         ? "Продажа будет сразу завершена."
         : "Продажа создаётся неоплаченной. Полученную сумму укажите при подтверждении оплаты. Завершение — после доставки и оплаты.";
+    }
+
+    function syncPrepaymentChoice() {
+      const option = paymentInput?.querySelector('option[value="prepayment_account"]');
+      if (!option) return;
+      const available = Boolean(consignmentPartnerId()) && operationMode() !== 'EXPENSE';
+      option.hidden = !available;
+      option.disabled = !available;
+      if (!available && paymentInput.value === 'prepayment_account') paymentInput.value = 'cash';
+      syncCashReceivedVisibility();
     }
 
     function addLine(value = {}) {
@@ -767,7 +811,9 @@
 
     addButtons.forEach((button) => button.addEventListener("click", () => addLine()));
     form.querySelectorAll(".add-custom-line").forEach((button) => button.addEventListener("click", () => addCustomLine()));
-    addConsignmentButtons.forEach((button) => button.addEventListener("click", () => addConsignmentLine()));
+    addConsignmentButtons.forEach((button) => button.addEventListener("click", () => {
+      if (!button.hidden && consignmentChoices().length) addConsignmentLine();
+    }));
     if (barcodeButton) barcodeButton.addEventListener("click", () => addByBarcode());
     if (barcodeInput) {
       barcodeInput.addEventListener("keydown", (event) => {
@@ -785,6 +831,7 @@
     });
     if (saleTypeInput) saleTypeInput.addEventListener("change", () => {
       syncPriceType(true);
+      syncConsignmentAccess();
       if (paymentInput && saleTypeInput.value === "avito") {
         paymentInput.value = "bank_transfer_postpay";
       }
@@ -793,6 +840,8 @@
       recalculate();
     });
     if (warehouseInput) warehouseInput.addEventListener("change", refreshInventory);
+    if (customerInput) customerInput.addEventListener('change', () => { syncConsignmentAccess(); syncPrepaymentChoice(); });
+    if (saleTypeInput) saleTypeInput.addEventListener('change', syncPrepaymentChoice);
     if (paymentInput) paymentInput.addEventListener("change", syncCashReceivedVisibility);
     form.addEventListener("submit", (event) => {
       const productRows = [...body.querySelectorAll("tr")].filter((row) => (
@@ -843,6 +892,8 @@
     });
     syncPriceType();
     (initial.length ? initial : [{}]).forEach(addLine);
+    syncConsignmentAccess();
+    syncPrepaymentChoice();
     if (tripEditable) {
       form.querySelectorAll('.add-custom-line, .add-consignment-line').forEach(node => { node.hidden = true; });
     }

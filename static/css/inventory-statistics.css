@@ -1,0 +1,10 @@
+.inventory-statistics table { min-width: 0; width: 100%; }
+.inventory-statistics .detail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.inventory-statistics .detail-grid > div { min-width: 0; }
+.inventory-statistics .collapsible-content h3 { margin-top: 20px; }
+.inventory-statistics th:first-child, .inventory-statistics td:first-child { white-space: normal; }
+.inventory-statistics tfoot { font-weight: 700; background: var(--surface-muted, #f7f9fb); }
+@media (max-width: 760px) {
+  .inventory-statistics .detail-grid { grid-template-columns: minmax(0, 1fr); }
+  .inventory-statistics > .table-scroll > table { min-width: 620px; }
+}

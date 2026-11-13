@@ -122,6 +122,56 @@ class StaffWorkerTests(TransactionTestCase):
                 with process_lock('telegram_staff'):
                     pass
 
+    def test_startup_recovers_after_three_transient_api_failures(self):
+        from .client import TelegramError
+        for method in ('getMe', 'getWebhookInfo'):
+            with self.subTest(method=method):
+                client, stop, failures = FakeClient(), threading.Event(), []
+                original = client.call
+                def call(name, data=None):
+                    if name == method:
+                        failures.append(name)
+                        if len(failures) <= 3:
+                            raise TelegramError('timeout')
+                    if name == 'getUpdates':
+                        stop.set()
+                        return []
+                    return original(name, data)
+                client.call = call
+                with patch('telegram_bots.worker.threading.Thread') as thread, patch.object(stop, 'wait', return_value=False), patch(
+                        'telegram_bots.worker.expected_status', side_effect=['required'] * 10 + ['disabled']):
+                    thread.return_value.is_alive.return_value = True
+                    run_polling(self.bot.pk, uuid.uuid4(), stop, client_factory=lambda _: client)
+                self.assertEqual(len(failures), 4)
+                self.bot.refresh_from_db()
+                self.assertEqual(self.bot.error_category, '')
+                self.assertIsNone(self.bot.lease_owner)
+
+    def test_three_transient_errors_do_not_stop_polling_or_executor(self):
+        from .client import TelegramError
+        for category in ('timeout', 'network', 'rate_limited'):
+            with self.subTest(category=category):
+                client, stop, polls = FakeClient(), threading.Event(), []
+                original_call = client.call
+                def call(method, data=None):
+                    if method == 'getUpdates':
+                        polls.append(data)
+                        if len(polls) <= 3:
+                            raise TelegramError(category)
+                        stop.set()
+                        return []
+                    return original_call(method, data)
+                client.call = call
+                with patch('telegram_bots.worker.threading.Thread') as executor, patch.object(stop, 'wait', return_value=False):
+                    executor.return_value.is_alive.return_value = True
+                    # Ограничиваем цикл при регрессии, чтобы тест не зависал на blocked.
+                    with patch('telegram_bots.worker.expected_status', side_effect=['required'] * 7 + ['disabled']):
+                        run_polling(self.bot.pk, uuid.uuid4(), stop, client_factory=lambda _: client)
+                self.assertEqual(len(polls), 4)
+                self.bot.refresh_from_db()
+                self.assertEqual(self.bot.error_category, '')
+                self.assertIsNone(self.bot.lease_owner)
+
     def test_supervisor_retries_three_times_and_manual_recovery_is_independent(self):
         adapter = FakeProcesses()
         adapter.fail = True
@@ -146,7 +196,9 @@ class StaffWorkerTests(TransactionTestCase):
             for seconds in [301, 370]:
                 WorkerProcess.objects.update_or_create(instance=instance, defaults={
                     'pid': row['pid'], 'birth': row['birth'], 'services': [code], 'ready': True,
-                    'heartbeat_at': now + timedelta(seconds=seconds)})
+                    'heartbeat_at': now + timedelta(seconds=seconds),
+                    'progress_at': now + timedelta(seconds=seconds), 'verified_at': now + timedelta(seconds=seconds),
+                    'executor_at': now + timedelta(seconds=seconds)})
                 supervise_once(adapter, now=now + timedelta(seconds=seconds))
             service.refresh_from_db()
             self.assertEqual(service.status, 'running')

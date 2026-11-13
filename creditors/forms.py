@@ -2,6 +2,7 @@
 
 У связанного партнёра положительный долг — нам должны, отрицательный — мы должны."""
 from decimal import Decimal
+import uuid
 
 from django import forms
 
@@ -65,3 +66,20 @@ class DebtAdjustmentForm(SingleWarehouseInitialMixin, forms.Form):
         elif mode == "total" and data.get("new_debt") is None and "new_debt" not in self.errors:
             self.add_error("new_debt", "Обязательное поле.")
         return data
+
+
+class PrepaymentForm(SingleWarehouseInitialMixin, forms.Form):
+    warehouse = forms.ModelChoiceField(label="Склад", queryset=Warehouse.objects.all())
+    amount = forms.DecimalField(label="Сумма, ₽", max_digits=20, decimal_places=2,
+        min_value=Decimal("0.01"), localize=True,
+        widget=forms.TextInput(attrs={"inputmode": "decimal", "autocomplete": "off"}))
+    money_source_type = forms.ChoiceField(label="Куда поступили деньги", choices=[
+        ("cash", "Касса склада"), ("safe", "Сейф склада"), ("bank", "Банковский перевод"),
+    ])
+    comment = forms.CharField(label="Комментарий", required=False, widget=forms.Textarea(attrs={"rows": 2}))
+    operation_key = forms.UUIDField(initial=uuid.uuid4, widget=forms.HiddenInput)
+
+    def __init__(self, *args, transfer=False, **kwargs):
+        super().__init__(*args, **kwargs)
+        if transfer:
+            self.fields.pop("money_source_type")

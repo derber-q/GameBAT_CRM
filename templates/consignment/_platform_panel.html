@@ -8,16 +8,16 @@
     <a class="button button-secondary" href="{% url 'consignment:platform_export' presentation.platform.pk %}">Скачать Excel</a>
   </div>
   <div id="consignment-platform-{{ presentation.platform.pk }}" class="collapsible-content consignment-platform-content">
-    {% if presentation.cd_groups %}
-      <div class="consignment-kind-heading"><span class="category-tag">CD</span><h3>Диски</h3></div>
-      {% for group, rows in presentation.cd_groups %}
-        {% include "consignment/_stock_group.html" with group=group rows=rows product_kind="cd" sales_platform=presentation.platform %}
-      {% endfor %}
-    {% endif %}
     {% if presentation.tech_groups %}
       <div class="consignment-kind-heading"><span class="category-tag category-tag-tech">TECH</span><h3>Техника</h3></div>
       {% for group, rows in presentation.tech_groups %}
         {% include "consignment/_stock_group.html" with group=group rows=rows product_kind="tech" sales_platform=presentation.platform %}
+      {% endfor %}
+    {% endif %}
+    {% if presentation.cd_groups %}
+      <div class="consignment-kind-heading"><span class="category-tag">CD</span><h3>Диски</h3></div>
+      {% for group, rows in presentation.cd_groups %}
+        {% include "consignment/_stock_group.html" with group=group rows=rows product_kind="cd" sales_platform=presentation.platform %}
       {% endfor %}
     {% endif %}
     <p class="empty-cell" data-platform-empty {% if presentation.count %}hidden{% endif %}>{% if filter_state.is_active %}Товары не найдены.{% else %}На площадке нет товаров.{% endif %}</p>

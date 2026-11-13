@@ -22,7 +22,7 @@ from .listing import list_groups, sales_queryset, status_context
 from .partner_payments import payment_partner_choices
 from .storage_locations import sale_storage_locations
 from .market_controls import with_market_controls, market_context
-from .invoice_excel import render_sale_invoice_xlsx
+from .invoice_excel import sale_invoice_document
 from .services import (
     advance_order_status, cancel_sale, create_sale, edit_postpay_sale_items,
     set_sale_payment_method, mark_sale_paid, update_sale_note, next_order_status,
@@ -125,10 +125,11 @@ def _parse_lines(post):
 def _consignment_options():
     options = []
     for kind, model, field in (("cd", CDConsignmentStock, "cd"), ("tech", TechConsignmentStock, "tech")):
-        for stock in model.objects.filter(quantity__gt=0).select_related(field, "platform", "warehouse"):
+        for stock in model.objects.filter(quantity__gt=0, platform__partner__is_archived=False).select_related(field, "platform__partner", "warehouse"):
             product = getattr(stock, field)
             options.append({
                 "kind": kind, "stock_id": stock.pk, "quantity": stock.quantity,
+                "partner_id": stock.platform.partner.pk, "platform_id": stock.platform_id,
                 "unit_price": f"{stock.receivable_per_unit:.2f}",
                 "label": f"{stock.platform.name} — {product.name} — {stock.warehouse.name} ({stock.quantity} шт.)",
             })
@@ -352,6 +353,8 @@ def sale_detail(request, pk):
         ).prefetch_related("cd_items__cd", "tech_items__tech", "custom_items", "consignment_items")),
         pk=pk,
     )
+    if sale.sale_type == Sale.SaleType.DIGITAL:
+        return redirect('digital_sales:order', pk=sale.digital_order.pk)
     legacy_consignment_mirror = sale.sale_type == Sale.SaleType.CONSIGNMENT and bool(sale.consignment_items.all())
     can_view_financials = request.user.is_superuser or request.user.has_perm("sales.view_sales_statistics")
     show_storage_locations = (
@@ -433,31 +436,9 @@ def sale_invoice(request, pk):
         ),
         pk=pk,
     )
-    legacy_consignment_mirror = sale.sale_type == Sale.SaleType.CONSIGNMENT and bool(sale.consignment_items.all())
-    rows = [
-        {"kind": "CD", "name": item.product_name_snapshot, "article": item.article_snapshot,
-         "quantity": item.quantity, "unit_price": item.effective_unit_price, "line_total": item.line_total}
-        for item in sale.cd_items.all() if not legacy_consignment_mirror
-    ] + [
-        {"kind": "Tech", "name": item.product_name_snapshot, "article": item.article_snapshot,
-         "quantity": item.quantity, "unit_price": item.effective_unit_price, "line_total": item.line_total}
-        for item in sale.tech_items.all() if not legacy_consignment_mirror
-    ] + [
-        {"kind": item.product_name_snapshot if item.system_product_id else "Произвольная позиция", "name": item.product_name_snapshot, "article": "—",
-         "quantity": item.quantity, "unit_price": item.effective_unit_price, "line_total": item.line_total}
-        for item in sale.custom_items.all()
-    ] + [
-        {"kind": f"Реализация · {item.platform_name_snapshot}", "name": item.product_name_snapshot,
-         "article": item.article_snapshot or "—", "quantity": item.quantity,
-         "unit_price": item.unit_price, "line_total": item.line_total}
-        for item in sale.consignment_items.all()
-    ]
-    content = render_sale_invoice_xlsx(sale=sale, rows=rows)
-    filename = "".join(char if char.isalnum() or char in "-_." else "_" for char in sale.visible_id)
+    filename, content = sale_invoice_document(sale)
     response = HttpResponse(content, content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-    from partners.customers import customer_filename
-    suffix = f'_{customer_filename(sale.partner_name_snapshot)}' if sale.partner_name_snapshot else ''
-    response["Content-Disposition"] = content_disposition_header(True, f"nakladnaya_{filename}{suffix}.xlsx")
+    response["Content-Disposition"] = content_disposition_header(True, filename)
     response["X-Content-Type-Options"] = "nosniff"
     return response
 
@@ -491,6 +472,7 @@ def sale_edit(request, pk):
         for item in sale.custom_items.all()
     ] + [
         {"consignment": True, "product_kind": item.product_kind, "stock_id": item.source_stock_id,
+         "partner_id": sale.partner_id if sale.partner_id and sale.partner.platform_id == item.platform_id else None,
          "quantity": item.quantity, "label": f"{item.platform_name_snapshot} — {item.product_name_snapshot}",
          "unit_price": f"{item.unit_price:.2f}"}
         for item in sale.consignment_items.all()
@@ -558,6 +540,7 @@ def sale_mark_paid(request, pk):
             settlement_confirmation=request.POST.get('settlement_confirmation', ''),
             note=request.POST.get('settlement_note'),
             settlement_partner_id=request.POST.get('settlement_partner_id'),
+            payment_method=request.POST.get('payment_method'),
         )
     except (ValidationError, Sale.DoesNotExist) as exc:
         messages.error(request, " ".join(exc.messages) if isinstance(exc, ValidationError) else "Продажа не найдена.")

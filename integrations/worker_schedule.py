@@ -24,6 +24,15 @@ def queue_snapshot(code, *, now, enabled=True):
     if code == 'telegram_staff':
         from telegram_bots.monitoring import queue_snapshot as telegram_snapshot
         data.update(telegram_snapshot())
+    elif code == 'telegram_digital':
+        from digital_sales.monitoring import queue_snapshot as digital_snapshot
+        data.update(digital_snapshot())
+    elif code == 'telegram_opt':
+        from wholesale_bot.monitoring import queue_snapshot as wholesale_snapshot
+        data.update(wholesale_snapshot())
+    elif code == 'digital_prices':
+        from digital_prices.monitoring import queue_snapshot as prices_snapshot
+        data.update(prices_snapshot())
     elif code == 'print':
         from sales.models import MarketPrintJob
         jobs = MarketPrintJob.objects.all()

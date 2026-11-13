@@ -58,9 +58,18 @@ INSTALLED_APPS = [
     "orders",
     "integrations.apps.IntegrationsConfig",
     "telegram_bots.apps.TelegramBotsConfig",
+    "digital_sales.apps.DigitalSalesConfig",
+    "digital_prices.apps.DigitalPricesConfig",
+    "wholesale_bot.apps.WholesaleBotConfig",
     "yandex_market.apps.YandexMarketConfig",
     "resource_storefront.apps.ResourceStorefrontConfig",
 ]
+
+# Отдельные источники цифровых секретов. Ключ создаётся только явной командой.
+DIGITAL_SALES_KEY_FILE = os.environ.get('DIGITAL_SALES_KEY_FILE', str(BASE_DIR / '.digital-sales-key'))
+TELEGRAM_DIGITAL_TOKEN_FILE = os.environ.get('TELEGRAM_DIGITAL_TOKEN_FILE', str(BASE_DIR / '.telegram-digital-bot-token'))
+TELEGRAM_OPT_TOKEN_FILE = os.environ.get('TELEGRAM_OPT_TOKEN_FILE', str(BASE_DIR / '.telegram-opt-bot-token'))
+DIGITAL_SALES_CRM_URL = os.environ.get('DIGITAL_SALES_CRM_URL', 'http://127.0.0.1:8000')
 
 MIDDLEWARE = [
     'crm_backups.window.BackupWindowMiddleware',

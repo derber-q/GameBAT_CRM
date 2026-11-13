@@ -14,7 +14,7 @@
   <link rel="stylesheet" href="{% static 'css/navigation.css' %}?v=20261031-1">
   <script src="{% static 'js/navigation.js' %}?v=20261031-1" defer></script>
   <script src="{% static 'js/partner-customers.js' %}?v=20261031-1" defer></script>
-  <script src="{% static 'js/partner-settlements.js' %}?v=20261031-1" defer></script>
+  <script src="{% static 'js/partner-settlements.js' %}?v=20261112-prepayment-1" defer></script>
   {% if is_local_test %}<link rel="stylesheet" href="{% static 'css/test-environment.css' %}?v=20261031-1">{% endif %}
 </head>
 <body class="{% block body_class %}{% endblock %}" data-exchange-rates-url="{% url 'core:exchange_rates' %}" data-partner-settlement-url="{% url 'sales:settlement_preview' %}">
@@ -39,10 +39,11 @@
           </div>
         </div>{% endif %}
         {% if nav.orders %}<a class="{% if request.resolver_match.namespace == 'orders' %}active{% endif %}" href="{% url 'orders:list' %}">Импорт</a>{% endif %}
-        {% if nav.partners or nav.creditors or nav.suppliers %}
+        {% if nav.partners or nav.creditors or nav.suppliers or nav.digital_sales %}
           <div class="nav-dropdown" data-counterparties-nav>
-            <a class="nav-dropdown-trigger {% if request.resolver_match.namespace == 'partners' or request.resolver_match.namespace == 'creditors' %}active{% endif %}" href="{% if nav.partners %}{% url 'partners:partner_list' %}{% elif nav.creditors %}{% url 'creditors:list' %}{% else %}{% url 'partners:list' %}{% endif %}" aria-haspopup="true">Контрагенты</a>
+            <a class="nav-dropdown-trigger {% if request.resolver_match.namespace == 'partners' or request.resolver_match.namespace == 'creditors' or request.resolver_match.namespace == 'digital_sales' %}active{% endif %}" href="{% if nav.partners %}{% url 'partners:partner_list' %}{% elif nav.creditors %}{% url 'creditors:list' %}{% elif nav.digital_sales %}{% url 'digital_sales:dashboard' %}{% else %}{% url 'partners:list' %}{% endif %}" aria-haspopup="true">Контрагенты</a>
             <div class="nav-dropdown-menu">
+              {% if nav.digital_sales %}<a href="{% url 'digital_sales:dashboard' %}">Баланс цифровых продаж</a>{% endif %}
               {% if nav.partners %}<a class="{% if request.resolver_match.namespace == 'partners' and 'partner_' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'partners:partner_list' %}">Партнёры</a>{% endif %}
               {% if nav.creditors %}<a class="{% if request.resolver_match.namespace == 'creditors' %}active{% endif %}" href="{% url 'creditors:list' %}">Кредиторы</a>{% endif %}
               {% if nav.suppliers %}<a class="{% if request.resolver_match.namespace == 'partners' and 'partner_' not in request.resolver_match.url_name %}active{% endif %}" href="{% url 'partners:list' %}">Поставщики</a>{% endif %}
@@ -88,13 +89,14 @@
             </div>
           </div>
         {% endif %}
-        {% if nav.pricing %}
+        {% if nav.pricing or nav.digital_prices %}
           <div class="nav-dropdown">
             <a class="nav-dropdown-trigger {% if request.resolver_match.namespace == 'pricing' %}active{% endif %}" href="{% url 'pricing:list' %}" aria-haspopup="true">Ценообразование</a>
             <div class="nav-dropdown-menu">
               <a class="{% if request.resolver_match.namespace == 'pricing' and request.resolver_match.url_name == 'cd_list' %}active{% endif %}" href="{% url 'pricing:cd_list' %}">Диски</a>
               <a class="{% if request.resolver_match.namespace == 'pricing' and request.resolver_match.url_name == 'tech_list' %}active{% endif %}" href="{% url 'pricing:tech_list' %}">Техника</a>
               <a class="{% if request.resolver_match.namespace == 'pricing' and request.resolver_match.url_name == 'avito_check' %}active{% endif %}" href="{% url 'pricing:avito_check' %}">Avito Check</a>
+              {% if nav.digital_prices %}<a href="{% url 'pricing:digital_prices:catalog' %}">Цифровые товары</a>{% endif %}
             </div>
           </div>
         {% endif %}

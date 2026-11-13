@@ -2,6 +2,14 @@
     <div class="finalization-penalty finalization-penalty-success" data-finalization-penalty>
       <span>Текущая неустойка</span><strong>{{ initial_penalty|floatformat:2 }} ₽</strong>
     </div>
+    {% if bulk_cost_adjustment %}
+    <div class="finalization-bulk-actions" aria-label="Изменить себестоимость выделенных строк">
+      <div class="field"><label for="finalization-bulk-operation">Действие</label><select id="finalization-bulk-operation" data-bulk-cost-operation><option value="subtract">− Вычесть</option><option value="add">+ Прибавить</option></select></div>
+      <div class="field"><label for="finalization-bulk-amount">Сумма, ₽ за единицу</label><input id="finalization-bulk-amount" type="number" min="0.01" step="0.01" inputmode="decimal" placeholder="100,00" data-bulk-cost-amount></div>
+      <button class="button button-secondary" type="button" data-bulk-cost-apply>Выполнить</button>
+      <span class="muted" role="status" aria-live="polite" data-bulk-cost-status></span>
+    </div>
+    {% endif %}
     <div class="finalization-quick-actions">
       <button class="button button-secondary" type="button" data-select-kind="cd">Выбрать все CD</button>
       <button class="button button-secondary" type="button" data-select-kind="tech">Выбрать все Tech</button>

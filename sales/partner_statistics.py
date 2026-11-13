@@ -1,7 +1,8 @@
 """Единая лента продаж и движений долга для HTML и Excel; выручка считается прежним сервисом."""
 from dataclasses import dataclass
 from decimal import Decimal
-from creditors.models import CreditorTransaction
+from creditors.models import CreditorTransaction, PrepaymentTransaction
+from .models import Sale
 
 ZERO = Decimal('0.00')
 
@@ -27,7 +28,8 @@ def financial_operations(filters, sales):
     operations = []
     for row in sales:
         sale = row.sale
-        actual = sale.cash_received_amount if sale.cash_received_amount is not None else sale.total_amount
+        actual = ((sale.cash_received_amount or ZERO) if sale.sale_type == Sale.SaleType.DIGITAL else
+                  sale.cash_received_amount if sale.cash_received_amount is not None else sale.total_amount)
         actual -= sale.procurement_prepaid_amount
         operations.append(FinancialOperation(sale.completed_at, sale.get_operation_kind_display(),
             sale.partner_name_snapshot, sale, row.goods_total, actual_money=actual, comment=sale.note))
@@ -60,6 +62,8 @@ def financial_operations(filters, sales):
         reversal_sign = -1 if entry.kind == CreditorTransaction.Kind.REVERSAL else 1
         original_kind = entry.reversal_of.kind if entry.reversal_of_id else entry.kind
         repayment = entry.amount * reversal_sign if original_kind == CreditorTransaction.Kind.REPAYMENT else ZERO
+        if original_kind == CreditorTransaction.Kind.SALE_ADVANCE and entry.sale_id:
+            repayment = entry.sale.debt_repayment_amount * reversal_sign
         offset = entry.amount * reversal_sign if original_kind == CreditorTransaction.Kind.OFFSET else ZERO
         if original_kind == CreditorTransaction.Kind.SALE_DEBT and entry.sale_id:
             offset = entry.sale.debt_offset_amount * reversal_sign
@@ -85,4 +89,23 @@ def financial_operations(filters, sales):
             operations.append(FinancialOperation(entry.created_at, f'{entry.get_operation_type_display()} · заказ №{order.pk}',
                 order.partner_name_snapshot or order.recipient, None, entry.amount, entry.signed_amount,
                 comment=entry.comment, order_id=order.pk))
+    # Внесение предоплаты — реальные деньги, но не выручка от товаров.
+    # Оплата со счёта уже присутствует строкой продажи с actual_money=0.
+    # Перенос отражён в журнале долга и не является новым поступлением.
+    if not any(filters.get(key) for key in ('channels', 'operation_kind', 'sale_ids', 'product_query',
+            'platform', 'game_series', 'brand', 'product_type', 'arbitrary_partner_name')) and all(
+            filters.get(key) is None for key in ('min_profit', 'max_profit')):
+        prepayments = PrepaymentTransaction.objects.filter(kind=PrepaymentTransaction.Kind.DEPOSIT)
+        for key, lookup in (('date_from', 'created_at__date__gte'), ('date_to', 'created_at__date__lte'),
+                            ('warehouse', 'warehouse'), ('partner', 'creditor__partner')):
+            if filters.get(key):
+                prepayments = prepayments.filter(**{lookup: filters[key]})
+        if filters.get('payment_methods'):
+            sources = []
+            if any(method in filters['payment_methods'] for method in ('cash', 'cash_postpay')): sources += ['cash', 'safe']
+            if any(method in filters['payment_methods'] for method in ('bank_account', 'bank_transfer_postpay')): sources += ['bank']
+            prepayments = prepayments.filter(money_source_type__in=sources)
+        for entry in prepayments:
+            operations.append(FinancialOperation(entry.created_at, entry.get_kind_display(),
+                entry.partner_name_snapshot, None, entry.amount, actual_money=entry.amount, comment=entry.comment))
     return sorted(operations, key=lambda row: row.date, reverse=True)

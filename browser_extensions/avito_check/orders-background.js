@@ -5,19 +5,29 @@
   const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
   let opening;
   function crm(url){try{const u=new URL(url);return u.protocol==='http:'&&allowedHosts.has(u.hostname)&&!u.username&&!u.password;}catch{return false;}}
+  // Chrome/Opera возвращают pendingUrl, пока новая вкладка ещё не получила url.
+  function tabURL(tab){return typeof tab?.pendingUrl==='string'&&tab.pendingUrl?tab.pendingUrl:typeof tab?.url==='string'?tab.url:'';}
   async function connection(){
     if(opening)return opening;
     opening=(async()=>{
       const tabs=await chrome.tabs.query({});
-      let tab=tabs.find(t=>crm(t.url)&&new URL(t.url).pathname==='/crm/sales/avito-extension/');
+      let requestedURL='';
+      let tab=tabs.find(t=>crm(tabURL(t))&&new URL(tabURL(t)).pathname==='/crm/sales/avito-extension/');
       if(!tab){
         const saved=(await chrome.storage.session.get('resource-orders:connection'))['resource-orders:connection'];
-        tab=tabs.find(t=>t.id===saved?.id&&crm(t.url)&&new URL(t.url).origin===saved.origin);
-        if(tab&&!new URL(tab.url).pathname.startsWith('/crm/accounts/login/'))tab=await chrome.tabs.update(tab.id,{url:saved.origin+'/crm/sales/avito-extension/'});
+        tab=tabs.find(t=>t.id===saved?.id&&crm(tabURL(t))&&new URL(tabURL(t)).origin===saved.origin);
+        if(tab&&!new URL(tabURL(tab)).pathname.startsWith('/crm/accounts/login/')){
+          requestedURL=saved.origin+'/crm/sales/avito-extension/';
+          tab=await chrome.tabs.update(tab.id,{url:requestedURL});
+        }
       }
-      if(!tab){const source=tabs.find(t=>crm(t.url)&&new URL(t.url).pathname.startsWith('/crm/'));
-        tab=await chrome.tabs.create({url:(source?new URL(source.url).origin:'http://127.0.0.1:8000')+'/crm/sales/avito-extension/',active:false});}
-      const state={id:tab.id,origin:new URL(tab.url).origin};
+      if(!tab){const source=tabs.find(t=>crm(tabURL(t))&&new URL(tabURL(t)).pathname.startsWith('/crm/'));
+        requestedURL=(source?new URL(tabURL(source)).origin:'http://127.0.0.1:8000')+'/crm/sales/avito-extension/';
+        tab=await chrome.tabs.create({url:requestedURL,active:false});}
+      const knownURL=tabURL(tab);
+      const initialURL=!knownURL||knownURL==='about:blank'?requestedURL:knownURL;
+      if(!crm(initialURL))throw new Error('Не удалось открыть вкладку связи CRM.');
+      const state={id:tab.id,origin:new URL(initialURL).origin};
       await chrome.storage.session.set({'resource-orders:connection':state});
       // После перезагрузки расширения старые вкладки остаются без content script.
       // Проверяем приёмник ДО отправки действия; одновременно соединяющиеся строки
@@ -25,8 +35,10 @@
       let refreshed=false;
       for(let n=0;n<40;n++){
         const current=await chrome.tabs.get(state.id);
-        if(!crm(current.url)||new URL(current.url).origin!==state.origin)throw new Error('Вкладка связи CRM перенаправлена на другой адрес.');
-        const path=new URL(current.url).pathname;
+        const address=tabURL(current);
+        if(!address||address==='about:blank'){await pause(250);continue;}
+        if(!crm(address)||new URL(address).origin!==state.origin)throw new Error('Вкладка связи CRM перенаправлена на другой адрес.');
+        const path=new URL(address).pathname;
         if(path.startsWith('/crm/accounts/login/'))throw new Error('Войдите в CRM во вкладке связи заказов Avito.');
         if(current.status!=='loading'&&path==='/crm/sales/avito-extension/'){
           try{
@@ -47,7 +59,7 @@
       let response;
       try{
         const tab=await chrome.tabs.get(state.id);
-        if(!crm(tab.url)||new URL(tab.url).origin!==state.origin)throw new Error('CRM перенаправила вкладку.');
+        if(!crm(tabURL(tab))||new URL(tabURL(tab)).origin!==state.origin)throw new Error('CRM перенаправила вкладку.');
         response=await chrome.tabs.sendMessage(state.id,{type:'resource-orders:bridge',data});
       }catch(error){if(n===19)throw new Error('Откройте вкладку связи заказов Avito в CRM и войдите в аккаунт. '+error.message);await pause(500);continue;}
       if(!response?.ok)throw new Error(response?.message||'Нет ответа CRM.');
@@ -55,7 +67,8 @@
     }
   }
   function codeURL(source){
-    const u=new URL(source);
+    if(typeof source!=='string'||!source.trim())throw new Error('На странице Avito нет адреса отправительного кода.');
+    let u;try{u=new URL(source,'https://m.avito.ru/');}catch{throw new Error('Avito вернул некорректный адрес отправительного кода.');}
     if(u.protocol!=='https:'||!['www.avito.ru','avito.ru','m.avito.ru'].includes(u.hostname)||u.port||u.username||u.password||u.pathname!=='/web/1/barcode/generate'||!u.searchParams.get('content'))throw new Error('Исходный отправительный код Avito не найден.');
     return u.href;
   }
@@ -81,7 +94,7 @@
         clip.x<0||clip.y<0||clip.x>100000||clip.y>100000||clip.width<20||clip.height<20||clip.width>1000||clip.height>1000)
         throw new Error('Некорректные размеры изображения отправительного кода Avito.');
       const current=await chrome.tabs.get(target.tabId);
-      if(!ResourceAvito.isAvito(current.url)||new URL(current.url).pathname!=='/orders/'+order.order_id)
+      if(!ResourceAvito.isAvito(tabURL(current))||new URL(tabURL(current)).pathname!=='/orders/'+order.order_id)
         throw new Error('Avito перенаправил временную вкладку заказа.');
       let screenshot;
       try{
@@ -95,7 +108,7 @@
     }
     // Уже открытый мобильный заказ можно прочитать без новой навигации/эмуляции.
     for(const current of await chrome.tabs.query({})){
-      if(!ResourceAvito.isAvito(current.url)||new URL(current.url).pathname!=='/orders/'+order.order_id)continue;
+      if(!ResourceAvito.isAvito(tabURL(current))||new URL(tabURL(current)).pathname!=='/orders/'+order.order_id)continue;
       let result;try{result=await chrome.tabs.sendMessage(current.id,{type:'resource-orders:label'});}catch{continue;}
       if(result?.label){const found=await extract(result.label);if(found)return found;}
     }
@@ -121,8 +134,11 @@
       for(let n=0;n<35;n++){
         await pause(700);
         const current=await chrome.tabs.get(tab.id);
-        const u=new URL(current.url);
-        if(!ResourceAvito.isAvito(current.url)||u.pathname!=='/orders/'+order.order_id){reason='Avito перенаправил страницу';continue;}
+        const address=tabURL(current);
+        if(!address||address==='about:blank'){reason='мобильная страница ещё загружается';continue;}
+        if(!ResourceAvito.isAvito(address)){reason='Avito перенаправил страницу';continue;}
+        const u=new URL(address);
+        if(u.pathname!=='/orders/'+order.order_id){reason='Avito перенаправил страницу';continue;}
         let result;try{result=await chrome.tabs.sendMessage(tab.id,{type:'resource-orders:label'});}catch{reason='расширение не подключилось к мобильной странице';continue;}
         if(!result?.label){reason='в мобильном заказе нет исходного кода';continue;}
         return await extract(result.label,target);

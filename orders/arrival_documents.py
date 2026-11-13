@@ -7,6 +7,7 @@ from django.db import transaction
 from core.db_retry import retry_database_lock
 from catalog.models import CD, Tech
 from catalog.game_codes import validate_supply_game_codes
+from catalog.product_ordering import wholesale_product_order_key
 from price.services import decimal_value, RATE_PRECISION
 from .arrival import lock_arrival, reduce_received
 from .arrival_math import unit_cohorts
@@ -29,6 +30,9 @@ def cohort_rows(arrival, order_id):
 
 
 def form_rows(arrival, order_id):
+    sources = arrival.rows.filter(order_id=order_id).select_related('cd__platform', 'tech__brand', 'tech__product_type')
+    # Меняем только отображение: идентификаторы партий, цены и количества остаются прежними.
+    sources = sorted(sources, key=lambda row: wholesale_product_order_key(row.product, kind=row.product_kind))
     return [{'product_type':row.product_kind, 'product_id':row.product_id, 'label':row.product.name,
         'quantity':row.actual_quantity, 'supplier_id':row.supplier_id, 'unit_cost':str(
             (row.final_total / row.actual_quantity).quantize(Decimal('.01'), rounding=ROUND_HALF_UP) if row.actual_quantity else 0),
@@ -37,21 +41,60 @@ def form_rows(arrival, order_id):
         'weight_grams':row.weight_grams_snapshot,
         'unit_discount':str(row.unit_discount), 'line_note':row.line_note,
         'cusa_ppsa_code':getattr(row.product,'cusa_ppsa_code','')}
-        for row in arrival.rows.filter(order_id=order_id).select_related('cd','tech')]
+        for row in sources]
 
 
-def operation_snapshot(arrival, order, rows):
+def operation_snapshot(arrival, order, rows, *, quantity_restore=None):
     return {'arrival_id':arrival.pk, 'arrival_revision':arrival.revision, 'order_id':order.pk,
         'trip_id':arrival.trip_id, 'usd_rub':str(arrival.usdt_rub), 'usd_aed':str(arrival.usdt_aed),
         'aed_rub':str(decimal_value(arrival.usdt_rub/arrival.usdt_aed, precision=RATE_PRECISION, positive=True)),
         'partner_id':order.partner_id, 'partner_name':order.partner_name_snapshot or order.recipient,
-        'purpose':order.purpose, 'rows':rows, 'control_total':str(arrival.control_total)}
+        'purpose':order.purpose, 'rows':rows, 'control_total':str(arrival.control_total),
+        'quantity_restore':quantity_restore or []}
+
+
+@transaction.atomic
+def restore_operation_quantities(operation, *, actor=None):
+    """Возвращает фактические количества, уменьшенные при подготовке документа рейса."""
+    changes = operation.calculation.get('quantity_restore') or []
+    if not changes:
+        return []
+    arrival = lock_arrival(operation.calculation['arrival_id'], finalized_allowed=True)
+    row_ids = [int(change['row_id']) for change in changes]
+    rows = {row.pk:row for row in arrival.rows.select_for_update().filter(
+        pk__in=row_ids, order_id=operation.order_id)}
+    restored = []
+    for change in changes:
+        row_id = int(change['row_id'])
+        row = rows.get(row_id)
+        if row is None:
+            raise ValidationError('Не найдена строка прибытия, связанная с отменяемой операцией.')
+        before, after = int(change['before']), int(change['after'])
+        if before < after or before > row.original_quantity:
+            raise ValidationError('Сохранённые количества операции повреждены; прибытие не изменено.')
+        if arrival.finalized:
+            # Итоговая себестоимость и фактические количества финализированного рейса неизменяемы.
+            continue
+        current = row.actual_quantity
+        target = min(row.original_quantity, current + before - after)
+        if target != current:
+            row.actual_quantity = target
+            row.save(update_fields=['actual_quantity'])
+            restored.append({'row_id':row.pk, 'before':current, 'after':target})
+    if restored:
+        from .arrival import recalculate_arrival
+        from .trips import _record_trip_change
+        recalculate_arrival(arrival, actor=actor or operation.created_by)
+        _record_trip_change(arrival.trip, actor or operation.created_by,
+            f'Восстановлены фактические количества после отмены операции заказа №{operation.order_id}',
+            {'operation_id':operation.pk, 'changes':restored})
+    return restored
 
 
 def build_draft(*, actor, order):
     from .fulfillment import require_permissions, prepaid_amount
     require_permissions(actor, order)
-    arrival = TripArrival.objects.filter(trip_id=order.trip_id, arrived_at__isnull=False).first()
+    arrival = TripArrival.current.filter(trip_id=order.trip_id, arrived_at__isnull=False).first()
     if not arrival:
         raise ValidationError('Сначала подтвердите «Рейс приехал» на странице рейса.')
     snapshot = operation_snapshot(arrival, order, form_rows(arrival, order.pk))
@@ -118,6 +161,7 @@ def _prepare(actor, arrival, order, lines, *, stock=False):
                 'unit_price':str(product.wholesale_price), 'unit_cost':str(product.cost),
                 'cusa_ppsa_code':getattr(product,'cusa_ppsa_code','')})
             changes.append(f'Добавлен товар со склада «{product.name}»: {quantity} шт.')
+    quantity_restore = []
     if arrival.finalized:
         if any(quantities[key] != row.actual_quantity for key,row in sources.items()):
             raise ValidationError('Фактические количества финализированного рейса зафиксированы.')
@@ -125,6 +169,9 @@ def _prepare(actor, arrival, order, lines, *, stock=False):
         for key,row in sources.items():
             if quantities[key] != row.actual_quantity:
                 changes.append(f'«{row.product.name}»: количество {row.actual_quantity} → {quantities[key]} шт.')
+                if quantities[key] < row.actual_quantity:
+                    quantity_restore.append({'row_id':row.pk, 'before':row.actual_quantity,
+                        'after':quantities[key]})
         arrival = reduce_received(actor=actor, arrival_id=arrival.pk, order_id=order.pk,
             quantities=quantities, expected_revision=arrival.revision)
     for key,(discount,note) in configs.items():
@@ -134,7 +181,7 @@ def _prepare(actor, arrival, order, lines, *, stock=False):
             note = ''
         source.unit_discount, source.line_note = discount, note
         source.save(update_fields=['unit_discount','line_note'])
-    return arrival, cohort_rows(arrival, order.pk) + extras, changes
+    return arrival, cohort_rows(arrival, order.pk) + extras, changes, quantity_restore
 
 
 def _confirm(actor, arrival, order, rows, changes, key, confirmation, details):
@@ -160,7 +207,7 @@ def create_arrival_sale(*, actor, arrival_id, order_id, expected_revision, wareh
     order = _order(actor, arrival, order_id, False)
     if payment_method not in (Sale.PaymentMethod.CASH_POSTPAY, Sale.PaymentMethod.BANK_TRANSFER_POSTPAY):
         raise ValidationError('Продажа из рейса создаётся с постоплатой; оплату подтвердите после общей финализации.')
-    arrival, rows, changes = _prepare(actor,arrival,order,lines)
+    arrival, rows, changes, quantity_restore = _prepare(actor,arrival,order,lines)
     _confirm(actor,arrival,order,rows,changes,key,changes_confirmation,{'warehouse_id':str(warehouse_id),'note':note,'payment_method':payment_method})
     if not rows:
         return None
@@ -170,7 +217,7 @@ def create_arrival_sale(*, actor, arrival_id, order_id, expected_revision, wareh
         note=note, creation_key=key, _direct_rows=rows, _prepaid=prepaid_amount(order))
     if sale.total_amount < sale.procurement_prepaid_amount:
         raise ValidationError('Стоимость продажи меньше уже внесённого аванса. Сначала урегулируйте предоплату заказа.')
-    snapshot = operation_snapshot(arrival,order,rows)
+    snapshot = operation_snapshot(arrival,order,rows,quantity_restore=quantity_restore)
     _link(actor,order,{'key':str(key),'calculation':snapshot},sale=sale)
     return sale
 
@@ -189,7 +236,7 @@ def create_arrival_supply(*, actor, arrival_id, order_id, expected_revision, war
         return prior
     arrival = lock_arrival(arrival_id,expected_revision,finalized_allowed=True)
     order = _order(actor,arrival,order_id,True)
-    arrival, rows, changes = _prepare(actor,arrival,order,lines,stock=True)
+    arrival, rows, changes, quantity_restore = _prepare(actor,arrival,order,lines,stock=True)
     _confirm(actor,arrival,order,rows,changes,key,changes_confirmation,{'warehouse_id':str(warehouse_id)})
     if not rows:
         return None
@@ -202,7 +249,7 @@ def create_arrival_supply(*, actor, arrival_id, order_id, expected_revision, war
             item.save(update_fields=['trip_cost_row','trip_cost_slot'])
     supply.status = Supply.Status.WAITING_TRIP_FINALIZATION
     supply.save(update_fields=['status'])
-    snapshot = operation_snapshot(arrival,order,rows)
+    snapshot = operation_snapshot(arrival,order,rows,quantity_restore=quantity_restore)
     _link(actor,order,{'key':str(key),'calculation':snapshot},supply=supply)
     return supply
 
@@ -326,7 +373,8 @@ def refresh_documents(arrival, *, actor=None):
                 cancel_supply(actor=actor,supply_id=operation.supply_id,comment='Все товары заказа не поступили')
                 continue
             _refresh_supply(operation.supply,rows)
-        operation.calculation = operation_snapshot(arrival,operation.order,rows)
+        operation.calculation = operation_snapshot(arrival,operation.order,rows,
+            quantity_restore=operation.calculation.get('quantity_restore'))
         operation._pending_trip_cost_write = True
         operation.save(update_fields=['calculation'])
 
@@ -362,7 +410,9 @@ def synchronize_sale_discounts(*, actor, sale):
         if not arrival.finalized:
             arrival.revision+=1
             arrival.save(update_fields=['revision'])
-            operation.calculation=operation_snapshot(arrival,operation.order,cohort_rows(arrival,operation.order_id)+warehouse_rows(sale))
+            operation.calculation=operation_snapshot(arrival,operation.order,
+                cohort_rows(arrival,operation.order_id)+warehouse_rows(sale),
+                quantity_restore=operation.calculation.get('quantity_restore'))
             operation._pending_trip_cost_write=True
             operation.save(update_fields=['calculation'])
         _record_trip_change(arrival.trip,actor,f'Согласованы скидки продажи {sale.visible_id}',{'changes':changes})

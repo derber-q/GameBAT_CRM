@@ -2,9 +2,11 @@
 {% load static %}
 {% block body_class %}responsive-crm-page{% endblock %}
 {% block title %}Статистика · ReSOURCE{% endblock %}
-{% block extra_head %}<script src="{% static 'js/sales-statistics.js' %}?v=20261031-1" defer></script>{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{% static 'css/inventory-statistics.css' %}?v=20261110-1"><script src="{% static 'js/sales-statistics.js' %}?v=20261031-1" defer></script>{% endblock %}
 {% block content %}
 <div class="page-heading"><div><p class="eyebrow">Управленческие отчёты</p><h1>Статистика</h1><p class="muted">Завершённые продажи, фактическая выручка и историческая себестоимость.</p></div></div>
+
+{% include 'sales/_inventory_statistics.html' %}
 
 <form id="statistics-filter-form" method="get" class="panel stats-filters">
   <button class="section-heading section-toggle" type="button" data-collapse-toggle aria-expanded="false" aria-controls="stats-report-filters"><span class="section-title"><span class="collapse-indicator" aria-hidden="true">▼</span><span class="section-name">Фильтры отчёта</span></span></button><div id="stats-report-filters" class="collapsible-content" hidden>

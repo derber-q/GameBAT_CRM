@@ -9,7 +9,7 @@ from accounts.models import User
 from catalog.models import Brand, CD, Platform, ProductType, Tech
 from consignment.models import CDConsignmentStock
 from consignment.services import transfer_to_consignment
-from partners.models import SalesPlatform
+from partners.models import Partner, SalesPlatform
 from warehouse.models import CDWarehouseStock, TechWarehouseStock, Warehouse
 
 from .models import Sale
@@ -184,6 +184,7 @@ class MixedConsignmentSaleTests(TestCase):
         self.sales_platform = SalesPlatform.objects.create(
             name="Джогстик", address="Адрес", legal_entity="ООО Джогстик", phone_1="+70000000000",
         )
+        self.partner = Partner.objects.create(name='Партнёр реализации', platform=self.sales_platform)
         self.consignment_stock = transfer_to_consignment(
             actor=self.user, warehouse_id=self.warehouse.pk, platform_id=self.sales_platform.pk,
             product_type="cd", product_id=self.product.pk, quantity=2,
@@ -207,12 +208,12 @@ class MixedConsignmentSaleTests(TestCase):
         )[0]
         self.assertNotIn("dataset.unitCost", consignment_script)
         self.assertIn('costCell.className = "numeric muted"; costCell.textContent = "—";', consignment_script)
-        self.assertContains(response, "stock-lines.js?v=20261031-1")
+        self.assertContains(response, "stock-lines.js?v=20261112-3")
 
     def test_mixed_sale_consumes_each_inventory_source_once_and_cancel_restores_it(self):
         sale = create_sale(
             actor=self.user, warehouse_id=self.warehouse.pk,
-            price_type=Sale.PriceType.RETAIL, sale_type=Sale.SaleType.RETAIL,
+            price_type=Sale.PriceType.RETAIL, sale_type=Sale.SaleType.WHOLESALE, partner_id=self.partner.pk,
             payment_method=Sale.PaymentMethod.BANK_ACCOUNT,
             lines=[
                 {"product_type": "cd", "product_id": self.product.pk, "quantity": 1},
@@ -241,7 +242,7 @@ class MixedConsignmentSaleTests(TestCase):
         with self.assertRaisesMessage(ValidationError, "осталось только 2"):
             create_sale(
                 actor=self.user, warehouse_id=self.warehouse.pk,
-                price_type=Sale.PriceType.RETAIL, sale_type=Sale.SaleType.RETAIL,
+                price_type=Sale.PriceType.RETAIL, sale_type=Sale.SaleType.WHOLESALE, partner_id=self.partner.pk,
                 payment_method=Sale.PaymentMethod.BANK_ACCOUNT,
                 lines=[
                     {"product_type": "cd", "product_id": self.product.pk, "quantity": 1},
@@ -253,3 +254,42 @@ class MixedConsignmentSaleTests(TestCase):
         self.consignment_stock.refresh_from_db()
         self.assertEqual((self.warehouse_stock.quantity, self.consignment_stock.quantity), (3, 2))
         self.assertEqual(Sale.objects.count(), 0)
+
+    def test_consignment_rejects_nonwholesale_sale_without_writing(self):
+        for kind in (Sale.SaleType.RETAIL, Sale.SaleType.AVITO):
+            with self.subTest(kind=kind), self.assertRaisesMessage(ValidationError, 'только в оптовую'):
+                create_sale(actor=self.user, warehouse_id=self.warehouse.pk,
+                    price_type=Sale.PriceType.RETAIL, sale_type=kind, payment_method=Sale.PaymentMethod.CASH_POSTPAY,
+                    lines=[{'product_type':'consignment','product_kind':'cd','stock_id':self.consignment_stock.pk,'quantity':1}])
+        self.consignment_stock.refresh_from_db()
+        self.assertEqual(self.consignment_stock.quantity, 2)
+        self.assertEqual(Sale.objects.count(), 0)
+
+    def test_consignment_rejects_custom_partner_or_partner_without_platform(self):
+        plain = Partner.objects.create(name='Без площадки')
+        for customer in ({'partner_name':'Произвольный покупатель'}, {'partner_id':plain.pk}):
+            with self.subTest(customer=customer), self.assertRaisesMessage(ValidationError, 'с привязанной площадкой'):
+                create_sale(actor=self.user, warehouse_id=self.warehouse.pk,
+                    price_type=Sale.PriceType.RETAIL, sale_type=Sale.SaleType.WHOLESALE,
+                    payment_method=Sale.PaymentMethod.CASH_POSTPAY, **customer,
+                    lines=[{'product_type':'consignment','product_kind':'cd','stock_id':self.consignment_stock.pk,'quantity':1}])
+        self.assertEqual(Sale.objects.count(), 0)
+
+    def test_edit_preserves_empty_own_party_and_rejects_different_partner(self):
+        lines=[{'product_type':'consignment','product_kind':'cd','stock_id':self.consignment_stock.pk,'quantity':2}]
+        sale=create_sale(actor=self.user, warehouse_id=self.warehouse.pk, partner_id=self.partner.pk,
+            price_type=Sale.PriceType.RETAIL, sale_type=Sale.SaleType.WHOLESALE,
+            payment_method=Sale.PaymentMethod.CASH_POSTPAY, lines=lines)
+        edit_postpay_sale_items(actor=self.user, sale_id=sale.pk, lines=lines)
+        self.consignment_stock.refresh_from_db()
+        self.assertEqual(self.consignment_stock.quantity,0)
+        other_platform=SalesPlatform.objects.create(name='Чужая площадка',address='Адрес',legal_entity='ООО',phone_1='1')
+        other=Partner.objects.create(name='Другой партнёр',platform=other_platform)
+        before=list(sale.consignment_items.values())
+        with self.assertRaisesMessage(ValidationError,'площадки выбранного партнёра'):
+            edit_postpay_sale_items(actor=self.user,sale_id=sale.pk,lines=lines,partner_id=other.pk)
+        sale.refresh_from_db()
+        self.consignment_stock.refresh_from_db()
+        self.assertEqual(sale.partner_id,self.partner.pk)
+        self.assertEqual(self.consignment_stock.quantity,0)
+        self.assertEqual(list(sale.consignment_items.values()),before)

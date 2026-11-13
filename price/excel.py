@@ -1,10 +1,11 @@
-"""Генерация и проверяемый импорт XLSX. Служебная разметка/подписи, ведущие нули и разные правила нулевых строк обязательны."""
+"""Генерация и проверяемый импорт Excel. Шаблонные подписи и правила строк обязательны."""
 import logging
 from copy import copy
 from decimal import Decimal, InvalidOperation
 from io import BytesIO
 from pathlib import Path
 from textwrap import wrap
+from types import SimpleNamespace
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
@@ -675,7 +676,9 @@ def generate_procurement_stock_xlsx(*, price_list_id, actor):
 
 
 def import_stock_procurement_order_xlsx(upload):
-    workbook, sheet, values, technical_rows = _load_uploaded_workbook(upload, "resource_stock_procurement")
+    workbook, sheet, values, technical_rows = _load_uploaded_workbook(
+        upload, "resource_stock_procurement", allow_xls=True
+    )
     try:
         is_legacy = tuple(sheet.cell(HEADER_ROW, column).value for column in range(1, 8)) == LEGACY_STOCK_HEADERS
         _require_headers(sheet, LEGACY_STOCK_HEADERS if is_legacy else STOCK_HEADERS)
@@ -725,16 +728,76 @@ def import_stock_procurement_order_xlsx(upload):
         workbook.close()
 
 
-def _load_uploaded_workbook(upload, expected_type):
+class _LegacyXlsSheet:
+    """Минимальный интерфейс листа xlrd, совместимый с проверками прайса."""
+
+    def __init__(self, sheet):
+        self._sheet = sheet
+        self.max_row = sheet.nrows
+        self.max_column = sheet.ncols
+
+    def cell(self, row, column):
+        value = self._sheet.cell_value(row - 1, column - 1) if (
+            1 <= row <= self.max_row and 1 <= column <= self.max_column
+        ) else None
+        if value is not None:
+            import xlrd
+            cell_type = self._sheet.cell_type(row - 1, column - 1)
+            if cell_type in (xlrd.XL_CELL_EMPTY, xlrd.XL_CELL_BLANK):
+                value = None
+            elif cell_type == xlrd.XL_CELL_BOOLEAN:
+                value = bool(value)
+        return SimpleNamespace(value=value)
+
+    def iter_rows(self, *, min_row=1, max_row=None, min_col=1, max_col=None, values_only=False):
+        max_row = max_row or self.max_row
+        max_col = max_col or self.max_column
+        for row in range(min_row, max_row + 1):
+            cells = tuple(self.cell(row, column) for column in range(min_col, max_col + 1))
+            yield tuple(cell.value for cell in cells) if values_only else cells
+
+
+class _LegacyXlsWorkbook:
+    """Обёртка для сохранения общей серверной проверки шаблона."""
+
+    def __init__(self, book):
+        self._book = book
+        self.sheetnames = book.sheet_names()
+
+    def __getitem__(self, name):
+        if name not in self.sheetnames:
+            raise KeyError(name)
+        return _LegacyXlsSheet(self._book.sheet_by_name(name))
+
+    def close(self):
+        self._book.release_resources()
+
+
+def load_legacy_xls(upload):
+    """Читает XLS через xlrd в интерфейс, совместимый с используемыми импортёрами."""
+    import xlrd
+
+    return _LegacyXlsWorkbook(xlrd.open_workbook(file_contents=upload.read()))
+
+
+def _load_uploaded_workbook(upload, expected_type, *, allow_xls=False):
     filename = Path(getattr(upload, "name", "")).name
-    if Path(filename).suffix.lower() != ".xlsx":
-        raise ValidationError("Разрешены только файлы .xlsx.")
-    try:
-        workbook = load_workbook(
-            upload, data_only=False, read_only=False, keep_vba=False, keep_links=False
-        )
-    except Exception as exc:
-        raise ValidationError("Не удалось прочитать XLSX-файл.") from exc
+    suffix = Path(filename).suffix.lower()
+    if suffix == ".xls" and allow_xls:
+        try:
+            workbook = load_legacy_xls(upload)
+        except Exception as exc:
+            raise ValidationError("Не удалось прочитать XLS-файл. Сохраните шаблон в формате Excel 97–2003.") from exc
+    elif suffix == ".xlsx":
+        try:
+            workbook = load_workbook(
+                upload, data_only=False, read_only=False, keep_vba=False, keep_links=False
+            )
+        except Exception as exc:
+            raise ValidationError("Не удалось прочитать XLSX-файл.") from exc
+    else:
+        message = "Разрешены файлы .xls и .xlsx." if allow_xls else "Разрешены только файлы .xlsx."
+        raise ValidationError(message)
     if META_SHEET not in workbook.sheetnames or MAIN_SHEET not in workbook.sheetnames:
         workbook.close()
         raise ValidationError("Файл не является документом ReSOURCE: отсутствует технический лист.")
@@ -783,7 +846,9 @@ def _quantity(value, *, excel_row):
 
 
 def import_wholesale_price_to_sale(upload, *, with_customer=False):
-    workbook, sheet, values, technical_rows = _load_uploaded_workbook(upload, "resource_wholesale")
+    workbook, sheet, values, technical_rows = _load_uploaded_workbook(
+        upload, "resource_wholesale", allow_xls=True
+    )
     try:
         from partners.excel import read_customer_metadata
         customer = read_customer_metadata(values)
@@ -956,7 +1021,9 @@ def import_supplier_price_files(*, supplier_id, uploads, actor):
 def import_procurement_order_xlsx(upload, *, product_kind=None, allow_empty=False):
     if product_kind not in (None, "cd", "tech"):
         raise ValidationError("Выберите диски или технику.")
-    workbook, sheet, values, technical_rows = _load_uploaded_workbook(upload, "resource_procurement")
+    workbook, sheet, values, technical_rows = _load_uploaded_workbook(
+        upload, "resource_procurement", allow_xls=True
+    )
     try:
         file_kind = values.get("product_kind", "")
         if file_kind not in ("", "cd", "tech") or (file_kind and product_kind and file_kind != product_kind):

@@ -23,6 +23,19 @@ class SaleListingTests(TestCase):
         self.client.force_login(self.actor)
 
     def sale(self, kind=Sale.SaleType.RETAIL, method=Sale.PaymentMethod.BANK_TRANSFER_POSTPAY):
+        if kind == Sale.SaleType.DIGITAL:
+            import uuid
+            from catalog.models import SystemProduct
+            from digital_sales.models import Buyer, Supplier
+            from digital_sales.services import manual_sale, move_balance, complete_sale
+            SystemProduct.objects.get_or_create(kind='DIGITAL_PRODUCT')
+            buyer, new = Buyer.objects.get_or_create(name='Listing Buyer')
+            supplier, _ = Supplier.objects.get_or_create(name='Listing Supplier')
+            if new:
+                move_balance(actor=self.actor, buyer_id=buyer.pk, amount=10000, kind='opening', reason='Test')
+            sale = manual_sale(actor=self.actor, supplier_id=supplier.pk, buyer_id=buyer.pk,
+                items=[{'name': 'Disc', 'cost': '0'}], price=100, creation_key=uuid.uuid4())
+            return complete_sale(actor=self.actor, sale_id=sale.pk) if method == Sale.PaymentMethod.CASH else sale
         # Старые ручные продажи Маркета остаются историческими данными, но новый публичный путь закрыт.
         creator = _create_sale if kind == Sale.SaleType.YANDEX_MARKET else create_sale
         return creator(actor=self.actor, warehouse_id=self.warehouse.pk, price_type=Sale.PriceType.RETAIL,
@@ -48,7 +61,7 @@ class SaleListingTests(TestCase):
             response = self.client.get(reverse('sales:' + name))
             self.assertEqual(response.status_code, 200)
             groups = response.context['groups']
-            order = Sale.SaleType.values if name == 'cancelled' else ['wholesale', 'avito', 'yandex_market', 'retail'] if name in ('list', 'incomplete') else ['yandex_market', 'wholesale', 'avito', 'retail']
+            order = Sale.SaleType.values if name == 'cancelled' else ['wholesale', 'avito', 'yandex_market', 'retail', 'digital'] if name in ('list', 'incomplete') else ['yandex_market', 'wholesale', 'avito', 'retail', 'digital']
             if name == 'completed':
                 order = [*order, 'consignment']
             self.assertEqual([g['kind'] for g in groups], order)
@@ -75,6 +88,9 @@ class SaleListingTests(TestCase):
         self.assertContains(response, f'href="{reverse("sales:create")}" aria-haspopup="true">Продажа</a>')
         for name in ('incomplete', 'completed', 'cancelled'):
             self.assertContains(response, reverse('sales:' + name))
+            listing = self.client.get(reverse('sales:' + name))
+            self.assertContains(listing, 'data-sales-channel="digital" aria-pressed="false"')
+            self.assertContains(listing, 'js/sales-channels.js?v=20261031-1')
         self.assertEqual(response.context['state'], 'incomplete')
         self.assertEqual(self.client.get(reverse('sales:create')).status_code, 200)
 
@@ -115,6 +131,38 @@ class SaleListingTests(TestCase):
         self.assertFalse(CashTransaction.objects.filter(sale=sale).exists())
         self.assertNotContains(self.client.get(reverse('sales:incomplete')), f'data-sale-row="{sale.pk}"')
         self.assertContains(self.client.get(reverse('sales:completed')), f'data-sale-row="{sale.pk}"')
+
+    def test_digital_inline_payment_debits_wallet_once_and_completes_sale(self):
+        sale = self.sale(Sale.SaleType.DIGITAL)
+        buyer = sale.digital_order.buyer
+        balance = buyer.balance
+        self.assertEqual(sale.order_status, Sale.OrderStatus.DELIVERED)
+        self.assertEqual(sale.payment_status, Sale.PaymentStatus.UNPAID)
+        page = self.client.get(reverse('sales:incomplete'))
+        group = next(group for group in page.context['groups'] if group['kind'] == 'digital')
+        self.assertTrue(group['rows'][0]['can_mark_paid'])
+        self.assertIsNone(group['rows'][0]['next_order'])
+        self.assertContains(page, 'js/sales-status.js?v=20261107-1')
+        response = self.post(sale, field='payment', value='paid')
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()['is_completed'])
+        self.assertEqual(buyer.balance, balance - sale.total_amount)
+        self.assertEqual(self.post(sale, field='payment', value='paid').status_code, 409)
+        self.assertEqual(buyer.balance, balance - sale.total_amount)
+        self.assertFalse(CashTransaction.objects.filter(sale=sale).exists())
+        self.assertNotContains(self.client.get(reverse('sales:incomplete')), f'data-sale-row="{sale.pk}"')
+        self.assertContains(self.client.get(reverse('sales:completed')), f'data-sale-row="{sale.pk}"')
+
+    def test_digital_inline_payment_requires_digital_completion_permission(self):
+        sale = self.sale(Sale.SaleType.DIGITAL)
+        user = User.objects.create_user('digital-payment-viewer')
+        user.user_permissions.add(*Permission.objects.filter(content_type__app_label='sales',
+            codename__in=['view_sales', 'mark_sale_paid']))
+        self.client.force_login(user)
+        page = self.client.get(reverse('sales:incomplete'))
+        self.assertNotContains(page, 'data-status-field="payment"')
+        self.assertEqual(self.post(sale, field='payment', value='paid').status_code, 403)
+        self.assertFalse(sale.digital_movements.exists())
 
     def test_confirmation_permissions_csrf_and_get(self):
         sale = self.sale()

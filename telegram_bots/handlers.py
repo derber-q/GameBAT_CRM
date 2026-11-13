@@ -6,7 +6,8 @@ from core.db_retry import retry_database_lock
 from warehouse.models import Warehouse
 from partners.models import Supplier
 from .access import BotDenied, authorize, consume_link, check_function_access
-from .menu import WHOLESALE, SUPPLIER_TEMPLATES, main_menu, warehouse_menu, supplier_menu, supplier_label
+from .menu import (WHOLESALE, SUPPLIER_TEMPLATES, DIGITAL_PRICES, FUNCTIONS, main_menu,
+                   warehouse_menu, supplier_menu, supplier_label, screen_reply)
 from .models import StaffBot, StaffBotUpdate, StaffBotJob, StaffBotJobDocument
 
 
@@ -70,10 +71,37 @@ def _dispatch(bot, update, receipt):
         consume_link(bot, text.split(' ', 1)[1].strip(), chat_id, sender.get('username', ''))
     access, user = authorize(bot, chat_id)
     data = callback.get('data') if callback else None
+    root_callback = isinstance(data, str) and (data == 'menu' or data in FUNCTIONS)
+    root_text = not callback and (text.split(' ', 1)[0] in ('/start', '/menu', '/help')
+                                 or any(text == item.title for item in FUNCTIONS.values()))
+    if root_callback or root_text:
+        from digital_sales.models import StaffConversation
+        StaffConversation.objects.filter(access=access).delete()
+    from digital_sales.staff_balances import handle as buyer_balance_handle
+    buyer_balance_reply = buyer_balance_handle(access, message, callback)
+    if buyer_balance_reply is not None:
+        return buyer_balance_reply
+    from digital_prices.staff import handle as digital_price_handle
+    price_reply = digital_price_handle(bot, access, receipt, chat_id, message, callback)
+    if price_reply is not None:
+        return price_reply
+    from wholesale_bot.staff import handle as wholesale_control
+    control_reply = wholesale_control(access, message, callback)
+    if control_reply is not None:
+        return control_reply
+    from digital_sales.reconciliation import handle as balance_handle
+    balance_reply = balance_handle(access, user, callback)
+    if balance_reply is not None:
+        return balance_reply
+    from digital_sales.telegram import handle as digital_handle
+    digital_reply = digital_handle(access, user, message, callback)
+    if digital_reply is not None:
+        return digital_reply
+    data = callback.get('data') if callback else None
     if data == 'menu' or (not callback and text.split(' ', 1)[0] in ['/start', '/menu', '/help']):
         menu = main_menu(user)
-        return {'text': ('Добро пожаловать в ReSOURCE.\nВыберите необходимую функцию.'
-            if 'keyboard' in menu else 'У вас пока нет доступных функций. Обратитесь к администратору CRM.'),
+        return {'text': ('ReSOURCE\nCRM для сотрудников.\n\nВыберите раздел:'
+            if menu['inline_keyboard'] else 'У вас пока нет доступных функций. Обратитесь к администратору CRM.'),
             'reply_markup': menu}
     if data == SUPPLIER_TEMPLATES.code or (not callback and text == SUPPLIER_TEMPLATES.title):
         user = check_function_access(access, SUPPLIER_TEMPLATES.code)
@@ -126,6 +154,8 @@ def accept_update(bot_id, update):
     if not reply:
         return None
     message, sender, callback = _private_context(update)
+    if receipt.result == 'accepted':
+        reply = screen_reply(reply, message, callback)
     reply['chat_id'] = message['chat']['id']
     if isinstance(callback.get('id'), str):
         reply['callback_id'] = callback['id']

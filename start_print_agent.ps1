@@ -1,9 +1,19 @@
-﻿param([switch]$Stop)
+﻿param([switch]$Stop, [switch]$EnableAutostart)
 $ErrorActionPreference='Stop'
 $projectDir=Split-Path -Parent $MyInvocation.MyCommand.Path
 $stateDir=Join-Path $env:LOCALAPPDATA 'ReSOURCE\PrintAgent'
 $config=Join-Path $stateDir 'config.json'
 if (-not (Test-Path -LiteralPath $config)) {throw 'Сначала выполните setup_print_agent.ps1.'}
+if ($EnableAutostart) {
+    # Агент живёт на Windows, независимо от перезапусков Docker и сайта.
+    $runKey='HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+    $hostExe=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+    $scriptPath=Join-Path $projectDir 'start_print_agent.ps1'
+    $command='"'+$hostExe+'" -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "'+$scriptPath+'"'
+    New-Item -Path $runKey -Force | Out-Null
+    New-ItemProperty -Path $runKey -Name 'ReSOURCE Print Agent' -Value $command -PropertyType String -Force | Out-Null
+    Write-Output 'Автозапуск Print Agent при входе в Windows включён.'
+}
 if ($Stop) {
     Set-Content -LiteralPath (Join-Path $stateDir 'stop-request') -Value 'stop' -Encoding ASCII
     Write-Output 'Запрошено завершение агента после текущей операции.'

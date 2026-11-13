@@ -6,6 +6,12 @@ services:
     init: true
     restart: unless-stopped
     stop_grace_period: 5m
+    healthcheck:
+      test: ["CMD", "python", "manage.py", "check_worker_health"]
+      interval: 30s
+      timeout: 20s
+      start_period: 150s
+      retries: 3
     user: "10001:10001"
     read_only: true
     cap_drop: ["ALL"]
@@ -19,10 +25,22 @@ services:
         target: /app
         bind:
           create_host_path: false
+      # Серверные архивы и staging не проходят через медленный Windows/9p.
+      # Рабочая SQLite остаётся в прежнем bind-каталоге /app.
+      - type: volume
+        source: backup-cache
+        target: /var/lib/resource-backups
     environment:
       GAMEBAT_ENV: local_live
       GAMEBAT_PRINT_BACKEND: agent
+      GAMEBAT_BACKUP_ROOT: /var/lib/resource-backups
       DJANGO_DEBUG: '1'
       DJANGO_ALLOWED_HOSTS: ${GAMEBAT_LOCAL_ALLOWED_HOSTS:-localhost,127.0.0.1}
+      DIGITAL_SALES_CRM_URL: ${GAMEBAT_LOCAL_CRM_URL:-http://127.0.0.1:8000}
     # Только проверка схемы: запуск никогда не применяет миграции автоматически.
     command: ["python", "-u", "-m", "GameBAT_CRM.container_runtime"]
+
+volumes:
+  backup-cache:
+    name: resource-crm-backups
+    external: true

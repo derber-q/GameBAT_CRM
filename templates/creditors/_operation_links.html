@@ -1,0 +1,6 @@
+{% if prepayment %}
+  <a href="{% url 'creditors:prepayment_operation' operation.pk %}">{{ operation.get_kind_display }} №{{ operation.pk }}</a>
+{% else %}
+  <a href="{% url 'creditors:operation' operation.pk %}">{{ operation.get_kind_display }} №{{ operation.pk }}</a>
+{% endif %}
+{% if operation.sale_id %}<br>{% if perms.sales.view_sale_detail or user.is_superuser %}<a href="{% url 'sales:detail' operation.sale_id %}">{{ operation.sale.visible_id }}</a>{% else %}{{ operation.sale.visible_id }}{% endif %}{% endif %}

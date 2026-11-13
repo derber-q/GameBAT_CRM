@@ -7,7 +7,8 @@ from django.db.models import Q
 
 SERVICE_CHOICES = [('avito', 'Avito'), ('yandex', 'Яндекс Маркет'),
                    ('google', 'Google Sheets'), ('print', 'Печать этикеток'),
-                   ('telegram_staff', 'Telegram — сотрудники')]
+                   ('telegram_staff', 'Telegram — сотрудники'), ('telegram_digital', 'Telegram — цифровые продажи'),
+                   ('telegram_opt', 'Telegram — оптовые покупатели'), ('digital_prices', 'Цифровые цены — API')]
 
 
 class WorkerController(models.Model):
@@ -31,6 +32,10 @@ class WorkerProcess(models.Model):
     services = models.JSONField(default=list)
     heartbeat_at = models.DateTimeField(db_index=True)
     ready = models.BooleanField(default=False)
+    progress_at = models.DateTimeField(null=True, blank=True)
+    verified_at = models.DateTimeField(null=True, blank=True)
+    executor_at = models.DateTimeField(null=True, blank=True)
+    health_error = models.CharField(max_length=40, blank=True, default='')
     action = models.CharField(max_length=32, blank=True)
     started_at = models.DateTimeField(auto_now_add=True)
 

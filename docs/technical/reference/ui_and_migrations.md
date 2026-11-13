@@ -4,7 +4,7 @@
 
 Справочник исходников и метаданных схемы, без рабочих записей/ключей. Перегенерация: `.venv/Scripts/python.exe scripts/build_technical_reference.py`.
 
-## HTML-шаблоны (175)
+## HTML-шаблоны (199)
 
 ### `resource_storefront/templates/resource_storefront/_card.html`
 
@@ -130,7 +130,7 @@
 
 Части: `core/_test_environment_banner.html`, `integrations/_worker_alert.html`, `sales/_notification_assets.html`, `sales/_notification_counter.html`, `sales/_notification_panel.html`, `sales/_notification_sound_button.html`.
 
-Именованные действия: `accounts:logout`, `accounts:password_change`, `accounts:staff_by_group`, `accounts:user_list`, `admin:index`, `cash:register`, `catalog:warehouse`, `consignment:list`, `consignment:platform`, `core:exchange_rates`, `core:home`, `creditors:list`, `crm_backups:applications`, `crm_backups:dashboard`, `crm_backups:devices`, `integrations:api_keys`, `integrations:avito`, `integrations:updates`, `integrations:workers`, `nomenclature:cd_list`, `nomenclature:create`, `nomenclature:list`, `nomenclature:tech_list`, `orders:list`, `partners:list`, `partners:partner_list`, `price:imports`, `price:index`, `price:site_links`, `pricing:avito_check`, `pricing:cd_list`, `pricing:list`, `pricing:tech_list`, `resource_storefront:manage`, `sales:cancelled`, `sales:completed`, `sales:create`, `sales:incomplete`, `sales:settlement_preview`, `statistics:index`, `supplies:list`, `telegram_bots:connection`, `telegram_bots:dashboard`, `warehouse:detail`, `warehouse:transfer_list`, `yandex_market:dashboard`.
+Именованные действия: `accounts:logout`, `accounts:password_change`, `accounts:staff_by_group`, `accounts:user_list`, `admin:index`, `cash:register`, `catalog:warehouse`, `consignment:list`, `consignment:platform`, `core:exchange_rates`, `core:home`, `creditors:list`, `crm_backups:applications`, `crm_backups:dashboard`, `crm_backups:devices`, `digital_sales:dashboard`, `integrations:api_keys`, `integrations:avito`, `integrations:updates`, `integrations:workers`, `nomenclature:cd_list`, `nomenclature:create`, `nomenclature:list`, `nomenclature:tech_list`, `orders:list`, `partners:list`, `partners:partner_list`, `price:imports`, `price:index`, `price:site_links`, `pricing:avito_check`, `pricing:cd_list`, `pricing:digital_prices:catalog`, `pricing:list`, `pricing:tech_list`, `resource_storefront:manage`, `sales:cancelled`, `sales:completed`, `sales:create`, `sales:incomplete`, `sales:settlement_preview`, `statistics:index`, `supplies:list`, `telegram_bots:connection`, `telegram_bots:dashboard`, `warehouse:detail`, `warehouse:transfer_list`, `yandex_market:dashboard`.
 
 ### `templates/cash/operation.html`
 
@@ -214,6 +214,10 @@
 
 ### `templates/creditors/_debt_field.html`
 
+### `templates/creditors/_operation_links.html`
+
+Именованные действия: `creditors:operation`, `creditors:prepayment_operation`, `sales:detail`.
+
 ### `templates/creditors/debt.html`
 
 Базовый шаблон: `base.html`.
@@ -226,7 +230,9 @@
 
 Базовый шаблон: `base.html`.
 
-Именованные действия: `creditors:debt`, `creditors:edit`, `creditors:list`.
+Части: `creditors/_operation_links.html`.
+
+Именованные действия: `creditors:debt`, `creditors:edit`, `creditors:list`, `creditors:prepayment`, `creditors:prepayment_transfer`.
 
 ### `templates/creditors/form.html`
 
@@ -238,7 +244,21 @@
 
 Базовый шаблон: `base.html`.
 
-Именованные действия: `creditors:create`, `creditors:debt`, `creditors:detail`.
+Именованные действия: `creditors:create`, `creditors:debt`, `creditors:detail`, `creditors:prepayment`, `creditors:prepayment_transfer`.
+
+### `templates/creditors/operation_detail.html`
+
+Базовый шаблон: `base.html`.
+
+Именованные действия: `cash:register`, `creditors:detail`, `sales:detail`.
+
+### `templates/creditors/prepayment.html`
+
+Базовый шаблон: `base.html`.
+
+Части: `creditors/_debt_field.html`.
+
+Именованные действия: `creditors:detail`.
 
 ### `templates/crm_backups/applications.html`
 
@@ -261,6 +281,84 @@
 ### `templates/crm_backups/stub.html`
 
 Базовый шаблон: `base.html`.
+
+### `templates/digital_prices/_manual_amount.html`
+
+### `templates/digital_prices/catalog.html`
+
+Базовый шаблон: `base.html`.
+
+Части: `digital_prices/_manual_amount.html`.
+
+Именованные действия: `pricing:digital_prices:catalog`, `pricing:digital_prices:configuration`, `pricing:digital_prices:generate`, `pricing:digital_prices:layout`, `pricing:digital_prices:status`, `pricing:digital_prices:sync`.
+
+### `templates/digital_prices/download.html`
+
+Базовый шаблон: `base.html`.
+
+Именованные действия: `pricing:digital_prices:generate`.
+
+### `templates/digital_prices/form.html`
+
+Базовый шаблон: `base.html`.
+
+Именованные действия: `pricing:digital_prices:catalog`.
+
+### `templates/digital_prices/manual.html`
+
+Базовый шаблон: `base.html`.
+
+Именованные действия: `pricing:digital_prices:catalog`.
+
+### `templates/digital_prices/preview.html`
+
+Базовый шаблон: `base.html`.
+
+Именованные действия: `pricing:digital_prices:catalog`, `pricing:digital_prices:download`, `pricing:digital_prices:png`.
+
+### `templates/digital_sales/_balance_chats.html`
+
+### `templates/digital_sales/_pagination.html`
+
+### `templates/digital_sales/base.html`
+
+Базовый шаблон: `base.html`.
+
+### `templates/digital_sales/configuration.html`
+
+Базовый шаблон: `digital_sales/base.html`.
+
+Части: `digital_sales/_balance_chats.html`.
+
+Именованные действия: `digital_sales:dashboard`.
+
+### `templates/digital_sales/dashboard.html`
+
+Базовый шаблон: `digital_sales/base.html`.
+
+Части: `digital_sales/_pagination.html`.
+
+Именованные действия: `digital_sales:balance`, `digital_sales:buyer_create`, `digital_sales:buyer_edit`, `digital_sales:configuration`, `digital_sales:manual`, `digital_sales:order`, `sales:detail`.
+
+### `templates/digital_sales/form.html`
+
+Базовый шаблон: `digital_sales/base.html`.
+
+Именованные действия: `digital_sales:dashboard`.
+
+### `templates/digital_sales/order.html`
+
+Базовый шаблон: `digital_sales/base.html`.
+
+Части: `digital_sales/_pagination.html`.
+
+Именованные действия: `digital_sales:action`, `digital_sales:buyer_create`, `digital_sales:dashboard`, `digital_sales:reveal`.
+
+### `templates/digital_sales/reveal.html`
+
+Базовый шаблон: `digital_sales/base.html`.
+
+Именованные действия: `digital_sales:dashboard`, `digital_sales:download`, `digital_sales:order`.
 
 ### `templates/integrations/_pagination.html`
 
@@ -382,7 +480,7 @@
 
 Части: `orders/_operation_actions.html`.
 
-Именованные действия: `orders:assign_trip`, `orders:detail`, `orders:export`, `orders:trip_detail`.
+Именованные действия: `orders:add_catalog_items`, `orders:add_items`, `orders:assign_trip`, `orders:detail`, `orders:edit`, `orders:export`, `orders:trip_detail`.
 
 ### `templates/orders/_procurement_financials.html`
 
@@ -390,13 +488,25 @@
 
 Части: `orders/_operation_panel.html`.
 
-Именованные действия: `orders:adjust`, `orders:assign_trip`, `orders:complete`, `orders:confirm`, `orders:edit`, `orders:export`, `orders:export_suppliers`, `orders:list`, `orders:start_receiving`, `price:procurement_detail`, `supplies:detail`, `supplies:price_review`.
+Именованные действия: `orders:add_catalog_items`, `orders:add_items`, `orders:adjust`, `orders:assign_trip`, `orders:complete`, `orders:confirm`, `orders:edit`, `orders:export`, `orders:export_suppliers`, `orders:list`, `orders:start_receiving`, `price:procurement_detail`, `supplies:detail`, `supplies:price_review`.
 
 ### `templates/orders/_trip_arrival.html`
 
 Именованные действия: `orders:arrival_finalization`, `orders:trip_arrival`.
 
 ### `templates/orders/_trip_price_dialog.html`
+
+### `templates/orders/add_catalog_items.html`
+
+Базовый шаблон: `base.html`.
+
+Именованные действия: `orders:detail`, `orders:trip_detail`.
+
+### `templates/orders/add_items.html`
+
+Базовый шаблон: `base.html`.
+
+Именованные действия: `orders:detail`, `orders:trip_detail`.
 
 ### `templates/orders/adjust.html`
 
@@ -442,13 +552,13 @@
 
 Части: `orders/_operation_panel.html`, `orders/_procurement_financials.html`, `orders/_stock_detail.html`.
 
-Именованные действия: `orders:adjust`, `orders:assign_trip`, `orders:complete`, `orders:confirm`, `orders:edit`, `orders:export`, `orders:export_suppliers`, `orders:list`, `orders:start_receiving`, `partners:partner_detail`, `price:procurement_detail`.
+Именованные действия: `orders:add_catalog_items`, `orders:add_items`, `orders:adjust`, `orders:assign_trip`, `orders:complete`, `orders:confirm`, `orders:edit`, `orders:export`, `orders:export_suppliers`, `orders:list`, `orders:start_receiving`, `partners:partner_detail`, `price:procurement_detail`.
 
 ### `templates/orders/edit.html`
 
 Базовый шаблон: `base.html`.
 
-Именованные действия: `orders:detail`.
+Именованные действия: `orders:detail`, `orders:trip_detail`.
 
 ### `templates/orders/list.html`
 
@@ -456,7 +566,7 @@
 
 Части: `orders/_orders_table.html`.
 
-Именованные действия: `orders:supplier_batch_detail`, `orders:trip_create`, `orders:trip_detail`, `orders:trip_empty_create`, `orders:trip_full_export`, `orders:trip_stock_create`, `orders:upload`.
+Именованные действия: `orders:delete_unassigned`, `orders:supplier_batch_detail`, `orders:trip_create`, `orders:trip_detail`, `orders:trip_empty_create`, `orders:trip_full_export`, `orders:trip_stock_create`, `orders:upload`.
 
 ### `templates/orders/operation_prepare.html`
 
@@ -506,7 +616,7 @@
 
 Части: `orders/_operation_actions.html`, `orders/_procurement_financials.html`, `orders/_trip_arrival.html`, `orders/_trip_price_dialog.html`.
 
-Именованные действия: `orders:assign_trip`, `orders:customs`, `orders:detail`, `orders:list`, `orders:trip_add_orders`, `orders:trip_addition`, `orders:trip_export`, `orders:trip_invoice_update`, `orders:trip_line_update`, `orders:trip_stock_create`.
+Именованные действия: `orders:add_catalog_items`, `orders:add_items`, `orders:assign_trip`, `orders:customs`, `orders:detail`, `orders:edit`, `orders:list`, `orders:trip_add_orders`, `orders:trip_addition`, `orders:trip_export`, `orders:trip_invoice_update`, `orders:trip_line_update`, `orders:trip_stock_create`.
 
 ### `templates/orders/trip_empty_create.html`
 
@@ -576,7 +686,7 @@
 
 Базовый шаблон: `base.html`.
 
-Именованные действия: `price:retail_export`, `price:settings_update`, `price:wholesale_export`.
+Именованные действия: `price:retail_export`, `price:settings_update`, `price:wholesale_export`, `wholesale_bot:configuration`, `wholesale_bot:dashboard`, `wholesale_bot:service_state`.
 
 ### `templates/price/procurement_confirm.html`
 
@@ -662,6 +772,8 @@
 
 Части: `catalog/_product_filters.html`, `pricing/_price_table.html`.
 
+### `templates/sales/_inventory_statistics.html`
+
 ### `templates/sales/_list_group.html`
 
 Части: `sales/_list_row.html`.
@@ -700,6 +812,8 @@
 
 ### `templates/sales/_payment_partner_field.html`
 
+### `templates/sales/_prepayment_choice.html`
+
 ### `templates/sales/avito_bridge.html`
 
 Базовый шаблон: `base.html`.
@@ -716,7 +830,7 @@
 
 Базовый шаблон: `base.html`.
 
-Части: `orders/_operation_source.html`, `sales/_market_cancel_dialog.html`, `sales/_market_controls.html`, `sales/_payment_partner_field.html`.
+Части: `orders/_operation_source.html`, `sales/_market_cancel_dialog.html`, `sales/_market_controls.html`, `sales/_payment_partner_field.html`, `sales/_prepayment_choice.html`.
 
 Именованные действия: `sales:advance`, `sales:cancel`, `sales:edit`, `sales:invoice`, `sales:list`, `sales:mark_paid`, `sales:note_update`, `sales:payment_method`.
 
@@ -752,7 +866,7 @@
 
 Базовый шаблон: `base.html`.
 
-Части: `sales/_partner_operations.html`.
+Части: `sales/_inventory_statistics.html`, `sales/_partner_operations.html`.
 
 Именованные действия: `sales:detail`, `statistics:export`, `statistics:index`.
 
@@ -872,6 +986,22 @@
 
 Именованные действия: `warehouse:transfer_list`.
 
+### `templates/wholesale_bot/base.html`
+
+Базовый шаблон: `base.html`.
+
+### `templates/wholesale_bot/configuration.html`
+
+Базовый шаблон: `wholesale_bot/base.html`.
+
+Именованные действия: `wholesale_bot:dashboard`.
+
+### `templates/wholesale_bot/dashboard.html`
+
+Базовый шаблон: `wholesale_bot/base.html`.
+
+Именованные действия: `price:index`, `sales:detail`, `wholesale_bot:configuration`, `wholesale_bot:customer_action`, `wholesale_bot:original`, `wholesale_bot:retry`.
+
 ### `templates/yandex_market/_product_content.html`
 
 Части: `yandex_market/confirm.html`.
@@ -950,7 +1080,7 @@
 
 ### `yandex_market/templates/yandex_market/object_list_widget.html`
 
-## JavaScript и CSS (92)
+## JavaScript и CSS (99)
 
 ### `browser_extensions/avito_check/background.js`
 
@@ -1028,6 +1158,12 @@ ReSOURCE: Оформление финансовых карточек/знака 
 
 Редактор самостоятельного таможенного документа, без финансовых колонок.
 
+### `static/css/digital-prices.css`
+
+Каталог целиком: слайды и постоянные цвета регионов повторяют PNG.
+
+### `static/css/digital-sales.css`
+
 ### `static/css/fbs-pricing.css`
 
 ReSOURCE: Оформление Предпросмотр/сохранение расчёта FBS; итоговую цену и ограничения проверяет сервер.. Стили не заменяют серверные учётные проверки.
@@ -1035,6 +1171,8 @@ ReSOURCE: Оформление Предпросмотр/сохранение р�
 ### `static/css/gamebat.css`
 
 ReSOURCE: Оформление общих панелей, таблиц и форм ReSOURCE. Стили не заменяют серверные учётные проверки.
+
+### `static/css/inventory-statistics.css`
 
 ### `static/css/market-notifications.css`
 
@@ -1096,6 +1234,10 @@ ReSOURCE: Оформление компактной финализации ре�
 
 ReSOURCE: Оформление Мобильная сверка выбранного склада с общим scanner; отметки ревизии сами не меняют физический остаток.. Стили не заменяют серверные учётные проверки.
 
+### `static/css/wholesale-bot.css`
+
+Локальная компоновка; цвета, поля и таблицы — из общей оболочки ReSOURCE.
+
 ### `static/css/workers.css`
 
 Мониторинг использует панели, таблицы и цвета ReSOURCE.
@@ -1152,6 +1294,14 @@ ReSOURCE: Предпросмотр абсолютной/относительно
 
 Форма остаётся на странице при ошибке: сервер получает один JSON-параметр.
 
+### `static/js/digital-price-calculation.js`
+
+Предварительная цена по серверному правилу: целые копейки, без float.
+
+### `static/js/digital-prices.js`
+
+Сохранение строки с optimistic revision. Деньги не преобразуются в float.
+
 ### `static/js/fbs-pricing.js`
 
 ReSOURCE: Предпросмотр/сохранение расчёта FBS; итоговую цену и ограничения проверяет сервер.
@@ -1179,6 +1329,10 @@ ReSOURCE: Выбор и подтверждение массового удале
 ### `static/js/notification-sound-controls.js`
 
 ReSOURCE: Единый пользовательский регулятор звука нескольких каналов; учитывает блокировку autoplay браузером.
+
+### `static/js/order-additions.js`
+
+ReSOURCE: быстрый выбор новых каталожных товаров для одного закупочного заказа.
 
 ### `static/js/order-trips.js`
 
@@ -1320,7 +1474,7 @@ ReSOURCE: Каталог, корзина и оформление оптовой/
 
 ReSOURCE: Оформление дизайн-токенов витрин. Стили не заменяют серверные учётные проверки.
 
-## Тесты Python/CJS и браузерные проверки (244)
+## Тесты Python/CJS и браузерные проверки (280)
 
 ### `GameBAT_CRM/test_guard.py`
 
@@ -1467,6 +1621,14 @@ Python/C-кода. Отдельная инфраструктурная сеть 
 
 Итоговая сумма и относительное изменение через прежний денежный журнал.
 
+### `creditors/test_operation_links.py`
+
+Навигация по журналу не меняет деньги и сохраняет ограничения доступа.
+
+### `creditors/test_prepayments.py`
+
+Проводки отдельной предоплаты, идемпотентность и отмена оплаченной продажи.
+
 ### `creditors/tests.py`
 
 ### `crm_backups/test_artifacts.py`
@@ -1526,6 +1688,80 @@ ZIP проверяется и публикуется явно; файловые 
 
 ### `deployment/test_store.py`
 
+### `digital_prices/test_auto_dispatch.py`
+
+Авторассылка: персональные группы, полнота обновления и защита от дублей.
+
+Внешний Telegram и генерация картинок подменены; рабочие ключи не используются.
+
+### `digital_prices/test_buyer_markups.py`
+
+Изоляция покупательских наценок, общий себес и явный выбор профиля в CRM-боте.
+
+### `digital_prices/test_ea_rounding.py`
+
+Ранее загруженный EA Play и предварительная цена используют тот же шаг 50 ₽.
+
+### `digital_prices/test_presentation.py`
+
+Оформление пересылаемого прайса без Telegram и рабочей БД.
+
+### `digital_prices/test_price_calculation.cjs`
+
+### `digital_prices/test_price_inheritance.py`
+
+Пустое поле наследует общую наценку; незаполненные блоки не входят в клиентский комплект.
+
+### `digital_prices/test_sheet_source.py`
+
+Будущие проверки Sheets используют фиктивный транспорт, не рабочую таблицу.
+
+### `digital_prices/test_sheet_structure.py`
+
+Смена диапазонов сохраняет строки, наценки, ссылки покупателей и защищает старые вкладки.
+
+### `digital_prices/tests.py`
+
+Синтетические проверки. Рабочие ключи, сеть, склад и финансовые операции не нужны.
+
+### `digital_sales/test_backup.py`
+
+Полный архив проверяется восстановлением отдельной синтетической SQLite.
+
+### `digital_sales/test_chat_balances.py`
+
+Синтетические группы: отдельные сообщения баланса и идемпотентная очередь.
+
+### `digital_sales/test_customer_receipts.py`
+
+Публичные чеки: секретные поля не читаются, длинный состав не обрезается.
+
+### `digital_sales/test_finance.py`
+
+### `digital_sales/test_ignored_orders.py`
+
+Отменённый входящий заказ не возвращается из повторных событий поставщика.
+
+### `digital_sales/test_ingestion.py`
+
+### `digital_sales/test_parser.py`
+
+### `digital_sales/test_reconciliation.py`
+
+Сценарии пополнения из Telegram; сеть и рабочие ключи не используются.
+
+### `digital_sales/test_settings.py`
+
+Отдельная SQLite для параллельной профильной проверки, не рабочая CRM.
+
+### `digital_sales/test_staff_and_web.py`
+
+### `digital_sales/test_topup_receipts.py`
+
+Квитанции пополнения: подтверждение, порядок сообщений и защита от повторного зачисления.
+
+### `digital_sales/test_worker.py`
+
 ### `integrations/notification_browser_checks.py`
 
 Два счётчика в шапке, переход к действиям и обновление без вызовов Avito.
@@ -1550,6 +1786,10 @@ ZIP проверяется и публикуется явно; файловые 
 
 ### `integrations/test_required_actions.py`
 
+### `integrations/test_worker_health.py`
+
+Регрессии ложного зелёного статуса; внешние API и рабочие процессы подменяются.
+
 ### `integrations/test_worker_monitoring.py`
 
 Контроль процессов проверяется без запуска API, Windows-печати и рабочих worker.
@@ -1559,6 +1799,10 @@ ZIP проверяется и публикуется явно; файловые 
 ### `integrations/worker_browser_checks.py`
 
 Реальный Chromium и отдельная БД; ОС, внешние API и принтер не запускаются.
+
+### `local_agent/test_backup_setup.py`
+
+Понятные причины отказа и защита пароля; без сети и рабочей БД.
 
 ### `local_agent/test_configuration.py`
 
@@ -1600,6 +1844,10 @@ Chromium: редакция, справочник, отличие количес�
 
 Прежняя форма отдельных валютных курсов и индивидуальная финализация
 рейсового прихода заменены общей фиксацией прибытия и затрат.
+
+### `orders/order_changes_browser_checks.py`
+
+Проверка новых действий заказов и массовой корректировки в настоящем браузере.
 
 ### `orders/stock_order_form_browser_checks.py`
 
@@ -1676,6 +1924,18 @@ Chromium: редакция, справочник, отличие количес�
 ### `orders/test_operation_changes.py`
 
 Отличия документа от заказа требуют точного подтверждения до любых проводок.
+
+### `orders/test_operation_quantity_restore.py`
+
+Возврат уменьшенных количеств при отмене связанных документов рейса.
+
+### `orders/test_order_changes.py`
+
+Регрессии редактирования, дополнения и удаления импортных заказов.
+
+### `orders/test_product_ordering.py`
+
+Плоский порядок заказов и форм операций соответствует действующему оптовому XLSX.
 
 ### `orders/test_stock_order_form.py`
 
@@ -1802,6 +2062,10 @@ Chromium: редакция, справочник, отличие количес�
 ### `price/procurement_suppliers_browser_checks.py`
 
 Выбор поставщика и сохранение в Chromium, без рабочего API и рабочей БД.
+
+### `price/test_legacy_xls.py`
+
+Проверка типов ячеек настоящего BIFF8-файла без тестового Excel-писателя.
 
 ### `price/test_nomenclature_excel.py`
 
@@ -1957,6 +2221,10 @@ MV3 Chromium с подменённым Avito: форма, связь прода�
 
 ### `sales/test_independent_rows.py`
 
+### `sales/test_inventory_statistics.py`
+
+Согласованность складских сумм, группировки и прав; без внешних сервисов.
+
 ### `sales/test_invoice.py`
 
 ### `sales/test_label_printing.py`
@@ -2021,6 +2289,8 @@ MV3 Chromium с подменённым Avito: форма, связь прода�
 
 ### `sales/test_system_products_js.cjs`
 
+### `sales/test_units_js.cjs`
+
 ### `sales/tests.py`
 
 ### `scripts/test_repository_hygiene.py`
@@ -2053,6 +2323,10 @@ MV3 Chromium с подменённым Avito: форма, связь прода�
 
 Расширение очереди сохраняет прежние задания и привязки; только тестовая SQLite.
 
+### `telegram_bots/test_screens.py`
+
+Переходы одного меню проверяются без настоящего Telegram и рабочих данных.
+
 ### `telegram_bots/test_supplier_templates.py`
 
 Шаблоны поставщиков проверяются на искусственных товарах без настоящего Telegram.
@@ -2070,6 +2344,18 @@ Polling и конкуренция на отдельной тестовой БД,
 ### `warehouse/test_storage_locations.py`
 
 ### `warehouse/tests.py`
+
+### `wholesale_bot/test_catalog.py`
+
+Каталог использует оптовый остаток и авторизацию, не проводит продажи.
+
+### `wholesale_bot/test_runtime.py`
+
+Транспорт/перезапуск без рабочего токена и без реальных Telegram-запросов.
+
+### `wholesale_bot/tests.py`
+
+Синтетические пользователи/Excel; Telegram и рабочие ключи не используются.
 
 ### `yandex_market/test_boxes_js.cjs`
 
@@ -2089,7 +2375,7 @@ PDF готовится отдельно от печати и хранится д
 
 Проверки на изолированной БД и подменённом API; рабочие ключи не используются.
 
-## Миграции (171)
+## Миграции (204)
 
 ### `accounts/migrations/0001_initial.py`
 
@@ -2349,6 +2635,14 @@ PDF готовится отдельно от печати и хранится д
 
 Зависимости: `[('cash', '0009_remove_cashtransaction_cash_transaction_safe_matches_type_and_more'), ('creditors', '0005_alter_creditortransaction_kind'), ('sales', '0033_trip_cost_sources'), ('warehouse', '0006_warehouse_revision'), migrations.swappable_dependency(settings.AUTH_USER_MODEL)]`.
 
+### `creditors/migrations/0007_wholesale_partner_advance.py`
+
+Зависимости: `[('creditors', '0006_debt_delta_cent_precision')]`.
+
+### `creditors/migrations/0008_prepayment_account.py`
+
+Зависимости: `[('cash', '0009_remove_cashtransaction_cash_transaction_safe_matches_type_and_more'), ('creditors', '0007_wholesale_partner_advance'), ('sales', '0038_wholesale_partner_advance'), ('warehouse', '0006_warehouse_revision'), migrations.swappable_dependency(settings.AUTH_USER_MODEL)]`.
+
 ### `crm_backups/migrations/0001_initial.py`
 
 Зависимости: `[migrations.swappable_dependency(settings.AUTH_USER_MODEL)]`.
@@ -2364,6 +2658,90 @@ PDF готовится отдельно от печати и хранится д
 ### `crm_backups/migrations/0004_applicationartifact.py`
 
 Зависимости: `[('crm_backups', '0003_printrouting'), migrations.swappable_dependency(settings.AUTH_USER_MODEL)]`.
+
+### `digital_prices/migrations/0001_digital_price_catalog.py`
+
+Зависимости: `[('telegram_bots', '0002_staffbotjobdocument_staffbotjob_function_and_more'), migrations.swappable_dependency(settings.AUTH_USER_MODEL)]`.
+
+### `digital_prices/migrations/0002_initial_disabled_configuration.py`
+
+Только выключенная конфигурация и номер версии. Импорта или отправок нет.
+
+Зависимости: `[('digital_prices', '0001_digital_price_catalog')]`.
+
+Преобразования данных: `initialize`. Не удалять только по возрасту файла.
+
+### `digital_prices/migrations/0003_manual_price_entries.py`
+
+Зависимости: `[('digital_prices', '0002_initial_disabled_configuration'), migrations.swappable_dependency(settings.AUTH_USER_MODEL)]`.
+
+### `digital_prices/migrations/0004_manual_tariff_placeholders.py`
+
+Пустые ручные строки по образцу владельца. Цены с изображений не переносятся.
+
+Зависимости: `[('digital_prices', '0003_manual_price_entries')]`.
+
+Преобразования данных: `populate`. Не удалять только по возрасту файла.
+
+### `digital_prices/migrations/0005_manual_purchase_cost.py`
+
+Зависимости: `[('digital_prices', '0004_manual_tariff_placeholders'), migrations.swappable_dependency(settings.AUTH_USER_MODEL)]`.
+
+### `digital_prices/migrations/0006_manual_markup.py`
+
+Зависимости: `[('digital_prices', '0005_manual_purchase_cost'), migrations.swappable_dependency(settings.AUTH_USER_MODEL)]`.
+
+### `digital_prices/migrations/0007_manual_pricing_modes.py`
+
+Зависимости: `[('digital_prices', '0006_manual_markup'), migrations.swappable_dependency(settings.AUTH_USER_MODEL)]`.
+
+### `digital_prices/migrations/0008_manual_sheet_source.py`
+
+Зависимости: `[('digital_prices', '0007_manual_pricing_modes')]`.
+
+### `digital_prices/migrations/0009_manual_sheet_status.py`
+
+Зависимости: `[('digital_prices', '0008_manual_sheet_source')]`.
+
+### `digital_prices/migrations/0010_buyer_markups.py`
+
+Зависимости: `[('digital_prices', '0009_manual_sheet_status'), ('digital_sales', '0007_customer_sale_receipt'), ('telegram_bots', '0003_digital_price_catalog'), migrations.swappable_dependency(settings.AUTH_USER_MODEL)]`.
+
+### `digital_prices/migrations/0011_archived_source_tariffs.py`
+
+Зависимости: `[('digital_prices', '0010_buyer_markups')]`.
+
+### `digital_prices/migrations/0012_buyerpricedispatch_buyerpricedispatchpage_and_more.py`
+
+Зависимости: `[('digital_prices', '0011_archived_source_tariffs'), ('digital_sales', '0007_customer_sale_receipt'), migrations.swappable_dependency(settings.AUTH_USER_MODEL)]`.
+
+### `digital_sales/migrations/0001_initial.py`
+
+Зависимости: `[('partners', '0005_partner_telegram'), ('sales', '0035_avito_browser_orders'), ('telegram_bots', '0002_staffbotjobdocument_staffbotjob_function_and_more'), migrations.swappable_dependency(settings.AUTH_USER_MODEL)]`.
+
+### `digital_sales/migrations/0002_supplierpurchase_superseded_by.py`
+
+Зависимости: `[('digital_sales', '0001_initial')]`.
+
+### `digital_sales/migrations/0003_digitalorder_is_retail_and_more.py`
+
+Зависимости: `[('digital_sales', '0002_supplierpurchase_superseded_by'), ('sales', '0037_alter_sale_payment_method'), migrations.swappable_dependency(settings.AUTH_USER_MODEL)]`.
+
+### `digital_sales/migrations/0004_buyerbalancechat_balancechatpublication_and_more.py`
+
+Зависимости: `[('digital_sales', '0003_digitalorder_is_retail_and_more')]`.
+
+### `digital_sales/migrations/0005_supplier_balance_reconciliation.py`
+
+Зависимости: `[('digital_sales', '0004_buyerbalancechat_balancechatpublication_and_more')]`.
+
+### `digital_sales/migrations/0006_ignored_incoming_orders.py`
+
+Зависимости: `[('digital_sales', '0005_supplier_balance_reconciliation'), migrations.swappable_dependency(settings.AUTH_USER_MODEL)]`.
+
+### `digital_sales/migrations/0007_customer_sale_receipt.py`
+
+Зависимости: `[('digital_sales', '0006_ignored_incoming_orders')]`.
 
 ### `integrations/migrations/0001_initial.py`
 
@@ -2408,6 +2786,22 @@ PDF готовится отдельно от печати и хранится д
 ### `integrations/migrations/0011_avito_manual_price_scopes.py`
 
 Зависимости: `[('integrations', '0010_alter_workercommand_service_alter_workerservice_code'), migrations.swappable_dependency(settings.AUTH_USER_MODEL)]`.
+
+### `integrations/migrations/0012_alter_workercommand_service_alter_workerservice_code.py`
+
+Зависимости: `[('integrations', '0011_avito_manual_price_scopes')]`.
+
+### `integrations/migrations/0013_alter_workercommand_service_alter_workerservice_code.py`
+
+Зависимости: `[('integrations', '0012_alter_workercommand_service_alter_workerservice_code')]`.
+
+### `integrations/migrations/0014_digital_price_catalog.py`
+
+Зависимости: `[('integrations', '0013_alter_workercommand_service_alter_workerservice_code')]`.
+
+### `integrations/migrations/0015_worker_functional_health.py`
+
+Зависимости: `[('integrations', '0014_digital_price_catalog')]`.
 
 ### `orders/migrations/0001_initial.py`
 
@@ -2460,6 +2854,10 @@ PDF готовится отдельно от печати и хранится д
 ### `orders/migrations/0013_customs_before_arrival.py`
 
 Зависимости: `[('orders', '0012_customs_manifests')]`.
+
+### `orders/migrations/0014_archive_cancelled_arrivals.py`
+
+Зависимости: `[('orders', '0013_customs_before_arrival'), migrations.swappable_dependency(settings.AUTH_USER_MODEL)]`.
 
 ### `partners/migrations/0001_initial.py`
 
@@ -2729,6 +3127,22 @@ PDF готовится отдельно от печати и хранится д
 
 Зависимости: `[('sales', '0034_print_agent_delivery'), migrations.swappable_dependency(settings.AUTH_USER_MODEL)]`.
 
+### `sales/migrations/0036_alter_sale_payment_method_alter_sale_sale_type_and_more.py`
+
+Зависимости: `[('partners', '0005_partner_telegram'), ('resource_storefront', '0006_wholesalecontact_partner'), ('sales', '0035_avito_browser_orders'), ('warehouse', '0006_warehouse_revision'), migrations.swappable_dependency(settings.AUTH_USER_MODEL)]`.
+
+### `sales/migrations/0037_alter_sale_payment_method.py`
+
+Зависимости: `[('sales', '0036_alter_sale_payment_method_alter_sale_sale_type_and_more')]`.
+
+### `sales/migrations/0038_wholesale_partner_advance.py`
+
+Зависимости: `[('partners', '0005_partner_telegram'), ('resource_storefront', '0006_wholesalecontact_partner'), ('sales', '0037_alter_sale_payment_method'), ('warehouse', '0006_warehouse_revision'), migrations.swappable_dependency(settings.AUTH_USER_MODEL)]`.
+
+### `sales/migrations/0039_prepayment_account.py`
+
+Зависимости: `[('partners', '0005_partner_telegram'), ('resource_storefront', '0006_wholesalecontact_partner'), ('sales', '0038_wholesale_partner_advance'), ('warehouse', '0006_warehouse_revision'), migrations.swappable_dependency(settings.AUTH_USER_MODEL)]`.
+
 ### `supplies/migrations/0001_initial.py`
 
 Зависимости: `[('catalog', '0001_initial'), ('partners', '0001_initial'), migrations.swappable_dependency(settings.AUTH_USER_MODEL)]`.
@@ -2783,6 +3197,10 @@ PDF готовится отдельно от печати и хранится д
 
 Зависимости: `[('partners', '0005_partner_telegram'), ('telegram_bots', '0001_initial'), ('warehouse', '0006_warehouse_revision')]`.
 
+### `telegram_bots/migrations/0003_digital_price_catalog.py`
+
+Зависимости: `[('partners', '0005_partner_telegram'), ('telegram_bots', '0002_staffbotjobdocument_staffbotjob_function_and_more'), ('warehouse', '0006_warehouse_revision')]`.
+
 ### `warehouse/migrations/0001_initial.py`
 
 Зависимости: `[('catalog', '0001_initial')]`.
@@ -2810,6 +3228,14 @@ PDF готовится отдельно от печати и хранится д
 ### `warehouse/migrations/0006_warehouse_revision.py`
 
 Зависимости: `[('catalog', '0022_cd_wholesale_site_enabled_and_more'), ('warehouse', '0005_transfer_cost_snapshots'), migrations.swappable_dependency(settings.AUTH_USER_MODEL)]`.
+
+### `wholesale_bot/migrations/0001_initial.py`
+
+Зависимости: `[('partners', '0005_partner_telegram'), ('sales', '0036_alter_sale_payment_method_alter_sale_sale_type_and_more'), ('warehouse', '0006_warehouse_revision'), migrations.swappable_dependency(settings.AUTH_USER_MODEL)]`.
+
+### `wholesale_bot/migrations/0002_botconfig_accepting_orders_and_more.py`
+
+Зависимости: `[('wholesale_bot', '0001_initial')]`.
 
 ### `yandex_market/migrations/0001_initial.py`
 
@@ -2839,7 +3265,7 @@ PDF готовится отдельно от печати и хранится д
 
 Зависимости: `[('yandex_market', '0006_offerconnection_exchange_defaults')]`.
 
-## Management commands (27)
+## Management commands (33)
 
 ### `cash/management/commands/verify_cash.py`
 
@@ -2899,6 +3325,20 @@ PDF готовится отдельно от печати и хранится д
 
 Независимый исполнитель, не блокирующий мониторинг/печать при упаковке.
 
+### `digital_sales/management/commands/configure_digital_sales.py`
+
+Явная локальная подготовка, без запуска polling, отправок и финансовых движений.
+
+### `digital_sales/management/commands/discover_digital_chat.py`
+
+Одно чтение ожидающих событий без подтверждения offset и без вывода содержимого.
+
+### `digital_sales/management/commands/run_telegram_digital_bot.py`
+
+### `integrations/management/commands/check_worker_health.py`
+
+Проверка готовности контейнера по результатам рабочих циклов; без API и постановки задач.
+
 ### `integrations/management/commands/configure_worker_monitoring.py`
 
 Явная политика штатного запуска, не изменяющая настройки бизнес-интеграций.
@@ -2942,6 +3382,12 @@ Windows-исполнитель печати ярлыков. Подтверждё
 ### `telegram_bots/management/commands/run_telegram_staff_bot.py`
 
 Отдельный управляемый процесс; отсутствие настройки не мешает веб-серверу.
+
+### `wholesale_bot/management/commands/configure_wholesale_bot.py`
+
+Явная локальная установка токена; не применяет миграции и не включает получателя.
+
+### `wholesale_bot/management/commands/run_telegram_opt_bot.py`
 
 ### `yandex_market/management/commands/configure_yandex_market.py`
 

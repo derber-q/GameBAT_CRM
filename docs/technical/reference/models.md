@@ -4,7 +4,7 @@
 
 Справочник исходников и метаданных схемы, без рабочих записей/ключей. Перегенерация: `.venv/Scripts/python.exe scripts/build_technical_reference.py`.
 
-Конкретных собственных моделей: **143**.
+Конкретных собственных моделей: **144**.
 
 Метаданные моделей не показывают значения записей. `blank/null/editable` не заменяют ограничения формы, permissions и проверки сервиса. `on_delete=CASCADE` не означает разрешённое пользовательское удаление документа.
 
@@ -1109,11 +1109,11 @@ Permissions: []. Стандартные: ('add', 'change', 'delete', 'view').
 | `creation_key` | UUIDField; null=True; blank=True; editable=False; max_length=32 | Ключ создания |
 | `creation_fingerprint` | CharField; null=False; blank=True; editable=False; max_length=64 | creation fingerprint |
 | `visible_id` | CharField; null=False; blank=False; editable=False; max_length=40 | Номер продажи |
-| `warehouse` | ForeignKey; null=False; blank=False; editable=True | Склад → warehouse.Warehouse; on_delete=PROTECT |
+| `warehouse` | ForeignKey; null=True; blank=True; editable=True | Склад → warehouse.Warehouse; on_delete=PROTECT |
 | `consignment_platform` | ForeignKey; null=True; blank=True; editable=False | Площадка реализации → partners.SalesPlatform; on_delete=PROTECT |
 | `price_type` | CharField; null=False; blank=False; editable=True; max_length=24 | Тип цены; choices: retail → Цена Avito; wholesale → Оптовая; yandex_market → Яндекс Маркет; consignment → Реализация |
-| `sale_type` | CharField; null=False; blank=False; editable=True; max_length=24 | Тип продажи; choices: retail → Розница; wholesale → Опт; avito → Авито; yandex_market → Яндексмаркет; consignment → Реализация |
-| `payment_method` | CharField; null=False; blank=False; editable=True; max_length=24 | Способ оплаты; choices: undefined → Не определён; cash → Наличные; cash_postpay → Наличные — постоплата; bank_account → Банковский перевод; bank_transfer_postpay → Банковский перевод — постоплата; partner_debt → В долг |
+| `sale_type` | CharField; null=False; blank=False; editable=True; max_length=24 | Тип продажи; choices: digital → Цифровая продажа; retail → Розница; wholesale → Опт; avito → Авито; yandex_market → Яндексмаркет; consignment → Реализация |
+| `payment_method` | CharField; null=False; blank=False; editable=True; max_length=24 | Способ оплаты; choices: bank_card → Банковская карта; undefined → Не определён; cash → Наличные; cash_postpay → Наличные — постоплата; bank_account → Банковский перевод; bank_transfer_postpay → Банковский перевод — постоплата; partner_debt → В долг; prepayment_account → Счёт предоплаты |
 | `order_status` | CharField; null=False; blank=False; editable=False; max_length=20 | Статус заказа; choices: created → Создан; assembled → Собран; delivered → Доставлен |
 | `payment_status` | CharField; null=False; blank=False; editable=False; max_length=20 | Статус оплаты; choices: unpaid → Не оплачен; paid → Оплачен |
 | `created_by` | ForeignKey; null=True; blank=True; editable=True | Создал → accounts.User; on_delete=PROTECT |
@@ -1122,7 +1122,9 @@ Permissions: []. Стандартные: ('add', 'change', 'delete', 'view').
 | `partner` | ForeignKey; null=True; blank=True; editable=True | Заказчик → partners.Partner; on_delete=PROTECT |
 | `partner_name_snapshot` | CharField; null=False; blank=True; editable=True; max_length=255 | Заказчик на момент продажи |
 | `debt_repayment_amount` | DecimalField; null=False; blank=False; editable=False; max_digits=20; decimal_places=2 | Погашение долга партнёра |
+| `debt_advance_amount` | DecimalField; null=False; blank=False; editable=False; max_digits=20; decimal_places=2 | Аванс на счёте партнёра |
 | `debt_offset_amount` | DecimalField; null=False; blank=False; editable=False; max_digits=20; decimal_places=2 | Взаимозачёт долга GameBAT |
+| `prepayment_used_amount` | DecimalField; null=False; blank=False; editable=False; max_digits=20; decimal_places=2 | Оплачено со счёта предоплаты |
 | `buyer_name_snapshot` | CharField; null=False; blank=True; editable=True; max_length=160 | Контактное имя на момент заказа |
 | `buyer_phone_snapshot` | CharField; null=False; blank=True; editable=True; max_length=40 | Основной телефон на момент заказа |
 | `buyer_address_snapshot` | TextField; null=False; blank=True; editable=True | Адрес на момент заказа |
@@ -1147,7 +1149,7 @@ Permissions: []. Стандартные: ('add', 'change', 'delete', 'view').
 
 Permissions: [('view_sales', 'Может просматривать незавершённые продажи'), ('view_completed_sales', 'Может просматривать завершённые продажи'), ('view_sale_detail', 'Может просматривать подробности продажи'), ('create_sale', 'Может создавать продажи'), ('edit_unpaid_postpay_sale', 'Может изменять неоплаченную продажу с постоплатой'), ('advance_order_status', 'Может менять статус заказа'), ('mark_sale_paid', 'Может подтверждать оплату продажи'), ('import_wholesale_price', 'Может импортировать оптовый XLSX в новую продажу'), ('cancel_sale', 'Может отменять продажи'), ('view_sales_statistics', 'Может просматривать статистику продаж и прибыль'), ('export_sales_statistics', 'Может экспортировать статистику продаж')]. Стандартные: ('add', 'change', 'delete', 'view').
 
-Ограничения: `[<CheckConstraint: condition=(OR: (NOT (AND: ('direct_delivery', True))), (AND: ('operation_kind', 'normal'), ('sale_type', 'wholesale'))) name='sale_direct_delivery_wholesale'>, <CheckConstraint: condition=(AND: ('procurement_prepaid_amount__gte', 0)) name='sale_procurement_prepaid_nonnegative'>, <CheckConstraint: condition=(OR: (NOT (AND: ('operation_kind', 'EXPENSE'))), (AND: ('extra_cash_amount', 0), ('total_amount', 0), (OR: ('cash_received_amount__isnull', True), ('cash_received_amount', 0)))) name='expense_sale_no_revenue'>, <CheckConstraint: condition=(OR: (NOT (AND: ('payment_method', 'undefined'))), ('payment_status', 'unpaid')) name='sale_undefined_payment_unpaid'>, <CheckConstraint: condition=(AND: ('total_amount__gte', 0)) name='sale_total_nonnegative'>, <CheckConstraint: condition=(AND: ('refunded_amount__gte', 0)) name='sale_refund_nonnegative'>, <CheckConstraint: condition=(OR: (AND: ('cash_received_amount__isnull', True), ('refunded_amount__lte', F(total_amount))), (AND: ('cash_received_amount__isnull', False), ('refunded_amount__lte', F(cash_received_amount)))) name='sale_refund_not_above_received'>, <CheckConstraint: condition=(OR: ('cash_received_amount__isnull', True), ('cash_received_amount__gte', F(total_amount)), ('payment_method', 'partner_debt'), (AND: ('cash_received_amount__gte', 0), ('debt_repayment_amount', 0), ('extra_cash_amount', 0), ('operation_kind__in', ('normal', 'DIGITAL_PRODUCT')), ('partner__isnull', False), ('payment_status', 'paid'), ('sale_type', 'wholesale'), ('cash_received_amount__lte', <CombinedExpression: F(total_amount) - F(debt_offset_amount)>))) name='sale_cash_received_not_below_total'>, <CheckConstraint: condition=(AND: ('extra_cash_amount__gte', 0)) name='sale_extra_cash_nonnegative'>, <CheckConstraint: condition=(AND: ('debt_offset_amount__gte', 0), ('debt_repayment_amount__gte', 0), (NOT (AND: ('debt_offset_amount__gt', 0), ('debt_repayment_amount__gt', 0)))) name='sale_debt_amounts_valid'>, <CheckConstraint: condition=(OR: (AND: ('debt_offset_amount', 0), ('debt_repayment_amount', 0)), (AND: ('operation_kind__in', ('normal', 'DIGITAL_PRODUCT')), ('partner__isnull', False), ('payment_status', 'paid'), ('sale_type', 'wholesale'))) name='sale_debt_requires_paid_partner'>, <CheckConstraint: condition=(OR: (AND: ('debt_offset_amount', 0), ('debt_repayment_amount', 0)), ('cash_received_amount', <CombinedExpression: F(total_amount) + F(debt_repayment_amount) + F(extra_cash_amount) - F(debt_offset_amount)>), (AND: ('cash_received_amount__gte', 0), ('debt_repayment_amount', 0), ('extra_cash_amount', 0), ('cash_received_amount__lte', <CombinedExpression: F(total_amount) - F(debt_offset_amount)>))) name='sale_partner_payment_reconciles'>, <CheckConstraint: condition=(OR: (NOT (AND: ('payment_method', 'partner_debt'))), (AND: ('cash_received_amount', 0), ('cash_received_amount__isnull', False), ('debt_offset_amount', 0), ('debt_repayment_amount', 0), ('extra_cash_amount', 0), ('operation_kind__in', ('normal', 'DIGITAL_PRODUCT')), ('partner__isnull', False), ('payment_status', 'paid'), ('sale_type', 'wholesale'), ('total_amount__gt', 0))) name='sale_partner_debt_valid'>, <CheckConstraint: condition=(OR: (NOT (AND: ('payment_method', 'undefined'))), (AND: ('cash_received_amount__isnull', True), ('extra_cash_amount', 0))) name='sale_undefined_has_no_received'>, <CheckConstraint: condition=(OR: (AND: ('cancellation_comment', ''), ('cancelled_at__isnull', True), ('cancelled_by__isnull', True), ('refunded_amount', 0)), (AND: ('cancelled_at__isnull', False), ('cancelled_by__isnull', False), (NOT (AND: ('cancellation_comment', ''))))) name='sale_cancellation_fields_consistent'>]`; unique_together: `()`.
+Ограничения: `[<CheckConstraint: condition=(OR: (AND: ('cash_received_amount', 0), ('debt_advance_amount', 0), ('debt_offset_amount', 0), ('debt_repayment_amount', 0), ('extra_cash_amount', 0), ('operation_kind__in', ('normal', 'DIGITAL_PRODUCT')), ('partner__isnull', False), ('payment_method', 'prepayment_account'), ('payment_status', 'paid'), ('prepayment_used_amount', F(total_amount)), ('procurement_prepaid_amount', 0), ('sale_type', 'wholesale'), ('total_amount__gt', 0)), (AND: (NOT (AND: ('payment_method', 'prepayment_account'))), ('prepayment_used_amount', 0))) name='sale_prepayment_account_valid'>, <CheckConstraint: condition=(OR: ('warehouse__isnull', False), ('sale_type', 'digital')) name='sale_physical_warehouse_required'>, <CheckConstraint: condition=(OR: (NOT (AND: ('sale_type', 'digital'))), (AND: ('debt_advance_amount', 0), ('debt_offset_amount', 0), ('debt_repayment_amount', 0), ('direct_delivery', False), ('operation_kind', 'DIGITAL_PRODUCT'), ('payment_method', 'bank_card'), ('procurement_prepaid_amount', 0), ('warehouse__isnull', True))) name='sale_digital_prepaid_contract'>, <CheckConstraint: condition=(OR: (NOT (AND: ('payment_method', 'bank_card'))), ('sale_type', 'digital')) name='sale_card_only_digital'>, <CheckConstraint: condition=(OR: (NOT (AND: ('direct_delivery', True))), (AND: ('operation_kind', 'normal'), ('sale_type', 'wholesale'))) name='sale_direct_delivery_wholesale'>, <CheckConstraint: condition=(AND: ('procurement_prepaid_amount__gte', 0)) name='sale_procurement_prepaid_nonnegative'>, <CheckConstraint: condition=(OR: (NOT (AND: ('operation_kind', 'EXPENSE'))), (AND: ('extra_cash_amount', 0), ('total_amount', 0), (OR: ('cash_received_amount__isnull', True), ('cash_received_amount', 0)))) name='expense_sale_no_revenue'>, <CheckConstraint: condition=(OR: (NOT (AND: ('payment_method', 'undefined'))), ('payment_status', 'unpaid')) name='sale_undefined_payment_unpaid'>, <CheckConstraint: condition=(AND: ('total_amount__gte', 0)) name='sale_total_nonnegative'>, <CheckConstraint: condition=(AND: ('refunded_amount__gte', 0)) name='sale_refund_nonnegative'>, <CheckConstraint: condition=(OR: (AND: ('cash_received_amount__isnull', True), ('refunded_amount__lte', F(total_amount))), (AND: ('cash_received_amount__isnull', False), ('refunded_amount__lte', F(cash_received_amount)))) name='sale_refund_not_above_received'>, <CheckConstraint: condition=(OR: ('cash_received_amount__isnull', True), ('cash_received_amount__gte', F(total_amount)), ('payment_method', 'partner_debt'), (AND: ('cash_received_amount__gte', 0), ('debt_repayment_amount', 0), ('extra_cash_amount', 0), ('operation_kind__in', ('normal', 'DIGITAL_PRODUCT')), ('partner__isnull', False), ('payment_status', 'paid'), ('sale_type', 'wholesale'), ('cash_received_amount__lte', <CombinedExpression: F(total_amount) - F(debt_offset_amount)>))) name='sale_cash_received_not_below_total'>, <CheckConstraint: condition=(AND: ('extra_cash_amount__gte', 0)) name='sale_extra_cash_nonnegative'>, <CheckConstraint: condition=(AND: ('debt_advance_amount__gte', 0), ('debt_offset_amount__gte', 0), ('debt_repayment_amount__gte', 0), (NOT (AND: ('debt_offset_amount__gt', 0), (OR: ('debt_repayment_amount__gt', 0), ('debt_advance_amount__gt', 0))))) name='sale_debt_amounts_valid'>, <CheckConstraint: condition=(OR: (AND: ('debt_advance_amount', 0), ('debt_offset_amount', 0), ('debt_repayment_amount', 0)), (AND: ('operation_kind__in', ('normal', 'DIGITAL_PRODUCT')), ('partner__isnull', False), ('payment_status', 'paid'), ('sale_type', 'wholesale'))) name='sale_debt_requires_paid_partner'>, <CheckConstraint: condition=(OR: (AND: ('debt_advance_amount', 0), ('debt_offset_amount', 0), ('debt_repayment_amount', 0)), ('cash_received_amount', <CombinedExpression: F(total_amount) + F(debt_repayment_amount) + F(debt_advance_amount) + F(extra_cash_amount) - F(debt_offset_amount)>), (AND: ('cash_received_amount__gte', 0), ('debt_advance_amount', 0), ('debt_repayment_amount', 0), ('extra_cash_amount', 0), ('cash_received_amount__lte', <CombinedExpression: F(total_amount) - F(debt_offset_amount)>))) name='sale_partner_payment_reconciles'>, <CheckConstraint: condition=(OR: ('debt_advance_amount', 0), ('extra_cash_amount', 0)) name='sale_advance_not_extra_revenue'>, <CheckConstraint: condition=(OR: (NOT (AND: ('payment_method', 'partner_debt'))), (AND: ('cash_received_amount', 0), ('cash_received_amount__isnull', False), ('debt_advance_amount', 0), ('debt_offset_amount', 0), ('debt_repayment_amount', 0), ('extra_cash_amount', 0), ('operation_kind__in', ('normal', 'DIGITAL_PRODUCT')), ('partner__isnull', False), ('payment_status', 'paid'), ('sale_type', 'wholesale'), ('total_amount__gt', 0))) name='sale_partner_debt_valid'>, <CheckConstraint: condition=(OR: (NOT (AND: ('payment_method', 'undefined'))), (AND: ('cash_received_amount__isnull', True), ('extra_cash_amount', 0))) name='sale_undefined_has_no_received'>, <CheckConstraint: condition=(OR: (AND: ('cancellation_comment', ''), ('cancelled_at__isnull', True), ('cancelled_by__isnull', True), ('refunded_amount', 0)), (AND: ('cancelled_at__isnull', False), ('cancelled_by__isnull', False), (NOT (AND: ('cancellation_comment', ''))))) name='sale_cancellation_fields_consistent'>]`; unique_together: `()`.
 
 ## `sales.SaleCDItem` — позиция CD в продаже
 
@@ -1479,12 +1481,13 @@ Permissions: []. Стандартные: ('add', 'change', 'delete', 'view').
 | `name` | CharField; null=False; blank=False; editable=True; max_length=255 | Название |
 | `current_debt` | DecimalField; null=False; blank=False; editable=False; max_digits=20; decimal_places=2 | Текущая задолженность |
 | `description` | TextField; null=False; blank=True; editable=True | Описание |
+| `prepayment_balance` | DecimalField; null=False; blank=False; editable=False; max_digits=20; decimal_places=2 | Предоплата |
 | `created_at` | DateTimeField; null=False; blank=True; editable=False | Создан |
 | `updated_at` | DateTimeField; null=False; blank=True; editable=False | Обновлён |
 
 Permissions: [('view_creditors', 'Может просматривать кредиторов'), ('change_debt', 'Может изменять задолженность кредиторов'), ('view_history', 'Может просматривать историю кредиторов')]. Стандартные: ('add', 'change', 'delete', 'view').
 
-Ограничения: `[]`; unique_together: `()`.
+Ограничения: `[<CheckConstraint: condition=(AND: ('prepayment_balance__gte', 0)) name='creditor_prepayment_nonnegative'>]`; unique_together: `()`.
 
 ## `creditors.CreditorTransaction` — операция кредитора
 
@@ -1495,7 +1498,7 @@ Permissions: [('view_creditors', 'Может просматривать кред
 | Поле | Тип/параметры | Назначение/связь |
 | --- | --- | --- |
 | `id` | BigAutoField; null=False; blank=True; editable=True | ID |
-| `kind` | CharField; null=False; blank=False; editable=True; max_length=20 | Тип операции; choices: adjustment → Изменение задолженности; repayment → Погашение долга партнёра; offset → Взаимозачёт долга GameBAT; sale_debt → Продажа партнёру в долг; reversal → Отмена расчёта по продаже |
+| `kind` | CharField; null=False; blank=False; editable=True; max_length=20 | Тип операции; choices: adjustment → Изменение задолженности; repayment → Погашение долга партнёра; offset → Взаимозачёт долга GameBAT; sale_debt → Продажа партнёру в долг; sale_advance → Зачисление аванса партнёра; prepayment_transfer → Перенос на счёт предоплаты; reversal → Отмена расчёта по продаже |
 | `partner_name_snapshot` | CharField; null=False; blank=True; editable=True; max_length=255 | Партнёр на момент операции |
 | `sale` | ForeignKey; null=True; blank=True; editable=True | sale → sales.Sale; on_delete=PROTECT |
 | `operation_key` | CharField; null=True; blank=True; editable=False; max_length=80 | operation key |
@@ -1515,6 +1518,37 @@ Permissions: [('view_creditors', 'Может просматривать кред
 Permissions: []. Стандартные: ('add', 'change', 'delete', 'view').
 
 Ограничения: `[<CheckConstraint: condition=(AND: ('amount__gt', 0)) name='creditor_tx_amount_positive'>, <CheckConstraint: condition=(NOT (AND: ('delta', 0))) name='creditor_tx_delta_nonzero'>, <CheckConstraint: condition=(AND: ('delta', Round(F(new_debt) - F(old_debt), Value(2)))) name='creditor_tx_delta_matches_balances'>, <CheckConstraint: condition=(OR: ('delta', F(amount)), ('delta', <CombinedExpression: F(amount) * Value(-1)>)) name='creditor_tx_amount_matches_delta'>, <CheckConstraint: condition=(OR: (AND: ('cash_transaction__isnull', True), ('money_source_type__in', ('bank', 'offset'))), (AND: ('cash_transaction__isnull', False), ('money_source_type__in', ('cash', 'safe')))) name='creditor_tx_money_source_consistent'>]`; unique_together: `()`.
+
+## `creditors.PrepaymentTransaction` — операция предоплаты
+
+Отдельный журнал предоплаты: пополнение, внутренний перенос, оплата и её сторно.
+
+Таблица `creditors_prepaymenttransaction`; порядок `('-created_at', '-pk')`.
+
+| Поле | Тип/параметры | Назначение/связь |
+| --- | --- | --- |
+| `id` | BigAutoField; null=False; blank=True; editable=True | ID |
+| `creditor` | ForeignKey; null=False; blank=False; editable=True | creditor → creditors.Creditor; on_delete=PROTECT |
+| `kind` | CharField; null=False; blank=False; editable=True; max_length=16 | Операция; choices: deposit → Внесение предоплаты; transfer → Перенос из отрицательного долга; payment → Оплата продажи предоплатой; reversal → Возврат предоплаты при отмене |
+| `old_balance` | DecimalField; null=False; blank=False; editable=True; max_digits=20; decimal_places=2 | Предоплата до |
+| `new_balance` | DecimalField; null=False; blank=False; editable=True; max_digits=20; decimal_places=2 | Предоплата после |
+| `delta` | DecimalField; null=False; blank=False; editable=True; max_digits=20; decimal_places=2 | Изменение |
+| `amount` | DecimalField; null=False; blank=False; editable=True; max_digits=20; decimal_places=2 | Сумма |
+| `warehouse` | ForeignKey; null=False; blank=False; editable=True | warehouse → warehouse.Warehouse; on_delete=PROTECT |
+| `money_source_type` | CharField; null=False; blank=False; editable=True; max_length=8 | Источник; choices: cash → Касса; safe → Сейф; bank → Банковский перевод; offset → Без движения денег |
+| `cash_transaction` | OneToOneField; null=True; blank=True; editable=True | cash transaction → cash.CashTransaction; on_delete=PROTECT |
+| `debt_transaction` | OneToOneField; null=True; blank=True; editable=True | debt transaction → creditors.CreditorTransaction; on_delete=PROTECT |
+| `sale` | ForeignKey; null=True; blank=True; editable=True | sale → sales.Sale; on_delete=PROTECT |
+| `reversal_of` | OneToOneField; null=True; blank=True; editable=True | reversal of → creditors.PrepaymentTransaction; on_delete=PROTECT |
+| `operation_key` | CharField; null=False; blank=False; editable=False; max_length=80 | operation key |
+| `partner_name_snapshot` | CharField; null=False; blank=False; editable=True; max_length=255 | Партнёр на момент операции |
+| `actor` | ForeignKey; null=False; blank=False; editable=True | actor → accounts.User; on_delete=PROTECT |
+| `comment` | TextField; null=False; blank=True; editable=True | Комментарий |
+| `created_at` | DateTimeField; null=False; blank=True; editable=False | Дата |
+
+Permissions: []. Стандартные: ('add', 'change', 'delete', 'view').
+
+Ограничения: `[<CheckConstraint: condition=(AND: ('amount__gt', 0), ('new_balance__gte', 0), ('old_balance__gte', 0)) name='prepay_tx_positive_balances'>, <CheckConstraint: condition=(AND: ('delta', Round(F(new_balance) - F(old_balance), Value(2)))) name='prepay_tx_delta_matches'>, <CheckConstraint: condition=(OR: (AND: ('delta', <CombinedExpression: F(amount) * Value(-1)>), ('kind', 'payment')), (AND: ('delta', F(amount)), ('kind__in', ('deposit', 'transfer', 'reversal')))) name='prepay_tx_direction'>, <CheckConstraint: condition=(OR: (AND: ('cash_transaction__isnull', False), ('money_source_type__in', ('cash', 'safe'))), (AND: ('cash_transaction__isnull', True), ('money_source_type__in', ('bank', 'offset')))) name='prepay_tx_source_consistent'>]`; unique_together: `()`.
 
 ## `price.PriceDocumentSettings` — настройки документов прайса
 
@@ -1924,14 +1958,16 @@ Permissions: []. Стандартные: ('add', 'change', 'delete', 'view').
 
 ## `orders.TripArrival` — trip arrival
 
-TripArrival(id, trip, usdt_aed, usdt_rub, actual_delivery, arrived_at, arrived_by, revision, reviewed_orders, purchase_total, control_total, finalized_at, finalized_by, proposed_prices, applied_prices)
+TripArrival(id, trip, cancelled_at, cancelled_by, usdt_aed, usdt_rub, actual_delivery, arrived_at, arrived_by, revision, reviewed_orders, purchase_total, control_total, finalized_at, finalized_by, proposed_prices, applied_prices)
 
 Таблица `orders_triparrival`; порядок `[]`.
 
 | Поле | Тип/параметры | Назначение/связь |
 | --- | --- | --- |
 | `id` | BigAutoField; null=False; blank=True; editable=True | ID |
-| `trip` | OneToOneField; null=False; blank=False; editable=True | trip → orders.SupplierOrderBatch; on_delete=PROTECT |
+| `trip` | ForeignKey; null=False; blank=False; editable=True | trip → orders.SupplierOrderBatch; on_delete=PROTECT |
+| `cancelled_at` | DateTimeField; null=True; blank=True; editable=False | cancelled at |
+| `cancelled_by` | ForeignKey; null=True; blank=False; editable=True | cancelled by → accounts.User; on_delete=PROTECT |
 | `usdt_aed` | DecimalField; null=False; blank=False; editable=True; max_digits=20; decimal_places=6 | AED за 1 USDT |
 | `usdt_rub` | DecimalField; null=False; blank=False; editable=True; max_digits=20; decimal_places=6 | RUB за 1 USDT |
 | `actual_delivery` | DecimalField; null=False; blank=False; editable=True; max_digits=20; decimal_places=2 | Фактическая доставка, RUB |
@@ -1948,7 +1984,7 @@ TripArrival(id, trip, usdt_aed, usdt_rub, actual_delivery, arrived_at, arrived_b
 
 Permissions: []. Стандартные: ().
 
-Ограничения: `[<CheckConstraint: condition=(AND: ('actual_delivery__gte', 0), ('usdt_aed__gt', 0), ('usdt_rub__gt', 0)) name='trip_arrival_positive_parameters'>]`; unique_together: `()`.
+Ограничения: `[<UniqueConstraint: fields=('trip',) name='one_current_trip_arrival' condition=(AND: ('cancelled_at__isnull', True))>, <CheckConstraint: condition=(OR: (AND: ('cancelled_at__isnull', True), ('cancelled_by__isnull', True)), (AND: ('cancelled_at__isnull', False), ('cancelled_by__isnull', False))) name='trip_arrival_cancellation_actor'>, <CheckConstraint: condition=(AND: ('actual_delivery__gte', 0), ('usdt_aed__gt', 0), ('usdt_rub__gt', 0)) name='trip_arrival_positive_parameters'>]`; unique_together: `()`.
 
 ## `orders.TripCostRow` — trip cost row
 
@@ -2198,7 +2234,7 @@ Permissions: []. Стандартные: ('add', 'change', 'delete', 'view').
 
 ## `integrations.WorkerProcess` — worker process
 
-WorkerProcess(instance, pid, birth, services, heartbeat_at, ready, action, started_at)
+WorkerProcess(instance, pid, birth, services, heartbeat_at, ready, progress_at, verified_at, executor_at, health_error, action, started_at)
 
 Таблица `integrations_workerprocess`; порядок `[]`.
 
@@ -2210,6 +2246,10 @@ WorkerProcess(instance, pid, birth, services, heartbeat_at, ready, action, start
 | `services` | JSONField; null=False; blank=False; editable=True | services |
 | `heartbeat_at` | DateTimeField; null=False; blank=False; editable=True | heartbeat at |
 | `ready` | BooleanField; null=False; blank=False; editable=True | ready |
+| `progress_at` | DateTimeField; null=True; blank=True; editable=True | progress at |
+| `verified_at` | DateTimeField; null=True; blank=True; editable=True | verified at |
+| `executor_at` | DateTimeField; null=True; blank=True; editable=True | executor at |
+| `health_error` | CharField; null=False; blank=True; editable=True; max_length=40 | health error |
 | `action` | CharField; null=False; blank=True; editable=True; max_length=32 | action |
 | `started_at` | DateTimeField; null=False; blank=True; editable=False | started at |
 
@@ -2225,7 +2265,7 @@ WorkerService(code, expected, status, heartbeat_at, last_started_at, observed_at
 
 | Поле | Тип/параметры | Назначение/связь |
 | --- | --- | --- |
-| `code` | CharField; null=False; blank=False; editable=True; max_length=20 | code; choices: avito → Avito; yandex → Яндекс Маркет; google → Google Sheets; print → Печать этикеток; telegram_staff → Telegram — сотрудники |
+| `code` | CharField; null=False; blank=False; editable=True; max_length=20 | code; choices: avito → Avito; yandex → Яндекс Маркет; google → Google Sheets; print → Печать этикеток; telegram_staff → Telegram — сотрудники; telegram_digital → Telegram — цифровые продажи; telegram_opt → Telegram — оптовые покупатели; digital_prices → Цифровые цены — API |
 | `expected` | CharField; null=False; blank=False; editable=True; max_length=20 | expected |
 | `status` | CharField; null=False; blank=False; editable=True; max_length=20 | status |
 | `heartbeat_at` | DateTimeField; null=True; blank=True; editable=True | heartbeat at |
@@ -2256,7 +2296,7 @@ WorkerCommand(id, request_id, service, actor, state, result, created_at, finishe
 | --- | --- | --- |
 | `id` | UUIDField; null=False; blank=False; editable=False; max_length=32 | id |
 | `request_id` | UUIDField; null=False; blank=False; editable=True; max_length=32 | request id |
-| `service` | CharField; null=False; blank=False; editable=True; max_length=20 | service; choices: avito → Avito; yandex → Яндекс Маркет; google → Google Sheets; print → Печать этикеток; telegram_staff → Telegram — сотрудники |
+| `service` | CharField; null=False; blank=False; editable=True; max_length=20 | service; choices: avito → Avito; yandex → Яндекс Маркет; google → Google Sheets; print → Печать этикеток; telegram_staff → Telegram — сотрудники; telegram_digital → Telegram — цифровые продажи; telegram_opt → Telegram — оптовые покупатели; digital_prices → Цифровые цены — API |
 | `actor` | ForeignKey; null=True; blank=False; editable=True | actor → accounts.User; on_delete=SET_NULL |
 | `state` | CharField; null=False; blank=False; editable=True; max_length=16 | state |
 | `result` | CharField; null=False; blank=True; editable=True; max_length=40 | result |
@@ -2695,7 +2735,7 @@ StaffBotJob(id, bot, access, warehouse, function, supplier, update, chat_id, sta
 | `bot` | ForeignKey; null=False; blank=False; editable=True | bot → telegram_bots.StaffBot; on_delete=CASCADE |
 | `access` | ForeignKey; null=False; blank=False; editable=True | access → telegram_bots.StaffBotAccess; on_delete=PROTECT |
 | `warehouse` | ForeignKey; null=True; blank=False; editable=True | warehouse → warehouse.Warehouse; on_delete=SET_NULL |
-| `function` | CharField; null=False; blank=False; editable=True; max_length=40 | function; choices: wholesale_stock_price → Оптовый прайс наличия; supplier_price_templates → Шаблоны поставщика с ценами |
+| `function` | CharField; null=False; blank=False; editable=True; max_length=40 | function; choices: wholesale_stock_price → Оптовый прайс наличия; supplier_price_templates → Шаблоны поставщика с ценами; digital_price_images → Прайс цифровых товаров |
 | `supplier` | ForeignKey; null=True; blank=True; editable=True | supplier → partners.Supplier; on_delete=SET_NULL |
 | `update` | OneToOneField; null=False; blank=False; editable=True | update → telegram_bots.StaffBotUpdate; on_delete=PROTECT |
 | `chat_id` | BigIntegerField; null=False; blank=False; editable=True | chat id |
@@ -2708,7 +2748,7 @@ StaffBotJob(id, bot, access, warehouse, function, supplier, update, chat_id, sta
 
 Permissions: []. Стандартные: ('add', 'change', 'delete', 'view').
 
-Ограничения: `[<UniqueConstraint: fields=('access',) name='telegram_one_active_price' condition=(AND: ('state__in', ['queued', 'generating', 'sending']))>, <CheckConstraint: condition=(OR: (AND: ('function', 'wholesale_stock_price'), ('supplier__isnull', True)), (AND: ('function', 'supplier_price_templates'), ('warehouse__isnull', True))) name='telegram_job_function_target'>]`; unique_together: `()`.
+Ограничения: `[<UniqueConstraint: fields=('access',) name='telegram_one_active_price' condition=(AND: ('state__in', ['queued', 'generating', 'sending']))>, <CheckConstraint: condition=(OR: (AND: ('function', 'wholesale_stock_price'), ('supplier__isnull', True)), (AND: ('function', 'supplier_price_templates'), ('warehouse__isnull', True)), (AND: ('function', 'digital_price_images'), ('supplier__isnull', True), ('warehouse__isnull', True))) name='telegram_job_function_target'>]`; unique_together: `()`.
 
 ## `telegram_bots.StaffBotJobDocument` — staff bot job document
 

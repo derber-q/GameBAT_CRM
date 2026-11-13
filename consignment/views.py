@@ -1,6 +1,8 @@
 """HTTP-обработчики: доступ, формы, вызов сервисов и ответ пользователю реализации.
 
 Операции адресуют конкретную партию stock_id; разные условия партий не объединяются."""
+from types import SimpleNamespace
+
 from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, OperationalError
@@ -13,6 +15,7 @@ from django.utils import timezone
 from django.utils.http import content_disposition_header, url_has_allowed_host_and_scheme
 
 from catalog.models import CD, Tech
+from catalog.product_ordering import wholesale_product_order_key, tech_price_order
 from catalog.product_filters import product_filter_context, filter_product_querysets
 from core.decorators import permission_required_any
 from partners.models import SalesPlatform
@@ -50,15 +53,25 @@ def _stock_row(stock, product_kind, user):
 
 
 def _group_stocks(stocks, *, product_kind, user):
-    grouped = {}
-    for stock in stocks:
+    """Тот же плоский порядок, что в оптовом XLSX; stock_id и условия партий неизменны."""
+    def ordering(stock):
+        product = stock.cd if product_kind == 'cd' else stock.tech
+        return wholesale_product_order_key(product, kind=product_kind), stock.receivable_per_unit, stock.pk
+
+    groups, previous = [], None
+    for stock in sorted(stocks, key=ordering):
         product = stock.cd if product_kind == "cd" else stock.tech
-        group = product.platform if product_kind == "cd" else product.product_type
-        grouped.setdefault(group, []).append(_stock_row(stock, product_kind, user))
-    return [
-        (group, sorted(rows, key=lambda row: (row["name"].casefold(), row["warehouse"].name.casefold())))
-        for group, rows in sorted(grouped.items(), key=lambda item: item[0].name.casefold())
-    ]
+        if product_kind == 'cd':
+            group, identity = product.platform, product.platform_id
+        else:
+            title = tech_price_order(product, for_excel=True)[1].removeprefix('Tech · ')
+            identity = title
+            group = SimpleNamespace(pk=f'price-{len(groups)}', name=title)
+        if not groups or identity != previous:
+            groups.append((group, []))
+            previous = identity
+        groups[-1][1].append(_stock_row(stock, product_kind, user))
+    return groups
 
 
 def _platform_presentations(user, platform_queryset, filters):
@@ -79,7 +92,7 @@ def _platform_presentations(user, platform_queryset, filters):
     if platform_ids and (user.is_superuser or user.has_perm("consignment.view_techconsignmentstock")):
         for stock in TechConsignmentStock.objects.filter(
             platform_id__in=platform_ids, quantity__gt=0, tech_id__in=techs.values('pk'),
-        ).select_related("tech__product_type", "warehouse", "platform"):
+        ).select_related("tech__product_type", "tech__brand", "warehouse", "platform"):
             tech_by_platform[stock.platform_id].append(stock)
     result = []
     for platform in platforms:

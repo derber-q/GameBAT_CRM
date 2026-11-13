@@ -89,14 +89,33 @@ def heartbeat(request,device,data):
     device.session=request.backup_session; device.last_seen_at=timezone.now()
     device.version=str(data.get('version','1'))[:32]
     device.save(update_fields=['session','last_seen_at','version'])
-    return JsonResponse({'ok':True,'can_request':device.can_request,'protocol':1})
+    return JsonResponse({'ok':True,'can_request':device.can_request,'protocol':1,'setup':setup_status(device)})
 
 
 def metadata(job):
-    return {'id':str(job.pk),'state':job.state,'size':job.size,'sha256':job.sha256,'key_id':job.key_id,
+    state=job.state
+    if state in ('snapshot','files','checking','encrypting'):
+        from .window import marker_path
+        try:
+            path=marker_path()
+            if not path.is_symlink() and path.stat().st_size<=1024:
+                marker=json.loads(path.read_text('utf-8'))
+                phases={'staging':'files','snapshot':'snapshot','checking':'checking','encrypting':'encrypting'}
+                if marker.get('job')==str(job.pk):state=phases.get(marker.get('phase'),state)
+        except (OSError,ValueError,TypeError):pass
+    return {'id':str(job.pk),'state':state,'size':job.size,'sha256':job.sha256,'key_id':job.key_id,
         'snapshot_at':job.metadata.get('snapshot_at'), 'version':job.metadata.get('sha',''),
         'environment_id':job.metadata.get('environment_id',''), 'database_engine':job.metadata.get('database_engine',''),
         'kind':job.kind, 'error':job.error}
+
+
+def setup_status(device):
+    """Только безопасные признаки готовности; ключи и токены не передаются."""
+    config=BackupConfiguration.objects.get(pk=1)
+    return {'enabled':config.enabled,'key_ready':bool(config.public_key and config.recovery_key_saved),
+            'can_request':device.can_request,'schedule_time':str(config.schedule_time),
+            'timezone':config.timezone,
+            'worker_recent':bool(config.last_worker_at and config.last_worker_at>timezone.now()-timedelta(minutes=2))}
 
 
 @device_api('GET')
@@ -107,6 +126,9 @@ def status(request,device,data):
 @device_api('POST')
 def create(request,device,data):
     if not device.can_request: raise APIError('manual_request_forbidden',403)
+    config=BackupConfiguration.objects.get(pk=1)
+    if not config.public_key or not config.recovery_key_saved:raise APIError('recovery_not_configured',403)
+    if not config.enabled:raise APIError('backup_disabled',403)
     return JsonResponse(metadata(request_job(uuid.UUID(data['request_id']))))
 
 

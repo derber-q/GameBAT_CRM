@@ -43,7 +43,7 @@ def settlement_preview(request):
             partner_id=partner.pk, sale_id=int(sale_id) if sale_id else None, creation_key=creation_key)
     except ValidationError as exc:
         return JsonResponse({'error': ' '.join(exc.messages)}, status=400)
-    needed = any(Decimal(values[key]) > 0 for key in ('repayment', 'offset', 'charge'))
+    needed = any(Decimal(values[key]) > 0 for key in ('repayment', 'offset', 'charge', 'advance'))
     if needed and not request.user.has_perm('creditors.change_debt'):
         return JsonResponse({'error': 'Для расчёта задолженности требуется право изменения долга.'}, status=403)
     if not needed:

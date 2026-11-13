@@ -1,0 +1,9 @@
+/* Локальная компоновка; цвета, поля и таблицы — из общей оболочки ReSOURCE. */
+.wholesale-bot-page .form-actions { flex-wrap: wrap; }
+.wholesale-bot-page .opt-filter { align-items: end; display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
+.wholesale-bot-page .opt-filter select { max-width: 260px; }
+.wholesale-bot-page .stacked-form { gap: 8px; }
+.wholesale-bot-page td .stacked-form { min-width: 270px; }
+.wholesale-bot-page td small { color: var(--gb-text-muted); }
+.wholesale-bot-page .panel > .form-actions { margin-bottom: 10px; }
+.wholesale-bot-page .table-scroll { max-width: 100%; min-width: 0; }

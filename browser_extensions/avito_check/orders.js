@@ -80,8 +80,19 @@
   if (!['avito.ru','www.avito.ru','m.avito.ru'].includes(location.hostname) || !location.pathname.startsWith('/orders')) return;
   const seen = new WeakMap();
   let updating = false;
+  let contextLost = false;
   async function send(action, data = {}) {
-    const response = await chrome.runtime.sendMessage({type:'resource-orders:action', action, ...data});
+    let response;
+    try{
+      if(contextLost||!chrome.runtime?.id)throw new Error('Extension context invalidated.');
+      response = await chrome.runtime.sendMessage({type:'resource-orders:action', action, ...data});
+    }catch(error){
+      if(contextLost||/extension context invalidated/i.test(error.message||'')){
+        contextLost=true;
+        throw new Error('Расширение обновлено или перезапущено. Обновите страницу Avito.');
+      }
+      throw error;
+    }
     if (!response?.ok) throw new Error(response?.message || 'CRM не ответила. Проверьте подключение.');
     return response;
   }
@@ -97,6 +108,8 @@
     const print = document.createElement('button');print.textContent='Напечатать отправительный код';
     if(hasShippingCode(order))actions.append(print);
     const status = document.createElement('small');status.setAttribute('role','status');root.append(status);
+    const reconnect=document.createElement('button');reconnect.textContent='Обновить Avito';reconnect.hidden=true;
+    reconnect.onclick=()=>location.reload();actions.append(reconnect);
     let crmOrigin='';
     function showInfo(info,styles,origin) {
       if(origin)crmOrigin=origin;
@@ -119,10 +132,12 @@
     async function act(action) {
       if (busy || (action==='print'&&!hasShippingCode(order))) return; busy=true;sale.disabled=print.disabled=true;
       status.textContent=action==='draft'?'Открытие формы CRM…':'Чтение оригинального кода заказа…';
+      let printQueued=false;
       try {
         const result=await send(action,{order});
         if (action==='draft') status.textContent='Форма открыта в CRM. После сохранения здесь появится номер продажи.';
         else {
+          printQueued=true;
           status.textContent='Стикер передан в очередь печати.';
           for (let n=0;n<90;n++) {
             await new Promise(resolve=>setTimeout(resolve,1500));
@@ -132,8 +147,13 @@
             if(n===89) status.textContent='Задание остаётся в очереди. Проверьте агент/обработчик печати; повторно не нажимайте.';
           }
         }
-      } catch(error) {status.textContent=error.message;}
-      finally {busy=false;sale.disabled=print.disabled=cancelled;}
+      } catch(error) {
+        status.textContent=contextLost&&action==='print'?(printQueued?
+          'Задание уже создано. Обновите Avito и проверьте результат печати в CRM; повторно не отправляйте стикер.':
+          'Связь с расширением прервалась. Обновите Avito и проверьте очередь печати в CRM перед повторной отправкой.'):error.message;
+        reconnect.hidden=!contextLost;
+      }
+      finally {busy=false;sale.disabled=print.disabled=cancelled||contextLost;}
     }
     sale.onclick=()=>act('draft');print.onclick=()=>act('print');
     return {order, host, setOrder(next) {
@@ -141,10 +161,12 @@
       presentation.setOrder(next);
       if(hasShippingCode(order)){if(print.parentNode!==actions)actions.append(print);}
       else print.remove();
-      if(!busy)sale.disabled=print.disabled=cancelled;
+      if(!busy)sale.disabled=print.disabled=cancelled||contextLost;
     }, dispose(){presentation.dispose();host.remove();}, connectionFailed(message) {
       if(!busy && (!status.textContent || status.textContent===connectionError)) {
         status.textContent=message;connectionError=message;
+        reconnect.hidden=!contextLost;
+        if(contextLost)sale.disabled=print.disabled=true;
       }
     }, update(info,origin,styles) {
       if(!busy && connectionError && status.textContent===connectionError)status.textContent='';
@@ -153,7 +175,7 @@
     }};
   }
   async function update() {
-    if(updating)return;updating=true;
+    if(updating||contextLost)return;updating=true;
     const rows=[];
     try {
       for(const row of document.querySelectorAll('[data-marker="order-row"]')) {

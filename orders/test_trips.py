@@ -220,9 +220,9 @@ class TripTests(TestCase):
                              action="transfer", target_supplier_id=self.c.pk, price_supplier_id=self.a.pk)
         self.assertEqual(trip.lines.get(supplier=self.c).quantity, 2)
 
-    def test_confirmed_trip_is_read_only_and_direct_order_edit_is_blocked(self):
+    def test_confirmed_trip_is_read_only_and_order_edit_requires_revision(self):
         trip = self.trip()
-        with self.assertRaisesMessage(ValidationError, "через таблицы рейса"):
+        with self.assertRaisesMessage(ValidationError, "Версия рейса"):
             edit_created_order(actor=self.user, order_id=self.first.pk, recipient="Изменено", comment="", lines=[{
                 "price_list_item_id": self.cd_source.pk, "prepayment_quantity": 1, "postpayment_quantity": 0}])
         self.first.status = "confirmed"

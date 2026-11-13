@@ -71,15 +71,15 @@ def load(folder):
     path=folder/'settings.json'
     if not path.exists(): return initial()
     data=json.loads(path.read_text(encoding='utf-8'))
-    for name in ('print_token','backup_token'):
+    for name in ('print_token','backup_token','recovery_password'):
         if name in data: data[name]=unprotect(data[name])
-    return data
+    return {**initial(),**data}
 
 
 def save(folder,data):
     private_folder(folder)
     data=dict(data); data['server_url']=server_origin(data['server_url'])
-    for name in ('print_token','backup_token'):
+    for name in ('print_token','backup_token','recovery_password'):
         if data.get(name): data[name]=protect(data[name])
     temporary=folder/'settings.tmp'
     with temporary.open('w',encoding='utf-8') as stream:

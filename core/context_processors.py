@@ -55,6 +55,10 @@ def crm_header(request):
         or user.has_perm("cash.view_cash_history")
         or user.has_perm("cash.view_safe")
     )
+    digital_prices_access = False
+    if authenticated and (user.has_perm('digital_prices.view_catalog') or user.has_perm('digital_prices.download_prices')):
+        from digital_prices.services import ready
+        digital_prices_access = ready()
     return {
         "nav_warehouses": warehouses,
         "single_warehouse_id": warehouses[0]["id"] if len(warehouses) == 1 else None,
@@ -62,6 +66,8 @@ def crm_header(request):
         'market_pending_count': market_pending_count,
         'avito_action_counts': avito_action_counts,
         "nav": {
+            'digital_prices': digital_prices_access,
+            'digital_sales': authenticated and user.has_perm('digital_sales.view_digital_sales'),
             'worker_monitoring': authenticated,
             'market_notifications': market_notifications,
             'avito_notifications': avito_notifications,

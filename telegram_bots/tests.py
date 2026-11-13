@@ -64,6 +64,12 @@ class FakeClient:
         if self.error:
             raise self.error
 
+    def menu_photo(self, chat_id, text, markup):
+        self.calls.append(('menu_photo', {'chat_id': chat_id, 'caption': text, 'reply_markup': markup}))
+        if self.error:
+            raise self.error
+        return {'message_id': 42}
+
     def close(self):
         pass
 
@@ -158,16 +164,14 @@ class StaffBotTests(TestCase):
         with patch('telegram_bots.handlers.Warehouse.objects.order_by', return_value=[]):
             self.assertIn('нет доступных', self.request(10)['text'])
 
-    def test_menu_uses_persistent_reply_keyboard_and_button_creates_document(self):
+    def test_menu_uses_inline_keyboard_and_legacy_text_button_still_creates_document(self):
         for i, command in enumerate(['/start', '/menu', '/help'], 1):
             with self.subTest(command=command):
                 reply = accept_update(self.bot.pk, update(i, text=command))
                 keyboard = reply['reply_markup']
-                self.assertEqual(keyboard.get('keyboard'), [[{'text': WHOLESALE.title}]])
-                self.assertTrue(keyboard.get('is_persistent'))
-                self.assertTrue(keyboard.get('resize_keyboard'))
-                self.assertFalse(keyboard.get('one_time_keyboard', True))
-                self.assertNotIn('inline_keyboard', keyboard)
+                self.assertEqual(keyboard['inline_keyboard'], [[{'text': WHOLESALE.title, 'callback_data': WHOLESALE.code}]])
+                self.assertNotIn('keyboard', keyboard)
+                self.assertTrue(reply['screen'])
         result = accept_update(self.bot.pk, update(4, text=WHOLESALE.title))
         self.assertIn('Формирую', result['text'])
         client = FakeClient()

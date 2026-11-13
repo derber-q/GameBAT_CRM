@@ -53,7 +53,15 @@ const reply = (result) => resolve({headers: {get: () => 'application/json'}, jso
   select.value = 'paid'; change();
   assert.equal(elements['sale-status-cash-field'].hidden, false);
   callbacks['sale-status-cancel:click']();
+  row.dataset.paymentMethod = 'bank_card'; row.dataset.partnerId = '42';
+  select.value = 'paid'; change();
+  assert.equal(elements['sale-status-cash-field'].hidden, true);
+  assert.equal(elements['sale-status-cash'].disabled, true);
+  assert(elements['sale-status-question'].textContent.includes('цифрового баланса'));
+  callbacks['sale-status-cancel:click']();
+  row.dataset.paymentMethod = 'bank_transfer_postpay'; delete row.dataset.partnerId;
   select.value = 'paid'; change(); const completed = submit();
+  assert.equal(elements['sale-status-cash'].disabled, false);
   reply({success: true, is_completed: true, message: 'OK'}); await completed;
   assert(removed); assert.equal(Number(count.textContent), 0); assert.equal(empty.hidden, false);
   console.log('Sale status JS: confirmation/cancel/Escape, no optimistic status, double-submit, payment errors, completion and empty group OK');

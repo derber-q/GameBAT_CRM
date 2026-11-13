@@ -76,7 +76,7 @@ def render_statistics_workbook(report):
     for row in report.sales:
         sale = row.sale
         date = timezone.localtime(sale.completed_at).replace(tzinfo=None)
-        _append(sales, (sale.pk, date, sale.warehouse.name, row.channel_label,
+        _append(sales, (sale.pk, date, sale.warehouse.name if sale.warehouse_id else 'Без склада', row.channel_label,
                         sale.get_payment_method_display(), row.goods_total, row.overpayment,
                         row.actual_revenue, row.commission, row.cost, row.profit, row.margin, row.markup,
                         row.units, row.positions, row.missing_lines, sale.get_operation_kind_display(), sale.note,

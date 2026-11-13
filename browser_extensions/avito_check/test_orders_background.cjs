@@ -20,13 +20,15 @@ function runtime(){
 }
 
 // Страница отдаёт код только при полноценном мобильном окружении, а не UA-заголовке.
-function printingRuntime({existing=false,failEmulation=false,kind='128',failCapture=false,invalidClip=false}={}){
+function printingRuntime({existing=false,failEmulation=false,kind='128',failCapture=false,invalidClip=false,pendingMobile=false,relativeSource=false}={}){
   let listener,created=0,detached=0,removed=0,fetches=0,printData;
   const commands=[];
   const crm={id:1,url:'http://127.0.0.1:8000/crm/sales/avito-extension/'};
   const mobile={id:3,url:'about:blank'};
   const id='70000000000000001';
   const label={source:'https://avito.ru/web/1/barcode/generate?barcodeType='+kind+'&content=00123456789012',carrier:kind==='128'?'Почта России':'5Post'};
+  if(relativeSource)label.source='/web/1/barcode/generate?barcodeType='+kind+'&content=00123456789012';
+  let mobileReads=0;
   const chrome={runtime:{id:'test-extension',onMessage:{addListener(fn){listener=fn;}}},
     storage:{session:{async get(){return{};},async set(){}}},
     debugger:{async attach(target){assert.equal(target.tabId,3);},
@@ -41,7 +43,11 @@ function printingRuntime({existing=false,failEmulation=false,kind='128',failCapt
       },async detach(target){assert.equal(target.tabId,3);detached++;}},
     tabs:{async query(){return existing?[crm,{id:4,url:'https://m.avito.ru/orders/'+id}]:[crm];},
       async create(){created++;return mobile;},async update(tabId,{url}){mobile.url=url;return mobile;},
-      async get(tabId){return tabId===1?crm:mobile;},async remove(tabId){assert.equal(tabId,3);removed++;},
+      async get(tabId){
+        if(tabId===1)return crm;
+        if(pendingMobile&&mobileReads++===0)return {id:mobile.id,status:'loading',pendingUrl:mobile.url};
+        return mobile;
+      },async remove(tabId){assert.equal(tabId,3);removed++;},
       async sendMessage(tabId,message){
         if(message.type==='resource-orders:label'){
           const ready=existing || commands.some(c=>c.method==='Emulation.setDeviceMetricsOverride'&&c.params.mobile&&c.params.width<=430) &&
@@ -58,6 +64,21 @@ function printingRuntime({existing=false,failEmulation=false,kind='128',failCapt
   return {run:()=>new Promise(resolve=>listener({type:'resource-orders:action',action:'print',order:{order_id:id}},
     {id:chrome.runtime.id,frameId:0,tab:{id:2},url:'https://www.avito.ru/orders'},resolve)),
     get state(){return {created,detached,removed,fetches,printData};}};
+}
+
+// Только что созданная вкладка ещё не обязана иметь поле url.
+function pendingCrmRuntime(){
+  let listener,reads=0;
+  const url='http://127.0.0.1:8000/crm/sales/avito-extension/';
+  const chrome={runtime:{id:'test-extension',onMessage:{addListener(fn){listener=fn;}}},
+    storage:{session:{async get(){return{};},async set(){}}},
+    tabs:{async query(){return[];},async create(){return{id:1,status:'loading'};},
+      async get(){return reads++===0?{id:1,status:'loading',pendingUrl:url}:{id:1,status:'complete',url};},
+      async sendMessage(id,message){return message.type==='resource-orders:ping'?{ok:true}:{ok:true,orders:{}};}}};
+  const context=vm.createContext({chrome,URL,console,crypto:globalThis.crypto,setTimeout(fn){queueMicrotask(fn);}});
+  for(const file of ['protocol.js','orders-background.js'])vm.runInContext(fs.readFileSync(path.join(__dirname,file),'utf8'),context);
+  return ()=>new Promise(resolve=>listener({type:'resource-orders:action',action:'lookup',ids:[]},
+    {id:chrome.runtime.id,frameId:0,tab:{id:2},url:'https://www.avito.ru/orders'},resolve));
 }
 
 function reconnectRuntime({login=false,concurrent=false}={}){
@@ -95,6 +116,12 @@ function reconnectRuntime({login=false,concurrent=false}={}){
   app.setURL('https://evil.example/');
   assert.equal((await app.send({action:'draft',order:{order_id:'70000000000000001'}})).ok,false);
   const printing=printingRuntime();assert.equal((await printing.run()).ok,true);
+  assert.equal((await pendingCrmRuntime()()).ok,true);
+  const pending=printingRuntime({pendingMobile:true,kind:'QR'});
+  assert.equal((await pending.run()).ok,true);
+  const relative=printingRuntime({existing:true,relativeSource:true,kind:'QR'});
+  assert.equal((await relative.run()).ok,true);
+  assert.equal(relative.state.printData.symbol.content,'00123456789012');
   assert.equal(printing.state.printData.symbol.content,'00123456789012');
   assert.equal(printing.state.detached,1);assert.equal(printing.state.removed,1);
   const failed=printingRuntime({failEmulation:true});assert.equal((await failed.run()).ok,false);

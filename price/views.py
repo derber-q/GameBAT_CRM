@@ -68,10 +68,12 @@ def _xlsx_response(content, filename):
 def price_page(request):
     """Складские прайсы и данные документов — раздел по умолчанию."""
     settings = PriceDocumentSettings.get_solo()
+    from wholesale_bot.models import BotConfig
     return render(request, "price/index.html", {
         "settings_form": PriceDocumentSettingsForm(instance=settings),
         "warehouse_form": WarehousePriceForm(),
         'wholesale_form': WholesaleWarehousePriceForm(),
+        'wholesale_bot_config': BotConfig.objects.filter(pk=1).first() if request.user.has_perm('wholesale_bot.configure_wholesale_bot') else None,
         "can_change_settings": request.user.is_superuser or request.user.has_perm("price.change_document_settings"),
         "can_generate_retail": request.user.is_superuser or request.user.has_perm("price.generate_retail_price"),
         "can_generate_wholesale": request.user.is_superuser or request.user.has_perm("price.generate_wholesale_price"),

@@ -14,22 +14,22 @@ ROOT=Path(__file__).resolve().parent.parent
 sys.path.insert(0,str(ROOT))
 
 
-def build(target):
+def build(target, *, resume=False):
     if sys.platform!='win32':raise ValueError('Windows-сборку нужно выполнять на Windows.')
     target=target.resolve()
-    if target.exists() or not target.is_relative_to(ROOT/'outputs') or target==ROOT/'outputs':
+    if (target.exists() and not resume) or not target.is_relative_to(ROOT/'outputs') or target==ROOT/'outputs':
         raise ValueError('Нужен новый отдельный каталог внутри outputs.')
-    target.mkdir(parents=True)
-    source=target/'source';source.mkdir()
+    target.mkdir(parents=True,exist_ok=resume)
+    source=target/'source';source.mkdir(exist_ok=resume)
     files=[]
     for package in ('local_agent','print_agent'):
         files += [p for p in (ROOT/package).glob('*.py') if not p.name.startswith('test_')]
-    files += [ROOT/name for name in ('crm_backups/__init__.py','crm_backups/crypto.py',
+    files += [ROOT/name for name in ('crm_backups/__init__.py','crm_backups/crypto.py','crm_backups/snapshot.py',
         'core/__init__.py','core/external_policy.py','sales/__init__.py','sales/label_printing.py')]
     for path in files:
         dest=source/path.relative_to(ROOT);dest.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(path,dest)
     (source/'launch.py').write_text('from local_agent.__main__ import main\nif __name__ == "__main__": main()\n',encoding='utf-8')
-    hooks=target/'hooks';hooks.mkdir()
+    hooks=target/'hooks';hooks.mkdir(exist_ok=resume)
     # Стандартный hook-django ищет manage.py и копирует db.*. Здесь только
     # библиотека Django для существующего драйвера; проекта/ключей в сборке нет.
     (hooks/'hook-django.py').write_text('from PyInstaller.utils.hooks import collect_all\ndatas,binaries,hiddenimports=collect_all("django",on_error="ignore")\n',encoding='utf-8')
@@ -79,4 +79,6 @@ def build(target):
 
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('target',type=Path)
-    build(parser.parse_args().target)
+    parser.add_argument('--resume',action='store_true',help='Продолжить прерванную сборку в том же каталоге с проверкой и упаковкой.')
+    args=parser.parse_args()
+    build(args.target,resume=args.resume)

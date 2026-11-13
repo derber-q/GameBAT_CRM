@@ -1,0 +1,7 @@
+{% extends 'wholesale_bot/base.html' %}
+{% block title %}Оптовый Telegram-бот · ReSOURCE{% endblock %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">Прайсы · наличие</p><h1>Настройка оптового бота</h1></div><a class="button button-secondary" href="{% url 'wholesale_bot:dashboard' %}">Покупатели</a></div>
+<section class="panel"><p>Покупатели получают прайс выбранного склада. Продажи оформляются от указанного сотрудника с его текущими правами, наличными с постоплатой.</p><form method="post" class="stacked-form">{% csrf_token %}{{ form.as_p }}<button class="button">Сохранить настройки</button></form></section>
+<section class="panel"><h2>Подключение</h2><p>Собственный токен устанавливается локальной командой <code>configure_wholesale_bot --token-source</code>. Токен не отображается в CRM. Обработчик: <code>telegram_opt</code> в общем мониторинге.</p><p>Последнее подключение: {{ config.last_success_at|date:'d.m.Y H:i:s'|default:'Ещё не было' }}. Ошибка: {{ config.error_category|default:'Нет' }}.</p></section>
+{% endblock %}

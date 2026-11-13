@@ -3,7 +3,7 @@
 План закупки, фактическое поступление и проведённые Sale/Supply учитываются раздельно."""
 from django.urls import path
 
-from . import views, trip_views, stock_order_views, trip_price_views, trip_invoice_views
+from . import views, trip_views, stock_order_views, trip_price_views, trip_invoice_views, order_addition_views
 from . import trip_addition_views, fulfillment_views, arrival_views
 from . import customs_views
 
@@ -30,9 +30,13 @@ urlpatterns = [
     path("trips/<int:trip_pk>/stock/new/", stock_order_views.stock_order_create, name="trip_stock_create"),
     path("new/preview/", views.order_preview, name="preview"),
     path("<int:pk>/", views.order_detail, name="detail"),
+    path("<int:pk>/delete/", views.order_delete_unassigned, name="delete_unassigned"),
     path("<int:pk>/export/", views.order_export, name="export"),
     path("<int:pk>/export/suppliers/", views.order_suppliers_export, name="export_suppliers"),
     path("<int:pk>/edit/", views.order_edit, name="edit"),
+    path("<int:pk>/items/add/", views.order_add_items, name="add_items"),
+    path("<int:pk>/catalog-additions/search/", order_addition_views.product_search, name="order_addition_search"),
+    path("<int:pk>/catalog-additions/", order_addition_views.add_catalog_items, name="add_catalog_items"),
     path("<int:pk>/trip/", trip_views.order_trip_assign, name="assign_trip"),
     path("<int:pk>/confirm/", views.order_confirm, name="confirm"),
     path("<int:pk>/receiving/", views.order_start_receiving, name="start_receiving"),

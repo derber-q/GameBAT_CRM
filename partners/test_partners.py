@@ -118,18 +118,74 @@ class PartnerTests(TestCase):
         self.assertIsNone(sale.partner_id); self.assertEqual(sale.partner_name_snapshot, 'Вручную')
         self.assertEqual(Partner.objects.count(), 1); self.assertEqual(Creditor.objects.count(), 1)
 
-    def test_repayment_and_overpayment_do_not_duplicate_cash_or_profit(self):
+    def test_wholesale_advance_with_zero_account_is_reversible(self):
+        sale = self.sale(cash_received_amount='13000', settlement_confirmation=self.token('13000'))
+        self.partner.creditor.refresh_from_db()
+        self.assertEqual((sale.extra_cash_amount, sale.debt_advance_amount, self.partner.creditor.current_debt), (0, 3000, -3000))
+        self.assertEqual(sale.creditor_movements.get().kind, CreditorTransaction.Kind.SALE_ADVANCE)
+        cancel_sale(actor=self.actor, sale_id=sale.pk, comment='Возврат')
+        self.partner.creditor.refresh_from_db()
+        self.warehouse.cash_register.refresh_from_db()
+        self.stock.refresh_from_db()
+        self.assertEqual((self.partner.creditor.current_debt, self.warehouse.cash_register.balance, self.stock.quantity), (0, 0, 10))
+
+    def test_wholesale_advance_increases_existing_negative_account(self):
+        self.debt('-500')
+        sale = self.sale(cash_received_amount='13000', settlement_confirmation=self.token('13000'))
+        self.partner.creditor.refresh_from_db()
+        self.assertEqual((sale.debt_repayment_amount, sale.debt_advance_amount, self.partner.creditor.current_debt), (0, 3000, -3500))
+
+    def test_wholesale_advance_requires_account_confirmation_and_fresh_balance(self):
+        with self.assertRaisesMessage(ValidationError, 'выберите партнёра'):
+            self.sale(partner_id=None, cash_received_amount='13000')
+        with self.assertRaisesMessage(ValidationError, 'Подтвердите'):
+            self.sale(cash_received_amount='13000')
+        token = self.token('13000')
+        self.debt('500')
+        with self.assertRaisesMessage(ValidationError, 'изменились'):
+            self.sale(cash_received_amount='13000', settlement_confirmation=token)
+        self.assertFalse(Sale.objects.exists())
+
+    def test_postpaid_bank_advance_has_no_cash_transaction(self):
+        sale = self.sale(payment_method='bank_transfer_postpay')
+        response = self.client.post(reverse('sales:settlement_preview'), {'sale_id': sale.pk, 'received': '13000'})
+        self.assertTrue(response.json()['required'])
+        self.assertEqual(response.json()['values']['advance'], '3000.00')
+        sale = mark_sale_paid(actor=self.actor, sale_id=sale.pk, cash_received_amount='13000',
+            settlement_confirmation=response.json()['token'])
+        self.assertEqual((sale.extra_cash_amount, sale.debt_advance_amount), (0, 3000))
+        self.assertFalse(sale.cash_transactions.exists())
+
+    def test_legacy_overpayment_reclassification_preserves_cash_and_is_idempotent(self):
+        from sales.partner_payments import reclassify_wholesale_overpayment
+        sale = self.sale()
+        sale.cash_received_amount, sale.extra_cash_amount = Decimal('13000'), Decimal('3000')
+        sale.save(update_fields=['cash_received_amount', 'extra_cash_amount'])
+        cash_before = list(sale.cash_transactions.values_list('pk', 'amount'))
+        reclassify_wholesale_overpayment(actor=self.actor, sale_id=sale.pk, expected_extra='3000')
+        reclassify_wholesale_overpayment(actor=self.actor, sale_id=sale.pk, expected_extra='3000')
+        sale.refresh_from_db()
+        self.assertEqual((sale.extra_cash_amount, sale.debt_advance_amount), (0, 3000))
+        self.assertEqual(list(sale.cash_transactions.values_list('pk', 'amount')), cash_before)
+        self.assertEqual(sale.creditor_movements.count(), 1)
+
+    def test_sale_form_uses_updated_settlement_script(self):
+        response = self.client.get(reverse('sales:create'))
+        self.assertContains(response, 'partner-settlements.js?v=20261107-advance-1')
+
+    def test_repayment_and_advance_do_not_duplicate_cash_or_profit(self):
         self.debt('2000')
         sale = self.sale(cash_received_amount='13000', settlement_confirmation=self.token('13000'))
         self.partner.creditor.refresh_from_db(); self.warehouse.cash_register.refresh_from_db()
         self.assertEqual((sale.total_amount, sale.cash_received_amount, sale.debt_repayment_amount, sale.extra_cash_amount),
-            (Decimal('10000'), Decimal('13000'), Decimal('2000'), Decimal('1000')))
-        self.assertEqual(self.partner.creditor.current_debt, 0)
+            (Decimal('10000'), Decimal('13000'), Decimal('2000'), Decimal('0')))
+        self.assertEqual(sale.debt_advance_amount, Decimal('1000'))
+        self.assertEqual(self.partner.creditor.current_debt, -1000)
         self.assertEqual(self.warehouse.cash_register.balance, 13000)
         self.assertEqual(sale.cash_transactions.count(), 1)
         report = build_sales_statistics_report({'partner': self.partner})
-        self.assertEqual(report.totals.profit, 5000)
-        self.assertEqual(report.totals.actual_revenue, 11000)
+        self.assertEqual(report.totals.profit, 4000)
+        self.assertEqual(report.totals.actual_revenue, 10000)
         self.assertEqual(report.totals.debt_repayment, 2000)
         self.assertEqual(report.totals.actual_money, 13000)
         self.assertEqual(self.sale(cash_received_amount='13000', settlement_confirmation='expired').pk, sale.pk)

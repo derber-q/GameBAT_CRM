@@ -73,6 +73,7 @@ function environment(kind, initialItems = [], paymentControls = false, priceCont
   const barcodeButton = field('button', { dataset: { saleBarcodeAdd: '' } });
   const feedback = field('span', { dataset: { saleBarcodeFeedback: '', supplyBarcodeFeedback: '' } });
   const total = field('strong', { dataset: { saleIntermediateTotal: '' } });
+  const units = field('strong', { dataset: { saleUnitsTotal: '' } });
   const commission = field('strong', { dataset: { saleCommissionTotal: '' } });
   const netTotal = field('strong', { dataset: { saleNetTotal: '' } });
   let payment, saleType, received, receivedContainer, paymentHint, priceType;
@@ -135,7 +136,7 @@ function environment(kind, initialItems = [], paymentControls = false, priceCont
     assert(!focusLog.some(entry => entry.element === barcode), 'Нельзя возвращаться к штрихкоду над списком');
   }
   return { rows, autocomplete, feedback, barcode, barcodeButton, requests, focusLog, product, assertQuantityFocus,
-    form, total, commission, netTotal, payment, saleType, received, receivedContainer, paymentHint, priceType,
+    form, total, units, commission, netTotal, payment, saleType, received, receivedContainer, paymentHint, priceType,
     scan: async result => { results = Array.isArray(result) ? result : [result]; await scanner(results[0].barcodes[0]); },
     setResults: value => { results = value; },
   };

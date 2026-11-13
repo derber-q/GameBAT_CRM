@@ -412,8 +412,25 @@ def return_from_consignment(*, actor, warehouse_id, platform_id, product_type, p
     return stock
 
 
+def consignment_sale_platform(*, sale_type, partner):
+    """Для добавления партий в обычную продажу нужен опт и действующая связь Partner → площадка."""
+    if sale_type != Sale.SaleType.WHOLESALE:
+        raise ValidationError('Товары с реализации можно добавлять только в оптовую продажу.')
+    from partners.models import Partner
+    linked = Partner.objects.select_for_update().filter(pk=getattr(partner, 'pk', None), is_archived=False).first()
+    if linked is None or linked.platform_id is None:
+        raise ValidationError('Выберите партнёра из базы с привязанной площадкой реализации.')
+    return linked.platform_id
+
+
 def consume_consignment_sale_lines(*, actor, sale, lines):
     """Списывает точные stock_id и создаёт снимки площадки/цены/стоимости. Вызывается внутри транзакции продажи; агрегат реализации меняется вместе с партией."""
+    # Старое штатное проведение реализации использует отдельную фиксированную
+    # площадку. В ручных продажах разрешена только площадка выбранного партнёра.
+    platform_id = sale.consignment_platform_id if sale.sale_type == Sale.SaleType.CONSIGNMENT else consignment_sale_platform(
+        sale_type=sale.sale_type, partner=sale.partner)
+    if platform_id is None:
+        raise ValidationError('Для списания реализации не выбрана площадка.')
     grouped = {}
     for raw in lines:
         product_type = str(raw.get("product_kind") or raw.get("product_type") or "").lower()
@@ -433,6 +450,8 @@ def consume_consignment_sale_lines(*, actor, sale, lines):
             ).get(pk=stock_id)
         except stock_model.DoesNotExist as exc:
             raise ValidationError("Остаток товара на реализации не найден.") from exc
+        if stock.platform_id != platform_id:
+            raise ValidationError('Можно добавить только товары с площадки выбранного партнёра.')
         try:
             product = product_model.objects.active().select_for_update().get(
                 pk=getattr(stock, f"{product_field}_id"),
@@ -481,8 +500,9 @@ def consume_consignment_sale_lines(*, actor, sale, lines):
     return created
 
 
-def quote_consignment_sale_lines(lines):
+def quote_consignment_sale_lines(lines, *, sale_type, partner):
     """Блокирует партии и возвращает сумму; consume повторно проверяет те же строки."""
+    platform_id = consignment_sale_platform(sale_type=sale_type, partner=partner)
     total = Decimal("0.00")
     grouped = {}
     for raw in lines:
@@ -498,6 +518,8 @@ def quote_consignment_sale_lines(lines):
             stock = stock_model.objects.select_for_update().select_related(product_field).get(pk=stock_id)
         except stock_model.DoesNotExist as exc:
             raise ValidationError("Остаток товара на реализации не найден.") from exc
+        if stock.platform_id != platform_id:
+            raise ValidationError('Можно добавить только товары с площадки выбранного партнёра.')
         if stock.quantity < quantity:
             raise ValidationError(f"На реализации осталось только {stock.quantity} единиц товара.")
         if stock.receivable_per_unit <= 0:

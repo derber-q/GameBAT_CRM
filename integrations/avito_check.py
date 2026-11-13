@@ -325,9 +325,11 @@ def manual_search_url(product, kind, scope='russia'):
     if scope not in ('russia','rostov'):
         raise ValueError('Неизвестная география ручного поиска.')
     geography='all' if scope=='russia' else 'rostov-na-donu'
+    # Городская проверка начинается с местных объявлений, а не с доставки из других городов.
+    local_priority = 1 if scope == 'rostov' else 0
     query = _search_query(product, kind)
     if kind != "cd":
-        return f"https://www.avito.ru/{geography}?" + urlencode({"q": query + " новый", "localPriority": 0})
+        return f"https://www.avito.ru/{geography}?" + urlencode({"q": query + " новый", "localPriority": local_priority})
     platforms = _variant(product.platform.name)[1]
     # 110390=431231: новое; 191956=3358159: физический;
     # 167162=3270848: диск, 3270849: картридж. Остальные фильтры не заданы.
@@ -339,7 +341,7 @@ def manual_search_url(product, kind, scope='russia'):
             "fizicheskii-ASgBAgICAkSSAsYJqLcXnveZAw")
     return path + "?" + urlencode({
         "cd": 1, "f": filters,
-        "localPriority": 0, "q": query,
+        "localPriority": local_priority, "q": query,
     })
 
 

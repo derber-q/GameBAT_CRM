@@ -26,7 +26,7 @@ class SalesChannelsTests(TestCase):
             expected = (['yandex_market', 'wholesale', 'avito', 'retail', 'consignment'] if completed else ['wholesale', 'avito', 'yandex_market', 'retail'])
             self.assertEqual([group['kind'] for group in response.context['groups']], expected)
             html = response.content.decode()
-            labels = ['Все</button>', 'Яндекс Маркет</button>', 'Опт</button>', 'Авито</button>', 'Розница</button>']
+            labels = ['Все</button>', 'Яндекс Маркет</button>', 'Опт</button>', 'Авито</button>', 'Розница</button>', 'Цифровые продажи</button>']
             positions = [html.index(label) for label in labels]
             self.assertEqual(positions, sorted(positions))
             self.assertContains(response, 'data-sales-channel="all" aria-pressed="true"')

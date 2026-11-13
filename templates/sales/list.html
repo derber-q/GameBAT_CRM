@@ -8,8 +8,8 @@
 <script src="{% static 'js/sale-market-print.js' %}?v=20261101-1" defer></script>
 {% if state == 'incomplete' %}<script src="{% static 'js/sale-market-scan.js' %}?v=20261031-1" defer></script>{% endif %}
 <script src="{% static 'js/sale-market-actions.js' %}?v=20261031-1" defer></script>
-{% if state != 'cancelled' %}<script src="{% static 'js/sales-channels.js' %}?v=20261031-1" defer></script>{% endif %}
-{% if state == 'incomplete' %}<script src="{% static 'js/sales-status.js' %}?v=20261031-1" defer></script>{% endif %}
+<script src="{% static 'js/sales-channels.js' %}?v=20261031-1" defer></script>
+{% if state == 'incomplete' %}<script src="{% static 'js/sales-status.js' %}?v=20261107-1" defer></script>{% endif %}
 {% endblock %}
 {% block content %}
 <div class="page-heading"><div><p class="eyebrow">Продажи GameBAT</p><h1>{{ page_title }}</h1><p class="muted">Заказы, оплаты и исторические цены.</p></div>{% if perms.sales.create_sale or user.is_superuser %}<a class="button button-large" href="{% url 'sales:create' %}">Новая продажа</a>{% endif %}</div>
@@ -18,16 +18,15 @@
   {% if perms.sales.view_completed_sales or user.is_superuser %}<a class="button button-secondary" href="{% url 'sales:completed' %}" {% if state == 'completed' %}aria-current="page"{% endif %}>Завершённые продажи</a>{% endif %}
   <a class="button button-secondary" href="{% url 'sales:cancelled' %}" {% if state == 'cancelled' %}aria-current="page"{% endif %}>Отменённые продажи</a>
 </nav>
-{% if state != 'cancelled' %}
 <nav class="sales-channel-switch" aria-label="Канал продаж" data-sales-channels>
   <button type="button" class="button button-secondary" data-sales-channel="all" aria-pressed="true">Все</button>
   <button type="button" class="button button-secondary" data-sales-channel="yandex_market" aria-pressed="false">Яндекс Маркет</button>
   <button type="button" class="button button-secondary" data-sales-channel="wholesale" aria-pressed="false">Опт</button>
   <button type="button" class="button button-secondary" data-sales-channel="avito" aria-pressed="false">Авито</button>
   <button type="button" class="button button-secondary" data-sales-channel="retail" aria-pressed="false">Розница</button>
+  <button type="button" class="button button-secondary" data-sales-channel="digital" aria-pressed="false">Цифровые продажи</button>
 </nav>
 <p class="help-text" role="status" data-sales-channel-empty {% if groups %}hidden{% endif %}>Продаж нет.</p>
-{% endif %}
 <p role="status" aria-live="polite" id="sales-status-message"></p>
 {% if state == 'incomplete' and perms.yandex_market.manage_orders and perms.yandex_market.print_labels %}
 <form id="market-scan-controls" data-market-scan-url="{% url 'sales:market_scan' %}" hidden>{% csrf_token %}</form>

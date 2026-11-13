@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Предоплата · {{ creditor.display_name }} · ReSOURCE{% endblock %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">Счёт предоплаты</p><h1>{{ creditor.display_name }}</h1><p class="muted">Предоплата: <b>{{ creditor.prepayment_balance }} ₽</b> · Задолженность: <b>{{ creditor.current_debt }} ₽</b></p></div><a class="button button-secondary" href="{% url 'creditors:detail' creditor.pk %}">К партнёру</a></div>
+<section class="panel"><h2>{% if transfer %}Перенести из отрицательного долга{% else %}Внести предоплату{% endif %}</h2><p>{% if transfer %}Сумма уменьшит долг GameBAT перед партнёром и увеличит предоплату на ту же сумму. Деньги в кассе и сейфе не изменятся.{% else %}Выберите, куда фактически поступили деньги. Предоплата будет использована только при выборе способа оплаты «Счёт предоплаты».{% endif %}</p><form method="post" class="stacked-form">{% csrf_token %}{{ form.operation_key }}{{ form.operation_key.errors }}
+{% if form.non_field_errors %}<div class="alert alert-error">{{ form.non_field_errors }}</div>{% endif %}
+{% for field in form.visible_fields %}{% include 'creditors/_debt_field.html' with field=field %}{% endfor %}
+<div class="form-actions"><button class="button" type="submit">{% if transfer %}Перенести на предоплату{% else %}Зачислить предоплату{% endif %}</button></div>
+</form></section>
+{% endblock %}

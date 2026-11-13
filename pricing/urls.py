@@ -1,13 +1,14 @@
 """Именованные HTTP-маршруты приложения ценообразования.
 
 Себестоимость, опт, цена Avito, FBS и найденный минимум — разные величины."""
-from django.urls import path
+from django.urls import path, include
 
 from . import views, fbs_views
 from . import avito_check_views
 
 app_name = "pricing"
 urlpatterns = [
+    path('digital/', include('digital_prices.urls')),
     path("", views.pricing_list, name="list"),
     path("cd/", views.pricing_list, {"product_kind": "cd"}, name="cd_list"),
     path("tech/", views.pricing_list, {"product_kind": "tech"}, name="tech_list"),

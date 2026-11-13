@@ -20,7 +20,13 @@
     showStatus(`Выбрана цена без скидки: ${value} ₽. Нажмите «Сохранить и следующий».`, true);
     input.focus({preventScroll: true});
     return true;
-  }, message => { if (!busy) showStatus(message); });
+  }, message => { if (!busy) showStatus(message); }, value => {
+    // Если Avito дорисовал признак б/у после выбора, не оставляем эту цену готовой к сохранению.
+    if (!busy && input?.value === value) {
+      input.value = '';
+      picker.setMinimum('');
+    }
+  });
 
   function showStatus(message, info = false) {
     status.textContent = message;

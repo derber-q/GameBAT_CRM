@@ -118,10 +118,11 @@ def order_trip_assign(request, pk):
 def trip_detail(request, pk):
     batch = get_object_or_404(trip_queryset().trips(), pk=pk)
     from .arrival_models import TripArrival
-    batch._arrival_locked = TripArrival.objects.filter(trip=batch,arrived_at__isnull=False).exists()
+    batch._arrival_locked = TripArrival.current.filter(trip=batch,arrived_at__isnull=False).exists()
     from .fulfillment import operation_actions
     operation_actions(request.user, batch.trip_orders.all())
     manager = can_manage_trips(request.user)
+    can_edit_orders = manager and (request.user.is_superuser or request.user.has_perm("orders.edit_created_order"))
     can_assign = manager and not batch._arrival_locked and all(order.status == CustomerProcurementOrder.Status.CREATED
         and not downstream_lock_reason(order) for order in batch.trip_orders.all())
     grouped, editor, price_editor = defaultdict(list), {}, {}
@@ -169,6 +170,11 @@ def trip_detail(request, pk):
                            if (line.product_kind, line.product_id, offer.supplier_id) not in excluded],
                 "price_supplier_id": line.price_supplier_id, "allocations": allocations,
             }
+    for order in batch.trip_orders.all():
+        order.can_edit_composition = (
+            can_edit_orders and order.status == CustomerProcurementOrder.Status.CREATED
+            and not downstream_lock_reason(order)
+        )
     for supplier_lines in grouped.values():
         supplier_lines.sort(key=_trip_line_order_key)
     financial, financial_error = None, ''

@@ -104,7 +104,7 @@ def trip_financials(batch):
 def line_price_lock_reason(line, allocations=None):
     if not hasattr(line.batch,'_arrival_locked'):
         from .arrival_models import TripArrival
-        line.batch._arrival_locked = TripArrival.objects.filter(trip_id=line.batch_id,arrived_at__isnull=False).exists()
+        line.batch._arrival_locked = TripArrival.current.filter(trip_id=line.batch_id,arrived_at__isnull=False).exists()
     if line.batch._arrival_locked:
         return 'Рейс приехал. Исходные закупочные цены зафиксированы.'
     for allocation in line.allocations.all() if allocations is None else allocations:

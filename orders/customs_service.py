@@ -53,7 +53,7 @@ def source_snapshot(trip_id,*,lock=False):
     trips=SupplierOrderBatch.objects.select_for_update() if lock else SupplierOrderBatch.objects
     trip=trips.get(pk=trip_id)
     if not trip.is_trip:raise ValidationError('Таможенная опись доступна только для рейса.')
-    arrivals=TripArrival.objects.select_for_update() if lock else TripArrival.objects
+    arrivals=TripArrival.current.select_for_update() if lock else TripArrival.current
     arrival=arrivals.filter(trip=trip).first()
     orders=list(trip.trip_orders.order_by('pk').values_list('pk',flat=True))
     if not arrival or not arrival.arrived_at:

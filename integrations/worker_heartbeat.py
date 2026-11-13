@@ -11,6 +11,7 @@ from django.utils import timezone
 from .worker_models import WorkerProcess
 from .worker_processes import process_adapter
 from .worker_runtime import AlreadyRunning, HEARTBEAT_SECONDS, process_lock
+from .worker_health import DEADLINES, fresh
 
 logger = logging.getLogger('gamebat.business')
 
@@ -21,13 +22,37 @@ class Heartbeat:
         self.action = 'idle'
         self.stop = threading.Event()
         self.main = threading.current_thread()
+        self.progress_at = self.verified_at = None
+        self.executor_at = None
+        self.health_error = ''
+        self.guard = threading.Lock()
+
+    def progress(self, *, verified=True, error=''):
+        """Вызывается основным рабочим циклом; heartbeat сам успех не выдумывает."""
+        with self.guard:
+            self.progress_at = timezone.now()
+            if verified:
+                self.verified_at = self.progress_at
+            self.health_error = str(error)[:40]
+
+    def executor_progress(self):
+        with self.guard:
+            self.executor_at = timezone.now()
 
     def write(self):
         close_old_connections()
         try:
+            now = timezone.now()
+            with self.guard:
+                progress_at, verified_at, health_error = self.progress_at, self.verified_at, self.health_error
+                executor_at = self.executor_at
+            deadline = min(DEADLINES[code] for code in self.services)
             WorkerProcess.objects.update_or_create(instance=self.instance, defaults={
                 'pid': os.getpid(), 'birth': self.birth, 'services': self.services,
-                'heartbeat_at': timezone.now(), 'ready': True, 'action': self.action})
+                'heartbeat_at': now, 'ready': bool(not health_error and fresh(verified_at, now, deadline)),
+                'progress_at': progress_at, 'verified_at': verified_at, 'health_error': health_error,
+                'executor_at': executor_at,
+                'action': self.action})
         except OperationalError:
             # Одна блокировка не доказывает остановку; следующая запись повторится.
             logger.warning('worker_heartbeat_write_failed instance=%s', self.instance)

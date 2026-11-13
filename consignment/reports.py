@@ -1,4 +1,5 @@
 """Проверка подписанного отчёта; продажи проводятся штатным сервисом Sale."""
+from pathlib import Path
 from decimal import Decimal, InvalidOperation
 from uuid import UUID
 from zipfile import BadZipFile
@@ -9,6 +10,7 @@ from django.db import transaction
 from openpyxl import load_workbook
 
 from partners.models import Partner, SalesPlatform
+from price.excel import load_legacy_xls
 from sales.models import Sale
 from .models import CDConsignmentStock, TechConsignmentStock
 
@@ -71,7 +73,16 @@ def import_report(*, upload, platform_id, actor):
     if upload.size > 10 * 1024 * 1024:
         raise ValidationError('Размер отчёта превышает 10 МБ.')
     try:
-        book = load_workbook(upload, read_only=True, data_only=False)
+        suffix = Path(getattr(upload, 'name', '')).suffix.lower()
+        if suffix == '.xls':
+            try:
+                book = load_legacy_xls(upload)
+            except Exception as exc:
+                raise ValidationError('Не удалось прочитать отчёт. Загрузите заполненный Excel площадки.') from exc
+        elif suffix == '.xlsx':
+            book = load_workbook(upload, read_only=True, data_only=False)
+        else:
+            raise ValidationError('Загрузите отчёт в формате .xls или .xlsx.')
         meta = book['_resource_report']
         token = ''.join(str(row[0]) for row in meta.iter_rows(values_only=True) if row[0])
         manifest = unsign_report(token)

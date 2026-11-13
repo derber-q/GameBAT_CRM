@@ -18,6 +18,7 @@ from .runtime import Runtime
 from .transport import BackupAPI
 from .journal import BackupJournal
 from .downloads import verify_record, archive_folder
+from .transport import error_message
 
 
 class Application:
@@ -25,16 +26,26 @@ class Application:
         self.root,self.folder,self.profile,self.testing=root,folder,profile,testing
         self.lock=threading.RLock();self.config=config_store.load(folder)
         self.runtime=Runtime(folder,self.current_config)
-        self.root.title('ReSOURCE Local Agent · '+profile);self.root.geometry('880x620');self.root.minsize(720,520)
+        self.root.title('ReSOURCE · Резервные копии');self.root.geometry('1080x780');self.root.minsize(920,690)
         style=ttk.Style(root);style.theme_use('clam')
-        style.configure('TButton',padding=(10,7));style.configure('TNotebook.Tab',padding=(16,8))
-        ttk.Label(root,text='ReSOURCE Local Agent',font=('Segoe UI',17,'bold'),foreground='#207e91').pack(anchor='w',padx=18,pady=(15,3))
-        ttk.Label(root,text=f'Версия {VERSION} · профиль {profile}').pack(anchor='w',padx=18)
+        self.root.configure(background='#f3f6fa')
+        style.configure('.',font=('Segoe UI',10),background='#f3f6fa',foreground='#23384d')
+        style.configure('TButton',padding=(14,9));style.configure('TNotebook.Tab',padding=(22,10))
+        style.configure('Primary.TButton',background='#247f91',foreground='white',font=('Segoe UI',11,'bold'))
+        style.map('Primary.TButton',background=[('active','#196a7b'),('disabled','#adc0c7')])
+        style.configure('Card.TFrame',background='white');style.configure('Card.TLabel',background='white')
+        style.configure('Title.TLabel',font=('Segoe UI',20,'bold'),foreground='#16334b')
+        style.configure('Muted.TLabel',foreground='#61758b')
+        style.configure('Treeview',rowheight=34,background='white',fieldbackground='white',font=('Segoe UI',10))
+        style.configure('Treeview.Heading',font=('Segoe UI',10,'bold'),padding=(10,8))
+        ttk.Label(root,text='ReSOURCE · Защита данных',style='Title.TLabel').pack(anchor='w',padx=26,pady=(20,3))
+        ttk.Label(root,text='Автоматические резервные копии CRM на вашем компьютере',style='Muted.TLabel').pack(anchor='w',padx=26)
         self.tabs=ttk.Notebook(root);self.tabs.pack(fill='both',expand=True,padx=14,pady=12)
         self.pages={name:ttk.Frame(self.tabs,padding=14) for name in ('Главная','Печать','Резервные копии','Настройки')}
         for name,frame in self.pages.items(): self.tabs.add(frame,text=name)
         self.print_status=tk.StringVar(value='Обработчик печати выключен.')
         self.backup_status=tk.StringVar(value='Резервирование выключено.')
+        self.setup={}
         self.variables={}
         self.build_home();self.build_print();self.build_backups();self.build_settings()
         self.journal=BackupJournal(folder/'backups.sqlite3')
@@ -52,14 +63,56 @@ class Application:
 
     def build_home(self):
         frame=self.pages['Главная']
-        ttk.Label(frame,text=self.config['name'],font=('Segoe UI',13,'bold')).pack(anchor='w')
-        self.connection=tk.StringVar(value=self.config['server_url']);self.status_label(frame,self.connection)
-        self.status_label(frame,self.print_status);self.status_label(frame,self.backup_status)
+        card=ttk.Frame(frame,style='Card.TFrame',padding=24);card.pack(fill='x',pady=(0,14))
+        self.overview=tk.StringVar(value='Проверяем подключение к CRM…')
+        ttk.Label(card,textvariable=self.overview,style='Card.TLabel',font=('Segoe UI',17,'bold')).pack(anchor='w')
+        self.connection=tk.StringVar(value=self.config['server_url'])
+        ttk.Label(card,textvariable=self.connection,style='Card.TLabel').pack(anchor='w',pady=(8,12))
+        self.steps=tk.StringVar();ttk.Label(card,textvariable=self.steps,style='Card.TLabel',justify='left').pack(anchor='w')
+        row=ttk.Frame(card,style='Card.TFrame');row.pack(fill='x',pady=(20,0))
+        self.home_backup_button=ttk.Button(row,text='Создать копию сейчас',style='Primary.TButton',command=self.request_backup)
+        self.home_backup_button.pack(side='left')
+        ttk.Button(row,text='Настроить резервное копирование',command=self.show_settings).pack(side='left',padx=10)
+        card=ttk.Frame(frame,style='Card.TFrame',padding=24);card.pack(fill='x',pady=(0,14))
+        ttk.Label(card,text='Последняя копия',style='Card.TLabel',font=('Segoe UI',12,'bold')).pack(anchor='w')
+        self.last_copy=tk.StringVar(value='Первая копия ещё не создана.')
+        ttk.Label(card,textvariable=self.last_copy,style='Card.TLabel',wraplength=880).pack(anchor='w',pady=8)
+        ttk.Label(card,textvariable=self.backup_status,style='Card.TLabel',wraplength=880).pack(anchor='w')
+        self.restore_status=tk.StringVar(value='Пробное восстановление ещё не выполнено.')
+        proof=self.folder/'last-restore-check.json'
+        if proof.is_file():
+            try:self.restore_status.set('Восстановление проверено · '+self.display_date(json.loads(proof.read_text('utf-8'))['verified_at']))
+            except (ValueError,KeyError):pass
+        ttk.Label(card,textvariable=self.restore_status,style='Card.TLabel',wraplength=880).pack(anchor='w',pady=(8,0))
+        ttk.Button(card,text='Посмотреть сохранённые копии',command=lambda:self.tabs.select(self.pages['Резервные копии'])).pack(anchor='w',pady=(14,0))
         self.space=tk.StringVar();self.status_label(frame,self.space)
-        ttk.Label(frame,text='Архив на том же физическом диске не защищает от отказа диска.\n'
-            'Приватный ключ восстановления храните отдельно; потерянный ключ нельзя заменить токеном устройства.',
-            wraplength=750,foreground='#8c590b').pack(anchor='w',pady=18)
-        ttk.Button(frame,text='Создать ещё один профиль',command=self.new_profile).pack(anchor='w')
+        ttk.Label(frame,text='Ключ восстановления и пароль храните отдельно от CRM.\nКопия на внешнем диске дополнительно защищает от поломки компьютера.',
+            style='Muted.TLabel',wraplength=880).pack(anchor='w',pady=8)
+
+    def show_settings(self):self.tabs.select(self.pages['Настройки'])
+
+    def update_overview(self):
+        linked=bool(self.config.get('backup_token'))
+        key=bool(self.setup.get('key_ready'))
+        enabled=bool(self.setup.get('enabled') and self.config.get('backup_enabled'))
+        self.steps.set(('✓ Компьютер подключён к CRM' if linked else '1. Подключите компьютер к CRM')+'\n\n'+
+            ('✓ Ключ восстановления настроен' if key else '2. Создайте ключ восстановления и сохраните его в CRM')+'\n\n'+
+            ('✓ Автоматические копии включены · '+str(self.setup.get('schedule_time',''))[:5]+' · '+self.setup.get('timezone','')
+             if enabled else '3. Включите создание копий в CRM и получение на этом компьютере'))
+        ready=linked and key and enabled and bool(self.setup.get('can_request'))
+        self.home_backup_button.configure(state='normal' if ready else 'disabled')
+        self.overview.set('Резервное копирование настроено' if ready else 'Нужно завершить настройку')
+        rows=[row for row in self.journal.rows() if row['state']=='verified']
+        if rows:
+            meta=json.loads(rows[0]['meta'])
+            self.last_copy.set('Сохранена и проверена · '+self.display_date(meta.get('snapshot_at'))+' · '+f"{meta.get('size',0)/1024**2:.1f} МБ")
+
+    @staticmethod
+    def display_date(value):
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        try:return datetime.fromisoformat(value).astimezone(ZoneInfo('Europe/Moscow')).strftime('%d.%m.%Y %H:%M')
+        except (TypeError,ValueError):return 'Дата не указана'
 
     def field(self,parent,name,label,*,boolean=False):
         ttk.Label(parent,text=label).pack(anchor='w',pady=(6,2))
@@ -84,33 +137,70 @@ class Application:
 
     def build_backups(self):
         frame=self.pages['Резервные копии']
+        ttk.Label(frame,text='Сохранённые резервные копии',font=('Segoe UI',15,'bold')).pack(anchor='w')
         self.status_label(frame,self.backup_status)
-        self.tree=ttk.Treeview(frame,columns=('date','download','version','size','state','check','pin'),show='headings',height=10,selectmode='browse')
-        for name,title,width in [('date','Дата снимка',160),('download','Скачана',150),('version','Версия',65),('size','МиБ',65),('state','Состояние',100),('check','SHA-256',85),('pin','Закреплена',75)]:
+        self.tree=ttk.Treeview(frame,columns=('date','size','state','pin'),show='headings',height=9,selectmode='browse')
+        for name,title,width in [('date','Дата копии · МСК',230),('size','Размер',130),('state','Результат проверки',250),('pin','Защита от удаления',190)]:
             self.tree.heading(name,text=title);self.tree.column(name,width=width,minwidth=50)
         self.tree.pack(fill='both',expand=True)
         row=ttk.Frame(frame);row.pack(fill='x',pady=8)
-        for label,command in [('Создать и скачать сейчас',self.request_backup),('Проверить SHA-256',self.verify),
-            ('Закрепить / снять',self.pin),('Удалить',self.delete),('Обновить',self.refresh_history)]:
-            ttk.Button(row,text=label,command=command).pack(side='left',padx=2)
-        ttk.Button(frame,text='Открыть папку архивов',command=self.open_folder).pack(anchor='w')
+        ttk.Button(row,text='Создать копию сейчас',style='Primary.TButton',command=self.request_backup).pack(side='left',padx=2)
+        ttk.Button(row,text='Открыть папку копий',command=self.open_folder).pack(side='left',padx=8)
+        ttk.Button(row,text='Проверить восстановление',command=self.verify_restore).pack(side='left',padx=2)
+        self.archive_tools=ttk.Frame(frame)
+        ttk.Button(row,text='Дополнительные действия',command=lambda:self.toggle(self.archive_tools)).pack(side='right')
+        for label,command in [('Проверить выбранный файл',self.verify),('Защитить / снять защиту',self.pin),('Удалить выбранную копию',self.delete),('Обновить список',self.refresh_history)]:
+            ttk.Button(self.archive_tools,text=label,command=command).pack(side='left',padx=2)
+
+    @staticmethod
+    def toggle(frame):
+        if frame.winfo_manager():frame.pack_forget()
+        else:frame.pack(fill='x',pady=8)
 
     def build_settings(self):
         frame=self.pages['Настройки']
-        left=ttk.Frame(frame);left.pack(side='left',fill='both',expand=True,padx=(0,15))
+        left=ttk.Frame(frame);left.pack(side='left',fill='both',expand=True,padx=(0,24))
         right=ttk.Frame(frame);right.pack(side='left',fill='both',expand=True)
-        for name,label in [('server_url','Адрес CRM (HTTPS или loopback HTTP)'),('name','Название установки'),
-                           ('backup_folder','Папка архивов'),('keep','Последних ежедневных копий'),
-                           ('days','Срок хранения, дней'),('weekly','Дополнительных недельных копий'),
-                           ('minimum_free_mb','Минимум свободного места, МиБ')]: self.field(left,name,label)
-        for name,label in [('backup_enabled','Получать резервные копии'),('cleanup_enabled','Автоматическая очистка'),
-                           ('autostart','Автозапуск при входе Windows')]: self.field(right,name,label,boolean=True)
-        for label,command in [('Подключить резервное устройство…',self.enroll),('Выбрать папку…',self.pick_folder),
-            ('Создать ключ восстановления владельца…',self.owner_key),('Сохранить настройки',self.save),
-            ('Завершить программу',self.quit)]: ttk.Button(right,text=label,command=command).pack(fill='x',pady=6)
-        ttk.Label(right,text='Расписание создания снимков задаётся в CRM.\n'
-            'Здесь включается только получение готовых архивов.\n'
-            'Токены защищены DPAPI текущего пользователя Windows.',wraplength=325).pack(anchor='w',pady=10)
+        ttk.Label(left,text='1. Подключение к CRM',font=('Segoe UI',13,'bold')).pack(anchor='w')
+        self.field(left,'server_url','Адрес сайта CRM')
+        self.field(left,'name','Название этого компьютера')
+        ttk.Button(left,text='Открыть настройки в CRM',command=self.open_crm).pack(fill='x',pady=(10,4))
+        ttk.Button(left,text='Подключить компьютер по коду…',command=self.enroll).pack(fill='x',pady=4)
+        ttk.Label(left,text='Код нужен только при первом подключении или замене компьютера.',style='Muted.TLabel',wraplength=430).pack(anchor='w',pady=5)
+        ttk.Label(left,text='2. Где хранить копии',font=('Segoe UI',13,'bold')).pack(anchor='w',pady=(20,0))
+        self.field(left,'backup_folder','Папка резервных копий')
+        ttk.Button(left,text='Выбрать папку…',command=self.pick_folder).pack(anchor='w',pady=8)
+        self.field(left,'backup_enabled','Автоматически скачивать копии из CRM',boolean=True)
+        self.field(left,'autostart','Запускать программу при входе в Windows',boolean=True)
+        ttk.Label(right,text='3. Ключ восстановления',font=('Segoe UI',13,'bold')).pack(anchor='w')
+        ttk.Label(right,text='Ключ нужен, чтобы восстановить CRM из архива.\nОн остаётся у владельца, а не на сервере.',style='Muted.TLabel',wraplength=430).pack(anchor='w',pady=10)
+        ttk.Button(right,text='Создать ключ восстановления…',command=self.owner_key).pack(fill='x',pady=5)
+        ttk.Button(right,text='Открыть папку ключа',command=self.open_recovery_folder).pack(fill='x',pady=5)
+        ttk.Button(right,text='Скопировать публичный ключ для CRM',command=self.copy_public_key).pack(fill='x',pady=5)
+        ttk.Button(right,text='Сохранить настройки',style='Primary.TButton',command=self.save).pack(fill='x',pady=(24,8))
+        advanced=ttk.Frame(right)
+        ttk.Button(right,text='Дополнительные настройки хранения',command=lambda:self.toggle(advanced)).pack(fill='x',pady=5)
+        for name,label in [('keep','Оставлять последних ежедневных копий'),('days','Срок хранения, дней (0 — не ограничивать)'),
+                           ('weekly','Дополнительных недельных копий'),('minimum_free_mb','Запас свободного места, МБ')]:self.field(advanced,name,label)
+        self.field(advanced,'cleanup_enabled','Автоматически удалять старые копии',boolean=True)
+        ttk.Button(right,text='Завершить программу',command=self.quit).pack(anchor='w',pady=12)
+
+    def open_crm(self):
+        import webbrowser
+        from print_agent.transport import server_origin
+        webbrowser.open(server_origin(self.variables['server_url'].get())+'/crm/backups/')
+
+    def open_recovery_folder(self):
+        value=self.config.get('recovery_key_path')
+        if value and Path(value).is_file():os.startfile(str(Path(value).parent))
+        else:messagebox.showinfo('Ключ восстановления','Сначала создайте ключ восстановления.')
+
+    def copy_public_key(self):
+        value=self.config.get('recovery_public_path')
+        if not value or not Path(value).is_file():
+            messagebox.showinfo('Ключ восстановления','Сначала создайте ключ восстановления.');return
+        self.root.clipboard_clear();self.root.clipboard_append(Path(value).read_text('ascii'))
+        messagebox.showinfo('Публичный ключ','Публичный ключ скопирован. Вставьте его в настройки резервного копирования CRM.')
 
     def save(self):
         try:
@@ -144,7 +234,7 @@ class Application:
     def background(self,function,channel='backup'):
         def run():
             try: function()
-            except Exception as exc: self.runtime.report(channel,'Ошибка: '+type(exc).__name__+f' (HTTP {getattr(exc,"status",0)}).')
+            except Exception as exc:self.runtime.report(channel,error_message(exc))
         threading.Thread(target=run,daemon=True).start()
 
     def enroll(self):
@@ -176,14 +266,15 @@ class Application:
         states={'downloading':'Скачивается','checking':'Проверяется','verified':'Сохранена','error':'Ошибка','publishing':'Завершается','deleted':'Удалена','corrupt':'Повреждена'}
         for row in self.journal.rows():
             meta=json.loads(row['meta'])
-            self.tree.insert('',tk.END,iid=row['id'],values=(meta.get('snapshot_at',''),(row.get('verified_at') or '')[:19],meta.get('version','')[:7],
-                f"{meta.get('size',0)/1024**2:.2f}",states.get(row['state'],row['state']),
-                'Совпадает' if row['state']=='verified' else ('Ошибка' if row['state']=='corrupt' else '—'),'Да' if row['pinned'] else 'Нет'))
+            self.tree.insert('',tk.END,iid=row['id'],values=(self.display_date(meta.get('snapshot_at')),
+                f"{meta.get('size',0)/1024**2:.1f} МБ",states.get(row['state'],row['state']),
+                'Защищена' if row['pinned'] else 'По правилам хранения'))
         try:
             folder=archive_folder(self.config['backup_folder']);usage=shutil.disk_usage(folder)
             total=sum(Path(row['path']).stat().st_size for row in self.journal.rows() if Path(row['path']).is_file())
             self.space.set(f'Свободно {usage.free//1024**3} ГиБ · архивы {total//1024**2} МиБ')
         except OSError:self.space.set('Папка архивов недоступна.')
+        self.update_overview()
 
     def verify(self):
         row=self.selected()
@@ -193,6 +284,22 @@ class Application:
                 if not matches:self.journal.put(json.loads(row['meta']),row['path'],'corrupt','sha256_failed')
                 self.runtime.report('backup','Проверка SHA-256: '+('совпадает' if matches else 'ОШИБКА, копия помечена повреждённой'))
             self.background(check)
+
+    def verify_restore(self):
+        row=self.selected() or next((item for item in self.journal.rows() if item['state']=='verified'),None)
+        if not row:
+            messagebox.showinfo('Проверка восстановления','Сначала создайте и скачайте первую копию.');return
+        config=self.current_config()
+        if not config.get('recovery_key_path'):
+            messagebox.showinfo('Проверка восстановления','Сначала создайте ключ восстановления в настройках.');return
+        password=config.get('recovery_password') or simpledialog.askstring('Проверка восстановления','Пароль ключа восстановления:',show='●')
+        if not password:return
+        self.restore_status.set('Проверяем восстановление в отдельной папке. Рабочая CRM продолжает работу…')
+        def perform():
+            from .recovery import verify_restore
+            proof=verify_restore(row,config,self.folder,password)
+            self.runtime.report('restore',proof)
+        self.background(perform)
 
     def pin(self):
         row=self.selected()
@@ -259,22 +366,8 @@ class Application:
             self.print_status.set('Прежний профиль выбран. Включите обработчик после остановки прежнего агента.')
 
     def owner_key(self):
-        from crm_backups.crypto import generate_keys
-        password=simpledialog.askstring('Ключ владельца','Пароль приватного ключа (не менее 12 символов):',show='*')
-        if not password:return
-        confirmation=simpledialog.askstring('Ключ владельца','Повторите пароль приватного ключа:',show='*')
-        if password!=confirmation:
-            messagebox.showerror('Ключ','Пароли не совпадают. Ключ не создан.');return
-        path=filedialog.asksaveasfilename(defaultextension='.recovery.pem',initialfile='ReSOURCE.recovery.pem')
-        if not path:return
-        try:
-            private,public=generate_keys(password.encode())
-            with Path(path).open('xb') as stream:
-                config_store.private_file(path);stream.write(private);stream.flush();os.fsync(stream.fileno())
-            with Path(path+'.public.pem').open('xb') as stream:stream.write(public)
-            messagebox.showinfo('Ключ владельца','Сохраните ещё одну копию приватного ключа отдельно от CRM и этого диска.\n'
-                'В CRM передайте только файл .public.pem. Потеря ключа/пароля делает архивы нечитаемыми.')
-        except Exception as exc:messagebox.showerror('Ключ',type(exc).__name__)
+        from .key_dialog import show
+        show(self)
 
     def autostart(self,enabled):
         import winreg
@@ -316,6 +409,11 @@ class Application:
                 if text=='quit':self.quit();return
                 self.root.deiconify();self.root.lift()
             elif channel=='print':self.print_status.set(text)
+            elif channel=='backup_setup':
+                self.setup=text;self.update_overview()
+            elif channel=='restore':
+                self.restore_status.set('Восстановление проверено · '+self.display_date(text['verified_at']))
+                self.backup_status.set('Копия восстановлена в отдельную папку. Файлы, база и ключи проверены.')
             else:
                 self.backup_status.set(text)
                 if text.startswith(('Сохранено','Проверка SHA-256:')):self.refresh_history()

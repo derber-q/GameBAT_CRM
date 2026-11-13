@@ -1,0 +1,11 @@
+{% extends 'base.html' %}
+{% block title %}Ручные тарифы · GameBAT{% endblock %}
+{% block content %}
+<div class="page-heading"><div><h1>Ручные тарифы GameBAT</h1><p>Структура ручных позиций игр и Steam</p></div><a class="button button-secondary" href="{% url 'pricing:digital_prices:catalog' %}">К цифровым товарам</a></div>
+<section class="panel"><p>Здесь настраиваются блоки, названия и порядок ручных позиций. Себестоимость, наша наценка и режим расчёта задаются на странице <a href="{% url 'pricing:digital_prices:catalog' %}?cost_source=manual">цифровых товаров</a>. В рублях сумма округляется вверх до 10 ₽, проценты и коэффициенты складываются без такого округления. Если себестоимость или наценка не заполнена, в прайсе будет «Цена уточняется».</p>
+<form method="post">{% csrf_token %}{{ formset.management_form }}{{ formset.non_form_errors }}
+<div class="table-wrap"><table><thead><tr><th>Блок</th><th>Страна / регион</th><th>Диапазон / номинал</th><th>Порядок</th></tr></thead><tbody>
+{% for form in formset %}<tr><td>{{ form.id }}{{ form.revision }}{{ form.non_field_errors }}{{ form.kind.errors }}{{ form.kind }}</td><td>{{ form.region.errors }}{{ form.region }}</td><td>{{ form.label.errors }}{{ form.label }}</td><td>{{ form.position.errors }}{{ form.position }}</td></tr>{% endfor %}
+</tbody></table></div><button class="button">Сохранить ручные тарифы</button></form></section>
+<section class="panel"><details><summary>Добавить строку тарифа</summary><form method="post" class="stacked-form">{% csrf_token %}<input type="hidden" name="action" value="add">{{ new_form.as_p }}<button class="button button-secondary">Добавить строку</button></form></details></section>
+{% endblock %}

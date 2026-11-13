@@ -1,0 +1,4 @@
+{% extends 'base.html' %}{% block title %}{{ title }} · ReSOURCE{% endblock %}{% block content %}
+<div class="page-heading"><h1>{{ title }}</h1><a class="button button-secondary" href="{% url 'pricing:digital_prices:catalog' %}">К цифровым товарам</a></div>
+<section class="panel"><form method="post" class="stacked-form">{% csrf_token %}{{ form.as_p }}<button class="button">Сохранить</button></form>
+{% if configured %}<p>API-ключ сохранён. Текущее значение не отображается.</p>{% endif %}</section>{% endblock %}

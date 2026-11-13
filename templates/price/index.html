@@ -5,10 +5,35 @@
 {% block content %}
 <div class="page-heading"><div><p class="eyebrow">Прайс · наличие</p><h1>Прайсы наличие</h1><p class="muted">Клиентские складские прайсы и данные для прайс-листов.</p></div></div>
 <div class="price-section-grid">
+  <div>
   <section class="panel"><h2>Клиентские складские прайсы</h2><p class="muted">Только положительный остаток выбранного склада и товары с заполненной ценой.</p>
     {% if can_generate_retail %}<form method="post" action="{% url 'price:retail_export' %}" class="stacked-form" data-retail-export>{% csrf_token %}<div class="field"><label>Склад для розничного прайса</label>{{ warehouse_form.warehouse }}</div><button class="button" type="submit">Скачать розничный XLSX</button><p class="muted" data-retail-result aria-live="polite"></p></form>{% endif %}
     {% if can_generate_wholesale %}<form method="post" action="{% url 'price:wholesale_export' %}" class="stacked-form price-form-gap">{% csrf_token %}{% for field in wholesale_form %}<div class="field"><label>{{ field.label }}</label>{{ field }}</div>{% endfor %}<p class="muted">Заказчика можно не выбирать — прайс будет безымянным. При загрузке в продажу потребуется указать заказчика.</p><button class="button" type="submit">Скачать оптовый XLSX</button></form>{% endif %}
   </section>
+  {% if perms.wholesale_bot.configure_wholesale_bot or perms.wholesale_bot.manage_wholesale_customers %}
+  <section class="panel"><h2>Оптовый Telegram-бот</h2>
+    <p class="muted">Покупатели, заявки на авторизацию и оптовые заказы.</p>
+    {% if perms.wholesale_bot.configure_wholesale_bot %}
+    <p>{% if wholesale_bot_config.enabled %}{% if wholesale_bot_config.accepting_orders %}🟢 Приём заказов включён{% else %}⏸ Приём заказов выключен{% endif %}{% else %}Оптовый бот пока не подключён.{% endif %}</p>
+    {% endif %}
+    <div class="heading-actions">
+      {% if perms.wholesale_bot.manage_wholesale_customers %}<a class="button" href="{% url 'wholesale_bot:dashboard' %}">Открыть покупателей и заявки</a>{% endif %}
+      {% if perms.wholesale_bot.configure_wholesale_bot %}
+      {% if wholesale_bot_config.enabled %}
+      <form method="post" action="{% url 'wholesale_bot:service_state' %}">{% csrf_token %}
+        <input type="hidden" name="revision" value="{{ wholesale_bot_config.service_revision }}">
+        <button class="button button-secondary" type="submit" role="switch" aria-checked="{{ wholesale_bot_config.accepting_orders|yesno:'true,false' }}" aria-label="Приём заказов оптовым ботом" name="accepting" value="{{ wholesale_bot_config.accepting_orders|yesno:'off,on' }}">{% if wholesale_bot_config.accepting_orders %}⏸ Выключить приём{% else %}▶️ Включить приём{% endif %}</button>
+      </form>
+      {% endif %}
+      <a class="button button-secondary" href="{% url 'wholesale_bot:configuration' %}">Настройки подключения</a>
+      {% endif %}
+    </div>
+    {% if perms.wholesale_bot.configure_wholesale_bot and wholesale_bot_config.enabled %}<p class="muted">Смена режима уведомит покупателей. Во время паузы бот направляет к @GameBAT_Store.</p>{% endif %}
+  </section>
+  {% endif %}
+  </div>
+  <div>
   {% if can_change_settings %}<section class="panel"><h2>Данные для прайс-листов</h2><form method="post" enctype="multipart/form-data" action="{% url 'price:settings_update' %}" class="stacked-form">{% csrf_token %}{% for field in settings_form %}<div class="field"><label>{{ field.label }}</label>{{ field }}{% for error in field.errors %}<span class="error-text">{{ error }}</span>{% endfor %}</div>{% endfor %}<button class="button" type="submit">Сохранить данные</button></form></section>{% endif %}
+  </div>
 </div>
 {% endblock %}

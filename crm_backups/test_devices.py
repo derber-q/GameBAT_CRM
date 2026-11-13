@@ -13,6 +13,28 @@ from .configuration import backup_root
 
 
 class BackupDeviceTests(TestCase):
+    def test_setup_status_explains_disabled_backups_without_secrets(self):
+        self.connect()
+        response=self.post('heartbeat')
+        self.assertEqual(response.status_code,200)
+        setup=response.json()['setup']
+        self.assertFalse(setup['enabled'])
+        self.assertFalse(setup['key_ready'])
+        self.assertTrue(setup['can_request'])
+        self.assertNotIn('public_key',setup)
+        self.assertNotIn('token_hash',setup)
+
+    def test_manual_request_permission_can_change_without_credential_rotation(self):
+        from .devices import set_manual_request_permission
+        device=self.connect();digest=device.token_hash
+        set_manual_request_permission(self.admin,device.pk,False)
+        self.post('heartbeat')
+        self.assertEqual(self.post('create',{'request_id':str(uuid.uuid4())}).json()['error'],'manual_request_forbidden')
+        set_manual_request_permission(self.admin,device.pk,True)
+        device.refresh_from_db()
+        self.assertEqual(device.token_hash,digest)
+        self.assertEqual(self.post('create',{'request_id':str(uuid.uuid4())}).json()['error'],'recovery_not_configured')
+
     def setUp(self):
         self.client.defaults['HTTP_HOST']='localhost'
         from accounts.models import User

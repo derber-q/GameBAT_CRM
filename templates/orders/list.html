@@ -20,9 +20,12 @@
 <section id="unassigned-orders" class="panel table-panel">
   <div class="section-heading"><h2>Заказы без рейса</h2>{% if can_create_trip %}<button class="button" type="submit">Объединить в рейс</button>{% endif %}</div>
   {% if can_create_trip %}<div class="field"><label for="trip-name">Название рейса (необязательно)</label><input id="trip-name" name="name" maxlength="255"></div>{% endif %}
-  {% include 'orders/_orders_table.html' with table_orders=unassigned_orders select_orders=True %}
+  {% include 'orders/_orders_table.html' with table_orders=unassigned_orders select_orders=True allow_delete=True %}
 </section>
 {% if can_create_trip %}</form>{% endif %}
+{% for order in unassigned_orders %}{% if order.can_delete_unassigned %}
+<form id="delete-unassigned-order-{{ order.pk }}" method="post" action="{% url 'orders:delete_unassigned' order.pk %}" hidden>{% csrf_token %}</form>
+{% endif %}{% endfor %}
 
 <section class="panel table-panel">
   <button class="section-heading section-toggle" type="button" data-collapse-toggle aria-expanded="false" aria-controls="all-orders-content"><span class="section-title"><span class="collapse-indicator" aria-hidden="true">▼</span><span class="section-name">Все заказы</span></span></button>

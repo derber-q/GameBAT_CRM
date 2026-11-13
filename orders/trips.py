@@ -1,12 +1,13 @@
 """Создание рейсов, привязка прайса и распределение поставщиков/заказчиков."""
 from uuid import UUID
+from collections import defaultdict
 
 from django.core.exceptions import PermissionDenied, ValidationError
-from django.db import transaction
+from django.db import transaction, models
 
 from partners.models import Supplier
 from price.models import ProcurementSupplierOffer
-from catalog.supplier_exclusions import exclusion_keys
+from catalog.supplier_exclusions import exclusion_keys, validate_supplier_assignments
 from .models import (
     CustomerProcurementOrder, CustomerProcurementOrderItem, OrderAdjustment, OrderAdjustmentChange,
     SupplierOrderBatch, SupplierOrderBatchLine, SupplierTripAllocation, SupplierTripChange,
@@ -163,7 +164,7 @@ def available_trips(*, price_list_id, exclude_id=None):
     from .arrival_models import TripArrival
     return SupplierOrderBatch.objects.trips().filter(
         Q(price_list_id=price_list_id) | Q(price_list__isnull=True),
-    ).exclude(pk=exclude_id).exclude(pk__in=TripArrival.objects.filter(
+    ).exclude(pk=exclude_id).exclude(pk__in=TripArrival.current.filter(
         arrived_at__isnull=False).values('trip_id')).exclude(
         trip_orders__status__in=(CustomerProcurementOrder.Status.CONFIRMED,
                                 CustomerProcurementOrder.Status.RECEIVING,
@@ -173,7 +174,7 @@ def available_trips(*, price_list_id, exclude_id=None):
 
 def _require_editable_trip(batch):
     from .arrival_models import TripArrival
-    if TripArrival.objects.filter(trip=batch,arrived_at__isnull=False).exists():
+    if TripArrival.current.filter(trip=batch,arrived_at__isnull=False).exists():
         raise ValidationError('Рейс приехал. Исходные партии зафиксированы; используйте сверку фактического поступления.')
     orders = list(batch.trip_orders.select_for_update().order_by("pk"))
     for order in orders:
@@ -190,6 +191,230 @@ def _record_trip_change(batch, actor, description, details):
     batch.save(update_fields=("revision",))
     SupplierTripChange.objects.create(batch=batch, actor=actor, revision=batch.revision,
                                      description=description, details=details)
+
+
+def _supplier_for_new_trip_item(batch, item, accepted_suppliers):
+    """Возвращает поставщика строки с тем же правилом M → F, что и при включении заказа в рейс."""
+    supplier_id = item.selected_supplier_id
+    price_supplier_id = item.selected_supplier_id
+    if item.selected_supplier and item.selected_supplier.letter == "M":
+        f_supplier = Supplier.objects.filter(letter="F").first()
+        has_saved_offer = ProcurementSupplierOffer.objects.filter(
+            price_list_item=item.price_list_item,
+            supplier_id=item.selected_supplier_id,
+            price_aed=item.supplier_price_aed_snapshot,
+        ).exists()
+        if f_supplier and has_saved_offer and (
+            item.product_kind, item.product_id, f_supplier.pk
+        ) not in _batch_exclusions(batch) and f_supplier.pk not in accepted_suppliers:
+            supplier_id = f_supplier.pk
+    if supplier_id in accepted_suppliers:
+        raise ValidationError("Инвойс выбранного поставщика уже принят. Снимите флаг на странице рейса перед добавлением товара.")
+    return supplier_id, price_supplier_id
+
+
+def _sync_order_item_allocations(batch, item, desired, allocations, accepted_suppliers):
+    """Синхронизирует поставщицкие количества с предоплатой и постоплатой заказа."""
+    allocations = sorted(allocations, key=lambda row: (row.line_id, row.pk))
+    before = (item.prepayment_quantity, item.postpayment_quantity)
+    target = tuple(desired)
+    if before == target:
+        return []
+    changes = []
+    for index, field in enumerate(("prepayment_quantity", "postpayment_quantity")):
+        wanted = target[index]
+        current = sum(getattr(row, field) for row in allocations)
+        if wanted < current:
+            remaining = current - wanted
+            for row in sorted(allocations, key=lambda value: (value.line_id, value.pk), reverse=True):
+                amount = min(getattr(row, field), remaining)
+                if amount:
+                    if row.line.supplier_id in accepted_suppliers:
+                        raise ValidationError(
+                            "Инвойс поставщика по этой позиции уже принят. Снимите флаг на странице рейса перед изменением состава."
+                        )
+                    setattr(row, field, getattr(row, field) - amount)
+                    row.line.quantity -= amount
+                    row.line.save(update_fields=("quantity",))
+                    row.save(update_fields=(field,))
+                    changes.append({"line_id": row.line_id, "supplier_id": row.line.supplier_id,
+                                    "field": field, "delta": -amount})
+                    remaining -= amount
+                if not remaining:
+                    break
+        elif wanted > current:
+            increase = wanted - current
+            active = [row for row in allocations if row.quantity]
+            if active:
+                destination = max(active, key=lambda row: (row.quantity, row.line_id, row.pk))
+                if destination.line.supplier_id in accepted_suppliers:
+                    raise ValidationError("Инвойс поставщика уже принят. Снимите флаг перед увеличением товара.")
+            elif allocations:
+                destination = next((row for row in allocations
+                                    if row.line.price_supplier_id == item.selected_supplier_id), allocations[-1])
+                if destination.line.supplier_id in accepted_suppliers:
+                    raise ValidationError("Инвойс поставщика уже принят. Снимите флаг перед увеличением товара.")
+            else:
+                supplier_id, price_supplier_id = _supplier_for_new_trip_item(batch, item, accepted_suppliers)
+                line = _line_for(batch, item.price_list_item, supplier_id, price_supplier_id,
+                                 item.supplier_price_aed_snapshot)
+                destination = SupplierTripAllocation.objects.create(
+                    line=line, order_item=item, prepayment_cap=0,
+                )
+                allocations.append(destination)
+            _check_supplier_admission(batch, destination.line.price_list_item,
+                                      destination.line.supplier_id, destination.line.price_supplier_id)
+            if destination.line.quantity + increase > 2147483647:
+                raise ValidationError("Слишком большое количество в строке поставщика.")
+            setattr(destination, field, getattr(destination, field) + increase)
+            if field == "prepayment_quantity":
+                destination.prepayment_cap = max(destination.prepayment_cap, destination.prepayment_quantity)
+                destination.save(update_fields=(field, "prepayment_cap"))
+            else:
+                destination.save(update_fields=(field,))
+            destination.line.quantity += increase
+            destination.line.save(update_fields=("quantity",))
+            changes.append({"line_id": destination.line_id, "supplier_id": destination.line.supplier_id,
+                            "field": field, "delta": increase})
+
+    return [{"before": list(before), "after": list(target), "supplier_lines": changes}]
+
+
+def _update_trip_order_composition(*, actor, batch, order, prepared, recipient=None, comment=None):
+    from .services import _new_item, _save_totals, _validate_stock_quantities
+    from price.models import ProcurementPriceListItem
+
+    if order.trip_id != batch.pk or order.status != CustomerProcurementOrder.Status.CREATED:
+        raise ValidationError("Изменять можно только созданный заказ, привязанный к этому рейсу.")
+    require_untransferred_order(order)
+    _require_editable_trip(batch)
+    _assert_balances(batch)
+    old_items = {item.price_list_item_id: item for item in CustomerProcurementOrderItem.objects.select_for_update()
+                 .filter(order=order).select_related("price_list_item__cd", "price_list_item__tech", "selected_supplier")}
+    sources = {
+        source.pk: source for source in ProcurementPriceListItem.objects.select_for_update().select_related(
+            "cd", "tech", "selected_supplier"
+        ).filter(pk__in=prepared).filter(
+            models.Q(price_list=order.price_list) | models.Q(pk__in=old_items)
+        )
+    }
+    if set(sources) != set(prepared):
+        raise ValidationError("Товар отсутствует в исходном прайсе заказа.")
+    if any(source.product.is_archived for source in sources.values()):
+        raise ValidationError("Архивный товар нельзя добавить в заказ.")
+    _validate_stock_quantities(order.purpose, prepared.values())
+    validate_supplier_assignments(
+        (source.product_kind, source.product_id, source.selected_supplier_id, source.product_name_snapshot)
+        for source in sources.values()
+    )
+
+    old_recipient, old_comment = order.recipient, order.comment
+    allocations_by_item = defaultdict(list)
+    for allocation in SupplierTripAllocation.objects.select_for_update().select_related(
+        "line__price_list_item__cd", "line__price_list_item__tech", "line__supplier", "line__price_supplier"
+    ).filter(line__batch=batch, order_item__order=order).order_by("line_id", "pk"):
+        allocations_by_item[allocation.order_item_id].append(allocation)
+    accepted_suppliers = set(batch.invoice_flags.filter(accepted=True).values_list("supplier_id", flat=True))
+    adjustment_changes = []
+    trip_changes = []
+
+    for source_id in sorted(set(old_items) | set(prepared)):
+        item = old_items.get(source_id)
+        desired = prepared.get(source_id, (0, 0))
+        if item is None:
+            item = _new_item(order, sources[source_id], 0, 0)
+            item.full_clean()
+            item.save()
+            old = (0, 0)
+            old_items[source_id] = item
+        else:
+            old = (item.prepayment_quantity, item.postpayment_quantity)
+        if old == desired:
+            continue
+        if sum(desired) > 2147483647:
+            raise ValidationError("Слишком большое количество товара в заказе.")
+        supplier_changes = _sync_order_item_allocations(
+            batch, item, desired, allocations_by_item.get(item.pk, []), accepted_suppliers,
+        )
+        item.prepayment_quantity, item.postpayment_quantity = desired
+        item.full_clean()
+        item.save(update_fields=("prepayment_quantity", "postpayment_quantity"))
+        for field, old_value, new_value in (
+            ("prepayment_quantity", old[0], desired[0]),
+            ("postpayment_quantity", old[1], desired[1]),
+        ):
+            if old_value != new_value:
+                adjustment_changes.append((item, field, old_value, new_value))
+        trip_changes.append({"item_id": item.pk, "product": item.product_name_snapshot,
+                             "before": list(old), "after": list(desired),
+                             "supplier_changes": supplier_changes})
+
+    if recipient is not None:
+        order.recipient = str(recipient or "").strip()
+        if not order.recipient:
+            raise ValidationError("Получатель обязателен.")
+    if comment is not None:
+        order.comment = str(comment or "").strip()
+    order.save(update_fields=("recipient", "comment", "updated_at"))
+    _save_totals(order, list(order.items.all()))
+    header_changed = old_recipient != order.recipient or old_comment != order.comment
+    if adjustment_changes:
+        _record_customer_changes(actor, {order.pk: adjustment_changes}, batch,
+                                 comment=f"Изменён состав заказа в рейсе №{batch.pk}.")
+    if adjustment_changes or header_changed:
+        _record_trip_change(batch, actor, f"Изменён состав заказа №{order.pk}", {
+            "action": "edit_order_composition", "order_id": order.pk, "items": trip_changes,
+            "header": {"before": {"recipient": old_recipient, "comment": old_comment},
+                       "after": {"recipient": order.recipient, "comment": order.comment}}
+                     if header_changed else None,
+        })
+    _assert_balances(batch)
+    return order
+
+
+@transaction.atomic
+def edit_trip_order_composition(*, actor, order_id, revision, recipient, comment, prepared):
+    _require_manage(actor)
+    trip_id = CustomerProcurementOrder.objects.filter(pk=order_id).values_list("trip_id", flat=True).first()
+    if trip_id is None:
+        raise ValidationError("Заказ не найден в рейсе.")
+    try:
+        batch = SupplierOrderBatch.objects.trips().select_for_update().get(pk=trip_id)
+        order = CustomerProcurementOrder.objects.select_for_update().get(pk=order_id)
+    except (SupplierOrderBatch.DoesNotExist, CustomerProcurementOrder.DoesNotExist) as exc:
+        raise ValidationError("Рейс или заказ не найдены.") from exc
+    if batch.revision != _quantity(revision, "Версия рейса"):
+        raise ValidationError("Рейс уже изменён другим запросом. Обновите страницу.")
+    return _update_trip_order_composition(actor=actor, batch=batch, order=order, prepared=prepared,
+                                          recipient=recipient, comment=comment)
+
+
+@transaction.atomic
+def add_items_to_trip_order(*, actor, order_id, lines, revision):
+    _require_manage(actor)
+    trip_id = CustomerProcurementOrder.objects.filter(pk=order_id).values_list("trip_id", flat=True).first()
+    if trip_id is None:
+        raise ValidationError("Заказ не найден в рейсе.")
+    try:
+        batch = SupplierOrderBatch.objects.trips().select_for_update().get(pk=trip_id)
+        order = CustomerProcurementOrder.objects.select_for_update().get(pk=order_id)
+    except (SupplierOrderBatch.DoesNotExist, CustomerProcurementOrder.DoesNotExist) as exc:
+        raise ValidationError("Рейс или заказ не найдены.") from exc
+    if batch.revision != _quantity(revision, "Версия рейса"):
+        raise ValidationError("Рейс уже изменён другим запросом. Обновите страницу.")
+    additions = {int(source_id): _quantity(quantity, "Количество к добавлению")
+                 for source_id, quantity in lines.items() if quantity}
+    if not additions:
+        raise ValidationError("Укажите количество хотя бы для одного товара.")
+    current = {item.price_list_item_id: item for item in order.items.select_for_update().all()}
+    prepared = {source_id: (item.prepayment_quantity, item.postpayment_quantity)
+                for source_id, item in current.items()}
+    for source_id, quantity in additions.items():
+        pre, post = prepared.get(source_id, (0, 0))
+        prepared[source_id] = (pre + quantity, post) if order.is_stock_order else (pre, post + quantity)
+        if sum(prepared[source_id]) > 2147483647:
+            raise ValidationError("Итоговое количество товара слишком велико.")
+    return _update_trip_order_composition(actor=actor, batch=batch, order=order, prepared=prepared)
 
 
 @transaction.atomic
@@ -387,11 +612,11 @@ def delete_empty_trip(*, actor, batch_id, revision, archive_batch_id):
     return archive
 
 
-def _record_customer_changes(actor, changes, batch):
+def _record_customer_changes(actor, changes, batch, *, comment=None):
     for order_id, entries in changes.items():
         order = CustomerProcurementOrder.objects.get(pk=order_id)
         adjustment = OrderAdjustment.objects.create(
-            order=order, actor=actor, comment=f"Корректировка распределения в рейсе №{batch.pk}.", refund_amount=0,
+            order=order, actor=actor, comment=comment or f"Корректировка распределения в рейсе №{batch.pk}.", refund_amount=0,
         )
         for item, field, before, after in entries:
             OrderAdjustmentChange.objects.create(

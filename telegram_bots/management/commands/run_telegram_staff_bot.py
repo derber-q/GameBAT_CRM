@@ -26,8 +26,8 @@ class Command(BaseCommand):
             return
         instance = options['worker_instance'] or uuid.uuid4()
         try:
-            with graceful_shutdown() as stop, monitored_worker(['telegram_staff'], instance):
-                run_polling(StaffBot.objects.get(code='staff').pk, instance, stop, once=options['once'])
+            with graceful_shutdown() as stop, monitored_worker(['telegram_staff'], instance) as health:
+                run_polling(StaffBot.objects.get(code='staff').pk, instance, stop, once=options['once'], health=health)
         except AlreadyRunning:
             self.stdout.write('Telegram-бот уже обслуживается; повторный запуск отменён.')
         except ValidationError:

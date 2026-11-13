@@ -17,6 +17,9 @@
   <p class="muted" data-field="expected_label">{{ service.expected_label }}</p>
   <dl class="worker-details">
     <dt>Последняя активность</dt><dd data-field="heartbeat_at">{{ service.heartbeat_at|date:'d.m.Y H:i:s'|default:'Нет данных' }}</dd>
+    <dt>Последний рабочий цикл</dt><dd data-field="progress_at">{{ service.progress_at|date:'d.m.Y H:i:s'|default:'Ещё не выполнен' }}</dd>
+    <dt>Успешная проверка работы</dt><dd data-field="verified_at">{{ service.verified_at|date:'d.m.Y H:i:s'|default:'Ещё не подтверждена' }}</dd>
+    {% if service.code == 'telegram_staff' %}<dt>Цикл исполнителя документов</dt><dd data-field="executor_at">{{ service.executor_at|date:'d.m.Y H:i:s'|default:'Ещё не подтверждён' }}</dd>{% endif %}
     <dt>Подтверждённый запуск</dt><dd data-field="last_started_at">{{ service.last_started_at|date:'d.m.Y H:i:s'|default:'Нет данных' }}</dd>
     <dt>Успешное задание</dt><dd data-field="last_task_success_at">{{ service.last_task_success_at|date:'d.m.Y H:i:s'|default:'Нет данных' }}</dd>
     <dt>Текущее действие</dt><dd data-field="current_action">{{ service.current_action }}</dd>

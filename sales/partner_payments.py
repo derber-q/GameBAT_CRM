@@ -3,6 +3,7 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from django.core import signing
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
+from core.db_retry import retry_database_lock
 from creditors.models import Creditor, CreditorTransaction
 
 ZERO, CENT = Decimal('0.00'), Decimal('0.01')
@@ -45,19 +46,20 @@ def money(value):
 
 
 def quote(*, total, received, debt, partner_id, sale_id=None, creation_key=None):
-    """Чистый Decimal-предпросмотр: сначала погашение/взаимозачёт существующего знакового долга, затем новый долг/переплата. Сам денег и записей не создаёт."""
+    """Сверх стоимости опта: погашение существующего долга, затем аванс с отрицательным знаком."""
     debt = Decimal(str(debt)).quantize(CENT)
     total = money(total)
     received = total if received in (None, '') else money(received)
     repayment = min(max(received - total, ZERO), max(debt, ZERO))
+    advance = max(received - total - repayment, ZERO)
     shortfall = max(total - received, ZERO)
     offset = min(shortfall, max(-debt, ZERO))
     charge = shortfall - offset
     return {'partner_id': partner_id, 'sale_id': sale_id, 'creation_key': str(creation_key or ''),
         'total': str(total), 'received': str(received), 'debt_before': str(debt),
         'repayment': str(repayment), 'offset': str(offset), 'charge': str(charge),
-        'overpayment': str(max(received - total - repayment, ZERO)),
-        'debt_after': str(debt - repayment + offset + charge)}
+        'advance': str(advance), 'overpayment': str(ZERO),
+        'debt_after': str(debt - repayment - advance + offset + charge)}
 
 
 def payment_values(*, actor, sale_type, partner, total, received, note, confirmation='', sale_id=None, creation_key=None):
@@ -65,16 +67,19 @@ def payment_values(*, actor, sale_type, partner, total, received, note, confirma
     from .models import Sale
     actual = total if received in (None, '') else money(received)
     if sale_type != Sale.SaleType.WHOLESALE or partner is None:
+        if sale_type == Sale.SaleType.WHOLESALE and partner is None and actual > total:
+            raise ValidationError('Для зачисления аванса выберите партнёра из справочника.')
         if actual < total:
             if sale_type == Sale.SaleType.WHOLESALE and partner is None:
                 raise ValidationError('Для частичной оплаты выберите партнёра из справочника.')
             raise ValidationError('Полученная сумма не может быть меньше стоимости продажи.')
-        return actual, max(actual - total, ZERO), ZERO, ZERO
+        return actual, max(actual - total, ZERO), ZERO, ZERO, ZERO
     creditor = Creditor.objects.select_for_update().get(pk=partner.creditor_id)
     values = quote(total=total, received=actual, debt=creditor.current_debt, partner_id=partner.pk,
         sale_id=sale_id, creation_key=creation_key)
     repayment, offset = Decimal(values['repayment']), Decimal(values['offset'])
-    if repayment or offset or Decimal(values['charge']):
+    advance = Decimal(values['advance'])
+    if repayment or offset or advance or Decimal(values['charge']):
         if actor is None or not actor.has_perm('creditors.change_debt'):
             raise PermissionDenied('Нет права изменения задолженности.')
         if not str(note or '').strip():
@@ -85,14 +90,15 @@ def payment_values(*, actor, sale_type, partner, total, received, note, confirma
             raise ValidationError('Подтвердите расчёт задолженности перед сохранением.') from exc
         if confirmed != values:
             raise ValidationError('Сумма или задолженность изменились. Проверьте и подтвердите расчёт заново.')
-    return actual, Decimal(values['overpayment']), repayment, offset
+    return actual, ZERO, repayment, offset, advance
 
 
 @transaction.atomic
 def record_settlement(*, sale, actor):
     """Записывает единственную долговую дельту продажи без второй кассовой проводки. partner_debt — отдельная ветка полного начисления T."""
     charge = sale.debt_charge_amount
-    amount = sale.debt_repayment_amount or sale.debt_offset_amount + charge
+    advance = sale.debt_advance_amount
+    amount = sale.debt_repayment_amount + advance or sale.debt_offset_amount + charge
     if not amount:
         return
     if actor is None or not actor.has_perm('creditors.change_debt'):
@@ -102,14 +108,16 @@ def record_settlement(*, sale, actor):
     if CreditorTransaction.objects.filter(operation_key=key).exists():
         raise ValidationError('Расчёт по продаже уже проведён.')
     old = creditor.current_debt
-    repayment = sale.debt_repayment_amount > 0
-    if not sale.is_partner_debt and ((repayment and old < amount) or (not repayment and not charge and -old < amount)):
+    repayment = sale.debt_repayment_amount > 0 or advance > 0
+    if not sale.is_partner_debt and ((repayment and old < sale.debt_repayment_amount and sale.debt_repayment_amount > 0)
+            or (advance and max(old, ZERO) != sale.debt_repayment_amount)
+            or (not repayment and not charge and -old < amount)):
         raise ValidationError('Задолженность изменилась. Подтвердите расчёт заново.')
     creditor.current_debt = old - amount if repayment else old + amount
     creditor.full_clean()
     creditor.save(update_fields=('current_debt', 'updated_at'))
     CreditorTransaction.objects.create(creditor=creditor, sale=sale, operation_key=key,
-        kind=(CreditorTransaction.Kind.SALE_DEBT if charge else
+        kind=(CreditorTransaction.Kind.SALE_ADVANCE if advance else CreditorTransaction.Kind.SALE_DEBT if charge else
             CreditorTransaction.Kind.REPAYMENT if repayment else CreditorTransaction.Kind.OFFSET),
         partner_name_snapshot=sale.partner_name_snapshot, old_debt=old, new_debt=creditor.current_debt,
         delta=creditor.current_debt - old, amount=amount, warehouse=sale.warehouse,
@@ -134,3 +142,44 @@ def reverse_settlement(*, sale, actor, comment):
         partner_name_snapshot=original.partner_name_snapshot, old_debt=old, new_debt=creditor.current_debt,
         delta=-original.delta, amount=original.amount, warehouse=sale.warehouse,
         money_source_type=CreditorTransaction.MoneySourceType.OFFSET, actor=actor, comment=comment)
+
+
+@retry_database_lock
+@transaction.atomic
+def reclassify_wholesale_overpayment(*, actor, sale_id, expected_extra):
+    """Явная коррекция одной исторической переплаты без повторного получения денег.
+
+    Снимки товаров, сумма полученных денег и кассовая проводка сохраняются.
+    Отмена продажи затем сторнирует эту же единственную дельту кредитора.
+    """
+    from django.contrib.auth import get_user_model
+    from .models import Sale
+    current = get_user_model().objects.filter(pk=getattr(actor, 'pk', None), is_active=True).first()
+    if not current or not current.has_perms(['sales.change_sale', 'creditors.change_debt']):
+        raise PermissionDenied('Недостаточно прав для переноса переплаты на счёт партнёра.')
+    sale = Sale.objects.select_for_update().select_related('partner').get(pk=sale_id)
+    amount = money(expected_extra)
+    if (not amount or sale.sale_type != Sale.SaleType.WHOLESALE or not sale.partner_id
+            or sale.is_cancelled or sale.payment_status != Sale.PaymentStatus.PAID):
+        raise ValidationError('Требуется действующая оплаченная оптовая продажа с партнёром.')
+    previous = sale.creditor_movements.filter(operation_key=f'sale:{sale.pk}:settlement').first()
+    if previous:
+        if (sale.extra_cash_amount == ZERO and sale.debt_advance_amount == amount
+                and previous.delta == -amount and previous.kind == CreditorTransaction.Kind.SALE_ADVANCE
+                and not CreditorTransaction.objects.filter(reversal_of=previous).exists()):
+            return sale
+        raise ValidationError('У продажи уже есть другой расчёт задолженности. Нужна отдельная сверка.')
+    if (sale.extra_cash_amount != amount or sale.debt_repayment_amount or sale.debt_offset_amount
+            or sale.debt_advance_amount or sale.cash_received_amount != sale.total_amount + amount):
+        raise ValidationError('Исходные суммы продажи изменились. Перенос не выполнен.')
+    creditor = Creditor.objects.select_for_update().get(pk=sale.partner.creditor_id)
+    if creditor.current_debt > 0:
+        raise ValidationError('У партнёра появился положительный долг. Сначала требуется сверка распределения.')
+    sale.extra_cash_amount, sale.debt_advance_amount = ZERO, amount
+    annotation = f'Перенос прежней переплаты {amount:.2f} ₽ в аванс на кредиторском счёте; наличные уже получены.'
+    sale.note = '\n'.join(filter(None, [sale.note, annotation]))
+    sale._trip_actor = current
+    sale.full_clean()
+    sale.save(update_fields=['extra_cash_amount', 'debt_advance_amount', 'note', 'updated_at'])
+    record_settlement(sale=sale, actor=current)
+    return sale

@@ -62,6 +62,7 @@ class StaffBotJob(models.Model):
     class Function(models.TextChoices):
         WHOLESALE = 'wholesale_stock_price', 'Оптовый прайс наличия'
         SUPPLIER_TEMPLATES = 'supplier_price_templates', 'Шаблоны поставщика с ценами'
+        DIGITAL_PRICES = 'digital_price_images', 'Прайс цифровых товаров'
 
     class State(models.TextChoices):
         QUEUED = 'queued', 'В очереди'
@@ -93,7 +94,8 @@ class StaffBotJob(models.Model):
             condition=Q(state__in=['queued', 'generating', 'sending']), name='telegram_one_active_price'),
             models.CheckConstraint(condition=(
                 Q(function='wholesale_stock_price', supplier__isnull=True)
-                | Q(function='supplier_price_templates', warehouse__isnull=True)),
+                | Q(function='supplier_price_templates', warehouse__isnull=True)
+                | Q(function='digital_price_images', warehouse__isnull=True, supplier__isnull=True)),
                 name='telegram_job_function_target')]
 
 

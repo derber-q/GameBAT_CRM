@@ -22,6 +22,7 @@ from .commissions import calculate_avito_commission
 from .models import Sale, SaleCDItem, SaleTechItem, SaleCustomItem
 from partners.customers import resolve_customer
 from .partner_payments import money, payment_values, record_settlement, reverse_settlement, resolve_payment_partner
+from creditors.prepayments import validate_prepayment_sale, spend_prepayment, reverse_prepayment
 from core.db_retry import retry_database_lock
 
 logger = logging.getLogger("gamebat.business")
@@ -42,7 +43,7 @@ def can_mark_paid(sale):
         if document_waits_finalization(sale):return False
     return (
         not sale.is_cancelled and sale.payment_status == Sale.PaymentStatus.UNPAID
-        and sale.is_postpayment
+        and (sale.is_postpayment or sale.sale_type == Sale.SaleType.DIGITAL)
     )
 
 
@@ -100,6 +101,28 @@ def _selected_price(product, price_type):
     if price is None:
         raise ValidationError(f"Для товара «{product.name}» не задана выбранная цена продажи.")
     return price.quantize(CENT, rounding=ROUND_HALF_UP)
+
+
+@transaction.atomic
+def sale_stock_shortages(*, warehouse_id, lines):
+    """Read-only предпросмотр всех дефицитов тем же отбором, что использует create_sale.
+
+    Не резервирует запас и не заменяет окончательную проверку создания продажи.
+    Внешний интерфейс получает только название, заказанное и доступное количество.
+    """
+    try:
+        Warehouse.objects.select_for_update().get(pk=warehouse_id)
+    except Warehouse.DoesNotExist:
+        raise ValidationError('Выберите существующий склад.') from None
+    prepared = normalise_product_lines(lines)
+    products, stocks = _locked_inventory(warehouse_id, prepared)
+    shortages = []
+    for row in prepared:
+        key = row['product_type'], row['product_id']
+        available = stocks[key].quantity if key in stocks else 0
+        if row['quantity'] > available:
+            shortages.append({'name': products[key].name, 'requested': row['quantity'], 'available': available})
+    return shortages
 
 
 def _complete_if_ready(sale):
@@ -325,6 +348,8 @@ def _create_sale(
     partner_id=None, partner_name="", settlement_confirmation="", _direct_rows=None, _prepaid=Decimal('0.00'),
 ):
     """Списывает локальный stock и для наличной продажи в той же транзакции проводит кассу."""
+    if sale_type == Sale.SaleType.DIGITAL or payment_method == Sale.PaymentMethod.BANK_CARD:
+        raise ValidationError('Цифровые продажи создаются через баланс цифровых продаж.')
     fingerprint = ""
     if creation_key:
         try:
@@ -417,7 +442,7 @@ def _create_sale(
     total += sum((line["line_total"] for line in custom_prepared), Decimal("0"))
     if consignment_lines:
         from consignment.services import quote_consignment_sale_lines
-        total += quote_consignment_sale_lines(consignment_lines)
+        total += quote_consignment_sale_lines(consignment_lines, sale_type=sale_type, partner=partner)
 
     note = str(note or "").strip()
     if operation != Sale.OperationKind.NORMAL and total >= Decimal("1e18"):
@@ -436,11 +461,15 @@ def _create_sale(
             total=total, received=cash_received_amount)
     payment_method = method.value
     immediate_payment = method != Sale.PaymentMethod.UNDEFINED and not method.is_postpayment
-    actual_received, extra_cash, repayment, offset = (None, Decimal('0.00'), Decimal('0.00'), Decimal('0.00'))
+    actual_received, extra_cash, repayment, offset, advance = (None, Decimal('0.00'), Decimal('0.00'), Decimal('0.00'), Decimal('0.00'))
     if method == Sale.PaymentMethod.PARTNER_DEBT:
         actual_received = Decimal('0.00')
+    elif method == Sale.PaymentMethod.PREPAYMENT_ACCOUNT:
+        validate_prepayment_sale(actor=actor, partner=partner, sale_type=sale_type,
+            operation=operation, total=total, received=cash_received_amount)
+        actual_received = Decimal('0.00')
     elif immediate_payment:
-        actual_received, extra_cash, repayment, offset = payment_values(actor=actor, sale_type=sale_type,
+        actual_received, extra_cash, repayment, offset, advance = payment_values(actor=actor, sale_type=sale_type,
             partner=partner, total=total, received=cash_received_amount, note=note,
             confirmation=settlement_confirmation, creation_key=creation_key)
     if actual_received is not None and actual_received < _prepaid:
@@ -462,13 +491,16 @@ def _create_sale(
         note=note,
         created_by=actor,
         partner=partner, partner_name_snapshot=customer_name,
-        debt_repayment_amount=repayment, debt_offset_amount=offset,
+        debt_repayment_amount=repayment, debt_offset_amount=offset, debt_advance_amount=advance,
+        prepayment_used_amount=total if method == Sale.PaymentMethod.PREPAYMENT_ACCOUNT else Decimal('0.00'),
     )
     if _complete_if_ready(sale):
         sale.save(update_fields=("completed_at",))
     sale.visible_id = f"SALE-{sale.pk:06d}"
     sale.save(update_fields=("visible_id",))
     record_settlement(sale=sale, actor=actor)
+    if method == Sale.PaymentMethod.PREPAYMENT_ACCOUNT:
+        spend_prepayment(sale=sale, actor=actor)
 
     cd_items, tech_items = [], []
     for index, (
@@ -551,6 +583,8 @@ def _create_sale(
 
 @transaction.atomic
 def advance_order_status(*, actor, sale_id, next_status, _market=False):
+    if Sale.objects.filter(pk=sale_id, sale_type=Sale.SaleType.DIGITAL).exists():
+        raise ValidationError('Цифровую продажу завершите в карточке цифрового заказа.')
     from orders.arrival import lock_document_trip
     lock_document_trip('sale',sale_id)
     sale = Sale.objects.select_for_update().get(pk=sale_id)
@@ -593,8 +627,11 @@ def set_sale_payment_method(*, actor, sale_id, payment_method):
 @retry_database_lock
 @transaction.atomic
 def mark_sale_paid(*, actor, sale_id, cash_received_amount=None, settlement_confirmation="", note=None,
-                   settlement_partner_id=None):
+                   settlement_partner_id=None, payment_method=None):
     """Подтверждает постоплату один раз с актуальным расчётом партнёра. Рейсовая финализация проверяется до денег; наличные и долг проводятся согласованно."""
+    if Sale.objects.filter(pk=sale_id, sale_type=Sale.SaleType.DIGITAL).exists():
+        from digital_sales.services import complete_sale
+        return complete_sale(actor=actor, sale_id=sale_id)
     from orders.arrival import lock_document_trip
     lock_document_trip('sale',sale_id)
     sale = Sale.objects.select_for_update().select_related("warehouse").get(pk=sale_id)
@@ -605,6 +642,8 @@ def mark_sale_paid(*, actor, sale_id, cash_received_amount=None, settlement_conf
         raise ValidationError("Отменённую продажу оплачивать нельзя.")
     if sale.payment_status == Sale.PaymentStatus.PAID:
         raise ValidationError("Заказ уже оплачен.")
+    if payment_method not in (None, '', sale.payment_method, Sale.PaymentMethod.PREPAYMENT_ACCOUNT):
+        raise ValidationError("Недопустимый способ подтверждения оплаты.")
     if not sale.is_postpayment:
         raise ValidationError("Этот способ оплаты не поддерживает отложенное подтверждение.")
     original_partner_id = sale.partner_id
@@ -622,14 +661,23 @@ def mark_sale_paid(*, actor, sale_id, cash_received_amount=None, settlement_conf
     _validate_expense_received(sale.operation_kind, cash_received_amount)
     if note is not None:
         sale.note = str(note or '').strip()
-    if (sale.is_cash_payment and sale.partner_id and sale.total_amount > 0
+    if payment_method == Sale.PaymentMethod.PREPAYMENT_ACCOUNT:
+        if sale.procurement_prepaid_amount:
+            raise ValidationError('По заказу уже внесена предоплата наличными; оплатите остаток прежним способом.')
+        validate_prepayment_sale(actor=actor, partner=sale.partner, sale_type=sale.sale_type,
+            operation=sale.operation_kind, total=sale.total_amount, received=cash_received_amount)
+        sale.payment_method = Sale.PaymentMethod.PREPAYMENT_ACCOUNT
+        sale.prepayment_used_amount = sale.total_amount
+        sale.cash_received_amount = Decimal('0.00')
+        spend_prepayment(sale=sale, actor=actor)
+    elif (sale.is_cash_payment and sale.partner_id and sale.total_amount > 0
             and cash_received_amount not in (None, '') and money(cash_received_amount) == 0):
         _validate_partner_debt(partner=sale.partner, sale_type=sale.sale_type, operation=sale.operation_kind,
             total=sale.total_amount, received=cash_received_amount)
         sale.payment_method = Sale.PaymentMethod.PARTNER_DEBT
         sale.cash_received_amount = Decimal('0.00')
     else:
-        sale.cash_received_amount, sale.extra_cash_amount, sale.debt_repayment_amount, sale.debt_offset_amount = payment_values(
+        sale.cash_received_amount, sale.extra_cash_amount, sale.debt_repayment_amount, sale.debt_offset_amount, sale.debt_advance_amount = payment_values(
             actor=actor, sale_type=sale.sale_type, partner=sale.partner, total=sale.total_amount,
             received=cash_received_amount, note=sale.note, confirmation=settlement_confirmation, sale_id=sale.pk)
     record_settlement(sale=sale, actor=actor)
@@ -640,7 +688,8 @@ def mark_sale_paid(*, actor, sale_id, cash_received_amount=None, settlement_conf
     sale.payment_status = Sale.PaymentStatus.PAID
     sale.paid_at = timezone.now()
     sale.paid_by = actor
-    update_fields = ["payment_status", "payment_method", "updated_at", "cash_received_amount", "extra_cash_amount", "paid_at", "paid_by", "debt_repayment_amount", "debt_offset_amount", "note"]
+    update_fields = ["payment_status", "payment_method", "updated_at", "cash_received_amount", "extra_cash_amount", "paid_at", "paid_by", "debt_repayment_amount", "debt_offset_amount", "debt_advance_amount", "note"]
+    update_fields.append("prepayment_used_amount")
     if sale.partner_id != original_partner_id:
         update_fields.extend(('partner', 'partner_name_snapshot'))
     if _complete_if_ready(sale):
@@ -660,7 +709,7 @@ def update_sale_note(*, actor, sale_id, note):
     sale = Sale.objects.select_for_update().get(pk=sale_id)
     old_note = sale.note
     sale.note = str(note or "").strip()
-    if (sale.debt_offset_amount or sale.debt_repayment_amount or (sale.debt_charge_amount and not sale.is_partner_debt)) and not sale.note:
+    if (sale.debt_offset_amount or sale.debt_repayment_amount or sale.debt_advance_amount or (sale.debt_charge_amount and not sale.is_partner_debt)) and not sale.note:
         raise ValidationError('У продажи с расчётом задолженности примечание обязательно.')
     sale.save(update_fields=("note", "updated_at"))
     logger.info(
@@ -673,6 +722,8 @@ def update_sale_note(*, actor, sale_id, note):
 @transaction.atomic
 def edit_postpay_sale_items(*, actor, sale_id, lines, note=None, partner_id=None, partner_name=None):
     """Меняет только разрешённую незавершённую постоплату. Проверяет общий остаток повторов, сохраняет исторические строки, разделяет рейсовые и складские источники."""
+    if Sale.objects.filter(pk=sale_id, sale_type=Sale.SaleType.DIGITAL).exists():
+        raise ValidationError('Состав цифровой продажи фиксируется при подтверждении заказа.')
     custom_lines = [line for line in lines if line.get("product_type") in ("custom", "system")]
     consignment_lines = [line for line in lines if line.get("product_type") == "consignment"]
     product_lines = [line for line in lines if line.get("product_type") in ("cd", "tech")]
@@ -712,7 +763,7 @@ def edit_postpay_sale_items(*, actor, sale_id, lines, note=None, partner_id=None
     )
     restore_consignment_sale_lines(actor=actor, sale=sale, delete=True)
     if consignment_lines:
-        quote_consignment_sale_lines(consignment_lines)
+        quote_consignment_sale_lines(consignment_lines, sale_type=sale.sale_type, partner=sale.partner)
 
     existing, by_product = {}, defaultdict(list)
     for kind, model, field in (("cd", SaleCDItem, "cd"), ("tech", SaleTechItem, "tech")):
@@ -825,6 +876,9 @@ def edit_postpay_sale_items(*, actor, sale_id, lines, note=None, partner_id=None
 @transaction.atomic
 def cancel_sale(*, actor, sale_id, comment, _market=False, restore_stock=True):
     """Сторнирует собственные деньги/долг и восстанавливает реально списанные партии. Direct-delivery не возвращается на физический склад; повтор отмены не дублирует движения."""
+    if Sale.objects.filter(pk=sale_id, sale_type=Sale.SaleType.DIGITAL).exists():
+        from digital_sales.services import cancel_digital_sale
+        return cancel_digital_sale(actor=actor, sale_id=sale_id, comment=comment)
     comment = str(comment or "").strip()
     if not comment:
         raise ValidationError("Укажите причину отмены продажи.")
@@ -838,6 +892,7 @@ def cancel_sale(*, actor, sale_id, comment, _market=False, restore_stock=True):
     if sale.is_cancelled:
         return SaleCancellationResult(sale=sale, cancelled=False)
     reverse_settlement(sale=sale, actor=actor, comment=comment)
+    reverse_prepayment(sale=sale, actor=actor, comment=comment)
     Warehouse.objects.select_for_update().get(pk=sale.warehouse_id)
 
     lines = []

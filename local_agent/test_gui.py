@@ -28,7 +28,7 @@ class ArchiveHistoryUITests(unittest.TestCase):
                 app.background=lambda function:function()
                 app.verify();app.refresh_history()
                 self.assertEqual(app.journal.get(identifier)['state'],'corrupt')
-                self.assertEqual(app.tree.item(identifier,'values')[4],'Повреждена')
+                self.assertEqual(app.tree.item(identifier,'values')[2],'Повреждена')
                 self.assertTrue(path.exists())
                 self.assertFalse(app.runtime.threads)
             finally:app.journal.close();root.destroy()

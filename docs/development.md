@@ -1,5 +1,13 @@
 # Карта кода для сопровождения
 
+Цифровые продажи: `digital_sales/` — парсер, заказ, журналы балансов, Fernet,
+общий Telegram-черновик, outbox и отдельный получатель. Новые Sale направляются
+через `sales.services` в атомарное завершение/сторно без складских/кассовых
+движений. [Контракт](digital_sales.md), [настройка](digital_sales_installation.md).
+Проверки: `manage.py test digital_sales`, `digital_sales.browser_checks` с
+`--settings=sales.system_browser_settings`. Полная копия обязана включать
+цифровой ключ: `crm_backups.configuration`, `digital_sales.test_backup`.
+
 Local Agent/резервирование: `local_agent/`, `crm_backups/`, сборщики
 `scripts/build_local_agent.py`, `scripts/package_avito_extension.py`.
 Перед изменением формата/согласованности выполнять `crm_backups.test_snapshot`,
@@ -136,3 +144,11 @@ CJS-проверки выполняют реальные скрипты в мо�
 ## Общее прибытие и финализация рейса
 
 С 26.10.2026 для новых документов рейса курсы и фактическая доставка фиксируются один раз. До общей финализации продажи нельзя завершить, а приходы принять. [Действующий порядок, модели и эксплуатация](trip_arrival_costs.md); [отчёт и карта проверок](trip_arrival_report_20261026.md). Старые документы не пересчитываются автоматически.
+# Оптовый Telegram-бот покупателей
+
+`wholesale_bot` переиспользует `price.excel` без изменения веб-импорта и создания
+оптовых прайсов. `sales.invoice_excel.sale_invoice_document` — общий read-only
+вход накладной веба и бота; не вносить в него проведение/завершение продажи.
+Проверки: `manage.py test wholesale_bot`; реальный Chromium —
+`manage.py test wholesale_bot.browser_checks --settings=sales.system_browser_settings`.
+[Контракт, права и запуск](wholesale_telegram_bot.md).

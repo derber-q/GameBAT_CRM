@@ -89,6 +89,10 @@ def devices(request):
         if request.method=='POST':
             require_live_operation('local_devices_administration')
             action=request.POST.get('action')
+            if action=='manual_permission':
+                from .devices import set_manual_request_permission
+                set_manual_request_permission(request.user,uuid.UUID(request.POST['device_id']),request.POST.get('can_request')=='on')
+                messages.success(request,'Разрешение для компьютера сохранено. Повторное подключение не требуется.')
             if action=='enroll':
                 replace=request.POST.get('replace')=='yes'
                 code=issue_enrollment(request.user,replace=replace,can_request=request.POST.get('can_request')=='on')

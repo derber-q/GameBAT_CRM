@@ -6,6 +6,7 @@ from decimal import Decimal
 from io import BytesIO
 from itertools import groupby
 from textwrap import wrap
+from types import SimpleNamespace
 
 from django.db import transaction
 from django.utils import timezone
@@ -13,6 +14,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 
 from price.excel import BLUE, GRAY, GROUP_FILL, LIGHT, MONEY_FORMAT, TEAL, WHITE, safe_text
+from catalog.product_ordering import cd_order_key, tech_price_order
 from .models import CDConsignmentStock, TechConsignmentStock
 
 
@@ -22,22 +24,39 @@ def _stock_rows(platform, user):
     # Обе выборки читают один снимок БД; создание XLSX происходит после транзакции.
     with transaction.atomic():
         for kind, model, product, category, label in (
-            ("cd", CDConsignmentStock, "cd", "platform", "CD · Диски"),
             ("tech", TechConsignmentStock, "tech", "product_type", "Tech · Техника"),
+            ("cd", CDConsignmentStock, "cd", "platform", "CD · Диски"),
         ):
             if not (user.is_superuser or user.has_perm(f"consignment.view_{kind}consignmentstock")):
                 continue
             fields = (
-                "pk", f"{product}__name", f"{product}__sku", f"{product}__{category}_id",
+                "pk", f"{product}_id", f"{product}__name", f"{product}__sku", f"{product}__{category}_id",
                 f"{product}__{category}__name", "quantity", "receivable_per_unit",
             )
+            if kind == 'tech':
+                fields += ('tech__brand_id', 'tech__brand__name')
             rows = list(model.objects.filter(platform=platform, quantity__gt=0).values(*fields))
-            rows.sort(key=lambda row: (
-                row[f"{product}__{category}__name"].casefold(),
-                row[f"{product}__{category}_id"], row[f"{product}__name"].casefold(),
-                row[f"{product}__sku"], row["receivable_per_unit"], row["pk"],
-            ))
-            sections.append((label, product, category, rows))
+            ordered = []
+            for row in rows:
+                # Общий ключ прайса получает только разрешённые реквизиты, без cost.
+                item = SimpleNamespace(pk=row[f'{product}_id'], name=row[f'{product}__name'])
+                category_id = row[f'{product}__{category}_id']
+                category_name = row[f'{product}__{category}__name']
+                setattr(item, f'{category}_id', category_id)
+                setattr(item, category, SimpleNamespace(name=category_name))
+                if kind == 'tech':
+                    item.brand_id = row['tech__brand_id']
+                    item.brand = SimpleNamespace(name=row['tech__brand__name'])
+                    key, title = tech_price_order(item, for_excel=True)
+                else:
+                    key = cd_order_key(item)
+                    title = f'CD · Платформа: {category_name}'
+                ordered.append((key, title, row))
+            # Партии одного товара не объединяются: подпись хранит исходный stock_id.
+            ordered.sort(key=lambda entry: (entry[0], entry[2]['receivable_per_unit'], entry[2]['pk']))
+            groups = [(title, [entry[2] for entry in entries])
+                      for title, entries in groupby(ordered, key=lambda entry: entry[1])]
+            sections.append((label, product, groups))
     return sections
 
 
@@ -87,13 +106,12 @@ def generate_consignment_xlsx(*, platform, user):
     total_quantity = 0
     total_amount = Decimal("0.00")
     border = Border(bottom=Side(style="thin", color=GRAY))
-    for label, product, category, rows in sections:
-        if not rows:
+    for label, product, groups in sections:
+        if not groups:
             continue
         group_heading(label, main=True)
-        for _, grouped in groupby(rows, key=lambda row: row[f"{product}__{category}_id"]):
-            grouped = list(grouped)
-            group_heading(grouped[0][f"{product}__{category}__name"])
+        for title, grouped in groups:
+            group_heading(title)
             for stock in grouped:
                 quantity, reward = stock["quantity"], stock["receivable_per_unit"]
                 amount = quantity * reward

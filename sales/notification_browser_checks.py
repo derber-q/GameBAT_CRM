@@ -152,8 +152,8 @@ class MarketNotificationBrowserChecks(StaticLiveServerTestCase):
             b1 = page(ctx_b, 'supplies:list')
             groups = a1.locator('[data-sale-group]:visible')
             self.assertEqual(groups.evaluate_all('nodes => nodes.map(node=>node.dataset.saleGroup)'), ['wholesale', 'avito', 'yandex_market'])
-            self.assertEqual(a1.locator('[data-sales-channel]').all_text_contents(), ['Все', 'Яндекс Маркет', 'Опт', 'Авито', 'Розница'])
-            for kind, count in [('yandex_market', 1), ('wholesale', 1), ('avito', 1), ('retail', 0), ('all', 3)]:
+            self.assertEqual(a1.locator('[data-sales-channel]').all_text_contents(), ['Все', 'Яндекс Маркет', 'Опт', 'Авито', 'Розница', 'Цифровые продажи'])
+            for kind, count in [('yandex_market', 1), ('wholesale', 1), ('avito', 1), ('retail', 0), ('digital', 0), ('all', 3)]:
                 a1.locator(f'[data-sales-channel="{kind}"]').click()
                 expect(groups).to_have_count(count)
             a1.reload()

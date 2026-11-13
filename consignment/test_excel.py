@@ -83,7 +83,7 @@ class ConsignmentExcelTests(TestCase):
         book=self.workbook(self.export());sheet=book.active
         self.assertEqual([cell.value for cell in sheet[4]][:5],["Наименование","Остаток на реализации","Цена за единицу, ₽","Количество реализованного","Сумма реализованного, ₽"])
         rows=self.products(sheet)
-        self.assertEqual([row[:4] for row in rows],[("Игра PS4",1,7.89,0),("Альфа",2,0,0),("Зета",4,123.45,0),("Контроллер",3,678.91,0),("Консоль",1,99.99,0)])
+        self.assertEqual([row[:4] for row in rows],[("Консоль",1,99.99,0),("Контроллер",3,678.91,0),("Игра PS4",1,7.89,0),("Альфа",2,0,0),("Зета",4,123.45,0)])
         self.assertTrue(all(row[4].startswith('=IF(') for row in rows))
         self.assertEqual(sheet.cell(sheet.max_row,1).value,"Итого площадка должна за реализованные товары")
         self.assertTrue(sheet.cell(sheet.max_row,5).value.startswith('=SUM('))
@@ -98,7 +98,7 @@ class ConsignmentExcelTests(TestCase):
         sheet=self.workbook(self.export(q='Нет',page=99,platform=999999,kind='tech')).active
         self.assertEqual(len(self.products(sheet)),5)
         labels=[sheet.cell(area.min_row,1).value for area in sorted(sheet.merged_cells.ranges,key=lambda area:area.min_row)]
-        for title in ('CD · Диски','PlayStation 4','PlayStation 5','Tech · Техника','Геймпад','Консоль'):self.assertIn(title,labels)
+        for title in ('CD · Диски','CD · Платформа: PlayStation 4','CD · Платформа: PlayStation 5','Tech · Техника','Tech · Sony · Геймпад','Tech · Sony · Консоль'):self.assertIn(title,labels)
         for row in sheet:
             if row[0].value=='Зета':
                 self.assertEqual(row[1].number_format,'0');self.assertIn('₽',row[2].number_format);self.assertTrue(row[0].alignment.wrap_text)
@@ -111,6 +111,35 @@ class ConsignmentExcelTests(TestCase):
         CDConsignmentStock.objects.create(platform=self.shop,warehouse=other,cd=self.cd,quantity=1,receivable_per_unit='123.45')
         rows=[row[:4] for row in self.products(self.workbook(self.export()).active) if row[0]=='Зета']
         self.assertCountEqual(rows,[('Зета',4,123.45,0),('Зета',1,123.45,0),('Зета',2,222.22,0)])
+
+    def test_order_matches_wholesale_including_sony_models_and_switch_generations(self):
+        from price.excel import generate_wholesale_price_xlsx
+        sony = self.tech.brand
+        gamepad = self.tech.product_type
+        for name in ('Геймпад PS5 Chroma Teal', 'Геймпад PS5 Astro Bot Limited Edition',
+                     'Геймпад PS5 Black', 'Геймпад PS4 DualShock White',
+                     'Геймпад PS5 White', 'Геймпад PS5 DualSense Edge'):
+            product = Tech.objects.create(name=name, brand=sony, product_type=gamepad, wholesale_price=100)
+            TechWarehouseStock.objects.create(warehouse=self.warehouse, tech=product, quantity=10)
+            self.transfer(product, 1, '100')
+        for platform_name in ('Nintendo Switch', 'Nintendo Switch 2'):
+            product = CD.objects.create(name=f'{platform_name} Игра', platform=Platform.objects.create(name=platform_name), wholesale_price=100)
+            CDWarehouseStock.objects.create(warehouse=self.warehouse, cd=product, quantity=10)
+            self.transfer(product, 1, '100')
+        for product in (self.cd, self.alpha, self.old, self.tech, self.console):
+            product.wholesale_price = 100
+            product.save(update_fields=['wholesale_price'])
+        wholesale = load_workbook(BytesIO(generate_wholesale_price_xlsx(
+            warehouse_id=self.warehouse.pk, actor=self.admin)))
+        expected = [row[0] for row in wholesale.active.iter_rows(min_row=9, values_only=True)
+                    if isinstance(row[1], (int, float, Decimal))]
+        sheet = self.workbook(self.export()).active
+        self.assertEqual([row[0] for row in self.products(sheet)], expected)
+        self.assertLess(expected.index('Геймпад PS5 DualSense Edge'), expected.index('Геймпад PS4 DualShock White'))
+        self.assertLess(expected.index('Nintendo Switch 2 Игра'), expected.index('Nintendo Switch Игра'))
+        self.assertEqual([sheet.column_dimensions[c].width for c in 'ABCDE'], [62, 18, 21, 23, 25])
+        self.assertTrue(sheet.column_dimensions['F'].hidden)
+        self.assertEqual(sheet.max_column, 6)
 
     def test_new_download_reflects_sale_return_reward_and_excludes_zero(self):
         record_consignment_sale(actor=self.admin,product_type='cd',stock_id=self.cd_stock.pk,quantity=1,payment_method='bank_account')

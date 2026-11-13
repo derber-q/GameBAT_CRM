@@ -31,8 +31,10 @@ class SaleCreateForm(SingleWarehouseInitialMixin, CustomerSelectionForm):
         ]
         self.fields["sale_type"].choices = [
             choice for choice in Sale.SaleType.choices
-            if choice[0] not in {Sale.SaleType.CONSIGNMENT, Sale.SaleType.YANDEX_MARKET}
+            if choice[0] not in {Sale.SaleType.CONSIGNMENT, Sale.SaleType.YANDEX_MARKET, Sale.SaleType.DIGITAL}
         ]
+        self.fields['payment_method'].choices = [choice for choice in self.fields['payment_method'].choices
+                                                if choice[0] != Sale.PaymentMethod.BANK_CARD]
         if imported_wholesale:
             self.fields["warehouse"].disabled = True
             self.fields["price_type"].disabled = True
@@ -58,8 +60,13 @@ class SaleCreateForm(SingleWarehouseInitialMixin, CustomerSelectionForm):
                 self.add_error('payment_method', 'Продажа в долг доступна только партнёру из справочника в оптовой продаже.')
             if cleaned.get('cash_received_amount') not in (None, 0):
                 self.add_error('cash_received_amount', 'При продаже в долг полученная сумма должна быть равна нулю.')
+        if cleaned.get('payment_method') == Sale.PaymentMethod.PREPAYMENT_ACCOUNT:
+            if cleaned.get('sale_type') != Sale.SaleType.WHOLESALE or not cleaned.get('partner_id'):
+                self.add_error('payment_method', 'Счёт предоплаты доступен только для оптовой продажи партнёру из базы.')
+            if cleaned.get('cash_received_amount') not in (None, 0):
+                self.add_error('cash_received_amount', 'Со счёта предоплаты списывается стоимость продажи без нового поступления денег.')
         return cleaned
 
 
 class WholesalePriceImportForm(CustomerSelectionForm):
-    file = forms.FileField(label="Заполненный оптовый XLSX", required=False)
+    file = forms.FileField(label="Заполненный Excel-файл .xls или .xlsx", required=False)

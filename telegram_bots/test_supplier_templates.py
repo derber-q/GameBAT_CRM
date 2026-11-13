@@ -53,8 +53,8 @@ class SupplierTemplateBotTests(TestCase):
 
     def test_template_only_employee_can_link_and_sees_only_own_function(self):
         reply = accept_update(self.bot.pk, update(1, text='/menu'))
-        self.assertEqual(reply['reply_markup']['keyboard'], [[{'text': TITLE}]])
-        self.assertTrue(reply['reply_markup']['is_persistent'])
+        self.assertEqual(reply['reply_markup']['inline_keyboard'], [[{'text': TITLE, 'callback_data': TEMPLATES}]])
+        self.assertTrue(reply['screen'])
         self.assertIn('разрешения', accept_update(self.bot.pk, update(2, data='wholesale_stock_price'))['text'])
         self.access.telegram_user_id = None
         self.access.save()
@@ -90,7 +90,7 @@ class SupplierTemplateBotTests(TestCase):
         self.assertIn('нет разрешения', reply['text'])
         self.assertEqual(StaffBotJob.objects.count(), 0)
         reply = accept_update(self.bot.pk, update(2, text='/menu'))
-        self.assertEqual(reply['reply_markup'], {'remove_keyboard': True})
+        self.assertEqual(reply['reply_markup'], {'inline_keyboard': []})
 
     def test_documents_match_web_exports_and_only_selected_supplier_prices(self):
         from .documents import supplier_documents
@@ -291,7 +291,7 @@ class SupplierTemplateBotTests(TestCase):
         from warehouse.models import Warehouse
         self.grant('price.generate_wholesale_price')
         reply = accept_update(self.bot.pk, update(1, text='/menu'))
-        self.assertEqual(len(reply['reply_markup']['keyboard']), 2)
+        self.assertEqual(len(reply['reply_markup']['inline_keyboard']), 2)
         self.request(2)
         warehouse = Warehouse.objects.create(name='Склад другой функции')
         reply = accept_update(self.bot.pk, update(3, data=f'wholesale_stock_price:{warehouse.pk}'))

@@ -6,16 +6,17 @@ from uuid import uuid4
 
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied, ValidationError
-from django.db import transaction
-from django.db.models import Prefetch
+from django.db import OperationalError, transaction
+from django.db.models import Prefetch, Sum
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.http import content_disposition_header
 from django.views.decorators.cache import never_cache
-from django.views.decorators.http import require_GET, require_POST
+from django.views.decorators.http import require_GET, require_POST, require_http_methods
 
 from core.decorators import permission_required_all, permission_required_any
+from catalog.product_ordering import wholesale_product_order_key
 from price.excel import import_procurement_order_files
 from price.models import ProcurementPriceListItem
 
@@ -30,7 +31,9 @@ from .services import (
     advance_order_status,
     create_customer_procurement_order,
     edit_created_order,
+    add_items_to_order,
     reduce_receiving_order,
+    delete_unassigned_order,
 )
 
 DRAFT_SESSION_KEY = "procurement_order_import_draft"
@@ -61,10 +64,10 @@ def _order_queryset():
     return CustomerProcurementOrder.objects.select_related(
         "price_list", "payment_warehouse", "created_by", "trip", "supply__warehouse"
     ).prefetch_related(
-        "items__selected_supplier", "items__cd", "items__tech",
+        "items__selected_supplier", "items__cd__platform", "items__tech__brand", "items__tech__product_type",
         "items__trip_allocations__line__supplier",
         "status_events__actor", "adjustments__actor", "adjustments__changes", "cash_transactions",
-        "operations",
+        "operations", "supplier_order_batches", "tripadditionreceipt_set",
     )
 
 
@@ -76,6 +79,22 @@ def order_list(request):
     if not request.user.has_perm('price.view_supplier_prices'):
         orders = orders.filter(purpose=CustomerProcurementOrder.Purpose.CUSTOMER)
     orders = operation_actions(request.user, list(orders))
+    can_edit_orders = request.user.is_superuser or request.user.has_perm("orders.edit_created_order")
+    trip_manager = can_manage_trips(request.user)
+    for order in orders:
+        order.can_edit_composition = (
+            can_edit_orders and order.status == order.Status.CREATED and not downstream_lock_reason(order)
+            and (not order.trip_id or trip_manager)
+        )
+        order.can_delete_unassigned = bool(
+            can_edit_orders and order.trip_id is None
+            and order.status == CustomerProcurementOrder.Status.CREATED
+            and not order.supply_id and not order.cash_transactions.all()
+            and not order.status_events.all() and not order.adjustments.all()
+            and not order.operations.all() and not order.supplier_order_batches.exists()
+            and not order.tripadditionreceipt_set.exists()
+            and not any(item.trip_allocations.all() for item in order.items.all())
+        )
     can_generate_batches = (
         request.user.is_superuser
         or (
@@ -95,6 +114,7 @@ def order_list(request):
         ),
         "can_create": request.user.is_superuser or request.user.has_perm("orders.create_order"),
         "can_export": request.user.has_perm("orders.view_order_detail"),
+        "can_edit_orders": can_edit_orders,
         "can_generate_batches": can_generate_batches,
         "can_export_trips": can_generate_batches and request.user.has_perm("price.view_supplier_prices"),
         "can_create_trip": can_manage_trips(request.user),
@@ -194,7 +214,7 @@ def order_preview(request):
     item_ids = [row["price_list_item_id"] for row in draft["lines"]]
     items = {
         item.pk: item
-        for item in ProcurementPriceListItem.objects.select_related("cd", "tech").filter(
+        for item in ProcurementPriceListItem.objects.select_related("cd__platform", "tech__brand", "tech__product_type").filter(
             price_list_id=draft["price_list_id"], pk__in=item_ids
         ) if not item.product.is_archived
     }
@@ -223,6 +243,7 @@ def order_preview(request):
             request.session.pop(DRAFT_SESSION_KEY, None)
             messages.success(request, f"Заказ №{order.pk} создан без проведения оплаты.")
             return redirect("orders:detail", pk=order.pk)
+    preview_rows.sort(key=lambda row: wholesale_product_order_key(row['item'].product, kind=row['item'].product_kind))
     return render(request, "orders/preview.html", {"draft": draft, "rows": preview_rows,
                   "is_stock_order": draft.get("purpose") == CustomerProcurementOrder.Purpose.STOCK,
                   "back_url": back_url, "from_form": from_form, 'target_trip': target_trip})
@@ -233,6 +254,17 @@ def order_preview(request):
 def order_detail(request, pk):
     order = get_object_or_404(_order_queryset(), pk=pk)
     _require_stock_prices(request.user, order.purpose)
+    if order.trip_id:
+        from .arrival_models import TripArrival
+        arrival = TripArrival.current.filter(trip_id=order.trip_id, arrived_at__isnull=False).first()
+        if arrival:
+            received = dict(order.arrival_rows.filter(arrival=arrival).values('order_item_id')
+                .annotate(total=Sum('actual_quantity')).values_list('order_item_id', 'total'))
+            for item in order.items.all():
+                item.arrived_quantity = received.get(item.pk, 0)
+                item.arrival_quantity_reduced = item.arrived_quantity < item.quantity
+                item.arrival_quantity_missing = item.quantity - item.arrived_quantity
+            order.current_arrival = arrival
     can_view_supplier = request.user.is_superuser or request.user.has_perm("price.view_supplier_prices")
     locked = downstream_lock_reason(order)
     from .fulfillment import available, require_permissions
@@ -250,6 +282,7 @@ def order_detail(request, pk):
             financial_error = ' '.join(exc.messages)
     return render(request, "orders/detail.html", {
         "order": order,
+        'ordered_items': sorted(order.items.all(), key=lambda item: wholesale_product_order_key(item.product, kind=item.product_kind)),
         'can_create_operation': can_create_operation,
         'operation_history': order.operations.select_related('sale', 'supply', 'created_by'),
         'financial': financial, 'financial_error': financial_error, 'downstream_lock': locked,
@@ -261,9 +294,9 @@ def order_detail(request, pk):
         "can_assign_trip": not locked and can_manage_trips(request.user) and order.status == order.Status.CREATED and (
             not order.trip_id or not order.trip.trip_orders.exclude(status=order.Status.CREATED).exists()
         ),
-        "can_edit_created": not locked and not order.trip_id and order.status == order.Status.CREATED and (
+        "can_edit_created": not locked and order.status == order.Status.CREATED and (
             request.user.is_superuser or request.user.has_perm("orders.edit_created_order")
-        ),
+        ) and (not order.trip_id or can_manage_trips(request.user)),
         "can_confirm": not locked and order.status == order.Status.CREATED and (
             request.user.is_superuser
             or (
@@ -291,6 +324,18 @@ def order_detail(request, pk):
     })
 
 
+@require_POST
+@permission_required_any("orders.edit_created_order")
+def order_delete_unassigned(request, pk):
+    try:
+        delete_unassigned_order(actor=request.user, order_id=pk)
+    except ValidationError as exc:
+        messages.error(request, " ".join(exc.messages))
+    else:
+        messages.success(request, f"Заказ №{pk} удалён.")
+    return redirect("orders:list")
+
+
 @permission_required_any("orders.edit_created_order")
 def order_edit(request, pk):
     order = get_object_or_404(_order_queryset(), pk=pk)
@@ -298,8 +343,19 @@ def order_edit(request, pk):
     if order.status != order.Status.CREATED:
         messages.error(request, "Изменять можно только заказ в статусе «Создан».")
         return redirect("orders:detail", pk=pk)
-    current = {item.price_list_item_id: item for item in order.items.all()}
-    source_items = list(order.price_list.items.all())
+    locked = downstream_lock_reason(order)
+    if locked:
+        messages.error(request, locked)
+        return redirect("orders:detail", pk=pk)
+    if order.trip_id and not can_manage_trips(request.user):
+        raise PermissionDenied("Для изменения состава заказа в рейсе требуется право управления рейсами.")
+    current = {item.price_list_item_id: item for item in order.items.select_related(
+        "price_list_item__cd__platform", "price_list_item__tech__brand", "price_list_item__tech__product_type").all()}
+    source_items_by_id = {source.pk: source for source in order.price_list.items.select_related(
+        "cd__platform", "tech__brand", "tech__product_type").all()}
+    source_items_by_id.update({item.price_list_item_id: item.price_list_item for item in current.values()
+                               if item.price_list_item_id not in source_items_by_id})
+    source_items = sorted(source_items_by_id.values(), key=lambda source: wholesale_product_order_key(source.product, kind=source.product_kind))
     rows = [{
         "source": source,
         "prepayment_quantity": current[source.pk].prepayment_quantity if source.pk in current else 0,
@@ -310,20 +366,70 @@ def order_edit(request, pk):
             'customer': str(order.partner_id) if order.partner_id else 'custom' if order.partner_name_snapshot else '',
             'custom_partner_name': order.partner_name_snapshot if not order.partner_id else ''}
     )
-    if request.method == "POST" and form.is_valid():
+    form_valid = order.trip_id and request.method == "POST" or request.method == "POST" and form.is_valid()
+    if form_valid:
         try:
             edit_created_order(
                 actor=request.user, order_id=order.pk,
-                recipient=form.cleaned_data["recipient"], comment=form.cleaned_data["comment"],
-                partner_id=form.cleaned_data['partner_id'], partner_name=form.cleaned_data['partner_name'],
+                recipient=order.recipient if order.trip_id else form.cleaned_data["recipient"],
+                comment=order.comment if order.trip_id else form.cleaned_data["comment"],
+                partner_id=None if order.trip_id else form.cleaned_data['partner_id'],
+                partner_name=None if order.trip_id else form.cleaned_data['partner_name'],
                 lines=_parse_item_lines(request.POST, id_field="price_list_item_id"),
+                revision=request.POST.get("revision") if order.trip_id else None,
             )
         except ValidationError as exc:
-            form.add_error(None, exc)
+            if order.trip_id:
+                messages.error(request, " ".join(exc.messages))
+            else:
+                form.add_error(None, exc)
         else:
             messages.success(request, "Состав созданного заказа обновлён.")
             return redirect("orders:detail", pk=pk)
-    return render(request, "orders/edit.html", {"order": order, "form": form, "rows": rows})
+    return render(request, "orders/edit.html", {"order": order, "form": form, "rows": rows,
+        "trip_revision": order.trip.revision if order.trip_id else None,
+        "trip_composition_only": bool(order.trip_id)})
+
+
+@require_http_methods(["GET", "POST"])
+@permission_required_any("orders.edit_created_order")
+def order_add_items(request, pk):
+    order = get_object_or_404(_order_queryset(), pk=pk)
+    _require_stock_prices(request.user, order.purpose)
+    if order.status != order.Status.CREATED:
+        messages.error(request, "Дополнительные товары можно добавить только в заказе со статусом «Создан».")
+        return redirect("orders:detail", pk=pk)
+    locked = downstream_lock_reason(order)
+    if locked:
+        messages.error(request, locked)
+        return redirect("orders:detail", pk=pk)
+    if order.trip_id and not can_manage_trips(request.user):
+        raise PermissionDenied("Для изменения состава заказа в рейсе требуется право управления рейсами.")
+    sources = list(order.price_list.items.select_related("cd__platform", "cd__game_series", "tech__brand", "tech__product_type")
+                   .order_by("product_name_snapshot", "pk"))
+    sources.sort(key=lambda source: wholesale_product_order_key(source.product, kind=source.product_kind))
+    current = {item.price_list_item_id: item for item in order.items.all()}
+    rows = [{"source": source, "current_quantity": current[source.pk].quantity if source.pk in current else 0}
+            for source in sources if not source.product.is_archived]
+    if request.method == "POST":
+        ids = request.POST.getlist("price_list_item_id")
+        quantities = request.POST.getlist("quantity")
+        if len(ids) != len(quantities):
+            error = ValidationError("Переданы не все количества товаров.")
+        else:
+            try:
+                add_items_to_order(actor=request.user, order_id=order.pk, revision=request.POST.get("revision"),
+                    lines=[{"price_list_item_id": source_id, "quantity": quantity}
+                           for source_id, quantity in zip(ids, quantities)])
+            except (ValidationError, OperationalError) as exc:
+                error = exc
+            else:
+                messages.success(request, f"Товары добавлены в заказ №{order.pk}.")
+                return redirect("orders:trip_detail", pk=order.trip_id) if order.trip_id else redirect("orders:detail", pk=order.pk)
+        messages.error(request, " ".join(error.messages) if isinstance(error, ValidationError)
+                       else "База занята. Обновите страницу и повторите.")
+    return render(request, "orders/add_items.html", {"order": order, "rows": rows,
+        "trip_revision": order.trip.revision if order.trip_id else None})
 
 
 @require_POST

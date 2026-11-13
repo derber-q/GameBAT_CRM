@@ -41,6 +41,7 @@ class Sale(models.Model):
         CONSIGNMENT = "consignment", "Реализация"
 
     class SaleType(models.TextChoices):
+        DIGITAL = "digital", "Цифровая продажа"
         RETAIL = "retail", "Розница"
         WHOLESALE = "wholesale", "Опт"
         AVITO = "avito", "Авито"
@@ -48,12 +49,14 @@ class Sale(models.Model):
         CONSIGNMENT = "consignment", "Реализация"
 
     class PaymentMethod(models.TextChoices):
+        BANK_CARD = "bank_card", "Банковская карта"
         UNDEFINED = "undefined", "Не определён"
         CASH = "cash", "Наличные"
         CASH_POSTPAY = "cash_postpay", "Наличные — постоплата"
         BANK_ACCOUNT = "bank_account", "Банковский перевод"
         BANK_TRANSFER_POSTPAY = "bank_transfer_postpay", "Банковский перевод — постоплата"
         PARTNER_DEBT = "partner_debt", "В долг"
+        PREPAYMENT_ACCOUNT = "prepayment_account", "Счёт предоплаты"
 
         @property
         def is_cash_payment(self):
@@ -61,7 +64,7 @@ class Sale(models.Model):
 
         @property
         def is_bank_payment(self):
-            return self in (self.BANK_ACCOUNT, self.BANK_TRANSFER_POSTPAY)
+            return self in (self.BANK_ACCOUNT, self.BANK_TRANSFER_POSTPAY, self.BANK_CARD)
 
         @property
         def is_postpayment(self):
@@ -79,7 +82,7 @@ class Sale(models.Model):
     visible_id = models.CharField(
         "Номер продажи", max_length=40, unique=True, default=temporary_sale_id, editable=False
     )
-    warehouse = models.ForeignKey(Warehouse, on_delete=models.PROTECT, related_name="sales", verbose_name="Склад")
+    warehouse = models.ForeignKey(Warehouse, on_delete=models.PROTECT, related_name="sales", verbose_name="Склад", null=True, blank=True)
     consignment_platform = models.ForeignKey(
         SalesPlatform, on_delete=models.PROTECT, related_name="sales",
         verbose_name="Площадка реализации", null=True, blank=True, editable=False,
@@ -106,7 +109,10 @@ class Sale(models.Model):
     partner = models.ForeignKey("partners.Partner", on_delete=models.PROTECT, null=True, blank=True, related_name="sales", verbose_name="Заказчик")
     partner_name_snapshot = models.CharField("Заказчик на момент продажи", max_length=255, blank=True, db_default='')
     debt_repayment_amount = models.DecimalField("Погашение долга партнёра", max_digits=20, decimal_places=2, default=0, db_default=0, editable=False)
+    debt_advance_amount = models.DecimalField("Аванс на счёте партнёра", max_digits=20, decimal_places=2, default=0, db_default=0, editable=False)
     debt_offset_amount = models.DecimalField("Взаимозачёт долга GameBAT", max_digits=20, decimal_places=2, default=0, db_default=0, editable=False)
+    prepayment_used_amount = models.DecimalField("Оплачено со счёта предоплаты", max_digits=20,
+        decimal_places=2, default=0, db_default=0, editable=False)
     buyer_name_snapshot = models.CharField("Контактное имя на момент заказа", max_length=160, blank=True)
     buyer_phone_snapshot = models.CharField("Основной телефон на момент заказа", max_length=40, blank=True)
     buyer_address_snapshot = models.TextField("Адрес на момент заказа", blank=True)
@@ -162,6 +168,17 @@ class Sale(models.Model):
             ("export_sales_statistics", "Может экспортировать статистику продаж"),
         ]
         constraints = [
+            models.CheckConstraint(condition=(
+                models.Q(payment_method="prepayment_account", sale_type="wholesale", partner__isnull=False,
+                    payment_status="paid", total_amount__gt=0, prepayment_used_amount=models.F("total_amount"),
+                    cash_received_amount=0, extra_cash_amount=0, debt_offset_amount=0,
+                    debt_repayment_amount=0, debt_advance_amount=0, procurement_prepaid_amount=0,
+                    operation_kind__in=("normal", "DIGITAL_PRODUCT")) |
+                (~models.Q(payment_method="prepayment_account") & models.Q(prepayment_used_amount=0))),
+                name="sale_prepayment_account_valid"),
+            models.CheckConstraint(condition=models.Q(warehouse__isnull=False) | models.Q(sale_type='digital'), name='sale_physical_warehouse_required'),
+            models.CheckConstraint(condition=~models.Q(sale_type='digital') | models.Q(operation_kind='DIGITAL_PRODUCT', payment_method='bank_card', warehouse__isnull=True, direct_delivery=False, procurement_prepaid_amount=0, debt_offset_amount=0, debt_repayment_amount=0, debt_advance_amount=0), name='sale_digital_prepaid_contract'),
+            models.CheckConstraint(condition=~models.Q(payment_method='bank_card') | models.Q(sale_type='digital'), name='sale_card_only_digital'),
             models.CheckConstraint(condition=~models.Q(direct_delivery=True) | models.Q(sale_type='wholesale', operation_kind='normal'), name='sale_direct_delivery_wholesale'),
             models.CheckConstraint(condition=models.Q(procurement_prepaid_amount__gte=0), name='sale_procurement_prepaid_nonnegative'),
             models.CheckConstraint(condition=(~models.Q(operation_kind="EXPENSE") | (models.Q(total_amount=0, extra_cash_amount=0) & (models.Q(cash_received_amount__isnull=True) | models.Q(cash_received_amount=0)))), name="expense_sale_no_revenue"),
@@ -194,20 +211,22 @@ class Sale(models.Model):
                 condition=models.Q(extra_cash_amount__gte=0),
                 name="sale_extra_cash_nonnegative",
             ),
-            models.CheckConstraint(condition=models.Q(debt_offset_amount__gte=0, debt_repayment_amount__gte=0)
-                & ~(models.Q(debt_offset_amount__gt=0) & models.Q(debt_repayment_amount__gt=0)), name="sale_debt_amounts_valid"),
-            models.CheckConstraint(condition=models.Q(debt_offset_amount=0, debt_repayment_amount=0)
+            models.CheckConstraint(condition=models.Q(debt_offset_amount__gte=0, debt_repayment_amount__gte=0, debt_advance_amount__gte=0)
+                & ~(models.Q(debt_offset_amount__gt=0) & (models.Q(debt_repayment_amount__gt=0) | models.Q(debt_advance_amount__gt=0))), name="sale_debt_amounts_valid"),
+            models.CheckConstraint(condition=models.Q(debt_offset_amount=0, debt_repayment_amount=0, debt_advance_amount=0)
                 | models.Q(sale_type="wholesale", partner__isnull=False, payment_status="paid", operation_kind__in=('normal', 'DIGITAL_PRODUCT')), name="sale_debt_requires_paid_partner"),
-            models.CheckConstraint(condition=models.Q(debt_offset_amount=0, debt_repayment_amount=0)
+            models.CheckConstraint(condition=models.Q(debt_offset_amount=0, debt_repayment_amount=0, debt_advance_amount=0)
                 | models.Q(cash_received_amount=models.F('total_amount') + models.F('debt_repayment_amount')
-                    + models.F('extra_cash_amount') - models.F('debt_offset_amount'))
-                | (models.Q(debt_repayment_amount=0, extra_cash_amount=0, cash_received_amount__gte=0)
+                    + models.F('debt_advance_amount') + models.F('extra_cash_amount') - models.F('debt_offset_amount'))
+                | (models.Q(debt_repayment_amount=0, debt_advance_amount=0, extra_cash_amount=0, cash_received_amount__gte=0)
                    & models.Q(cash_received_amount__lte=models.F('total_amount') - models.F('debt_offset_amount'))),
                 name='sale_partner_payment_reconciles'),
+            models.CheckConstraint(condition=models.Q(debt_advance_amount=0) | models.Q(extra_cash_amount=0),
+                name='sale_advance_not_extra_revenue'),
             models.CheckConstraint(condition=~models.Q(payment_method="partner_debt") | models.Q(
                 sale_type="wholesale", partner__isnull=False, payment_status="paid", total_amount__gt=0,
                 cash_received_amount__isnull=False, cash_received_amount=0, extra_cash_amount=0,
-                debt_offset_amount=0, debt_repayment_amount=0, operation_kind__in=('normal', 'DIGITAL_PRODUCT')),
+                debt_offset_amount=0, debt_repayment_amount=0, debt_advance_amount=0, operation_kind__in=('normal', 'DIGITAL_PRODUCT')),
                 name='sale_partner_debt_valid'),
             models.CheckConstraint(
                 condition=(
@@ -240,6 +259,8 @@ class Sale(models.Model):
         """Новый долг из сохранённых сумм продажи, без пересчёта по текущему балансу партнёра."""
         if self.is_partner_debt:
             return self.total_amount
+        if self.payment_method == self.PaymentMethod.PREPAYMENT_ACCOUNT:
+            return Decimal('0.00')
         if self.partner_id and self.sale_type == self.SaleType.WHOLESALE and self.cash_received_amount is not None:
             return max(self.total_amount - self.cash_received_amount - self.debt_offset_amount, Decimal('0.00'))
         return Decimal('0.00')

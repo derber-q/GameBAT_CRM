@@ -91,11 +91,16 @@ def archive_path(job):
 
 
 def run_job(job):
+    import time
     from .configuration import columns, recovery_secrets, version_metadata,backup_root
     from .snapshot import create_bundle
     from .client_apps import artifact_root
     require_live_operation('backup_snapshot')
     from .window import publish, marker_path
+    started=time.monotonic();phase_times=[]
+    def report_phase(value):
+        phase_times.append({'phase':value,'elapsed_seconds':round(time.monotonic()-started,3)})
+        publish(job.pk,value)
     try:
         config = BackupConfiguration.objects.get(pk=1)
         if not config.enabled or not config.recovery_key_saved:
@@ -111,7 +116,7 @@ def run_job(job):
             secrets_loader=recovery_secrets, metadata=meta, public_key=config.public_key.encode(),
             destination=archive_path(job), file_columns=files, encrypted_columns=encrypted,
             window_seconds=min(15, getattr(settings, 'CRM_BACKUP_WINDOW_SECONDS', 15)),
-            phase=lambda value: publish(job.pk, value),extra_roots={'client_applications':artifact_root()})
+            phase=report_phase,extra_roots={'client_applications':artifact_root()})
         job.state, job.active_slot = 'ready', None
         job.sha256, job.size, job.key_id = result['sha256'], result['size'], result['key_id']
         job.metadata = {**meta, 'snapshot_at': result['snapshot_at'], 'format': 1,
@@ -122,6 +127,8 @@ def run_job(job):
         # Только категория; пути, содержимое БД и ключи не попадают в журнал.
         job.state, job.active_slot = 'error', None
         job.error = type(exc).__name__[:80]
+        job.metadata={**job.metadata,'phases':phase_times,'elapsed_seconds':round(time.monotonic()-started,3)}
+        if isinstance(exc,TimeoutError):job.metadata['timeout_stage']=phase_times[-1]['phase'] if phase_times else 'prepare'
     finally:
         marker_path().unlink(missing_ok=True)
     job.finished_at = timezone.now()

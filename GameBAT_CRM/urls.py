@@ -29,6 +29,8 @@ def crm_entry(request):
 
 
 urlpatterns = [
+    path('crm/price/telegram/', include('wholesale_bot.urls')),
+    path('crm/digital/', include('digital_sales.urls')),
     path('crm/backups/', include('crm_backups.urls')),
     path('crm/integrations/telegram/', include('telegram_bots.urls')),
     path('crm/print-agent/', include('sales.print_agent_urls')),

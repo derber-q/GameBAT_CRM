@@ -359,7 +359,7 @@ class ConsignmentServiceTests(TestCase):
             "q": "CD-1", "warehouse": self.warehouse.pk, "context": "consignment",
         }).status_code, 403)
 
-    def test_list_groups_cd_by_platform_and_tech_by_product_type(self):
+    def test_list_groups_follow_wholesale_price_order(self):
         second_platform = Platform.objects.create(name="PS4")
         second_cd = CD.objects.create(
             platform=second_platform, name="Другая игра", sku="CD-2", barcode="002", cost=1000,
@@ -391,12 +391,29 @@ class ConsignmentServiceTests(TestCase):
         presentation = response.context["platforms"][0]
         self.assertEqual([group.name for group, _ in presentation["cd_groups"]], ["PS4", "PS5"])
         self.assertEqual(
-            [group.name for group, _ in presentation["tech_groups"]], ["Геймпад", "Консоль"],
+            [group.name for group, _ in presentation["tech_groups"]], ["Sony · Консоль", "Sony · Геймпад"],
         )
         self.assertContains(response, f'aria-controls="consignment-platform-{self.sales_platform.pk}"')
         self.assertContains(response, f'id="consignment-{self.sales_platform.pk}-cd-{self.product.platform_id}"')
-        self.assertContains(response, f'id="consignment-{self.sales_platform.pk}-tech-{self.tech.product_type_id}"')
+        self.assertContains(response, f'id="consignment-{self.sales_platform.pk}-tech-price-0"')
+        html = response.content.decode()
+        self.assertLess(html.index('<h3>Техника</h3>'), html.index('<h3>Диски</h3>'))
         self.assertNotContains(response, "<th>Тип</th>", html=True)
+
+    def test_switch_two_precedes_switch_one_and_distinct_lots_remain(self):
+        from .views import _group_stocks
+        stocks = []
+        for generation in (1, 2):
+            product = CD.objects.create(platform=Platform.objects.create(name=f'Nintendo Switch {generation}'),
+                name=f'Игра Switch {generation}', sku=f'NS-ORDER-{generation}', cost=100)
+            for amount in (200, 250):
+                stocks.append(CDConsignmentStock.objects.create(platform=self.sales_platform,
+                    warehouse=self.warehouse, cd=product, quantity=1, receivable_per_unit=amount))
+        groups = _group_stocks(stocks, product_kind='cd', user=self.user)
+        self.assertEqual([group.name for group, _ in groups], ['Nintendo Switch 2', 'Nintendo Switch 1'])
+        rows = [row for _, entries in groups for row in entries]
+        self.assertEqual(len(rows), 4)
+        self.assertEqual({row['stock_id'] for row in rows}, {stock.pk for stock in stocks})
 
     def test_platform_page_only_contains_selected_platform_data(self):
         other = SalesPlatform.objects.create(

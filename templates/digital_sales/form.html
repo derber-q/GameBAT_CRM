@@ -1,0 +1,9 @@
+{% extends 'digital_sales/base.html' %}
+{% block title %}{{ title }} · ReSOURCE{% endblock %}
+{% block content %}
+<div class="page-heading"><h1>{{ title }}</h1><a class="button button-secondary" href="{% url 'digital_sales:dashboard' %}">К балансам</a></div>
+{% if notice %}<p class="panel">{{ notice }}</p>{% endif %}
+<form method="post" class="panel form-panel stacked-form">{% csrf_token %}{{ form.non_field_errors }}
+{% for field in form %}{% if field.is_hidden %}{{ field }}{% else %}<div class="field"><label for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{{ field.errors }}{% if field.help_text %}<small>{{ field.help_text }}</small>{% endif %}</div>{% endif %}{% endfor %}
+<button class="button" type="submit">Сохранить</button></form>
+{% endblock %}

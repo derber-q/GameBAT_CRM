@@ -294,7 +294,9 @@ def supply_detail(request, pk):
     )
     full_supplier_access = request.user.is_superuser or request.user.has_perm("partners.view_supplier_details")
     from orders.arrival_models import TripArrival
-    trip_arrival = TripArrival.objects.filter(trip__trip_orders__operations__supply=supply).first()
+    from orders.models import TripOrderOperation
+    trip_operation = TripOrderOperation.objects.filter(supply=supply).first()
+    trip_arrival = TripArrival.objects.filter(pk=trip_operation.calculation.get('arrival_id')).first() if trip_operation else None
     rows = []
     for item in supply.cd_items.all():
         rows.append({

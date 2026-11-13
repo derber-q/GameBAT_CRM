@@ -19,6 +19,7 @@
   };
   const debtLabel = value => value.startsWith('-') ? `GameBAT должен партнёру ${format(value.slice(1))}` : `партнёр должен GameBAT ${format(value)}`;
   async function confirmSettlement({partnerId, saleId, total, received, creationKey, note, csrf, paymentMethod}) {
+    if (paymentMethod === 'prepayment_account') return {token: '', note: null};
     if (['cash', 'cash_postpay'].includes(paymentMethod) && cents(received) === 0n) return {token: '', note: null};
     if (!partnerId || received === '' || cents(received) === cents(total)) return {token: '', note: null};
     const data = new FormData();
@@ -33,7 +34,7 @@
     for (const [label, text] of [['Стоимость товаров', format(value.total)], ['Получено денег', format(value.received)],
       ['Погашение долга партнёра', format(value.repayment)], ['Взаимозачёт долга GameBAT', format(value.offset)],
       ['Начислено в долг партнёру', format(value.charge || '0.00')],
-      ['Обычная переплата', format(value.overpayment)], ['Долг до расчёта', debtLabel(value.debt_before)],
+      ['Аванс на счёт партнёра', format(value.advance || '0.00')], ['Долг до расчёта', debtLabel(value.debt_before)],
       ['Долг после расчёта', debtLabel(value.debt_after)]]) {
       const title = document.createElement('dt'), amount = document.createElement('dd');
       title.textContent = label; amount.textContent = text; summary.append(title, amount);
@@ -56,6 +57,19 @@
   window.GameBAT = {...window.GameBAT, confirmPartnerSettlement: confirmSettlement};
   document.querySelectorAll('[data-partner-payment-form]').forEach(form => {
     let approved = false, busy = false;
+    const prepaymentChoice = form.querySelector('[data-prepayment-choice]');
+    if (prepaymentChoice) {
+      const receivedInput = form.querySelector('[name="cash_received_amount"]');
+      const updatePrepayment = () => {
+        if (!receivedInput) return;
+        const prepayment = prepaymentChoice.value === 'prepayment_account';
+        receivedInput.disabled = prepayment;
+        const field = receivedInput.closest('.field');
+        if (field) field.hidden = prepayment;
+      };
+      prepaymentChoice.addEventListener('change', updatePrepayment);
+      updatePrepayment();
+    }
     const paymentPartner = form.querySelector('[data-settlement-partner]');
     if (paymentPartner) {
       const receivedInput = form.querySelector('[name="cash_received_amount"]');

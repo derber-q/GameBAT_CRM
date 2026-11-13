@@ -50,7 +50,8 @@ class SupervisorTests(TestCase):
         row = self.adapter.rows[-1]
         WorkerProcess.objects.update_or_create(instance=instance, defaults={
             'pid': row['pid'], 'birth': row['birth'], 'services': [code],
-            'heartbeat_at': self.now + timedelta(seconds=seconds), 'ready': True})
+            'heartbeat_at': self.now + timedelta(seconds=seconds), 'ready': True,
+            'progress_at': self.now + timedelta(seconds=seconds), 'verified_at': self.now + timedelta(seconds=seconds)})
 
     def test_launch_is_not_success_until_stable_heartbeat(self):
         service = self.tick()
@@ -91,6 +92,32 @@ class SupervisorTests(TestCase):
         self.heartbeat(1)
         self.assertEqual(self.tick(200).status, 'unknown')
         self.assertEqual(len(self.adapter.launches), 1)
+
+    def test_live_heartbeat_with_stalled_main_loop_requests_stop_once_without_duplicate(self):
+        from unittest.mock import Mock
+        self.tick()
+        self.heartbeat(1)
+        process = WorkerProcess.objects.get(instance=self.adapter.launches[-1][1])
+        process.heartbeat_at = self.now + timedelta(seconds=1000)
+        process.save(update_fields=['heartbeat_at'])
+        self.adapter.stop_verified = Mock(return_value=True)
+        self.assertEqual(self.tick(1000).status, 'degraded')
+        self.tick(1001)
+        self.adapter.stop_verified.assert_called_once_with(self.adapter.rows[0])
+        self.assertEqual(len(self.adapter.launches), 1)
+
+    def test_snapshot_accepts_heartbeat_written_during_its_reads(self):
+        self.tick()
+        self.heartbeat(1)
+        self.tick(1)
+        self.heartbeat(62)
+        self.tick(62)
+        end = self.now + timedelta(seconds=63)
+        times = iter([self.now + timedelta(seconds=61), end])
+        with patch('integrations.worker_monitoring.timezone.now', side_effect=lambda: next(times, end)):
+            data = monitoring_snapshot(include_queues=False)
+        self.assertTrue(data['controller_ok'])
+        self.assertEqual(next(row for row in data['services'] if row['code']=='avito')['status'], 'running')
 
     def test_reused_pid_does_not_accept_old_heartbeat(self):
         instance = uuid.uuid4()
@@ -181,7 +208,7 @@ class SupervisorTests(TestCase):
             for code, instance in self.adapter.launches:
                 row = next(row for row in self.adapter.rows if row['instance'] == str(instance))
                 WorkerProcess.objects.create(instance=instance, pid=row['pid'], birth=row['birth'],
-                    services=[code], ready=True, heartbeat_at=self.now)
+                    services=[code], ready=True, heartbeat_at=self.now, progress_at=self.now, verified_at=self.now)
             self.tick(1)
             self.tick(62)
             self.assertEqual(WorkerService.objects.filter(status='running').count(), 4)
@@ -216,7 +243,8 @@ class SupervisorTests(TestCase):
         row = self.adapter.rows[-1]
         row['instance'], row['birth'] = str(replacement), 'replacement'
         WorkerProcess.objects.create(instance=replacement, pid=row['pid'], birth=row['birth'],
-            services=[code], ready=True, heartbeat_at=self.now + timedelta(seconds=62))
+            services=[code], ready=True, heartbeat_at=self.now + timedelta(seconds=62),
+            progress_at=self.now + timedelta(seconds=62), verified_at=self.now + timedelta(seconds=62))
         service = self.tick(62)
         self.assertEqual(service.status, 'recovering')
         self.assertEqual(service.stable_instance, replacement)
@@ -242,7 +270,8 @@ class SupervisorTests(TestCase):
         instance = uuid.uuid4()
         self.adapter.rows = [{'pid': 99, 'birth': 'live', 'instance': str(instance), 'services': ['avito']}]
         WorkerProcess.objects.create(instance=instance, pid=99, birth='live', services=['avito'],
-            ready=True, heartbeat_at=self.now + timedelta(seconds=1))
+            ready=True, heartbeat_at=self.now + timedelta(seconds=1),
+            progress_at=self.now + timedelta(seconds=1), verified_at=self.now + timedelta(seconds=1))
         WorkerService.objects.create(code='avito', expected='required', status='recovering',
             launch_instance=instance, launch_started_at=self.now - timedelta(seconds=75),
             stable_instance=instance, stable_since=self.now - timedelta(seconds=70))
@@ -385,6 +414,20 @@ class WorkerLockTests(SimpleTestCase):
 
 
 class WorkerPolicyTests(TestCase):
+    def test_new_boot_resets_only_required_technical_pauses(self):
+        from contextlib import nullcontext
+        from django.core.management import call_command
+        WorkerService.objects.create(code='avito', failures=3, auto_paused=True, status='paused')
+        WorkerService.objects.create(code='print', failures=3, auto_paused=True, status='paused')
+        with patch('integrations.management.commands.configure_worker_monitoring.expected_services',
+                   return_value={'avito':'required', 'print':'disabled'}), patch(
+                   'integrations.management.commands.configure_worker_monitoring.process_lock', return_value=nullcontext()):
+            call_command('configure_worker_monitoring', new_boot=True)
+        active = WorkerService.objects.get(pk='avito')
+        disabled = WorkerService.objects.get(pk='print')
+        self.assertEqual((active.failures, active.auto_paused, active.status), (0, False, 'stopped'))
+        self.assertEqual((disabled.failures, disabled.auto_paused), (3, True))
+
     def test_avito_requires_previous_confirmation_but_api_error_does_not_disable_it(self):
         from integrations.models import IntegrationCredential
         from integrations.worker_policy import expected_services

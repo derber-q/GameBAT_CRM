@@ -11,6 +11,12 @@
 
 ## Основные тематические контракты
 
+- [Меню CRM-бота и безопасные чеки цифровым покупателям](telegram_customer_receipts.md).
+
+- [Готовность контейнера, подтверждение работы ботов и обработчиков](container_worker_readiness.md).
+
+- Партнёры: [отдельная предоплата, перенос долга и оплата продаж](partner_prepayment.md).
+
 - Local Agent: [инструкция](local_agent.md), [контракт](local_agent_design.md), [проверки 03.11.2026](local_agent_report_20261103.md).
 
 - Telegram сотрудников: [права, привязки, Excel и worker](telegram_staff_bot.md), [согласованная установка](telegram_staff_bot_installation.md).
@@ -20,6 +26,7 @@
 
 - Рейсы: [пустой рейс](empty_trips.md), [изменения количества](trip_quantity_reductions.md), [AED-цена](trip_supplier_prices.md), [дополнительные партии](crm_complex_20261025.md), [действующее прибытие/финализация](trip_arrival_costs.md).
 - Закупки: [выбор поставщика](procurement_supplier_selection.md), [группировка Excel](procurement_excel_grouping.md), [постоплата](procurement_postpayment.md), [закупка на склад](stock_procurement_orders.md).
+- Импортные заказы: [изменение состава, дополнение отдельного заказа и удаление без рейса](order_composition.md).
 - Приход/продажа: [ожидающий приход](pending_supply_edit.md), [оплата](sale_payments.md), [системные позиции](system_operations.md), [накладная](sale_invoice_excel.md), [партнёры/долги](partners.md).
 - Реализация: [партийные действия](consignment_row_actions.md), [Excel-отчёт](consignment_excel.md).
 - Интеграции: [Avito Check](avito_check.md), [отчёт CD/Tech и РФ/Ростов](avito_scopes_report_20261103.md), [необходимые действия](avito_required_actions.md), [Яндекс FBS](yandex_market.md), [FBS-формула](fbs_pricing.md), [сборка/печать](market_scan_fulfillment.md), [внимание сотрудника](market_staff_alerts.md).
@@ -31,3 +38,11 @@
 `verification.md`, `trip_arrival_report_20261026.md`, `yandex_market_report.md`, датированные итоги внутри остальных документов фиксируют результат своей проверки. Это не утверждение об актуальном полном suite.
 
 `trip_order_operations.md` описывает ранний сценарий отдельных операций; при конфликте с ним действует `trip_arrival_costs.md` и текущий код. Старые `CHECKPOINT_*.md` и завершённый `tasks/plan.md` удалены как устаревшие инструкции отката; миграции и полезные описания правил сохранены.
+## Цифровые продажи
+
+- [Архитектура и этапы](digital_sales.md).
+- [Установка, права, Telegram и работа сотрудников](digital_sales_installation.md).
+- [Отчёт реализации и результаты тестов](digital_sales_report_20261106.md).
+# Оптовый Telegram-бот покупателей
+
+[Авторизация, именные прайсы, оформление Sale, ограничения и установка](wholesale_telegram_bot.md).

@@ -228,6 +228,6 @@ class SalesCreateBarcodeUiTests(TestCase):
         self.assertContains(response, "Добавить по штрихкоду")
         self.assertContains(response, 'id="sale-barcode-input"')
         self.assertContains(response, "data-sale-barcode-add")
-        self.assertContains(response, "stock-lines.js?v=20261031-1")
+        self.assertContains(response, "stock-lines.js?v=20261112-3")
         self.assertContains(response, "app.js?v=20261031-1")
         self.assertContains(response, "gamebat.css?v=20261031-1")

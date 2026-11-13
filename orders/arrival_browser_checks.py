@@ -58,6 +58,7 @@ class ArrivalBrowserChecks(ArrivalFixture, StaticLiveServerTestCase):
                 page.get_by_role('button',name='Продолжить к приходу',exact=True).click()
             page.wait_for_url('**/supplies/new/?trip_draft=*')
             expect(page.locator('#supply-lines [name="purchase_unit_cost"]')).to_have_value('2526.01')
+            expect(page.locator('#supply-lines [data-supply-game-codes]').first).to_have_text('CUSA / PPSA: PPSA-00001')
             expect(page.locator('.supply-weight-prompt:visible')).to_have_count(0)
             page.get_by_role('button',name='Сохранить сверку рейса',exact=True).click()
             page.wait_for_url('**/supplies/*/')

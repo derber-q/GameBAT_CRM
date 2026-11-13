@@ -25,6 +25,8 @@ class ArrivalLayoutBrowserChecks(ArrivalFinalizationFixture, StaticLiveServerTes
             context.add_cookies([{'name':settings.SESSION_COOKIE_NAME,
                 'value':self.client.cookies[settings.SESSION_COOKIE_NAME].value,'url':self.live_server_url}])
             context.route('**/crm/api/exchange-rates/',lambda route:route.fulfill(json={'rates':{},'available':False}))
+            context.route('**/crm/integrations/avito/actions/count/',lambda route:route.fulfill(json={'count':0,'actions':[]}))
+            context.route('**/crm/integrations/yandex/notifications/',lambda route:route.fulfill(json={'orders':[],'count':0}))
             page=context.new_page(); errors=[]
             page.on('pageerror',lambda error:errors.append(str(error)))
             page.goto(self.live_server_url+reverse('orders:arrival_finalization',args=[self.trip.pk]))
@@ -41,6 +43,8 @@ class ArrivalLayoutBrowserChecks(ArrivalFinalizationFixture, StaticLiveServerTes
             rows.first.locator('[name="corrected_cost"]').fill('2516.01')
             page.get_by_role('button',name='Выбрать все CD',exact=True).click()
             page.get_by_role('button',name='Распределить текущую неустойку',exact=True).click()
+            page.wait_for_function("!document.querySelector('[data-auto-distribute]').disabled")
+            self.assertEqual(page.locator('[data-finalization-error]').inner_text(),'')
             expect(rows.last.locator('[name="corrected_cost"]')).to_have_value('2456.01')
             expect(page.locator('[data-trip-price-key]')).to_have_count(0)
             page.set_viewport_size({'width':390,'height':844})
@@ -51,9 +55,16 @@ class ArrivalLayoutBrowserChecks(ArrivalFinalizationFixture, StaticLiveServerTes
             page.wait_for_url(self.live_server_url+reverse('orders:trip_detail',args=[self.trip.pk]))
             from supplies.models import Supply
             supply=Supply.objects.get()
-            page.goto(self.live_server_url+reverse('supplies:detail',args=[supply.pk]))
+            response=page.goto(self.live_server_url+reverse('supplies:detail',args=[supply.pk]))
+            self.assertEqual(response.status,200,page.locator('body').inner_text())
+            (output/'supply-before-price-review.html').write_text(page.content(),encoding='utf-8')
+            self.assertEqual(page.get_by_role('button',name='Проверить цены и принять приход',exact=True).count(),1,
+                page.locator('body').inner_text())
             page.get_by_role('button',name='Проверить цены и принять приход',exact=True).click()
-            page.wait_for_url(self.live_server_url+reverse('supplies:price_review',args=[supply.pk]))
+            page.wait_for_load_state('domcontentloaded')
+            if page.url != self.live_server_url+reverse('supplies:price_review',args=[supply.pk]):
+                (output/'price-review-unexpected.html').write_text(page.content(),encoding='utf-8')
+            self.assertEqual(page.url,self.live_server_url+reverse('supplies:price_review',args=[supply.pk]))
             supply.refresh_from_db();self.stock.refresh_from_db()
             self.assertEqual(supply.status,Supply.Status.PRICE_REVIEW_REQUIRED)
             self.assertEqual(self.stock.quantity,5)

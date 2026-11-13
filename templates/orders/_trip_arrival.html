@@ -7,7 +7,7 @@
     {% if not arrival.finalized %}<p class="help-text">Суммы предварительные. Сверка фактических количеств перераспределяет всю доставку. Цены покупателей сохраняются.</p>
       {% if arrival_readiness.errors %}<ul>{% for error in arrival_readiness.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
       {% if arrival_readiness.ready and arrival_can_finalize %}<a class="button" href="{% url 'orders:arrival_finalization' batch.pk %}">Итоговая финализация рейса</a>{% endif %}
-      {% if arrival_can_unset and arrival_can_manage %}<form method="post" action="{% url 'orders:trip_arrival' batch.pk %}">{% csrf_token %}<input type="hidden" name="revision" value="{{ arrival.revision }}"><button class="button button-secondary" name="action" value="unset">Снять отметку «Рейс приехал»</button></form>{% endif %}
+      {% if arrival_can_unset and arrival_can_manage %}<form method="post" action="{% url 'orders:trip_arrival' batch.pk %}">{% csrf_token %}<input type="hidden" name="arrival_id" value="{{ arrival.pk }}"><input type="hidden" name="revision" value="{{ arrival.revision }}"><button class="button button-secondary" name="action" value="unset">Отменить фактическое прибытие</button></form>{% elif arrival_can_manage and arrival_unset_block_reason %}<p class="muted">{{ arrival_unset_block_reason }}</p>{% endif %}
     {% else %}<p class="help-text">Итоговые затраты зафиксированы. Продажи и приходы завершайте отдельно. Финализация не создаёт складских или денежных движений.</p>{% endif %}
   {% elif arrival_can_manage %}
     <p class="help-text">Укажите одну общую фактическую доставку и курсы рейса. Закупка RUB = AED ÷ USDT/AED × USDT/RUB. Доставка распределяется по сохранённым предварительным тарифам.</p>

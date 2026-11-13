@@ -7,6 +7,7 @@ import os
 from pathlib import Path, PurePosixPath
 import shutil
 import sqlite3
+import stat
 import tempfile
 import time
 import uuid
@@ -36,17 +37,33 @@ def inventory(root, check):
     result = {}
     if root.is_symlink() or root.is_junction() or not root.is_dir():
         raise ValueError('Каталог файлов отсутствует или является ссылкой.')
-    for path in root.rglob('*'):
-        check()
-        if path.is_symlink() or path.is_junction() or not path.resolve().is_relative_to(root.resolve()):
-            raise ValueError('Ссылки в полном снимке запрещены.')
-        if path.is_file():
-            if path.stat().st_nlink != 1:
-                raise ValueError('Жёсткие ссылки в снимке запрещены.')
-            name = path.relative_to(root).as_posix()
-            safe_name(name)
-            result[name] = {'size': path.stat().st_size, 'sha256': digest(path, check)}
+    for path,info in _walk_files(root,check):
+        name = path.relative_to(root).as_posix()
+        safe_name(name)
+        result[name] = {'size': info.st_size, 'sha256': digest(path, check)}
     return result
+
+
+def _walk_files(root,check):
+    """Обход от проверенного корня без следования по ссылкам и повторных stat."""
+    root=Path(root)
+    if root.resolve()!=root.absolute() or not root.is_dir() or root.is_symlink() or root.is_junction():
+        raise ValueError('Небезопасный каталог снимка.')
+    directories=[root]
+    while directories:
+        check()
+        directory=directories.pop()
+        with os.scandir(directory) as entries:
+            for entry in entries:
+                check()
+                info=entry.stat(follow_symlinks=False)
+                if stat.S_ISLNK(info.st_mode) or (os.name=='nt' and Path(entry.path).is_junction()):
+                    raise ValueError('Ссылка в файлах снимка.')
+                if stat.S_ISDIR(info.st_mode):
+                    directories.append(Path(entry.path))
+                elif stat.S_ISREG(info.st_mode):
+                    if info.st_nlink!=1:raise ValueError('Жёсткая ссылка в файлах снимка.')
+                    yield Path(entry.path),info
 
 
 def copy_file(source, target, check):
@@ -66,14 +83,9 @@ def file_stamps(root,check=lambda:None):
     """
     root=Path(root);result={}
     if root.resolve()!=root.absolute() or not root.is_dir():raise ValueError('Небезопасный каталог снимка.')
-    for path in root.rglob('*'):
-        check()
-        if path.is_symlink() or path.is_junction():raise ValueError('Ссылка в файлах снимка.')
-        if path.is_file():
-            stat=path.stat()
-            if stat.st_nlink!=1:raise ValueError('Жёсткая ссылка в файлах снимка.')
-            name=path.relative_to(root).as_posix();safe_name(name)
-            result[name]=(stat.st_dev,stat.st_ino,stat.st_size,stat.st_mtime_ns,stat.st_ctime_ns)
+    for path,info in _walk_files(root,check):
+        name=path.relative_to(root).as_posix();safe_name(name)
+        result[name]=(info.st_dev,info.st_ino,info.st_size,info.st_mtime_ns,info.st_ctime_ns)
     return result
 
 
@@ -168,6 +180,10 @@ def create_bundle(*, database, media, secrets_loader, metadata, public_key, dest
                 if any(stamps[key]!=file_stamps(root,check) for key,root in roots.items()):
                     raise ValueError('Набор файлов изменился перед снимком БД.')
                 with closing(sqlite3.connect(database.resolve().as_uri() + '?mode=ro', uri=True)) as reader, closing(sqlite3.connect(snapshot)) as output:
+                    # Только читающее соединение SQLite: mmap убирает десятки тысяч
+                    # отдельных чтений страниц через Docker/Windows. Сам снимок
+                    # по-прежнему создаёт Online Backup API под guard-транзакцией.
+                    if os.name=='posix':reader.execute('PRAGMA mmap_size=268435456')
                     reader.backup(output, pages=256, progress=lambda *_: check(), sleep=0.01)
                 snapshot.chmod(0o600)
                 with closing(sqlite3.connect(snapshot)) as captured:

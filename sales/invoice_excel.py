@@ -20,6 +20,35 @@ HEADER_FILL = "EAF2F8"
 TOTAL_FILL = "F3F6F9"
 
 
+def sale_invoice_document(sale):
+    """Общий read-only вход веба и Telegram: прежние строки, оформление и имя файла."""
+    from .models import Sale
+    from partners.customers import customer_filename
+    mirror = sale.sale_type == Sale.SaleType.CONSIGNMENT and bool(sale.consignment_items.all())
+    rows = [
+        {"kind": "CD", "name": item.product_name_snapshot, "article": item.article_snapshot,
+         "quantity": item.quantity, "unit_price": item.effective_unit_price, "line_total": item.line_total}
+        for item in sale.cd_items.all() if not mirror
+    ] + [
+        {"kind": "Tech", "name": item.product_name_snapshot, "article": item.article_snapshot,
+         "quantity": item.quantity, "unit_price": item.effective_unit_price, "line_total": item.line_total}
+        for item in sale.tech_items.all() if not mirror
+    ] + [
+        {"kind": item.product_name_snapshot if item.system_product_id else "Произвольная позиция",
+         "name": item.product_name_snapshot, "article": "—", "quantity": item.quantity,
+         "unit_price": item.effective_unit_price, "line_total": item.line_total}
+        for item in sale.custom_items.all()
+    ] + [
+        {"kind": f"Реализация · {item.platform_name_snapshot}", "name": item.product_name_snapshot,
+         "article": item.article_snapshot or "—", "quantity": item.quantity,
+         "unit_price": item.unit_price, "line_total": item.line_total}
+        for item in sale.consignment_items.all()
+    ]
+    name = "".join(char if char.isalnum() or char in "-_." else "_" for char in sale.visible_id)
+    suffix = f'_{customer_filename(sale.partner_name_snapshot)}' if sale.partner_name_snapshot else ''
+    return f"nakladnaya_{name}{suffix}.xlsx", render_sale_invoice_xlsx(sale=sale, rows=rows)
+
+
 def _text(cell, value):
     # Строковый тип сохраняет буквально и названия, начинающиеся со знака «=».
     cell.value = ILLEGAL_CHARACTERS_RE.sub("", str(value or ""))
@@ -76,7 +105,7 @@ def render_sale_invoice_xlsx(*, sale, rows):
                                              bold=True, padding=4, minimum=25.5)
     sheet.merge_cells("A2:G2")
     date = timezone.localtime(sale.created_at).strftime("%d.%m.%Y %H:%M")
-    _text(sheet["A2"], f"Дата: {date} · Склад: {sale.warehouse.name}")
+    _text(sheet["A2"], f"Дата: {date} · Склад: {sale.warehouse.name if sale.warehouse_id else 'Без склада'}")
     sheet["A2"].font = Font(name="Arial", size=12, color=MUTED)
     sheet["A2"].alignment = Alignment(vertical="top", wrap_text=True)
     sheet.row_dimensions[2].height = _height(sheet["A2"].value, merged_width, padding=0, minimum=16)

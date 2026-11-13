@@ -43,7 +43,7 @@ def document_waits_finalization(document):
         return False
     key = 'sale' if document._meta.label_lower == 'sales.sale' else 'supply'
     operation = TripOrderOperation.objects.filter(**{key: document}, active=True).first()
-    return bool(operation and TripArrival.objects.filter(trip__trip_orders=operation.order,
+    return bool(operation and TripArrival.current.filter(trip__trip_orders=operation.order,
             arrived_at__isnull=False, finalized_at__isnull=True).exists())
 
 
@@ -68,6 +68,8 @@ def lock_arrival(arrival_id, expected_revision=None, *, finalized_allowed=False)
     trip_id = TripArrival.objects.values_list('trip_id', flat=True).get(pk=arrival_id)
     SupplierOrderBatch.objects.select_for_update().get(pk=trip_id)
     arrival = TripArrival.objects.select_for_update().get(pk=arrival_id)
+    if arrival.cancelled_at:
+        raise ValidationError('Это прибытие отменено. Обновите страницу рейса и откройте новую форму.')
     if not arrival.arrived:
         raise ValidationError('Сначала подтвердите «Рейс приехал».')
     if arrival.finalized and not finalized_allowed:
@@ -117,7 +119,7 @@ def confirm_arrival(*, actor, batch_id, expected_revision, **parameters):
     """Фиксирует единые USDT-курсы, D и первоначальные источники рейса. После первой операции основания прибытия нельзя незаметно заменить."""
     trip = SupplierOrderBatch.objects.select_for_update().get(pk=batch_id)
     _revision(trip.revision, expected_revision)
-    existing = TripArrival.objects.select_for_update().filter(trip=trip).first()
+    existing = TripArrival.current.select_for_update().filter(trip=trip).first()
     if existing and existing.arrived:
         raise ValidationError('Прибытие рейса уже зафиксировано.')
     preview = arrival_preview(actor=actor, batch_id=batch_id, **parameters)
@@ -154,13 +156,30 @@ def confirm_arrival(*, actor, batch_id, expected_revision, **parameters):
 def unconfirm_arrival(*, actor, arrival_id, expected_revision):
     require_arrival_permissions(actor)
     arrival = lock_arrival(arrival_id, expected_revision)
-    if TripOrderOperation.objects.filter(order__trip_id=arrival.trip_id,calculation__arrival_id=arrival.pk).exists():
-        raise ValidationError('После создания первой продажи или прихода нельзя снять прибытие рейса.')
-    arrival.arrived_at = None
+    reason = unconfirm_block_reason(arrival)
+    if reason:
+        raise ValidationError(reason)
+    # Исходные строки нужны отменённым документам. Новое прибытие получит другой ID.
+    arrival.cancelled_at = timezone.now()
+    arrival.cancelled_by = actor
     arrival.revision += 1
-    arrival.save(update_fields=['arrived_at', 'revision'])
+    arrival.save(update_fields=['cancelled_at', 'cancelled_by', 'revision'])
     _record_trip_change(arrival.trip, actor, 'Снята отметка фактического прибытия', {'arrival_id': arrival.pk})
     return arrival
+
+
+def unconfirm_block_reason(arrival):
+    """Открываем состав только после штатной отмены всех документов до финализации."""
+    if arrival.finalized:
+        return 'Прибытие финализированного рейса отменить нельзя.'
+    if TripOrderOperation.objects.filter(order__trip_id=arrival.trip_id, active=True).exists():
+        return 'Чтобы снять прибытие, сначала отмените все созданные из этого рейса продажи и приходы.'
+    operations = TripOrderOperation.objects.filter(calculation__arrival_id=arrival.pk).select_related('sale','supply')
+    for operation in operations:
+        if (operation.active or (operation.sale_id and not operation.sale.is_cancelled)
+                or (operation.supply_id and not operation.supply.is_cancelled)):
+            return 'Чтобы снять прибытие, сначала отмените все созданные из этого рейса продажи и приходы.'
+    return ''
 
 
 def recalculate_arrival(arrival, *, actor=None):

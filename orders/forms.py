@@ -12,9 +12,9 @@ class ProcurementOrderUploadForm(CustomerSelectionForm):
     recipient = forms.CharField(label="Получатель / название закупки", max_length=255, required=False,
                                help_text="Для клиентского заказа обязателен; для закупки на наличие можно оставить пустым.")
     comment = forms.CharField(label="Комментарий", required=False, widget=forms.Textarea(attrs={"rows": 3}))
-    cd_file = forms.FileField(label="Заполненный прайс дисков .xlsx", required=False)
-    tech_file = forms.FileField(label="Заполненный прайс техники .xlsx", required=False)
-    stock_file = forms.FileField(label="Прайс для заказа на склад .xlsx", required=False)
+    cd_file = forms.FileField(label="Заполненный прайс дисков .xls или .xlsx", required=False)
+    tech_file = forms.FileField(label="Заполненный прайс техники .xls или .xlsx", required=False)
+    stock_file = forms.FileField(label="Прайс для заказа на склад .xls или .xlsx", required=False)
 
     def clean(self):
         data = super().clean()

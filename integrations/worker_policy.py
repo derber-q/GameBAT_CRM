@@ -17,6 +17,12 @@ def expected_services():
     result = dict.fromkeys(SERVICES, 'unconfigured')
     from telegram_bots.configuration import expected_status
     result['telegram_staff'] = expected_status()
+    from digital_sales.configuration import expected_status as digital_status
+    result['telegram_digital'] = digital_status()
+    from wholesale_bot.configuration import expected_status as wholesale_status
+    result['telegram_opt'] = wholesale_status()
+    from digital_prices.services import expected_status as prices_status
+    result['digital_prices'] = prices_status()
     avito = IntegrationCredential.objects.filter(provider='avito').first()
     if avito and avito.is_configured and avito.last_success_at:
         result['avito'] = 'required'

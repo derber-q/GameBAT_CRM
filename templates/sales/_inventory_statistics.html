@@ -1,0 +1,31 @@
+<section class="panel stats-section inventory-statistics" id="inventory-statistics">
+  <div class="section-heading">
+    <div><h2>Стоимость товаров на складах</h2><p class="muted">По текущей средней себестоимости на {{ inventory.as_of|date:"d.m.Y H:i" }}. Только физические остатки; товары на реализации и в пути не включены. Фильтры продаж на этот блок не влияют.</p></div>
+  </div>
+  <div class="table-scroll"><table>
+    <thead><tr><th>Склад</th><th class="numeric">Единиц</th><th class="numeric">Диски, ₽</th><th class="numeric">Техника, ₽</th><th class="numeric">Всего, ₽</th><th>Подробности</th></tr></thead>
+    <tbody>
+      {% for warehouse in inventory.warehouses %}
+        <tr><td><strong>{{ warehouse.name }}</strong></td><td class="numeric">{{ warehouse.units }}</td><td class="numeric">{{ warehouse.cd_cost|floatformat:2 }}</td><td class="numeric">{{ warehouse.tech_cost|floatformat:2 }}</td><td class="numeric strong">{{ warehouse.total_cost|floatformat:2 }}</td><td><button type="button" class="button button-secondary button-small" data-collapse-toggle aria-expanded="false" aria-controls="inventory-warehouse-{{ warehouse.id }}">Разбивка</button></td></tr>
+      {% empty %}<tr><td colspan="6" class="empty-cell">Склады ещё не созданы.</td></tr>{% endfor %}
+    </tbody>
+    <tfoot><tr><th>Все склады</th><th class="numeric">{{ inventory.units }}</th><th class="numeric">{{ inventory.cd_cost|floatformat:2 }}</th><th class="numeric">{{ inventory.tech_cost|floatformat:2 }}</th><th class="numeric">{{ inventory.total_cost|floatformat:2 }}</th><td></td></tr></tfoot>
+  </table></div>
+  {% for warehouse in inventory.warehouses %}
+    <div id="inventory-warehouse-{{ warehouse.id }}" class="collapsible-content" hidden>
+      <h3>{{ warehouse.name }}</h3>
+      <div class="detail-grid">
+        <div><h4>Диски по платформам</h4><div class="table-scroll"><table>
+          <thead><tr><th>Платформа</th><th class="numeric">Единиц</th><th class="numeric">Стоимость, ₽</th></tr></thead>
+          <tbody>{% for row in warehouse.platforms %}<tr><td>{{ row.name }}</td><td class="numeric">{{ row.units }}</td><td class="numeric">{{ row.cost|floatformat:2 }}</td></tr>{% empty %}<tr><td colspan="3" class="empty-cell">Дисков на складе нет.</td></tr>{% endfor %}</tbody>
+          <tfoot><tr><th>Всего дисков</th><th class="numeric">{{ warehouse.cd_units }}</th><th class="numeric">{{ warehouse.cd_cost|floatformat:2 }}</th></tr></tfoot>
+        </table></div></div>
+        <div><h4>Техника по типам</h4><div class="table-scroll"><table>
+          <thead><tr><th>Тип техники</th><th class="numeric">Единиц</th><th class="numeric">Стоимость, ₽</th></tr></thead>
+          <tbody>{% for row in warehouse.product_types %}<tr><td>{{ row.name }}</td><td class="numeric">{{ row.units }}</td><td class="numeric">{{ row.cost|floatformat:2 }}</td></tr>{% empty %}<tr><td colspan="3" class="empty-cell">Техники на складе нет.</td></tr>{% endfor %}</tbody>
+          <tfoot><tr><th>Всего техники</th><th class="numeric">{{ warehouse.tech_units }}</th><th class="numeric">{{ warehouse.tech_cost|floatformat:2 }}</th></tr></tfoot>
+        </table></div></div>
+      </div>
+    </div>
+  {% endfor %}
+</section>

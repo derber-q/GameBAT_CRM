@@ -18,6 +18,7 @@ ZERO = Decimal("0.00")
 CENT = Decimal("0.01")
 PERCENT = Decimal("0.01")
 CHANNEL_LABELS = {
+    "digital": "Цифровые продажи",
     "retail": "Розница", "wholesale": "Оптовые", "avito": "Avito",
     "yandex_market": "Яндекс Маркет", "consignment": "Реализация",
     "expense": "Расходы",
