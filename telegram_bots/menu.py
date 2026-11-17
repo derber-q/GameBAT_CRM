@@ -26,7 +26,9 @@ WHOLESALE_CONTROL = BotFunction('wholesale_bot_control', 'Оптовый бот:
 DIGITAL_PRICES = BotFunction('digital_price_images', 'Прайс цифровых товаров', ('digital_prices.download_prices',))
 BUYER_BALANCE = BotFunction('digital_buyer_balance', 'Отправить баланс покупателю',
     ('digital_sales.view_digital_sales', 'digital_sales.manage_digital_buyers', 'digital_sales.telegram_digital_sales'))
-FUNCTIONS = {item.code: item for item in (WHOLESALE, SUPPLIER_TEMPLATES, DIGITAL, WHOLESALE_CONTROL, DIGITAL_PRICES, BUYER_BALANCE)}
+SUPPLIER_BALANCE = BotFunction('digital_supplier_balance', 'Баланс у поставщика',
+    ('digital_sales.view_digital_sales', 'digital_sales.view_digital_reconciliation', 'digital_sales.telegram_digital_sales'))
+FUNCTIONS = {item.code: item for item in (WHOLESALE, SUPPLIER_TEMPLATES, DIGITAL, WHOLESALE_CONTROL, DIGITAL_PRICES, BUYER_BALANCE, SUPPLIER_BALANCE)}
 
 
 def main_menu(user):

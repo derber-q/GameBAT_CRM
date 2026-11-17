@@ -8,10 +8,13 @@ import threading
 from django.conf import settings
 
 SERVICES = ('avito', 'yandex', 'google', 'print', 'telegram_staff', 'telegram_digital', 'telegram_opt', 'digital_prices')
+TELEGRAM_SERVICES = frozenset(('telegram_staff', 'telegram_digital', 'telegram_opt'))
+TELEGRAM_RETRY_SECONDS = (15, 30, 60, 120, 300)
 POLL_SECONDS = 15
 HEARTBEAT_SECONDS = 20
 STALE_SECONDS = 90
 START_SECONDS = 45
+STARTUP_GRACE_SECONDS = 180
 STABLE_SECONDS = 60
 RETRY_SECONDS = (15, 30, 60)
 MAX_FAILURES = 3

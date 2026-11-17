@@ -28,6 +28,15 @@ class CatalogState(models.Model):
     source_at = models.DateTimeField(null=True, blank=True)
 
 
+class ProviderGate(models.Model):
+    """Общее окно запросов всех процессов; ключ и ответы здесь не хранятся."""
+    id = models.PositiveSmallIntegerField(primary_key=True, default=1, editable=False)
+    revision = models.PositiveBigIntegerField(default=0)
+    requests_at = models.JSONField(default=list)
+    blocked_until = models.DateTimeField(null=True)
+    urgent_until = models.DateTimeField(null=True)
+
+
 class Product(models.Model):
     class Rule(models.TextChoices):
         PS_PLUS = 'ps_plus_subscription', 'PlayStation Plus · вверх до 50 ₽'
@@ -40,6 +49,13 @@ class Product(models.Model):
         UNKNOWN = 'unknown', 'Наличие уточняется'
 
     external_id = models.CharField(max_length=128, unique=True)
+    legacy_external_id = models.CharField(max_length=128, blank=True)
+    api_version = models.PositiveSmallIntegerField(default=0)
+    fulfillment = models.CharField(max_length=12, blank=True)
+    requirements = models.JSONField(default=dict, blank=True)
+    quantity_limits = models.JSONField(default=dict, blank=True)
+    mapping_issue = models.CharField(max_length=40, blank=True)
+    superseded_by = models.ForeignKey('self', null=True, blank=True, on_delete=models.PROTECT, related_name='legacy_cards')
     source_name = models.CharField(max_length=500)
     source_type = models.CharField(max_length=40)
     platform = models.CharField(max_length=60, blank=True)

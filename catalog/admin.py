@@ -82,7 +82,7 @@ class ProductAdminMixin:
     def get_readonly_fields(self, request, obj=None):
         readonly = ["quantity_on_consignment", "cost", "is_archived", "title_image"]
         for field, permission in field_permissions_for(self.model).items():
-            enforce_permission = field in PRICING_FIELDS or obj is not None
+            enforce_permission = field in PRICING_FIELDS or field == "hide_from_wholesale_price" or obj is not None
             if enforce_permission and not (
                 request.user.is_superuser or request.user.has_perm(permission)
             ):

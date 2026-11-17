@@ -26,7 +26,7 @@
     <dt>Начало действия</dt><dd data-field="current_started_at">{{ service.current_started_at|date:'d.m.Y H:i:s'|default:'Нет данных' }}</dd>
     <dt>Следующее действие</dt><dd data-field="next_action">{{ service.next_action }}</dd>
     <dt>Срок</dt><dd data-field="next_at">{% if service.next_at %}{{ service.next_at|date:'d.m.Y H:i:s' }}{% elif service.code == 'print' %}По поступлению{% else %}Не запланировано{% endif %}</dd>
-    <dt>Неудачные восстановления</dt><dd data-field="failures">{{ service.failures }} / 3</dd>
+    <dt>Неудачные восстановления</dt><dd data-field="failures">{{ service.failures }}{% if service.continuous_recovery %} · повторы без ограничения{% else %} / 3{% endif %}</dd>
     <dt>Автовосстановление</dt><dd data-field="paused">{% if service.paused %}Приостановлено{% else %}Разрешено для необходимых обработчиков{% endif %}</dd>
   </dl>
   <p class="error-text" data-field="error">{{ service.error }}</p><p class="muted" data-field="task_error">{{ service.task_error }}</p>

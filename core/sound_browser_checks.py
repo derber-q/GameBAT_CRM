@@ -38,10 +38,12 @@ class SoundButtonBrowserChecks(StaticLiveServerTestCase):
         expect(self.button).to_have_count(1)
         expect(page.locator('[data-market-sound-enable], [data-avito-sound-enable]')).to_have_count(0)
         expect(self.button).to_have_attribute('aria-label', 'Включить звуковые уведомления')
-        # Все разрешённые каналы получают общий усиленный ресурс с новой версией кэша.
-        expected_sound = '/static/audio/yandex-new-order.mp3?v=20261102-1'
+        # Каналы используют отдельные звуки, назначенные владельцем.
+        expected_sounds = ['/static/audio/yandex-order-applepay.mp3?v=20261116-1',
+                           '/static/audio/avito-action-notification.mp3?v=20261116-1',
+                           '/static/audio/yandex-new-order.mp3?v=20261102-1']
         self.assertEqual(page.locator('[data-sound-url]').evaluate_all(
-            'nodes => nodes.map(node => node.dataset.soundUrl)'), [expected_sound] * 3)
+            'nodes => nodes.map(node => node.dataset.soundUrl)'), expected_sounds)
         for panel in page.locator('.notification-state').all():
             self.assertEqual(panel.bounding_box()['height'], 0)
         self.button.click()
@@ -72,7 +74,7 @@ class SoundButtonBrowserChecks(StaticLiveServerTestCase):
         page.reload()
         expect(self.button).to_have_attribute('aria-pressed', 'true')
         self.assertEqual(page.locator('[data-sound-url]').evaluate_all(
-            'nodes => nodes.map(node => node.dataset.soundUrl)'), [expected_sound] * 3)
+            'nodes => nodes.map(node => node.dataset.soundUrl)'), expected_sounds)
         expect(self.button).to_be_disabled()
         self.assertEqual(page.evaluate('window.__audioEvents.length'), 0)
         page.goto(self.live_server_url + reverse('admin:index'))
@@ -97,7 +99,7 @@ class SoundButtonBrowserChecks(StaticLiveServerTestCase):
     def test_new_market_order_still_plays_automatically_after_enabling(self):
         from django.utils import timezone
         snapshot = {'count': 0, 'orders': [], 'server_now': timezone.now().isoformat(),
-            'repeat_seconds': 600, 'can_acknowledge': False}
+            'repeat_seconds': 180, 'can_acknowledge': False}
         self.context.route('**/crm/sales/market-notifications/', lambda route: route.fulfill(json=snapshot))
         self.page.evaluate('window.GameBAT.refreshMarketNotifications()')
         self.button.click()

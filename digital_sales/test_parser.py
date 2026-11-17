@@ -39,9 +39,9 @@ class ParserTests(SimpleTestCase):
         self.assertEqual(len(no_number['items']), 2)
         self.assertEqual(no_number['numbers'], ['6139'])
 
-    def test_totals_status_and_payment_are_required(self):
+    def test_matching_totals_and_completed_status_are_required(self):
         for text in [checklist(total='845'), checklist().replace('Выполнено', 'Создано'),
-                     checklist().replace('Получена', 'Ожидается'), 'Чек-лист заказа']:
+                     'Чек-лист заказа']:
             self.assertTrue(parse(text)['issues'])
 
     def test_ready_group_and_free_chat(self):

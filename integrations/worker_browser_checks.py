@@ -89,7 +89,7 @@ class WorkerBrowserChecks(StaticLiveServerTestCase):
             for page in pages:
                 page.on('pageerror', lambda error: errors.append(str(error)))
                 page.goto(self.live_server_url + reverse('integrations:workers'))
-                expect(page.locator('[data-worker-row]')).to_have_count(4)
+                expect(page.locator('[data-worker-row]')).to_have_count(len(snapshot['services']))
                 expect(page.locator('[data-worker-alert]')).to_be_visible()
                 expect(page.locator('[data-worker-row="avito"] [data-field="status_label"]')).to_have_text('Остановлен')
                 expect(page.get_by_role('button', name='Восстановить все')).to_have_count(0)

@@ -5,6 +5,7 @@ from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
 from .public import safe_text
+from .customer_terms import new_account_fee
 
 
 def _clip(text, units):
@@ -65,10 +66,7 @@ def page_caption(bundle, page, total):
              f'🖼 {page.index}/{total} · {_clip(page_title(bundle, page), 110)}']
     if page.index == 1:
         lines.append('📋 В прайсе: ' + product_types(bundle))
-    # Это условие оформления для покупателя, а не изменение цены товара
-    # или автоматическая доплата в продаже. Остальным покупателям его не показываем.
-    account_fees = {'gns': 150, 'подписки gns': 150, 'играть': 100, 'подписки играть': 100}
-    account_fee = account_fees.get(' '.join(bundle.buyer_name_snapshot.casefold().split()))
+    account_fee = new_account_fee(bundle.buyer_name_snapshot)
     if account_fee is not None:
         lines.append(f'🆕 Оформление на новый аккаунт: +{account_fee} ₽')
     lines.extend([f'🕒 Данные обновлены: {source}' + (' (МСК)' if source_at else ''),

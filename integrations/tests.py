@@ -314,6 +314,40 @@ class IntegrationTests(TestCase):
         self.assertEqual(listing.status, "old")
         self.assertFalse(connection.profile.sell_on_avito)
 
+    @patch('integrations.services._remote_snapshot')
+    def test_explicit_bind_intent_is_independent_of_old_remote_status(self, snapshot):
+        snapshot.return_value = {'title': 'Архив', 'category_name': 'Игры', 'status': 'old', 'details': {}}
+        listing = AvitoRemoteListing.objects.create(
+            avito_item_id=206, title='Архив', status='old', missing_since=timezone.now())
+        self.client.force_login(self.admin)
+        response = self.client.post(reverse('integrations:bind', args=[listing.pk]), {
+            'product_ref': f'cd:{self.cd.pk}', 'sell_intent_present': '1', 'sell_on_avito': 'on',
+        })
+        self.assertRedirects(response, reverse('integrations:connections'))
+        linked = AvitoListingConnection.objects.get(remote_listing=listing)
+        self.assertTrue(linked.profile.sell_on_avito)
+        listing.refresh_from_db()
+        self.assertEqual(listing.status, 'old')
+        self.assertIsNone(listing.missing_since)
+        from .required_actions import get_avito_required_actions, RequiredAction
+        self.assertEqual(get_avito_required_actions()[0].action, RequiredAction.PUBLISH_MANUALLY)
+
+    @patch('integrations.services._remote_snapshot')
+    def test_explicit_rebind_keeps_archive_sale_enabled_on_new_product(self, snapshot):
+        snapshot.return_value = {'title': 'Архив', 'category_name': 'Игры', 'status': 'old', 'details': {}}
+        old = AvitoProductProfile.objects.create(cd=self.cd, sell_on_avito=True)
+        product = CD.objects.create(name='Новый товар', platform=self.cd.platform, sku='REBIND-ARCHIVE')
+        listing = AvitoRemoteListing.objects.create(
+            avito_item_id=207, title='Архив', status='old', missing_since=timezone.now())
+        link = AvitoListingConnection.objects.create(profile=old, remote_listing=listing)
+        rebind_listing(connection=link, product=product, product_kind='cd', actor=self.admin, sell_on_avito=True)
+        link.refresh_from_db()
+        self.assertTrue(link.profile.sell_on_avito)
+        self.assertEqual(link.profile.cd_id, product.pk)
+        self.assertIsNone(link.remote_listing.missing_since)
+        old.refresh_from_db()
+        self.assertFalse(old.sell_on_avito)
+
     @patch("integrations.services._remote_snapshot")
     def test_rebind_clears_only_old_avito_data_and_keeps_listing_id(self, snapshot):
         snapshot.return_value = {

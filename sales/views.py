@@ -8,6 +8,7 @@ from django.core.exceptions import ValidationError
 from django.db import transaction, OperationalError
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.template.loader import render_to_string
 from django.views.decorators.http import require_GET, require_POST
 from django.utils.http import content_disposition_header
@@ -436,7 +437,8 @@ def sale_invoice(request, pk):
         ),
         pk=pk,
     )
-    filename, content = sale_invoice_document(sale)
+    filename, content = sale_invoice_document(sale, sale_url=request.build_absolute_uri(
+        reverse('sales:detail', args=[sale.pk])))
     response = HttpResponse(content, content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     response["Content-Disposition"] = content_disposition_header(True, filename)
     response["X-Content-Type-Options"] = "nosniff"

@@ -1,9 +1,23 @@
 {% extends 'digital_sales/base.html' %}
+{% load static %}
 {% block title %}Цифровой заказ №{{ order.pk }} · ReSOURCE{% endblock %}
+{% block extra_head %}{{ block.super }}<script src="{% static 'js/sale-label-print.js' %}?v=20261114-1" defer></script>{% endblock %}
 {% block content %}
-<div class="page-heading"><div><h1>{% if order.sale_id %}{{ order.sale.visible_id }}{% else %}Цифровой заказ №{{ order.pk }}{% endif %}</h1><p>{{ order.get_state_display }} · {{ order.get_source_display }} · {{ order.supplier }}</p></div><a class="button button-secondary" href="{% url 'digital_sales:dashboard' %}">К балансам</a></div>
+<div class="page-heading"><div><h1>{% if order.sale_id %}{{ order.sale.visible_id }}{% else %}Цифровой заказ №{{ order.pk }}{% endif %}</h1><p>{{ order.get_state_display }} · {{ order.get_source_display }} · {{ order.supplier }}</p></div><div class="heading-actions">{% if order.sale_id and perms.sales.view_sale_detail %}{% include 'sales/_sale_label_button.html' with sale=order.sale %}{% endif %}<a class="button button-secondary" href="{% url 'digital_sales:dashboard' %}">К балансам</a></div></div>
 {% if order.ignored_at %}<p class="panel digital-warning">Заказ отменён и исключён из обработки {{ order.ignored_at|date:"d.m.Y H:i" }}. Повторные сообщения не возобновят оформление. Подтверждённые расходы поставщика сохранены.</p>{% endif %}
 {% if order.review_reason %}<p class="panel digital-warning">{{ order.review_reason }}</p>{% endif %}
+{% if not order.processing_stopped and not order.sale_id and order.source != 'api_v2' %}
+<section class="panel digital-actions">
+  {% if not order.goods_received and perms.digital_sales.create_digital_sales and perms.sales.create_sale %}
+  <div><h2>Подтверждение выполнения</h2><p>Если услуга уже выполнена, но подтверждение в чате не поступило, подтвердите выполнение вручную. Повторный заказ поставщику не отправляется.</p>
+    {% if order.checklist_received and not order.review_reason %}
+    <form method="post" action="{% url 'digital_sales:action' order.pk %}">{% csrf_token %}<input type="hidden" name="revision" value="{{ order.revision }}"><button class="button" name="action" value="confirm_goods">Услуга выполнена — подтвердить вручную</button></form>
+    {% else %}<p class="muted">Сначала проверьте состав и устраните замечания ниже.</p>{% endif %}
+  </div>
+  {% endif %}
+  {% if perms.digital_sales.cancel_digital_sales %}<form method="post" action="{% url 'digital_sales:action' order.pk %}">{% csrf_token %}<input type="hidden" name="revision" value="{{ order.revision }}"><button class="button button-danger" name="action" value="cancel">Отменить входящий заказ</button></form>{% endif %}
+</section>
+{% endif %}
 <div class="digital-grid"><section class="panel"><h2>Итоги</h2><dl class="digital-values"><dt>Покупатель</dt><dd>{{ order.customer_display_name }}</dd><dt>Связанный партнёр</dt><dd>{{ order.buyer.partner|default:'—' }}</dd><dt>Общая цена</dt><dd>{{ order.price|default_if_none:'Не задана' }} ₽</dd><dt>Себестоимость</dt><dd>{{ order.cost }} ₽</dd><dt>Баланс покупателя</dt><dd>{% if order.is_retail %}Не используется{% else %}{{ order.buyer.balance|default_if_none:'—' }} ₽{% endif %}</dd>{% if balance_after_completion != None %}<dt>Баланс после завершения</dt><dd{% if balance_after_completion < 0 %} class="digital-warning"{% endif %}>{{ balance_after_completion }} ₽</dd>{% endif %}<dt>Оплата</dt><dd>{% if order.is_retail %}Банковская карта · сразу оплачена и завершена{% else %}Банковская карта · цифровой баланс (допускается долг){% endif %}</dd><dt>Последнее изменение</dt><dd>{{ order.edited_by|default:'Система' }} · {{ order.updated_at|date:'d.m.Y H:i' }}</dd></dl></section>
 {% if not order.processing_stopped and not order.sale_id and perms.digital_sales.create_digital_sales and perms.sales.create_sale %}<section class="panel"><h2>Общие данные оформления</h2><form method="post" class="stacked-form">{% csrf_token %}{{ form.as_p }}<button class="button">Сохранить покупателя и цену</button></form><p><a href="{% url 'digital_sales:buyer_create' %}">Создать покупателя</a></p><form method="post" action="{% url 'digital_sales:action' order.pk %}">{% csrf_token %}<input type="hidden" name="revision" value="{{ order.revision }}"><button class="button" name="action" value="confirm">{% if order.is_retail %}Создать оплаченную и завершённую продажу{% else %}Создать незавершённую продажу{% endif %}</button></form></section>{% endif %}</div>
 <section class="panel"><h2>Товары</h2><div class="table-wrap"><table><thead><tr><th>Название</th><th>Закупочная себестоимость</th><th>№ поставщика</th></tr></thead><tbody>{% for item in order.items %}<tr><td>{{ item.name }}</td><td>{{ item.cost }} ₽</td><td>{{ item.number|default:'—' }}</td></tr>{% empty %}<tr><td colspan="3">Ожидается чек-лист.</td></tr>{% endfor %}</tbody></table></div></section>

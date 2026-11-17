@@ -10,7 +10,7 @@ from yandex_market.services import audit
 from .models import MarketOrderAttention
 
 logger = logging.getLogger('gamebat.business')
-REPEAT_SECONDS = 600
+REPEAT_SECONDS = 180
 
 
 def can_acknowledge(user):

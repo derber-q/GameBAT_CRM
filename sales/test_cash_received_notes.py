@@ -175,7 +175,7 @@ class SaleNoteAndUiTests(TestCase):
         self.assertContains(response, "Получено от покупателя")
         self.assertContains(response, "Примечание")
         self.assertContains(response, "data-sale-intermediate-total")
-        self.assertContains(response, "js/stock-lines.js?v=20261112-3")
+        self.assertContains(response, "js/stock-lines.js?v=20261116-scan-1")
 
     def test_sale_list_shows_note_next_to_id(self):
         sale = self.sale("Отличительный текст")

@@ -3,12 +3,10 @@ from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 import re
 import time
-import requests
 from core.external_policy import require_live_operation
 from .classification import code_characteristics
 
 BASE_URL = 'https://yanstore.ru/api/external/v2/products'
-CODE_URL = 'https://yanstore.ru/api/external/v1/codes-catalog'
 # Каталог v2 у поставщика может считаться дольше 30 секунд. Один запрос
 # ограничен временем короче двухминутной аренды задания и не повторяется скрыто.
 PRODUCT_TIMEOUT = (5, 75)
@@ -65,7 +63,7 @@ def parse_page(payload, number):
         region = '' if row.get('region') is None else row['region']
         if not isinstance(platform, str) or len(platform) > 60 or not isinstance(region, str) or len(region) > 80:
             raise APIError('invalid_offer')
-        # Метаданные могут быть пустыми; неизвестные реквизиты и URL не сохраняем.
+        # Метаданные никогда не отправляются в Telegram целиком.
         meta = row.get('metadata') or {}
         attrs = {'topup_currency': str(meta['topup_currency'])[:8]} if isinstance(meta, dict) and meta.get('topup_currency') else {}
         requirements = row.get('requirements') or {}
@@ -74,6 +72,28 @@ def parse_page(payload, number):
             if not isinstance(modes, list) or any(mode not in ('existing', 'new') for mode in modes):
                 raise APIError('invalid_offer')
             attrs['account_modes'] = list(dict.fromkeys(modes))
+        if not isinstance(requirements, dict) or not isinstance(meta, dict):
+            raise APIError('invalid_requirements')
+        if 'account' in requirements and type(requirements['account']) is not bool:
+            raise APIError('invalid_requirements')
+        for key in ('parameters', 'delivery'):
+            if key in requirements and (not isinstance(requirements[key], list) or any(not isinstance(v, str) for v in requirements[key])):
+                raise APIError('invalid_requirements')
+        if kind == 'code':
+            category = str(meta.get('category') or platform)
+            code_region, code_attrs = code_characteristics(name, category)
+            attrs.update(code_attrs)
+            if not region:
+                region = code_region
+        limits = {key: row.get(key, default) for key, default in (('min_quantity', 1), ('max_quantity', 20), ('quantity_step', 1))}
+        if (any(type(v) is not int or not 1 <= v <= 10000 for v in limits.values())
+                or limits['min_quantity'] > limits['max_quantity']):
+            raise APIError('invalid_limits')
+        if not isinstance(row.get('fulfillment', ''), str) or len(row.get('fulfillment', '')) > 12:
+            raise APIError('invalid_fulfillment')
+        attrs.update({'api_version': 2, 'requirements': requirements, 'limits': limits,
+                      'fulfillment': row.get('fulfillment', ''),
+                      'in_stock': meta.get('in_stock') if type(meta.get('in_stock')) is int else None})
         result.append(Offer(identity, name.strip(), kind, platform, region,
             None if row['price'] is None else amount(row['price']), currency.upper(), row['available'], attrs))
     return result, payload['has_more']
@@ -106,83 +126,25 @@ def parse_codes(payload):
 class CatalogClient:
     def __init__(self, key, session=None, sleeper=time.sleep):
         require_live_operation('digital_prices_api')
-        self._key, self.session, self.sleep = key, session or requests.Session(), sleeper
+        from .provider import ProviderClient
+        self.client = ProviderClient(key, session=session, priority='background', sleeper=sleeper)
 
     def fetch(self, heartbeat=lambda: None, *, include_codes=False):
-        require_live_operation('digital_prices_api')
+        # include_codes ???????? ??? ??????????? ???????; ??? ???? ?????? ???????? ?????? ?? v2.
+        self.client.heartbeat = heartbeat
         result, seen = [], set()
         for page in range(1, 1001):
-            heartbeat()
-            if page > 1:
-                self.sleep(3.2)  # Общий документированный предел — 20 запросов в минуту.
-            try:
-                response = self.session.get(BASE_URL, params={'page': page}, headers={'X-Api-Key': self._key},
-                    timeout=PRODUCT_TIMEOUT, allow_redirects=False)
-            except requests.Timeout:
-                raise APIError('network_timeout', 60) from None
-            except requests.RequestException:
-                raise APIError('network', 60) from None
-            try:
-                if response.status_code in (401, 403):
-                    raise APIError('authentication')
-                if response.status_code == 429:
-                    delay = str(response.headers.get('Retry-After', '60'))
-                    raise APIError('rate_limited', max(60, min(3600, int(delay))) if delay.isdecimal() else 60)
-                if response.status_code >= 500:
-                    raise APIError('upstream', 120)
-                if response.status_code != 200:
-                    raise APIError('http_status')
-                if len(response.content) > 8 * 1024 * 1024:
-                    raise APIError('response_size')
-                try:
-                    payload = response.json(parse_float=Decimal)
-                except (ValueError, TypeError):
-                    raise APIError('invalid_json') from None
-                rows, more = parse_page(payload, page)
-                for row in rows:
-                    if row.identity in seen:
-                        raise APIError('duplicate_id')
-                    seen.add(row.identity)
-                    result.append(row)
-                if not more:
-                    if not result:
-                        raise APIError('empty_catalog')
-                    if not include_codes:
-                        return result
-                    break
-            finally:
-                response.close()
-        else:
-            raise APIError('page_limit')
-        # V2 фактически не возвращает коды этого магазина. Документированный v1
-        # перечисляет весь ассортимент с номиналами и остатком. Одна версия
-        # служит владельцем кодов: при появлении кодов v2 дублей не возникнет.
-        heartbeat()
-        self.sleep(3.2)
-        try:
-            response = self.session.get(CODE_URL, headers={'X-Api-Key': self._key},
-                timeout=(5, 25), allow_redirects=False)
-        except requests.RequestException:
-            raise APIError('network', 60) from None
-        try:
-            if response.status_code in (401, 403):
-                raise APIError('codes_authentication')
-            if response.status_code == 429:
-                delay = str(response.headers.get('Retry-After', '60'))
-                raise APIError('rate_limited', max(60, min(3600, int(delay))) if delay.isdecimal() else 60)
-            if response.status_code >= 500:
-                raise APIError('upstream', 120)
-            if response.status_code != 200 or len(response.content) > 8 * 1024 * 1024:
-                raise APIError('invalid_codes')
-            try:
-                codes = parse_codes(response.json(parse_float=Decimal))
-            except (ValueError, TypeError):
-                raise APIError('invalid_codes') from None
-            if not codes:
-                raise APIError('empty_codes_catalog')
-            return [row for row in result if row.kind != 'code'] + codes
-        finally:
-            response.close()
+            rows, more = parse_page(self.client.products(page), page)
+            for row in rows:
+                if row.identity in seen:
+                    raise APIError('duplicate_id')
+                seen.add(row.identity)
+                result.append(row)
+            if not more:
+                if not result:
+                    raise APIError('empty_catalog')
+                return result
+        raise APIError('page_limit')
 
     def close(self):
-        self.session.close()
+        self.client.close()

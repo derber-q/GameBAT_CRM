@@ -7,7 +7,8 @@
   <title>{% block title %}ReSOURCE{% endblock %}</title>
   <link rel="icon" href="{% static 'img/gamebat-favicon.ico' %}" sizes="32x32" type="image/x-icon">
   <link rel="stylesheet" href="{% static 'css/gamebat.css' %}?v=20261031-1">
-  <script src="{% static 'js/app.js' %}?v=20261031-1" defer></script>
+  <script src="{% static 'js/app.js' %}?v=20261116-scan-1" defer></script>
+  <script src="{% static 'js/barcode-feedback.js' %}?v=20261116-1" defer></script>
   <script src="{% static 'js/product-image-preview.js' %}?v=20261031-1" defer></script>
   {% include 'sales/_notification_assets.html' %}
   {% block extra_head %}{% endblock %}
@@ -17,7 +18,7 @@
   <script src="{% static 'js/partner-settlements.js' %}?v=20261112-prepayment-1" defer></script>
   {% if is_local_test %}<link rel="stylesheet" href="{% static 'css/test-environment.css' %}?v=20261031-1">{% endif %}
 </head>
-<body class="{% block body_class %}{% endblock %}" data-exchange-rates-url="{% url 'core:exchange_rates' %}" data-partner-settlement-url="{% url 'sales:settlement_preview' %}">
+<body class="{% block body_class %}{% endblock %}" data-barcode-yes-sound="{% static 'audio/barcode-yes.mp3' %}?v=20261116-1" data-barcode-no-sound="{% static 'audio/barcode-no.mp3' %}?v=20261116-1" data-sale-barcode-url="{% url 'sales:scan' %}" data-exchange-rates-url="{% url 'core:exchange_rates' %}" data-partner-settlement-url="{% url 'sales:settlement_preview' %}">
   {% if is_local_test %}{% include 'core/_test_environment_banner.html' %}{% endif %}
   {% if user.is_authenticated %}
     <header class="topbar crm-topbar" data-adaptive-navigation>
@@ -143,7 +144,7 @@
       <div class="session-tools">
         {% include 'sales/_notification_counter.html' %}
         {% include 'sales/_notification_sound_button.html' %}
-        {% if nav.worker_monitoring %}<a class="worker-alert" data-worker-alert href="{% url 'integrations:workers' %}" aria-label="Проблема обработчиков" title="Проблема обработчиков" hidden><span aria-hidden="true">!</span></a>{% endif %}
+        {% if nav.worker_monitoring %}<a class="worker-alert" data-worker-alert data-state="starting" href="{% url 'integrations:workers' %}" aria-label="Проверка запуска обработчиков" title="Проверка запуска обработчиков" hidden><svg class="worker-start-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M12 3v9M5.6 5.6a9 9 0 1 0 12.8 0"></path></svg><span class="worker-error-icon" aria-hidden="true">!</span></a>{% endif %}
         <div class="header-utilities" data-header-utilities>
         <div class="header-status">
           <div class="rates" aria-label="Курсы валют">
@@ -173,6 +174,7 @@
     </header>
   {% endif %}
   <main class="page {% block page_class %}{% endblock %}">
+    <p class="alert alert-info" data-barcode-audio-status hidden role="status">Браузер заблокировал звук сканера. <button class="button button-secondary" type="button" data-enable-barcode-audio>Включить звук сканера</button></p>
     {% include 'sales/_notification_panel.html' %}
     {% if nav.worker_monitoring %}{% include 'integrations/_worker_alert.html' %}{% endif %}
     {% if messages %}

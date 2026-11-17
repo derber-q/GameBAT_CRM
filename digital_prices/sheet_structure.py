@@ -46,7 +46,8 @@ def reconcile_sng(rows, costs, revisions):
         else:
             row.source_archived = True
         row.revision += 1
-        row.full_clean()
+        # Системный переход диапазонов не требует прежнего ручного редактора.
+        row.full_clean(exclude=['edited_by'] if row.edited_by_id is None else None)
         row.save(update_fields=['label', 'source_archived', 'revision'])
         if revisions is not None:
             revisions[row.pk] = row.revision

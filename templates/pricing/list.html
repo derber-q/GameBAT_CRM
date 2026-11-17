@@ -1,8 +1,9 @@
 {% extends "base.html" %}
 {% load static %}
 {% block title %}{{ pricing_title }}{% if pricing_kind %} · Ценообразование{% endif %} · ReSOURCE{% endblock %}
-{% block extra_head %}<script src="{% static 'js/pricing.js' %}?v=20261031-1" defer></script><script src="{% static 'js/wholesale-margin.js' %}?v=20261031-1" defer></script><script src="{% static 'js/pricing-scroll.js' %}?v=20261031-1" defer></script><link rel="stylesheet" href="{% static 'css/fbs-pricing.css' %}?v=20261031-1"><script src="{% static 'js/fbs-pricing.js' %}?v=20261031-1" defer></script>{% endblock %}
+{% block extra_head %}<script src="{% static 'js/pricing.js' %}?v=20261031-1" defer></script><script src="{% static 'js/wholesale-margin.js' %}?v=20261031-1" defer></script><script src="{% static 'js/pricing-scroll.js' %}?v=20261116-1" defer></script><link rel="stylesheet" href="{% static 'css/fbs-pricing.css' %}?v=20261031-1"><script src="{% static 'js/fbs-pricing.js' %}?v=20261031-1" defer></script>{% endblock %}
 {% block content %}
+<style>.pricing-wholesale-visibility { display:flex; align-items:center; gap:5px; margin-top:6px; font-size:11px; line-height:1.3; font-weight:400; text-align:left; white-space:normal; cursor:pointer; } .pricing-wholesale-visibility input[type="checkbox"] { width:15px; height:15px; min-width:15px; margin:0; flex:none; }</style>
 <div class="page-heading">
   <div>
     <p class="eyebrow">{% if pricing_kind %}Ценообразование · Текущие цены{% else %}Текущие цены{% endif %}</p>

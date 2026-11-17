@@ -1,4 +1,4 @@
-"""Порядок строк редактора как в ценообразовании, без разделения игр по сериям."""
+"""Незаполненная наценка первой; внутри групп — привычный порядок ценообразования."""
 from catalog.product_ordering import cd_order_key, tech_brand_groups
 
 
@@ -11,4 +11,4 @@ def ordered_procurement_items(items):
     cds = sorted(
         (item for item in items if item.product_kind == 'cd'), key=lambda item: cd_order_key(item.product),
     )
-    return tech + cds
+    return sorted(tech + cds, key=lambda item: item.configured_markup_rub > 0)

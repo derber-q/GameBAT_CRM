@@ -3,6 +3,11 @@ const {cycleFor, chooseOrder} = require('../static/js/market-notification-state.
 const start = Date.parse('2026-10-22T12:00:00Z');
 const orders = [0, 4, 7].map((minutes, index) => ({id: index + 1, started_at: new Date(start + minutes * 60000).toISOString()}));
 const seen = new Map();
+// Маркет использует явный период 3 минуты; общий механизм сохраняет другие каналы.
+assert.equal(cycleFor(orders[0], start + 179999, 180000), 0);
+assert.equal(cycleFor(orders[0], start + 180000, 180000), 1);
+assert.equal(chooseOrder([orders[0]], new Map([['1', 0]]), start + 179999, 180000), null);
+assert.equal(chooseOrder([orders[0]], new Map([['1', 0]]), start + 180000, 180000).cycle, 1);
 assert.equal(cycleFor(orders[0], start - 1), -1);
 assert.equal(cycleFor(orders[0], start + 599999), 0);
 assert.equal(cycleFor(orders[0], start + 600000), 1);

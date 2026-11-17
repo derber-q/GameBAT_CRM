@@ -16,6 +16,38 @@ from .services import update_product_prices, update_supplier_price
 
 
 class PricingTests(TestCase):
+    def test_wholesale_visibility_ajax_can_be_set_and_cleared_with_audit(self):
+        self.client.force_login(self.user)
+        for hidden in (True, False):
+            data = {'product_type': 'cd', 'product_id': self.cd.pk, 'wholesale_visibility_present': '1'}
+            if hidden:
+                data['hide_from_wholesale_price'] = '1'
+            response = self.client.post(reverse('pricing:product_update'), data,
+                                        HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+            self.assertEqual(response.status_code, 200)
+            self.assertIs(response.json()['saved_prices']['hide_from_wholesale_price'], hidden)
+            self.cd.refresh_from_db()
+            self.assertIs(self.cd.hide_from_wholesale_price, hidden)
+        self.assertEqual(self.cd.change_events.filter(field_changes__field_name='hide_from_wholesale_price').count(), 2)
+
+    def test_visibility_requires_wholesale_permission_and_rejects_invalid_values(self):
+        worker = User.objects.create_user('retail-editor')
+        worker.user_permissions.add(Permission.objects.get(
+            content_type__app_label='pricing', codename='change_retail_price'))
+        self.client.force_login(worker)
+        response = self.client.post(reverse('pricing:product_update'), {
+            'product_type': 'cd', 'product_id': self.cd.pk, 'wholesale_visibility_present': '1',
+        }, HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+        self.assertEqual(response.status_code, 403)
+        with self.assertRaises(ValidationError):
+            update_product_prices(actor=worker, product_type='cd', product_id=self.cd.pk,
+                                  changes={'hide_from_wholesale_price': True})
+        with self.assertRaises(ValidationError):
+            update_product_prices(actor=self.user, product_type='cd', product_id=self.cd.pk,
+                                  changes={'hide_from_wholesale_price': 'garbage'})
+        self.cd.refresh_from_db()
+        self.assertFalse(self.cd.hide_from_wholesale_price)
+
     def setUp(self):
         self.user = User.objects.create_superuser("admin", password="StrongAdmin!123")
         self.platform = Platform.objects.create(name="PS5")
@@ -324,5 +356,5 @@ class PricingTests(TestCase):
         self.assertContains(response, f'id="{control_id}"')
         self.assertEqual(html.count(f'id="{control_id}"'), 1)
         self.assertContains(response, f'aria-controls="pricing-brand-{brand.pk}"')
-        self.assertContains(response, "app.js?v=20261031-1")
+        self.assertContains(response, "app.js?v=20261116-scan-1")
         self.assertContains(response, "data-global-barcode-search")

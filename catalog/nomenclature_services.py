@@ -24,12 +24,12 @@ CREATE_FIELDS = {
     "cd": (
         "platform", "game_series", "name", "description", "sku", "cusa_ppsa_code",
         "weight_grams", "length_cm", "width_cm", "height_cm", "comment", "exclude_from_supplier_template",
-        'newness_months',
+        'newness_months', 'hide_from_wholesale_price',
     ),
     "tech": (
         "brand", "product_type", "name", "description", "sku",
         "weight_grams", "length_cm", "width_cm", "height_cm", "comment", "exclude_from_supplier_template",
-        'newness_months',
+        'newness_months', 'hide_from_wholesale_price',
     ),
 }
 
@@ -58,6 +58,8 @@ def create_product(*, actor, product_kind, data, barcode_formset_instance=None,
     if product_kind not in CREATE_FIELDS:
         raise ValueError("Неизвестный тип товара.")
     model = CD if product_kind == "cd" else Tech
+    if data.get('hide_from_wholesale_price') and not actor.has_perm('pricing.change_wholesale_price'):
+        raise ValidationError('Нет права изменять видимость товара в оптовом прайсе.')
     values = {
         field: data[field]
         for field in CREATE_FIELDS[product_kind]

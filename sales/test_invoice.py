@@ -51,6 +51,10 @@ class SaleInvoiceTests(TestCase):
         self.assertIn(self.warehouse.name, sheet["A2"].value)
         self.assertIn(timezone.localtime(sale.created_at).strftime("%d.%m.%Y %H:%M"), sheet["A2"].value)
         self.assertEqual(tuple(cell.value for cell in sheet[HEADER_ROW]), HEADERS)
+        self.assertEqual(len(sheet._images), 1)
+        self.assertGreaterEqual(sheet._images[0].anchor.ext.cx, 250 * 9525)
+        self.assertEqual(sheet._images[0].anchor.ext.cx, sheet._images[0].anchor.ext.cy)
+        self.assertGreaterEqual(sheet.row_dimensions[3].height, 200)
         self.assertEqual(tuple(cell.value for cell in sheet[HEADER_ROW + 1]),
                          (1, "CD", "Тестовый диск", "CD-INV-1", 2, 250, 500))
         self.assertEqual(sheet.cell(sheet.max_row, 7).value, 500)

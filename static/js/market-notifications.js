@@ -15,7 +15,7 @@
   audio.dataset.notificationChannel = 'market';
   let channel;
   try {channel = new BroadcastChannel('gamebat-market-alerts');} catch (_) {channel = null;}
-  let orders = [], offset = 0, period = 600000, fresh = false, lastFeed = 0;
+  let orders = [], offset = 0, period = 180000, fresh = false, lastFeed = 0;
   let enabled = false, blocked = false, enabling = false, pumping = false, active = null;
   let generation = 0, flight = null, feedController = null, warning = '';
   const broadcast = (type) => channel?.postMessage({type});
@@ -78,7 +78,7 @@
     orders = snapshot.orders;
     offset = Date.parse(snapshot.server_now) - Date.now();
     period = snapshot.repeat_seconds * 1000;
-    if (period !== 600000) throw new Error('Некорректный интервал уведомлений.');
+    if (period !== 180000) throw new Error('Некорректный интервал уведомлений.');
     fresh = true; lastFeed = Date.now(); warning = '';
     feedStatus.textContent = ''; feedStatus.classList.remove('error-text');
     document.querySelectorAll('[data-market-pending-count]').forEach(node => {node.textContent = snapshot.count;});

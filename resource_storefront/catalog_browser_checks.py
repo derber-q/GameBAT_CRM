@@ -1,6 +1,5 @@
 """Явная проверка сетки на реальных фото, только в тестовой БД."""
 import os
-import sqlite3
 from pathlib import Path
 from cryptography.fernet import Fernet
 from django.conf import settings
@@ -12,6 +11,7 @@ from catalog.models import CD, Tech, Platform, Brand, ProductType
 from warehouse.models import Warehouse, CDWarehouseStock, TechWarehouseStock
 from .models import StorefrontSettings, WholesaleContact, CatalogImageCrop
 from .security import issue_link
+from ._browser_fixtures import synthetic_cover
 
 @override_settings(RESOURCE_TOKEN_ENCRYPTION_KEY=Fernet.generate_key().decode())
 class CatalogBrowserTests(StaticLiveServerTestCase):
@@ -22,18 +22,19 @@ class CatalogBrowserTests(StaticLiveServerTestCase):
         brand=Brand.objects.create(name="Sony / Nintendo")
         category=ProductType.objects.create(name="Консоль")
         self.products=[]
-        with sqlite3.connect(f"file:{Path(settings.BASE_DIR)/'db.sqlite3'}?mode=ro",uri=True) as db:
-            for index,(kind,pk) in enumerate([("cd",1),("tech",20),("tech",67),("tech",11),("tech",60),("tech",7)]):
-                name,photo=db.execute(f"SELECT name,title_image FROM catalog_{kind} WHERE id=?",(pk,)).fetchone()
-                model=CD if kind=="cd" else Tech
-                fields={"platform":platform} if kind=="cd" else {"brand":brand,"product_type":category}
-                product=model.objects.create(name=name,title_image=photo,wholesale_price=4500+index*10000,**fields)
-                stock=CDWarehouseStock if kind=="cd" else TechWarehouseStock
-                stock.objects.create(warehouse=warehouse,quantity=99,**{kind:product})
-                self.products.append((kind,product))
-                framing = {("cd",1):(62,50,"1.10"), ("tech",67):(57,50,"1.00"), ("tech",11):(95,50,"1.00"), ("tech",60):(55,50,"1.00")}.get((kind,pk))
-                if framing and os.environ.get("RESOURCE_CATALOG_BASELINE") != "1":
-                    CatalogImageCrop.objects.create(**{kind:product},position_x=framing[0],position_y=framing[1],zoom=framing[2])
+        for index,(kind,pk) in enumerate([("cd",1),("tech",20),("tech",67),("tech",11),("tech",60),("tech",7)]):
+            name,photo=f'Синтетический товар {kind} {index}',synthetic_cover(index)
+            model=CD if kind=="cd" else Tech
+            fields={"platform":platform} if kind=="cd" else {"brand":brand,"product_type":category}
+            product=model.objects.create(name=name,title_image=photo,wholesale_price=4500+index*10000,**fields)
+            stock=CDWarehouseStock if kind=="cd" else TechWarehouseStock
+            stock.objects.create(warehouse=warehouse,quantity=99,**{kind:product})
+            self.products.append((kind,product))
+            framing = {("cd",1):(62,50,"1.10"), ("tech",67):(57,50,"1.00"), ("tech",11):(95,50,"1.00"), ("tech",60):(55,50,"1.00")}.get((kind,pk))
+            if framing and os.environ.get("RESOURCE_CATALOG_BASELINE") != "1":
+                crop=CatalogImageCrop.objects.create(**{kind:product},position_x=framing[0],position_y=framing[1],zoom=framing[2])
+                if index == 0:
+                    self.crop_id=crop.pk
         missing=Tech.objects.create(name="Товар без фото — очень длинное название комплекта с аксессуарами и дополнительным контроллером",brand=brand,product_type=category,wholesale_price="999999.99")
         TechWarehouseStock.objects.create(warehouse=warehouse,tech=missing,quantity=99)
         contact=WholesaleContact.objects.create(name="Проверка сетки",phone="+79990000000")
@@ -81,7 +82,7 @@ class CatalogBrowserTests(StaticLiveServerTestCase):
                     editor=browser.new_context(viewport={"width":1200,"height":900})
                     editor.add_cookies([{"name":settings.SESSION_COOKIE_NAME,"value":self.staff_cookie,"url":self.live_server_url}])
                     tab=editor.new_page()
-                    tab.goto(self.live_server_url+"/crm/admin/resource_storefront/catalogimagecrop/1/change/",wait_until="networkidle")
+                    tab.goto(self.live_server_url+f"/crm/admin/resource_storefront/catalogimagecrop/{self.crop_id}/change/",wait_until="networkidle")
                     expect(tab.locator("[data-crop-preview]")).to_be_visible()
                     tab.locator("#id_position_x").fill("70")
                     self.assertEqual(tab.locator("[data-crop-preview]").evaluate("e=>e.style.objectPosition"),"70% 50%")

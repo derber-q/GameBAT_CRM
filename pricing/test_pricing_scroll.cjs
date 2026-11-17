@@ -3,11 +3,15 @@ const vm = require('node:vm');
 const fs = require('node:fs');
 const code = fs.readFileSync('static/js/pricing-scroll.js', 'utf8');
 let submit, edited, calls = 0, prevented = 0, resolveResponse;
+let editVisibility;
+const visibility = {name: 'hide_from_wholesale_price', type: 'checkbox', value: '1', checked: false,
+  matches: (selector) => selector.includes('[data-wholesale-visibility]'),
+  addEventListener: (_, fn) => editVisibility = fn, dispatchEvent() {}};
 const button = {disabled: false};
 const status = {style: {}, setAttribute() {}};
 const input = {value: '189', matches: () => true, addEventListener: (_, fn) => edited = fn};
 const form = {
-  action: '/pricing/update/', elements: [input],
+  action: '/pricing/update/', elements: [input, visibility],
   dispatchEvent() {},
   querySelector: () => button, appendChild() {}, addEventListener: (_, fn) => submit = fn,
 };
@@ -45,5 +49,20 @@ const response = (ok, message) => ({ok, headers: {get: () => 'application/json'}
   context.fetch = async () => {throw new Error('Network error');};
   await submit(event); assert.equal(status.textContent, 'Network error');
   assert.equal(prevented, 6);
+  context.fetch = (url, options) => new Promise((resolve) => resolveResponse = resolve);
+  visibility.checked = true;
+  pending = submit(event);
+  visibility.checked = false;
+  resolveResponse({ok: true, headers: {get: () => 'application/json'},
+    json: async () => ({ok: true, saved_prices: {hide_from_wholesale_price: true}})});
+  await pending;
+  assert.equal(visibility.checked, false); // новая правка во время запроса сохраняется
+  assert(status.textContent.includes('несохранённые'));
+  pending = submit(event);
+  resolveResponse({ok: true, headers: {get: () => 'application/json'},
+    json: async () => ({ok: true, saved_prices: {hide_from_wholesale_price: false}})});
+  await pending;
+  assert.equal(visibility.value, '1'); assert.equal(status.textContent, 'Сохранено');
+  visibility.checked = true; editVisibility(); assert.equal(status.textContent, 'Не сохранено');
   console.log('Pricing async save: no navigation, JSON success/errors, double-submit, pending edits, auth and network errors OK');
 })().catch((error) => {console.error(error); process.exitCode = 1;});

@@ -1,15 +1,24 @@
 """Накладная XLSX по структуре и цветам прежнего sales/invoice.html."""
 from io import BytesIO
 from math import ceil
+from urllib.parse import urlsplit
 
+from django.conf import settings
+from django.core.exceptions import ValidationError
+from django.urls import reverse
 from django.utils import timezone
 from openpyxl import Workbook
+from openpyxl.drawing.image import Image as ExcelImage
+from openpyxl.drawing.spreadsheet_drawing import AnchorMarker, OneCellAnchor
+from openpyxl.drawing.xdr import XDRPositiveSize2D
+from openpyxl.utils.units import pixels_to_EMU
 from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.worksheet.pagebreak import Break
 from openpyxl.worksheet.page import PageMargins
 
 from core.excel_layout import column_width_pixels, text_width_pixels, wrapped_text_height
+import qrcode
 
 HEADER_ROW = 4
 HEADERS = ("№", "Тип", "Наименование", "Артикул", "Количество", "Цена", "Сумма")
@@ -20,7 +29,7 @@ HEADER_FILL = "EAF2F8"
 TOTAL_FILL = "F3F6F9"
 
 
-def sale_invoice_document(sale):
+def sale_invoice_document(sale, *, sale_url=None):
     """Общий read-only вход веба и Telegram: прежние строки, оформление и имя файла."""
     from .models import Sale
     from partners.customers import customer_filename
@@ -46,7 +55,36 @@ def sale_invoice_document(sale):
     ]
     name = "".join(char if char.isalnum() or char in "-_." else "_" for char in sale.visible_id)
     suffix = f'_{customer_filename(sale.partner_name_snapshot)}' if sale.partner_name_snapshot else ''
-    return f"nakladnaya_{name}{suffix}.xlsx", render_sale_invoice_xlsx(sale=sale, rows=rows)
+    return f"nakladnaya_{name}{suffix}.xlsx", render_sale_invoice_xlsx(sale=sale, rows=rows, sale_url=sale_url)
+
+
+def _sale_qr(sheet, sale, sale_url, widths):
+    if sale_url is None:
+        base = str(getattr(settings, 'DIGITAL_SALES_CRM_URL', 'http://127.0.0.1:8000')).rstrip('/')
+        sale_url = base + reverse('sales:detail', args=[sale.pk])
+    parsed = urlsplit(sale_url)
+    if (parsed.scheme not in ('http', 'https') or not parsed.netloc or parsed.username or parsed.password
+            or parsed.query or parsed.fragment or len(sale_url) > 512):
+        raise ValidationError('Некорректный адрес продажи для QR накладной.')
+    buffer = BytesIO()
+    qrcode.make(sale_url, error_correction=qrcode.constants.ERROR_CORRECT_M,
+                box_size=14, border=4).save(buffer, format='PNG')
+    buffer.seek(0)
+    image = ExcelImage(buffer)
+    size, margin = 280, 10
+    image.width = image.height = size
+    # Крупный встроенный PNG читается с экрана телефона без внешних загрузок.
+    # Товарная таблица остаётся в прежних ячейках: QR занимает пустую строку 3.
+    sheet.row_dimensions[3].height = (size + 2 * margin) * 0.75
+    offset = max(0, (sum(column_width_pixels(width) for width in widths) - size) / 2)
+    column = 0
+    while column < len(widths) - 1 and offset >= column_width_pixels(widths[column]):
+        offset -= column_width_pixels(widths[column])
+        column += 1
+    image.anchor = OneCellAnchor(
+        _from=AnchorMarker(col=column, colOff=pixels_to_EMU(offset), row=2, rowOff=pixels_to_EMU(margin)),
+        ext=XDRPositiveSize2D(cx=pixels_to_EMU(size), cy=pixels_to_EMU(size)))
+    sheet.add_image(image)
 
 
 def _text(cell, value):
@@ -78,7 +116,7 @@ def _page_breaks(sheet, last_item, total_row, widths):
         used += height
 
 
-def render_sale_invoice_xlsx(*, sale, rows):
+def render_sale_invoice_xlsx(*, sale, rows, sale_url=None):
     book = Workbook()
     sheet = book.active
     sheet.title = "Накладная"
@@ -110,6 +148,7 @@ def render_sale_invoice_xlsx(*, sale, rows):
     sheet["A2"].alignment = Alignment(vertical="top", wrap_text=True)
     sheet.row_dimensions[2].height = _height(sheet["A2"].value, merged_width, padding=0, minimum=16)
     sheet.row_dimensions[3].height = 18
+    _sale_qr(sheet, sale, sale_url, widths)
     border = Border(**{side: Side(style="thin", color=LINE) for side in ("top", "bottom", "left", "right")})
 
     def table_cell(row, column, value, *, bold=False, fill=None):

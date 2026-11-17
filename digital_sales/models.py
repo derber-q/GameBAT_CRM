@@ -75,7 +75,7 @@ class DigitalOrder(models.Model):
     buyer = models.ForeignKey(Buyer, null=True, blank=True, on_delete=models.PROTECT, verbose_name='Покупатель')
     is_retail = models.BooleanField('Розничный покупатель без баланса', default=False)
     sale = models.OneToOneField('sales.Sale', null=True, blank=True, on_delete=models.PROTECT, related_name='digital_order')
-    source = models.CharField(max_length=16, default='telegram', choices=[('telegram', 'Telegram'), ('manual', 'Создана вручную')])
+    source = models.CharField(max_length=16, default='telegram', choices=[('telegram', 'Telegram'), ('manual', 'Создана вручную'), ('api_v2', 'Магазин API v2')])
     state = models.CharField(max_length=16, choices=State.choices, default=State.CHECKLIST, db_index=True)
     items = models.JSONField(default=list)
     cost = models.DecimalField(max_digits=20, decimal_places=2, default=0)

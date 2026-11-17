@@ -12,6 +12,13 @@
     <span class="price-pair-separator" aria-hidden="true">/</span>
     <span class="wholesale-margin-value" data-wholesale-margin-value title="{{ actual_margin_label }}">{% if actual_margin != None %}{{ actual_margin|floatformat:2 }}{% else %}—{% endif %}</span>
   </div>{% endif %}
+  {% if field == 'wholesale_price' %}
+    {% if can_change %}<input type="hidden" name="wholesale_visibility_present" value="1" form="product-price-{{ row.type }}-{{ row.product.pk }}">{% endif %}
+    <label class="pricing-wholesale-visibility">
+      <input type="checkbox" name="hide_from_wholesale_price" value="1" data-wholesale-visibility form="product-price-{{ row.type }}-{{ row.product.pk }}"{% if row.product.hide_from_wholesale_price %} checked{% endif %}{% if not can_change %} disabled{% endif %}>
+      Скрыть из оптового прайса
+    </label>
+  {% endif %}
   {% if markup_field %}
   <span hidden data-markup-for="{{ field }}" data-value="{{ markup|default_if_none:''|unlocalize }}"></span>
   {% endif %}

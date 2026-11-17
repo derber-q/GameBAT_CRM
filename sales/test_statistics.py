@@ -17,7 +17,7 @@ from partners.models import SalesPlatform
 from consignment.services import record_consignment_sale, transfer_to_consignment
 from warehouse.models import CDWarehouseStock, Warehouse
 
-from .models import Sale
+from .models import Sale, SaleCDItem, SaleConsignmentItem
 from .services import advance_order_status, create_sale, edit_postpay_sale_items, mark_sale_paid
 from .statistics_service import build_sales_statistics_report
 
@@ -194,12 +194,17 @@ class SalesStatisticsTests(TestCase):
         self.assertIsNone(zero_row.markup)
 
     def test_report_queries_do_not_grow_per_sale_or_item(self):
-        for _ in range(10):
+        self.sale()
+        with CaptureQueriesContext(connection) as baseline:
+            self.report()
+        for _ in range(9):
             self.sale()
         with CaptureQueriesContext(connection) as captured:
             report = self.report()
         self.assertEqual(report.totals.sales_count, 10)
-        self.assertLessEqual(len(captured), 8)
+        # Независимый журнал предоплаты добавляет один общий запрос, а не запрос на продажу.
+        self.assertEqual(len(captured), len(baseline))
+        self.assertLessEqual(len(captured), 9)
 
     def test_consignment_sale_captures_cost_when_recorded(self):
         platform = SalesPlatform.objects.create(
@@ -256,13 +261,25 @@ class SalesStatisticsTests(TestCase):
                     "product_type": "consignment", "product_kind": "cd",
                     "stock_id": stock.pk, "quantity": 1,
                 })
-        sale = create_sale(
-            actor=self.user, warehouse_id=self.warehouse.pk,
-            price_type=Sale.PriceType.RETAIL, sale_type=Sale.SaleType.RETAIL,
-            payment_method=Sale.PaymentMethod.CASH,
-            lines=[{"product_type": "cd", "product_id": self.product.pk, "quantity": 1},
-                   *consignment_lines],
-        )
+        # Исторический снимок: новые продажи больше не допускают реализацию
+        # чужих площадок, но статистика обязана читать прежние документы.
+        now = timezone.now()
+        sale = Sale.objects.create(visible_id='SALE-LEGACY-STATS', created_by=self.user,
+            warehouse=self.warehouse, price_type='retail', sale_type='retail',
+            payment_method='cash', order_status='delivered', payment_status='paid',
+            completed_at=now, paid_at=now, paid_by=self.user,
+            total_amount=6100, cash_received_amount=6100)
+        SaleCDItem.objects.create(sale=sale, cd=self.product, quantity=1, unit_price=1500,
+            line_total=1500, unit_cost_snapshot=1000, product_name_snapshot=self.product.name,
+            article_snapshot=self.product.sku)
+        from consignment.models import CDConsignmentStock
+        for line in consignment_lines:
+            stock = CDConsignmentStock.objects.get(pk=line['stock_id'])
+            SaleConsignmentItem.objects.create(sale=sale, cd=self.product, product_kind='cd',
+                platform=stock.platform, source_stock_id=stock.pk, quantity=1,
+                unit_price=stock.receivable_per_unit, line_total=stock.receivable_per_unit,
+                unit_cost_snapshot=1000, product_name_snapshot=self.product.name,
+                article_snapshot=self.product.sku, platform_name_snapshot=stock.platform.name)
         with CaptureQueriesContext(connection) as captured:
             row = self.report(sale_ids={sale.pk}).sales[0]
         self.assertLessEqual(len(captured), 7)

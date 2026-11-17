@@ -10,6 +10,21 @@ URL = 'https://docs.google.com/spreadsheets/d/' + IDENTITY
 
 
 class SheetTransportTests(SimpleTestCase):
+    def test_removed_countries_and_extra_columns_do_not_break_other_blocks(self):
+        rows = [[''] * 52 for _ in range(4)]
+        rows[0][0], rows[1][0], rows[1][1] = 'Игры Турция', '1-99', '2,990'
+        rows[0][27], rows[1][27], rows[1][28] = '💳 Пополнение Steam', 'До 99 руб', '7%'
+        rows[1][45] = 'Посторонний блок кодов'
+        data = parse_costs(rows)
+        self.assertEqual(data[('game_tariff', 'tr', '1-99')].cost, Decimal('2.990'))
+        self.assertEqual(data[('steam_tariff', '', 'до99')].reference, 'Прайс!AC2')
+        self.assertNotIn(('game_tariff', 'in', '1000'), data)
+
+    def test_empty_or_ambiguous_table_is_not_accepted_as_mass_unavailability(self):
+        for rows in ([['Чужой лист']], [['Игры Турция', '', 'Игры Турция']], [['Игры Турция'], ['bad label', '100']]):
+            with self.subTest(rows=rows), self.assertRaises(SheetSourceError):
+                parse_costs(rows)
+
     def test_manual_blocks_parse_decimal_comma_percentage_and_zero_without_touching_api_cards(self):
         rows=[[] for _ in range(5)]
         for column,(heading,(_,region,mode)) in enumerate(HEADINGS.items()):

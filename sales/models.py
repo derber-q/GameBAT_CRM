@@ -655,3 +655,4 @@ class MarketOrderAttention(models.Model):
 
 
 from .avito_order_models import AvitoBrowserOrder, AvitoShippingPrintJob  # noqa: E402,F401
+from .sale_label_models import SaleLabelPrintJob  # noqa: E402,F401

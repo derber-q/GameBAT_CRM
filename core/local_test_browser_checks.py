@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import unittest
 from playwright.sync_api import sync_playwright, expect
+from integrations.worker_runtime import SERVICES
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -25,7 +26,7 @@ class LocalTestBrowserChecks(unittest.TestCase):
             page.get_by_label('Пароль',exact=True).fill(credentials['password'])
             page.get_by_role('button',name='Войти',exact=True).click()
             page.goto(origin+'/crm/integrations/workers/')
-            expect(page.locator('[data-worker-row]')).to_have_count(4)
+            expect(page.locator('[data-worker-row]')).to_have_count(len(SERVICES))
             expect(page.locator('.crm-topbar')).to_have_css('background-color','rgb(184, 92, 18)')
             expect(page.locator('[data-worker-summary]')).to_contain_text('Только сайт')
             expect(page.locator('[data-notification-sound-enable]')).to_be_visible()

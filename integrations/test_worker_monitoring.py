@@ -65,6 +65,46 @@ class SupervisorTests(TestCase):
         self.assertIsNotNone(service.last_started_at)
         self.assertEqual(service.failures, 0)
 
+    def test_boot_startup_has_power_state_without_alarm_or_sound_incident(self):
+        from integrations.worker_models import WorkerEvent
+        boot = WorkerEvent.objects.create(service='avito', kind='boot_check', result='queued')
+        self.now = boot.created_at
+        self.tick()
+        data = monitoring_snapshot(now=self.now + timedelta(seconds=10), include_queues=False)
+        self.assertTrue(data['starting'])
+        self.assertFalse(data['alarm'])
+        self.assertEqual(data['incidents'], [])
+        row = next(row for row in data['services'] if row['code'] == 'avito')
+        self.assertTrue(row['starting'])
+        self.assertFalse(row['alarm'])
+
+    def test_actual_failure_is_not_hidden_by_startup_grace(self):
+        from integrations.worker_models import WorkerEvent
+        boot = WorkerEvent.objects.create(service='avito', kind='boot_check', result='queued')
+        self.now = boot.created_at
+        self.adapter.fail = True
+        self.tick()
+        data = monitoring_snapshot(now=self.now + timedelta(seconds=10), include_queues=False)
+        self.assertTrue(data['alarm'])
+        self.assertFalse(data['starting'])
+        self.assertTrue(data['incidents'])
+
+    def test_startup_without_error_has_a_fixed_server_deadline(self):
+        from integrations.worker_models import WorkerEvent
+        boot = WorkerEvent.objects.create(service='avito', kind='boot_check', result='queued')
+        self.now = boot.created_at
+        self.tick()
+        at = self.now + timedelta(seconds=181)
+        controller = WorkerController.objects.get(pk=1)
+        controller.heartbeat_at = at
+        controller.save(update_fields=['heartbeat_at'])
+        service = WorkerService.objects.get(pk='avito')
+        service.observed_at = at
+        service.save(update_fields=['observed_at'])
+        data = monitoring_snapshot(now=at, include_queues=False)
+        self.assertTrue(data['alarm'])
+        self.assertFalse(data['starting'])
+
     def test_three_failures_persist_and_stop_automatic_launches(self):
         self.adapter.fail = True
         for seconds in (0, 60, 120, 240, 360):
@@ -73,6 +113,33 @@ class SupervisorTests(TestCase):
         self.assertEqual(service.failures, 3)
         self.assertEqual(service.status, 'paused')
         self.assertNotIn('SECRET', str(monitoring_snapshot(now=self.now + timedelta(seconds=360))))
+
+    def test_telegram_process_failures_never_pause_automatic_recovery(self):
+        from integrations.worker_runtime import SERVICES
+        policy = dict.fromkeys(SERVICES, 'disabled')
+        policy['telegram_staff'] = 'required'
+        self.adapter.fail = True
+        with patch('integrations.worker_monitoring.expected_services', return_value=policy):
+            for seconds in (0, 60, 120, 300, 600, 1000, 1400):
+                supervise_once(self.adapter, now=self.now + timedelta(seconds=seconds))
+        service = WorkerService.objects.get(pk='telegram_staff')
+        self.assertEqual(len(self.adapter.launches), 7)
+        self.assertFalse(service.auto_paused)
+        self.assertEqual(service.status, 'stopped')
+        self.assertEqual(service.next_attempt_at, self.now + timedelta(seconds=1700))
+
+    def test_telegram_legacy_pause_is_removed_but_existing_process_is_not_duplicated(self):
+        from integrations.worker_runtime import SERVICES
+        policy = dict.fromkeys(SERVICES, 'disabled')
+        policy['telegram_opt'] = 'required'
+        WorkerService.objects.create(code='telegram_opt', auto_paused=True, failures=3, status='paused')
+        self.adapter.rows = [{'pid': 99, 'birth': 'legacy', 'instance': '', 'services': ['telegram_opt']}]
+        with patch('integrations.worker_monitoring.expected_services', return_value=policy):
+            supervise_once(self.adapter, now=self.now)
+        service = WorkerService.objects.get(pk='telegram_opt')
+        self.assertFalse(service.auto_paused)
+        self.assertEqual(service.status, 'unknown')
+        self.assertEqual(self.adapter.launches, [])
 
     def test_inventory_failure_never_launches_or_counts_failure(self):
         self.adapter.available = False

@@ -1,6 +1,7 @@
 /* ReSOURCE: Восстановление позиции таблицы цен; не изменяет финансовые значения. */
 (() => {
   "use strict";
+  const fieldValue = (element) => element.type === 'checkbox' ? element.checked : element.value;
   document.querySelectorAll('.inline-price-form').forEach((form) => {
     const button = form.querySelector('[type="submit"]');
     const status = document.createElement('span');
@@ -9,10 +10,10 @@
     form.appendChild(status);
     let saving = false;
     let savedValues = null;
-    const inputs = Array.from(form.elements).filter((element) => element.matches('[data-price-field]') || element.matches('[data-fbs-profit]'));
+    const inputs = Array.from(form.elements).filter((element) => element.matches('[data-price-field], [data-fbs-profit], [data-wholesale-visibility]'));
     inputs.forEach((input) => input.addEventListener('input', () => {
       if (!saving && savedValues) {
-        status.textContent = inputs.some((element, index) => element.value !== savedValues[index])
+        status.textContent = inputs.some((element, index) => fieldValue(element) !== savedValues[index])
           ? 'Не сохранено' : 'Сохранено';
       }
     }));
@@ -24,7 +25,7 @@
       // Снимок values нужен, чтобы новые правки во время запроса не были
       // ошибочно помечены как уже сохранённые ответом на предыдущие значения.
       const data = new FormData(form);
-      const values = inputs.map((element) => element.value);
+      const values = inputs.map(fieldValue);
       saving = true;
       button.disabled = true;
       status.textContent = 'Сохранение…';
@@ -41,10 +42,13 @@
         const profitChanged = inputs.some((element, index) => element.matches('[data-fbs-profit]') && element.value !== values[index]);
         inputs.forEach((element, index) => {
           if (!Object.prototype.hasOwnProperty.call(result.saved_prices || {}, element.name)) return;
-          const saved = String(result.saved_prices[element.name] ?? '');
-          const unchanged = element.value === values[index];
+          const saved = element.type === 'checkbox'
+            ? result.saved_prices[element.name] === true
+            : String(result.saved_prices[element.name] ?? '');
+          const unchanged = fieldValue(element) === values[index];
           if (unchanged && !(element.name === 'yandex_market_price' && profitChanged)) {
-            element.value = saved;
+            if (element.type === 'checkbox') element.checked = saved;
+            else element.value = saved;
             element.dispatchEvent(new CustomEvent('input', {bubbles: true, detail: {fbs: true}}));
           }
           values[index] = saved;
@@ -56,7 +60,7 @@
           form.dispatchEvent(new CustomEvent('fbs:price-saved', {detail: {price: result.saved_prices.yandex_market_price}}));
         }
         savedValues = values;
-        status.textContent = inputs.some((element, index) => element.value !== values[index])
+        status.textContent = inputs.some((element, index) => fieldValue(element) !== values[index])
           ? 'Есть новые несохранённые изменения' : 'Сохранено';
       } catch (error) {
         savedValues = null;

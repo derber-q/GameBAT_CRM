@@ -44,7 +44,8 @@ class CreditorOperationLinksTests(TestCase):
 
     def test_sale_link_requires_sale_permission(self):
         sale = Sale.objects.create(warehouse=self.warehouse, created_by=self.actor,
-            price_type='wholesale', sale_type='wholesale', payment_method='partner_debt', partner=self.partner)
+            price_type='wholesale', sale_type='wholesale', payment_method='partner_debt', partner=self.partner,
+            total_amount=100, cash_received_amount=0, payment_status='paid')
         self.operation.sale = sale
         self.operation.save(update_fields=['sale'])
         self.grant('view_creditors', 'view_history')

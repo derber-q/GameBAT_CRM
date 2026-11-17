@@ -1,6 +1,10 @@
 /* Мониторинг использует панели, таблицы и цвета ReSOURCE. */
 .worker-alert { align-items: center; background: #b42332; border: 2px solid #fff; border-radius: 50%; color: #fff !important; display: inline-flex; flex: 0 0 30px; font-size: 23px; font-weight: 800; height: 30px; justify-content: center; text-decoration: none; width: 30px; }
 .worker-alert[hidden] { display: none !important; }
+.worker-alert[data-state="starting"] { background: #2b879b; }
+.worker-alert .worker-start-icon { display: none; height: 22px; width: 22px; }
+.worker-alert[data-state="starting"] .worker-start-icon { display: block; }
+.worker-alert[data-state="starting"] .worker-error-icon { display: none; }
 .worker-alert:focus-visible { outline: 3px solid #ffce69; outline-offset: 3px; }
 [data-worker-audio-status] { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 [data-worker-feed-status]:not(:empty) { display: block; padding: 8px 0; }

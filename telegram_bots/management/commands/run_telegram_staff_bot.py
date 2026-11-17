@@ -8,6 +8,7 @@ from integrations.worker_runtime import AlreadyRunning, graceful_shutdown
 from telegram_bots.configuration import expected_status, TEST_MESSAGE
 from telegram_bots.models import StaffBot
 from telegram_bots.worker import run_polling
+from telegram_bots.recovery import run_autonomous
 
 
 class Command(BaseCommand):
@@ -27,7 +28,9 @@ class Command(BaseCommand):
         instance = options['worker_instance'] or uuid.uuid4()
         try:
             with graceful_shutdown() as stop, monitored_worker(['telegram_staff'], instance) as health:
-                run_polling(StaffBot.objects.get(code='staff').pk, instance, stop, once=options['once'], health=health)
+                run_autonomous(lambda: run_polling(StaffBot.objects.get(code='staff').pk, instance, stop,
+                    once=options['once'], health=health), service='telegram_staff', stop=stop,
+                    expected=expected_status, health=health, once=options['once'])
         except AlreadyRunning:
             self.stdout.write('Telegram-бот уже обслуживается; повторный запуск отменён.')
         except ValidationError:

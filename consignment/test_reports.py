@@ -42,6 +42,8 @@ class ConsignmentReportTests(TestCase):
         return import_report(upload=self.upload(**kwargs),platform_id=self.platform.pk,actor=self.user)
 
     def sale(self, draft=None):
+        # Для нового списания реализации обязателен партнёр, связанный с площадкой.
+        Partner.objects.get_or_create(platform=self.platform, defaults={'name':'Заказчик'})
         return create_report_sale(actor=self.user,draft=draft or self.draft(),partner_name='Заказчик',note='Отчёт площадки')
 
     def test_import_is_read_only_and_uses_signed_stock_not_edited_name_and_price(self):
@@ -87,14 +89,15 @@ class ConsignmentReportTests(TestCase):
         self.assertEqual(self.sale(draft).partner_id,partner.pk)
 
     def test_upload_preview_standard_form_and_submit(self):
-        response=self.client.post(reverse('consignment:report_import',args=(self.platform.pk,)),{'file':self.upload(),'customer':'custom','custom_partner_name':'Заказчик'})
+        partner=Partner.objects.create(name='Заказчик',platform=self.platform)
+        response=self.client.post(reverse('consignment:report_import',args=(self.platform.pk,)),{'file':self.upload(),'customer':partner.pk})
         self.assertContains(response,'Открыть обычную форму продажи')
-        response=self.client.post(reverse('consignment:report_import',args=(self.platform.pk,)),{'confirm_report':'1','customer':'custom','custom_partner_name':'Заказчик'})
+        response=self.client.post(reverse('consignment:report_import',args=(self.platform.pk,)),{'confirm_report':'1','customer':partner.pk})
         self.assertEqual(response.status_code,302)
         response=self.client.get(response.url);self.assertContains(response,'consignment_report')
         key=response.context['creation_key']
         response=self.client.post(reverse('sales:create'),{'consignment_report':'1','creation_key':key,'warehouse':self.warehouse.pk,
-            'price_type':'wholesale','sale_type':'wholesale','payment_method':'cash_postpay','customer':'custom','custom_partner_name':'Заказчик','note':'Отчёт'})
+            'price_type':'wholesale','sale_type':'wholesale','payment_method':'cash_postpay','customer':partner.pk,'note':'Отчёт'})
         self.assertEqual(response.status_code,302)
         self.assertEqual(Sale.objects.get().total_amount,300)
         response=self.client.post(reverse('sales:create'),{'consignment_report':'1','creation_key':key})
@@ -102,27 +105,43 @@ class ConsignmentReportTests(TestCase):
         self.assertEqual(Sale.objects.count(),1)
         self.stock.refresh_from_db();self.assertEqual(self.stock.quantity,3)
 
-    def test_partial_payment_prompts_partner_only_at_payment_and_cancel_keeps_unpaid(self):
-        sale=self.sale();self.assertFalse(Partner.objects.exists())
+    def test_partial_payment_confirms_linked_partner_debt_and_cancellation_reverses_it(self):
+        sale=self.sale();partner=sale.partner
+        self.assertEqual(Partner.objects.count(),1)
         response=self.client.post(reverse('sales:mark_paid',args=(sale.pk,)),{'cash_received_amount':'200'})
-        self.assertRedirects(response,reverse('consignment:report_partner_payment',args=(sale.pk,)))
-        self.assertFalse(Partner.objects.exists());sale.refresh_from_db();self.assertEqual(sale.payment_status,'unpaid')
-        page=self.client.get(response.url)
-        self.assertContains(page,'100,00')
-        form=page.context['form']
-        response=self.client.post(response.url,{'name':'Новый партнёр','request_key':str(form['request_key'].value()),'payment_note':'Недоплата по отчёту'})
+        self.assertEqual(response.status_code,302)
+        sale.refresh_from_db();self.assertEqual(sale.payment_status,'unpaid')
+        self.assertFalse(sale.cash_transactions.exists())
+        preview=self.client.post(reverse('sales:settlement_preview'),{'sale_id':sale.pk,'received':'200'})
+        self.assertEqual(preview.status_code,200)
+        self.assertTrue(preview.json()['required'])
+        self.assertEqual(Decimal(preview.json()['values']['charge']),100)
+        response=self.client.post(reverse('sales:mark_paid',args=(sale.pk,)),{
+            'cash_received_amount':'200','settlement_confirmation':preview.json()['token'],
+            'settlement_note':'Недоплата по отчёту'})
         self.assertEqual(response.status_code,302)
         sale.refresh_from_db();partner=sale.partner
+        partner.creditor.refresh_from_db()
+        self.assertEqual(Partner.objects.count(),1)
         self.assertEqual(partner.platform_id,self.platform.pk);self.assertEqual(partner.creditor.current_debt,100)
         self.assertEqual(sale.cash_transactions.filter(operation_type='sale_payment').count(),1)
         cancel_sale(actor=self.user,sale_id=sale.pk,comment='Отмена')
         partner.creditor.refresh_from_db();self.assertEqual(partner.creditor.current_debt,0)
         self.stock.refresh_from_db();self.assertEqual(self.stock.quantity,5)
 
-    def test_full_payment_does_not_create_partner(self):
+    def test_full_payment_does_not_create_additional_partner(self):
         sale=self.sale();mark_sale_paid(actor=self.user,sale_id=sale.pk,cash_received_amount=300)
         sale.refresh_from_db()
-        self.assertFalse(Partner.objects.exists());self.assertEqual(sale.cash_received_amount,300)
+        self.assertEqual(Partner.objects.count(),1);self.assertEqual(sale.cash_received_amount,300)
+
+    def test_sale_without_platform_partner_is_rejected_without_stock_or_money_changes(self):
+        draft=self.draft()
+        with self.assertRaisesMessage(ValidationError,'партнёра из базы с привязанной площадкой'):
+            create_report_sale(actor=self.user,draft=draft,partner_name='Заказчик',note='Отчёт площадки')
+        self.stock.refresh_from_db()
+        self.assertEqual(self.stock.quantity,5)
+        self.assertFalse(Sale.objects.exists())
+        self.assertFalse(Partner.objects.exists())
 
     def test_reward_ajax_errors_and_success_keep_row_protocol(self):
         url=reverse('consignment:reward_update',args=('cd',self.stock.pk))

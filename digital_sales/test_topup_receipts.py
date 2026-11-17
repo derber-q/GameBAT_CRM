@@ -44,6 +44,28 @@ class ReceiptParserTests(SimpleTestCase):
 
 
 class ReceiptAccountingTests(TestCase):
+    def test_pending_receipt_is_reminded_after_each_interaction_until_confirmation(self):
+        from telegram_bots.models import StaffBot,StaffBotAccess
+        from .models import Notification
+        from .reconciliation import remind_pending_topups
+        from .notifications import notification_allowed
+        bot=StaffBot.objects.create(enabled=True)
+        access=StaffBotAccess.objects.create(bot=bot,user=self.owner,allowed=True,telegram_user_id=123)
+        self.ingest('Баланс: 11418 руб')
+        observation=self.ingest(receipt())
+        before=self.supplier.balance
+        self.assertEqual(remind_pending_topups(bot_id=bot.pk,chat_id=123,update_id=100),1)
+        self.assertEqual(remind_pending_topups(bot_id=bot.pk,chat_id=123,update_id=100),0)
+        self.assertEqual(remind_pending_topups(bot_id=bot.pk,chat_id=123,update_id=101),1)
+        notices=Notification.objects.filter(access=access,event_key__contains=':reminder:')
+        self.assertEqual(notices.filter(state='queued').count(),1)
+        self.assertEqual(self.supplier.balance,before)
+        current=notices.get(state='queued')
+        self.assertTrue(notification_allowed(current))
+        apply_topup(actor=self.owner,observation_id=observation.pk,displayed_amount='244')
+        self.assertFalse(notification_allowed(current))
+        self.assertEqual(remind_pending_topups(bot_id=bot.pk,chat_id=123,update_id=102),0)
+
     def setUp(self):
         self.cipher = patch('digital_sales.crypto.cipher',return_value=Fernet(Fernet.generate_key()))
         self.cipher.start()

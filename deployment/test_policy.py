@@ -8,6 +8,21 @@ from .store import UpdateError
 
 
 class DeploymentPolicyTests(unittest.TestCase):
+    def test_ci_uses_file_sqlite_without_spawn_clones_on_windows(self):
+        from .ci_checks import main
+        for platform, parallel in (('nt', '1'), ('posix', '4')):
+            with self.subTest(platform=platform), \
+                    patch('deployment.ci_checks.os.name', platform), \
+                    patch.dict(os.environ), \
+                    patch('sys.argv', ['ci_checks']), \
+                    patch('deployment.ci_checks.subprocess.check_output', return_value=''), \
+                    patch('deployment.ci_checks.subprocess.run'), \
+                    patch('deployment.ci_checks.multiprocessing.set_start_method'), \
+                    patch('django.core.management.execute_from_command_line') as execute:
+                main()
+                self.assertEqual(execute.call_args_list[-1].args[0],
+                    ['manage.py', 'test', '--parallel', parallel, '--noinput'])
+
     def test_nonproduction_manager_refuses_before_reading_config_or_running_docker(self):
         with patch.dict(os.environ,{'GAMEBAT_ENV':'local_live'}), \
                 patch('deployment.__main__.sys.platform','linux'), \

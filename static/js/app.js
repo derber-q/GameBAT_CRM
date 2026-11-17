@@ -4,11 +4,12 @@
 
   const globalBarcodeHandlers = [];
 
-  function registerGlobalBarcodeHandler(handler) {
+  function registerGlobalBarcodeHandler(handler, options = {}) {
     if (typeof handler !== "function") return () => {};
-    globalBarcodeHandlers.push(handler);
+    const entry = {handler, accepts: options.accepts, priority: Number.isFinite(options.priority) ? options.priority : 0};
+    globalBarcodeHandlers.push(entry);
     return () => {
-      const index = globalBarcodeHandlers.lastIndexOf(handler);
+      const index = globalBarcodeHandlers.lastIndexOf(entry);
       if (index >= 0) globalBarcodeHandlers.splice(index, 1);
     };
   }
@@ -19,6 +20,25 @@
     if (target.matches("textarea, [contenteditable='true']")) return false;
     if (!target.matches("input")) return true;
     return ["number", "range", "checkbox", "radio", "button", "submit"].includes(target.type);
+  }
+
+  function scannerKeyboardCharacter(event) {
+    // USB-сканер вводит клавиши: в русской раскладке Slash становится точкой.
+    // Эта копия используется только для распознавания быстрого скана,
+    // обычный ввод и исходное значение товарного штрихкода не переписываются.
+    if (/^Key[A-Z]$/.test(event.code || "")) {
+      const letter = event.code.slice(3);
+      return event.shiftKey ? letter : letter.toLowerCase();
+    }
+    if (/^Digit[0-9]$/.test(event.code || "")) {
+      const digit = event.code.slice(5);
+      return event.shiftKey ? ")!@#$%^&*("[Number(digit)] : digit;
+    }
+    const punctuation = {Slash: ["/", "?"], Period: [".", ">"], Comma: [",", "<"],
+      Semicolon: [";", ":"], Quote: ["'", '"'], Minus: ["-", "_"], Equal: ["=", "+"],
+      BracketLeft: ["[", "{"], BracketRight: ["]", "}"], Backslash: ["\\", "|"],
+      NumpadDecimal: [".", "."], NumpadDivide: ["/", "/"]};
+    return punctuation[event.code]?.[event.shiftKey ? 1 : 0] || event.key;
   }
 
   function captureControlState(target) {
@@ -54,6 +74,7 @@
 
   function initGlobalBarcodeScanner() {
     let buffer = "";
+    let keyboardBuffer = "";
     let startedAt = 0;
     let lastAt = 0;
     let largestGap = 0;
@@ -61,6 +82,7 @@
 
     const reset = () => {
       buffer = "";
+      keyboardBuffer = "";
       startedAt = 0;
       lastAt = 0;
       largestGap = 0;
@@ -80,17 +102,30 @@
         const averageGap = buffer.length > 1 ? duration / (buffer.length - 1) : Infinity;
         const isScanner = buffer.length >= 8 && largestGap <= 150 && averageGap <= 80;
         const barcode = buffer;
+        const keyboardBarcode = keyboardBuffer;
         const snapshot = controlSnapshot;
         reset();
         if (!isScanner) return;
+        let selected = null;
+        let selectedValue = barcode;
+        for (let index = globalBarcodeHandlers.length - 1; index >= 0; index--) {
+          const entry = globalBarcodeHandlers[index];
+          let value = barcode;
+          if (typeof entry.accepts === "function" && !entry.accepts(value)) {
+            if (!entry.accepts(keyboardBarcode)) continue;
+            value = keyboardBarcode;
+          }
+          if (!selected || entry.priority > selected.priority) { selected = entry; selectedValue = value; }
+        }
+        if (!selected) return;
         event.preventDefault();
         event.stopImmediatePropagation();
         restoreControlState(snapshot);
-        const handler = globalBarcodeHandlers[globalBarcodeHandlers.length - 1];
-        Promise.resolve(handler(barcode)).catch(() => {});
+        Promise.resolve(selected.handler(selectedValue)).catch(() => {});
         return;
       }
-      if (event.key.length !== 1 || !/^[0-9A-Za-z._-]$/.test(event.key)) {
+      const keyboardCharacter = scannerKeyboardCharacter(event);
+      if (event.key.length !== 1 || !/^[!-~]$/.test(keyboardCharacter)) {
         reset();
         return;
       }
@@ -101,11 +136,13 @@
       const gap = lastAt ? now - lastAt : 0;
       if (!lastAt || gap > 150) {
         buffer = event.key;
+        keyboardBuffer = keyboardCharacter;
         startedAt = now;
         largestGap = 0;
         controlSnapshot = captureControlState(event.target);
       } else {
         buffer += event.key;
+        keyboardBuffer += keyboardCharacter;
         largestGap = Math.max(largestGap, gap);
       }
       lastAt = now;
@@ -174,7 +211,7 @@
       if (onSelect) onSelect(result, metadata);
       close();
     };
-    const loadSuggestions = async (query) => {
+    const loadSuggestions = async (query, scanned = false) => {
       try {
         const selectedWarehouse = warehouseInput ? warehouseInput.value : warehouseId;
         const params = new URLSearchParams({ q: query });
@@ -183,7 +220,8 @@
         const selectedPriceType = priceTypeInput ? priceTypeInput.value : fixedPriceType;
         if (selectedPriceType) params.set("price_type", selectedPriceType);
         const response = await fetch(`${endpoint}?${params.toString()}`, { headers: { "X-Requested-With": "XMLHttpRequest" } });
-        if (!response.ok || input.value.trim() !== query) return close();
+        if (input.value.trim() !== query) return close();
+        if (!response.ok) throw new Error('Поиск недоступен');
         const payload = await response.json();
         const exactBarcodeMatches = payload.results.filter(
           (result) => (result.barcodes || [result.barcode]).some(
@@ -194,6 +232,7 @@
           selectResult(exactBarcodeMatches[0], { exactBarcode: true });
           return;
         }
+        if (scanned) void window.GameBAT.playBarcodeFeedback?.(false);
         suggestions.replaceChildren();
         payload.results.forEach((result) => {
           const option = document.createElement("button");
@@ -217,6 +256,7 @@
         if (payload.results.length > 0) open();
         else close();
       } catch (_) {
+        if (scanned && input.value.trim() === query) void window.GameBAT.playBarcodeFeedback?.(false);
         close();
       }
     };
@@ -229,13 +269,24 @@
       if (query.length < 2) return close();
       timer = setTimeout(() => loadSuggestions(query), 180);
     });
+    let scanKeys = 0, scanStartedAt = 0, scanLastAt = 0, scanLargestGap = 0;
     input.addEventListener("keydown", (event) => {
-      if (event.key !== "Enter" || idInput.value) return;
+      if (event.key !== 'Enter') {
+        if (event.key.length !== 1 || event.ctrlKey || event.altKey || event.metaKey || event.repeat) return;
+        const now = performance.now(), gap = now - scanLastAt;
+        if (!scanKeys || gap > 150) { scanKeys = 0; scanStartedAt = now; scanLargestGap = 0; }
+        else scanLargestGap = Math.max(scanLargestGap, gap);
+        scanKeys++; scanLastAt = now;
+        return;
+      }
+      const scanned = scanKeys >= 8 && scanLargestGap <= 150 && (scanLastAt - scanStartedAt) / (scanKeys - 1) <= 80;
+      scanKeys = 0;
+      if (idInput.value) return;
       const query = input.value.trim();
       if (query.length < 2) return;
       event.preventDefault();
       clearTimeout(timer);
-      loadSuggestions(query);
+      loadSuggestions(query, scanned);
     });
     document.addEventListener("click", (event) => {
       if (!input.contains(event.target) && !suggestions.contains(event.target)) close();
@@ -348,8 +399,24 @@
   if (globalBarcodeSearchForm) {
     const searchInput = globalBarcodeSearchForm.querySelector("[data-global-barcode-search-input]");
     if (searchInput) {
-      registerGlobalBarcodeHandler((barcode) => {
+      let searchScanSequence = 0;
+      registerGlobalBarcodeHandler(async (barcode) => {
+        const sequence = ++searchScanSequence;
         searchInput.value = barcode;
+        try {
+          const url = new URL(globalBarcodeSearchForm.dataset.barcodeLookupUrl, window.location.href);
+          url.searchParams.set('barcode', barcode);
+          const response = await fetch(url, {credentials: 'same-origin', cache: 'no-store', headers: {Accept: 'application/json'}});
+          if (!response.ok) throw new Error('Поиск недоступен');
+          const result = await response.json();
+          if (typeof result.found !== 'boolean') throw new Error('Некорректный ответ поиска');
+          if (sequence !== searchScanSequence) return;
+          // Даём короткому звуку завершиться до перехода на результаты поиска.
+          await window.GameBAT.playBarcodeFeedback?.(result.found);
+        } catch (_) {
+          if (sequence === searchScanSequence) await window.GameBAT.playBarcodeFeedback?.(false);
+        }
+        if (sequence !== searchScanSequence) return;
         globalBarcodeSearchForm.requestSubmit();
       });
     }
@@ -384,4 +451,36 @@
   });
 
   window.GameBAT = { attachAutocomplete, registerGlobalBarcodeHandler, attachCollapseControls };
+  const saleBarcodeUrl = document.body?.dataset?.saleBarcodeUrl;
+  if (saleBarcodeUrl) {
+    const endpoint = new URL(saleBarcodeUrl, window.location.href);
+    const prefix = endpoint.pathname.replace(/by-barcode\/$/, "");
+    const escape = value => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const pathPattern = new RegExp("^" + escape(prefix) + "([1-9][0-9]{0,18})/?$");
+    const dottedPath = prefix.split("/").filter(Boolean).map(escape).join("[/.]");
+    const dottedPattern = new RegExp("^(https?):[/.]{2}([A-Za-z0-9.:[\\]_-]+?)[/.]" + dottedPath + "[/.]([1-9][0-9]{0,18})[/.]?$", "i");
+    function saleScan(value) {
+      if (/^SALE-[0-9]{6,18}$/i.test(value)) return {code: value.toUpperCase()};
+      let url;
+      if (/^https?:\/\//i.test(value)) {
+        try { url = new URL(value); } catch (_) { return null; }
+      } else {
+        const damaged = value.match(dottedPattern);
+        if (!damaged) return null;
+        try { url = new URL(damaged[1] + "://" + damaged[2] + prefix + damaged[3] + "/"); } catch (_) { return null; }
+      }
+      const current = new URL(window.location.href);
+      const local = ["127.0.0.1", "localhost", "[::1]"].includes(url.hostname) && url.port === current.port;
+      if ((!local && url.origin !== current.origin) || url.username || url.password || url.search || url.hash) return null;
+      const matched = url.pathname.match(pathPattern);
+      return matched ? {sale_id: matched[1]} : null;
+    }
+    registerGlobalBarcodeHandler(value => {
+      const sale = saleScan(value);
+      if (!sale) return;
+      const target = new URL(saleBarcodeUrl, window.location.href);
+      for (const [name, content] of Object.entries(sale)) target.searchParams.set(name, content);
+      window.location.assign(target.href);
+    }, {priority: 100, accepts: value => Boolean(saleScan(value))});
+  }
 })();

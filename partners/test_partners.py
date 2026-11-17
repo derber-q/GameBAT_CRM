@@ -136,7 +136,7 @@ class PartnerTests(TestCase):
         self.assertEqual((sale.debt_repayment_amount, sale.debt_advance_amount, self.partner.creditor.current_debt), (0, 3000, -3500))
 
     def test_wholesale_advance_requires_account_confirmation_and_fresh_balance(self):
-        with self.assertRaisesMessage(ValidationError, 'выберите партнёра'):
+        with self.assertRaisesMessage(ValidationError, 'заказчика'):
             self.sale(partner_id=None, cash_received_amount='13000')
         with self.assertRaisesMessage(ValidationError, 'Подтвердите'):
             self.sale(cash_received_amount='13000')
@@ -147,6 +147,7 @@ class PartnerTests(TestCase):
         self.assertFalse(Sale.objects.exists())
 
     def test_postpaid_bank_advance_has_no_cash_transaction(self):
+        self.client.force_login(self.actor)
         sale = self.sale(payment_method='bank_transfer_postpay')
         response = self.client.post(reverse('sales:settlement_preview'), {'sale_id': sale.pk, 'received': '13000'})
         self.assertTrue(response.json()['required'])
@@ -170,8 +171,9 @@ class PartnerTests(TestCase):
         self.assertEqual(sale.creditor_movements.count(), 1)
 
     def test_sale_form_uses_updated_settlement_script(self):
+        self.client.force_login(self.actor)
         response = self.client.get(reverse('sales:create'))
-        self.assertContains(response, 'partner-settlements.js?v=20261107-advance-1')
+        self.assertContains(response, 'partner-settlements.js?v=20261112-prepayment-1')
 
     def test_repayment_and_advance_do_not_duplicate_cash_or_profit(self):
         self.debt('2000')

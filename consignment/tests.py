@@ -293,7 +293,7 @@ class ConsignmentServiceTests(TestCase):
         self.assertContains(response, "data-consignment-barcode-feedback")
         self.assertContains(response, "data-consignment-barcode-input")
         self.assertContains(response, "data-consignment-barcode-add")
-        self.assertContains(response, "consignment-transfer.js?v=20261031-1")
+        self.assertContains(response, "consignment-transfer.js?v=20261116-scan-1")
 
         failed_response = self.client.post(reverse("consignment:transfer"), {
             "warehouse": self.warehouse.pk,
@@ -408,7 +408,8 @@ class ConsignmentServiceTests(TestCase):
                 name=f'Игра Switch {generation}', sku=f'NS-ORDER-{generation}', cost=100)
             for amount in (200, 250):
                 stocks.append(CDConsignmentStock.objects.create(platform=self.sales_platform,
-                    warehouse=self.warehouse, cd=product, quantity=1, receivable_per_unit=amount))
+                    warehouse=self.warehouse, cd=product, quantity=1, receivable_per_unit=amount,
+                    lot_key=f'ordering-{generation}-{amount}'))
         groups = _group_stocks(stocks, product_kind='cd', user=self.user)
         self.assertEqual([group.name for group, _ in groups], ['Nintendo Switch 2', 'Nintendo Switch 1'])
         rows = [row for _, entries in groups for row in entries]

@@ -66,6 +66,10 @@ class AvitoPhotoForm(forms.ModelForm):
 
 class ProductTargetForm(forms.Form):
     product_ref = forms.ChoiceField(label="Товар CRM")
+    sell_on_avito = forms.BooleanField(
+        label='Продавать этот товар на Avito', required=False, initial=True,
+        help_text='Для архивного объявления CRM предложит публикацию при наличии товара на складе. Само объявление эта форма не публикует.',
+    )
 
     def __init__(self, *args, query="", exclude_connected=True, **kwargs):
         super().__init__(*args, **kwargs)

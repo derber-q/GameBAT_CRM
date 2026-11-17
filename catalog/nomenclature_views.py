@@ -248,7 +248,7 @@ def _form_sections(form, product_kind):
             "fields": [form[name] for name in (
                 "cost",
                 "avito_price", "avito_markup_from_wholesale",
-                "yandex_market_price", "yandex_markup_from_wholesale", "wholesale_price",
+                "yandex_market_price", "yandex_markup_from_wholesale", "wholesale_price", "hide_from_wholesale_price",
                 "yandex_desired_profit", "yandex_pricing_integration", "yandex_pricing_category",
             )],
         },

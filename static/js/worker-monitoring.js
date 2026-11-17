@@ -18,6 +18,13 @@
   const text = (selector, value) => { const node = document.querySelector(selector); if (node) node.textContent = value; };
   const date = (value, fallback = 'Нет данных') => value && Number.isFinite(Date.parse(value))
     ? new Date(value).toLocaleString('ru-RU', {timeZone: 'Europe/Moscow'}) : fallback;
+  function setIcon(mode, label) {
+    if (!icon) return;
+    icon.hidden = mode === 'healthy';
+    icon.dataset.state = mode;
+    icon.title = label;
+    icon.setAttribute('aria-label', label);
+  }
   function soundState() { report(blocked ? 'blocked' : enabled ? 'on' : 'off', audioStatus.textContent); }
   function stopAudio() { audio.pause(); cancelAudio?.(); }
   function soundFailed() {
@@ -65,20 +72,22 @@
   }
   function unavailable() {
     fresh = false; incidents = []; stopAudio();
-    if (icon) { icon.hidden = false; icon.title = 'Состояние обработчиков неизвестно: нет актуальных данных'; icon.setAttribute('aria-label', icon.title); }
+    setIcon('starting', 'Подключение к CRM: ожидаются актуальные данные об обработчиках');
     feedStatus.textContent = 'Нет актуальных данных об обработчиках. Проверьте сеть и вход в CRM.';
     text('[data-worker-summary]', feedStatus.textContent);
     for (const button of document.querySelectorAll('[data-worker-command] button')) button.disabled = true;
   }
   function render(data) {
     const previousIds = new Set(incidents.map(item => item.id));
-    incidents = data.incidents;
+    incidents = data.alarm ? data.incidents : [];
     if (!data.alarm || [...previousIds].some(id => !incidents.some(item => item.id === id))) stopAudio();
     fresh = true; lastFeed = Date.now(); offset = Date.parse(data.server_time) - Date.now();
-    if (icon) { icon.hidden = !data.alarm; icon.title = data.controller_alarm ? 'Контроллер недоступен' : 'Проблема обработчиков'; icon.setAttribute('aria-label', icon.title); }
+    setIcon(data.alarm ? 'error' : data.starting ? 'starting' : 'healthy',
+      data.alarm ? (data.controller_alarm ? 'Контроллер недоступен' : 'Проблема обработчиков')
+        : data.starting ? 'Обработчики запускаются — ожидается подтверждение работы' : 'Обработчики работают');
     feedStatus.textContent = '';
-    text('[data-worker-summary]', data.controller_label + (data.alarm ? ' · Требуется внимание' : data.mode === 'managed' ? ' · Все необходимые обработчики работают' : ''));
-    text('[data-worker-counts]', `Работают: ${data.running_count} · Требуют внимания: ${data.stopped_count} · Отключены или не настроены: ${data.disabled_count}`);
+    text('[data-worker-summary]', data.controller_label + (data.alarm ? ' · Требуется внимание' : data.starting ? ' · Обработчики запускаются' : data.mode === 'managed' ? ' · Все необходимые обработчики работают' : ''));
+    text('[data-worker-counts]', `Работают: ${data.running_count} · Запускаются: ${data.starting_count || 0} · Требуют внимания: ${data.stopped_count} · Отключены или не настроены: ${data.disabled_count}`);
     text('[data-worker-observed]', date(data.observed_at));
     for (const agent of data.print_agents || []) {
       const node = document.querySelector(`[data-print-agent="${agent.id}"]`);
@@ -101,7 +110,7 @@
         let value = row[key];
         if (key.endsWith('_at')) value = date(value, key === 'next_at' ? (row.code === 'print' ? 'По поступлению' : 'Не запланировано') : 'Нет данных');
         if (key === 'next_at' && row.overdue) value = `Просрочено с ${value}`;
-        if (key === 'failures') value = `${value} / 3`;
+        if (key === 'failures') value = row.continuous_recovery ? `${value} · повторы без ограничения` : `${value} / 3`;
         if (key === 'paused') value = value ? 'Приостановлено' : 'Разрешено для необходимых обработчиков';
         field.textContent = value ?? '';
       }

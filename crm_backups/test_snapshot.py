@@ -1,5 +1,6 @@
 """Реальное восстановление искусственного WAL, файлов и зашифрованных данных."""
 import json
+import os
 from contextlib import closing
 from pathlib import Path
 import sqlite3
@@ -56,6 +57,25 @@ class FullSnapshotTests(unittest.TestCase):
         self.assertEqual(Fernet(saved['INTEGRATION_ENCRYPTION_KEY'].encode()).decrypt(encrypted.encode()), b'fake-API-secret')
         self.assertEqual((restored / 'protected_media/label.pdf').read_bytes(), (self.media / 'label.pdf').read_bytes())
         self.assertEqual(self.writer.execute('SELECT quantity FROM stock').fetchone()[0], 7)
+
+    def test_file_inventory_records_real_identity_and_rejects_hardlinks(self):
+        from .snapshot import file_stamps, inventory
+        source = self.media / 'label.pdf'
+        stamps = file_stamps(self.media)
+        self.assertEqual(stamps['label.pdf'][:2], (source.stat().st_dev, source.stat().st_ino))
+        self.assertEqual(inventory(self.media, lambda: None)['label.pdf']['size'], source.stat().st_size)
+        duplicate = self.media / 'linked.pdf'
+        try:
+            os.link(source, duplicate)
+        except (OSError, NotImplementedError):
+            self.skipTest('Файловая система не поддерживает создание жёстких ссылок')
+        with self.assertRaisesRegex(ValueError, 'Жёсткая ссылка'):
+            file_stamps(self.media)
+        with self.assertRaisesRegex(ValueError, 'Жёсткая ссылка'):
+            inventory(self.media, lambda: None)
+        with self.assertRaisesRegex(ValueError, 'Жёсткая ссылка'):
+            create_bundle(**self.options)
+        self.assertFalse(self.target.exists())
 
     def test_missing_referenced_file_and_wrong_recovery_secret_fail_closed(self):
         (self.media / 'label.pdf').unlink()

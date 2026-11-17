@@ -96,12 +96,12 @@ class MarketNotificationBrowserChecks(StaticLiveServerTestCase):
                     payment_method='bank_transfer_postpay',
                     order_status='delivered', payment_status='paid')
 
-        def new_order(number, minutes):
+        def new_order(number, seconds):
             sale = Sale.objects.create(warehouse=warehouse, created_by=actor, sale_type='yandex_market',
                 price_type='yandex_market', payment_method='bank_transfer_postpay')
             order = OrderMetadata.objects.create(integration=integration, sale=sale, order_id=number,
                 status='PROCESSING', substatus='STARTED')
-            return MarketOrderAttention.objects.create(order=order, notification_started_at=start + timedelta(minutes=minutes)).pk
+            return MarketOrderAttention.objects.create(order=order, notification_started_at=start + timedelta(seconds=seconds)).pk
         first = new_order(101, 0)
         with ThreadPoolExecutor(max_workers=1) as database, sync_playwright() as pw:
             run = lambda callback: database.submit(database_call, callback).result()
@@ -193,18 +193,18 @@ class MarketNotificationBrowserChecks(StaticLiveServerTestCase):
             b1.locator('[data-notification-sound-enable]').click()
             wait_signals([a1, a2], 1)
             wait_signals([b1], 1)
-            second = run(lambda: new_order(102, 4))
-            clock[0] = start + timedelta(minutes=4)
+            second = run(lambda: new_order(102, 72))
+            clock[0] = start + timedelta(seconds=72)
             refresh([a1, a2, b1])
             wait_signals([a1, a2], 2); wait_signals([b1], 2)
-            third = run(lambda: new_order(103, 7))
-            clock[0] = start + timedelta(minutes=7)
+            third = run(lambda: new_order(103, 126))
+            clock[0] = start + timedelta(seconds=126)
             refresh([a1, a2, b1])
             wait_signals([a1, a2], 3); wait_signals([b1], 3)
             expect(a2.locator('[data-market-pending-count]')).to_have_text('3')
             a2.set_viewport_size({'width': 390, 'height': 900})
             a2.screenshot(path=str(output / 'pending-390.png'), full_page=True)
-            clock[0] = start + timedelta(minutes=10)
+            clock[0] = start + timedelta(seconds=180)
             refresh([a1, a2, b1])
             events_a = wait_signals([a1, a2], 4); wait_signals([b1], 4)
             self.assertEqual(events_a[-1]['id'], str(first))
@@ -213,15 +213,15 @@ class MarketNotificationBrowserChecks(StaticLiveServerTestCase):
             refresh([a1, b1])
             expect(a1.locator('[data-market-pending-count]')).to_have_text('2')
             expect(b1.locator('[data-market-pending-count]')).to_have_text('2')
-            clock[0] = start + timedelta(minutes=14)
+            clock[0] = start + timedelta(seconds=252)
             refresh([a1, a2, b1]); a1.wait_for_timeout(300)
             self.assertEqual(len(signals([a1, a2])), 4)
-            clock[0] = start + timedelta(minutes=17)
+            clock[0] = start + timedelta(seconds=306)
             refresh([a1, a2, b1])
             events_a = wait_signals([a1, a2], 5); wait_signals([b1], 5)
             self.assertEqual(events_a[-1]['id'], str(third))
             past = signals([a1]); a1.close()
-            clock[0] = start + timedelta(minutes=20)
+            clock[0] = start + timedelta(seconds=360)
             refresh([a2, b1])
             events_a = wait_signals([a2], 6, past); wait_signals([b1], 6)
             past = events_a
@@ -239,8 +239,8 @@ class MarketNotificationBrowserChecks(StaticLiveServerTestCase):
                 self.assertTrue(all(event['volume'] == 1 for event in records))
                 self.assertTrue(all(left['end'] <= right['start'] for left, right in zip(records, records[1:])))
             ctx_a.close(); ctx_b.close()
-            fourth = run(lambda: new_order(104, 21))
-            clock[0] = start + timedelta(minutes=21)
+            fourth = run(lambda: new_order(104, 378))
+            clock[0] = start + timedelta(seconds=378)
             ctx_c, outage = context()
             c1 = page(ctx_c, 'sales:market_pending')
             c1.evaluate('window.__audioDenied=true')
@@ -253,11 +253,11 @@ class MarketNotificationBrowserChecks(StaticLiveServerTestCase):
             c1.locator('[data-notification-sound-enable]').click()
             wait_signals([c1], 1)
             outage[0] = True
-            clock[0] = start + timedelta(minutes=31)
+            clock[0] = start + timedelta(seconds=558)
             refresh([c1])
             expect(c1.locator('[data-market-feed-status]')).to_contain_text('звук приостановлен')
             run(lambda: acknowledge_order(actor=actor, attention_id=fourth))
-            fifth = run(lambda: new_order(105, 31))
+            fifth = run(lambda: new_order(105, 558))
             outage[0] = False
             refresh([c1]); recovered = wait_signals([c1], 2)
             self.assertEqual([event['id'] for event in recovered], [str(fourth), str(fifth)])

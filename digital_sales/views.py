@@ -17,7 +17,7 @@ from core.decorators import permission_required_all
 from .models import (Buyer, Supplier, DigitalBot, DigitalOrder, SupplierMessage,
                      BalanceMovement, BalanceObservation, AuditEvent, Notification)
 from . import forms, services
-from .ingestion import expected_balance, resolve_order, link_orders, store_manual_goods, correct_checklist, attach_message
+from .ingestion import expected_balance, resolve_order, link_orders, store_manual_goods, correct_checklist, attach_message, confirm_fulfillment
 from .crypto import decrypt
 
 
@@ -172,6 +172,10 @@ def order_action(request, pk):
         elif action == 'cancel' and order.sale_id:
             from sales.services import cancel_sale
             cancel_sale(actor=request.user, sale_id=order.sale_id, comment=request.POST.get('reason'))
+        elif action == 'cancel':
+            services.ignore_incoming_order(actor=request.user, order_id=pk, revision=request.POST.get('revision'))
+        elif action == 'confirm_goods':
+            confirm_fulfillment(actor=request.user, order_id=pk, revision=request.POST.get('revision'))
         elif action == 'resolve':
             resolve_order(actor=request.user, order_id=pk, revision=request.POST.get('revision'), reason=request.POST.get('reason'))
         elif action == 'link':

@@ -62,18 +62,20 @@ def _number(raw, mode):
 
 def parse_costs(values):
     from .classification import clean_caption
-    if not isinstance(values,list) or len(values)>400 or any(not isinstance(row,list) or len(row)>24 for row in values):
+    if not isinstance(values,list) or len(values)>1000 or any(not isinstance(row,list) or len(row)>128 for row in values):
         raise SheetSourceError('sheet_structure')
     headings = {}
     for y,row in enumerate(values):
         for x,cell in enumerate(row):
             key = clean_caption(cell).casefold()
             if key in HEADINGS:
-                if key in headings or x >= 23:
+                if key in headings or x >= 127:
                     raise SheetSourceError('sheet_structure')
                 headings[key]=(y,x)
-    if set(headings)!=set(HEADINGS):
-        raise SheetSourceError('sheet_structure')
+    # Поставщик может убрать страну или передвинуть блок. Отсутствующий блок
+    # не превращает оставшиеся корректные тарифы в ошибку всей таблицы.
+    if not headings:
+        raise SheetSourceError('sheet_empty')
     costs = {}
     for name,(y,x) in headings.items():
         kind,region,mode = HEADINGS[name]
@@ -91,11 +93,22 @@ def parse_costs(values):
             if key in costs:
                 raise SheetSourceError('sheet_structure')
             raw=row[x+1] if len(row)>x+1 else ''
-            reference=f'{SOURCE_TAB}!{chr(65+x+1)}{n+1}'
+            reference=f'{SOURCE_TAB}!{column_name(x+2)}{n+1}'
             costs[key]=SheetCost(kind,region,normal,mode,_number(raw,mode),reference)
     if not costs:
         raise SheetSourceError('sheet_empty')
     return costs
+
+
+def column_name(number):
+    """A1-координаты без предположения, что блоки заканчиваются колонкой Z."""
+    if type(number) is not int or not 1 <= number <= 128:
+        raise SheetSourceError('sheet_structure')
+    result = ''
+    while number:
+        number, remainder = divmod(number-1, 26)
+        result = chr(65+remainder) + result
+    return result
 
 
 def spreadsheet_id(url):
@@ -169,10 +182,10 @@ class SheetClient:
         if len(tabs)!=1:
             raise SheetSourceError('sheet_structure')
         grid=tabs[0].get('gridProperties',{})
-        rows=grid.get('rowCount',0)
-        if type(rows) is not int or rows<40 or grid.get('columnCount',0)<24:
+        rows,columns=grid.get('rowCount',0),grid.get('columnCount',0)
+        if type(rows) is not int or rows<1 or type(columns) is not int or columns<2:
             raise SheetSourceError('sheet_structure')
-        data=self.read_ranges([f"'{SOURCE_TAB}'!A1:X{min(rows,400)}"])
+        data=self.read_ranges([f"'{SOURCE_TAB}'!A1:{column_name(min(columns,128))}{min(rows,1000)}"])
         ranges=data.get('valueRanges')
         if not isinstance(ranges,list) or len(ranges)!=1 or not isinstance(ranges[0],dict):
             raise SheetSourceError('sheet_response')

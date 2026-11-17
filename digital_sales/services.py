@@ -113,10 +113,12 @@ def _version(order, revision):
 @transaction.atomic
 def ignore_incoming_order(*, actor, order_id, revision):
     """Исключение входящего заказа не означает возврат денег поставщиком."""
-    actor = require(actor, 'digital_sales.telegram_digital_sales', 'digital_sales.cancel_digital_sales')
+    actor = require(actor, 'digital_sales.cancel_digital_sales')
     source = DigitalOrder.objects.get(pk=order_id)
     Supplier.objects.select_for_update().get(pk=source.supplier_id)
     order = DigitalOrder.objects.select_for_update().get(pk=source.pk)
+    if order.source == 'api_v2':
+        raise ValidationError('API-заказ управляется через сверку цифрового магазина; исключение сообщения не отменяет закупку.')
     if order.ignored_at:
         return order
     _version(order, revision)
@@ -134,7 +136,7 @@ def ignore_incoming_order(*, actor, order_id, revision):
         notice.state = 'revoked'
         notice.save(update_fields=['state'])
     AuditEvent.objects.create(order=order, actor=actor, kind='incoming_order_ignored',
-        detail='Исключён из обработки через Telegram; подтверждённый расход поставщика сохранён')
+        detail='Исключён из обработки; подтверждённый расход поставщика сохранён')
     from .notifications import enqueue_order
     enqueue_order(order, event=f'ignored:{order.revision}')
     return order
@@ -145,6 +147,8 @@ def ignore_incoming_order(*, actor, order_id, revision):
 def save_draft(*, actor, order_id, revision, buyer_id, price, is_retail=False):
     actor = require(actor, 'digital_sales.create_digital_sales', 'sales.create_sale')
     order = DigitalOrder.objects.select_for_update().get(pk=order_id)
+    if order.source == 'api_v2':
+        raise ValidationError('Покупатель и цена зафиксированы подтверждением корзины. Используйте сверку магазина.')
     _version(order, revision)
     if order.sale_id:
         raise ValidationError('Продажа уже создана; общий черновик закрыт.')
@@ -182,6 +186,12 @@ def confirm_order(*, actor, order_id, revision, complete_immediately=False):
     """Telegram явно запрашивает полное проведение; веб сохраняет прежний сценарий."""
     actor = require(actor, 'digital_sales.create_digital_sales', 'sales.create_sale')
     order = DigitalOrder.objects.select_for_update().select_related('buyer').get(pk=order_id)
+    if order.source == 'api_v2':
+        from digital_shop.models import PurchaseLine
+        line = PurchaseLine.objects.filter(digital_order=order).select_related('intent__cart').first()
+        if (line is None or line.status not in ('completed', 'active') or not line.encrypted_result
+                or order.is_retail or order.buyer_id != line.intent.cart.buyer_id or order.price != line.client_price):
+            raise ValidationError('Нужно подтверждённое выполнение и безопасный результат заказа магазина.')
     if order.sale_id:
         return order.sale
     _version(order, revision)
@@ -290,12 +300,23 @@ def complete_sale(*, actor, sale_id):
         return sale
     if order.review_reason:
         raise ValidationError('Перед завершением требуется разрешить расхождения цифрового заказа.')
+    api_line = None
+    if order.source == 'api_v2':
+        from digital_shop.models import PurchaseLine, BalanceHold
+        api_line = PurchaseLine.objects.select_for_update().filter(digital_order=order).first()
+        if (api_line is None or api_line.status not in ('completed', 'active') or not api_line.encrypted_result
+                or api_line.confirmed_cost is None or api_line.confirmed_cost > 0 and not api_line.supplier_movement_id
+                or api_line.confirmed_cost != order.cost):
+            raise ValidationError('Нужно подтвердить выполнение и безопасный результат внешнего заказа.')
+        hold = BalanceHold.objects.select_for_update().get(intent=api_line.intent)
+        if hold.state != 'active' or hold.remaining < sale.total_amount:
+            raise ValidationError('Резерв цифрового заказа требует сверки.')
     _sale_contract(order, sale)
     # Оба баланса могут уйти в минус: долг учитывается тем же журналом, без новой кассовой операции.
     if buyer is not None:
         BalanceMovement.objects.create(buyer=buyer, sale=sale, delta=-sale.total_amount, kind='sale', actor=actor,
                                       reason=f'Оплата {sale.visible_id}')
-    if order.cost:
+    if order.cost and api_line is None:
         BalanceMovement.objects.create(supplier=supplier, sale=sale, delta=-order.cost, kind='sale', actor=actor,
                                       reason=f'Себестоимость {sale.visible_id}')
     if buyer is not None:
@@ -310,6 +331,16 @@ def complete_sale(*, actor, sale_id):
     sale.save(update_fields=['order_status', 'payment_status', 'completed_at', 'paid_at', 'paid_by', 'cash_received_amount', 'updated_at'])
     order.state, order.revision = DigitalOrder.State.COMPLETED, order.revision + 1
     order.save(update_fields=['state', 'revision', 'updated_at'])
+    if api_line is not None:
+        hold.remaining -= sale.total_amount
+        if not hold.remaining:
+            hold.state = 'settled'
+        hold.save(update_fields=['remaining', 'state'])
+        api_line.settled_at = timezone.now()
+        api_line.save(update_fields=['settled_at'])
+        from digital_shop.models import ResultDelivery
+        ResultDelivery.objects.get_or_create(line=api_line, defaults={'buyer_id': buyer.pk,
+            'chat_id': api_line.intent.cart.chat_id, 'encrypted_text': api_line.encrypted_result})
     AuditEvent.objects.create(order=order, actor=actor, kind='sale_completed', detail=f'sale={sale.pk}')
     if buyer is not None:
         from .customer_receipts import enqueue_sale_receipt
@@ -328,6 +359,8 @@ def cancel_digital_sale(*, actor, sale_id, comment):
     if not comment:
         raise ValidationError('Укажите причину отмены.')
     source = DigitalOrder.objects.get(sale_id=sale_id)
+    if source.source == 'api_v2':
+        raise ValidationError('Внешняя закупка уже создана. Для отмены нужны подтверждение возврата и отдельная сверка в цифровом магазине.')
     Supplier.objects.select_for_update().get(pk=source.supplier_id)
     buyer = None if source.is_retail else Buyer.objects.select_for_update().get(pk=source.buyer_id)
     order = DigitalOrder.objects.select_for_update().get(pk=source.pk)

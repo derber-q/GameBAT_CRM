@@ -2,6 +2,7 @@
 from dataclasses import dataclass, asdict, replace
 from datetime import timedelta
 import re
+import unicodedata
 from django.db import transaction
 from django.utils import timezone
 from .models import CatalogState, Product, Integration, ManualPriceEntry
@@ -35,7 +36,11 @@ class PublicCatalog:
 
 
 def safe_text(value):
-    value = re.sub(r'https?://\S+|@[\w]+|pv2_[A-Za-z0-9]+|(?:pan\s*yan(?:\s*store)?|yan\s*store)', '', str(value), flags=re.I)
+    value = unicodedata.normalize('NFKC', str(value))
+    if re.search(r'pan[\W_]*yan|yan[\W_]*store|пан[\W_]*ян|ян[\W_]*стор|себес|закуп|наценк|поставщик|'
+                 r'purchase_cost|\b(?:cost|cogs|supplier|markup)\b|(?:pv2|ov2|qv2)_[\w-]+|https?://|www\.', value, re.I):
+        return 'Цифровой товар'  # Не оставляем закрытую сумму после удаления лишь имени поставщика.
+    value = re.sub(r'@[\w]+', '', value)
     value = ''.join(char for char in value if char >= ' ' and char != '\x7f')
     return ' '.join(value.split()).strip(' ·-|')
 
@@ -88,7 +93,9 @@ def manual_row(entry):
             text = coefficient_text(entry.cost_coefficient + entry.markup_coefficient)
     code = region_code(entry.region)
     family = 'Игры' if entry.kind == 'game_tariff' else 'Пополнение Steam'
-    return PublicRow(safe_text(entry.label), family, 'services', code, text, 'unknown' if entry.sheet_issue else 'yes', family,
+    unavailable = entry.sheet_issue == 'source_missing'
+    return PublicRow(safe_text(entry.label), family, 'services', code, 'Нет в наличии' if unavailable else text,
+                     'no' if unavailable else 'unknown' if entry.sheet_issue else 'yes', family,
                      '' if entry.kind == 'game_tariff' else 'Ручные тарифы', safe_text(entry.label),
                      COUNTRIES.get(code, safe_text(entry.region)), entry.position,
                      getattr(entry, {'percent':'markup_percent','coefficient':'markup_coefficient'}.get(entry.pricing_mode,'markup')) is not None)
@@ -111,9 +118,11 @@ def snapshot(*, actor, buyer=None):
     state = CatalogState.objects.select_for_update().get(pk=1)
     now, rows, review = timezone.now(), [], False
     from .buyer_pricing import profile_rows
-    for row in profile_rows(Product.objects.all(), ManualPriceEntry.objects.filter(source_archived=False), buyer):
+    current = Product.objects.filter(superseded_by__isnull=True).exclude(external_id__startswith='v1_code_')
+    manual = ManualPriceEntry.objects.filter(source_archived=False)
+    for row in profile_rows(current, manual, buyer):
         is_product = isinstance(row, Product)
-        review = review or (row.requires_review if is_product else bool(row.sheet_issue))
+        review = review or (row.requires_review if is_product else bool(row.sheet_issue and row.sheet_issue != 'source_missing'))
         rows.append(product_row(row) if is_product else manual_row(row))
     config = Integration.objects.filter(pk=1).first()
     return PublicCatalog(state.revision, now.isoformat(), state.source_at.isoformat() if state.source_at else None,
@@ -123,6 +132,7 @@ def snapshot(*, actor, buyer=None):
 
 def serialize(catalog):
     data = asdict(catalog)
+    data['rows'] = list(data['rows'])
     # Флаг нужен только для отбора блоков; в сохранённом публичном DTO нет даже
     # служебной отметки о наличии наценки, тем более её значений или себестоимости.
     for row in data['rows']:

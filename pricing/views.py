@@ -167,6 +167,7 @@ def pricing_list(request, product_kind=None):
 def product_prices_update(request):
     ajax = request.headers.get("X-Requested-With") == "XMLHttpRequest"
     field_permissions = {
+        "hide_from_wholesale_price": "pricing.change_wholesale_price",
         "avito_price": "pricing.change_retail_price",
         "wholesale_price": "pricing.change_wholesale_price",
         "yandex_market_price": "pricing.change_yandex_market_price",
@@ -175,12 +176,12 @@ def product_prices_update(request):
     }
     changes = {}
     for field, permission in field_permissions.items():
-        if field in request.POST:
+        if field in request.POST or (field == 'hide_from_wholesale_price' and 'wholesale_visibility_present' in request.POST):
             if not (request.user.is_superuser or request.user.has_perm(permission)):
                 if ajax:
                     return JsonResponse({"ok": False, "message": "У вас нет доступа к изменению этой цены."}, status=403)
                 raise PermissionDenied("У вас нет доступа к изменению этой цены.")
-            changes[field] = request.POST[field]
+            changes[field] = request.POST.get(field, '0')
     try:
         calculation = None
         saved_prices = {}

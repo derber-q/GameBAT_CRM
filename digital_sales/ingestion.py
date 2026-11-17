@@ -5,7 +5,7 @@ from datetime import datetime, timezone as dt_timezone
 from decimal import Decimal
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import Q, Sum
+from django.db.models import Sum
 from django.utils import timezone
 from django.views.decorators.debug import sensitive_variables
 from core.db_retry import retry_database_lock
@@ -31,6 +31,8 @@ def _issue(order, reason):
 
 
 def _refresh(order, *, notify=True):
+    if order.source == 'api_v2':
+        return  # Выполнение и деньги принадлежат API-заказу, сообщение не создаёт вторую продажу.
     if order.sale_id or order.processing_stopped:
         return
     if not order.review_reason:
@@ -70,7 +72,9 @@ def _same_checklist_snapshot(before, after):
 def expected_balance(supplier):
     credits = supplier.movements.exclude(kind__in=['sale', 'reversal']).aggregate(value=Sum('delta'))['value'] or Decimal(0)
     purchases = SupplierPurchase.objects.filter(order__supplier=supplier, superseded_by__isnull=True).aggregate(value=Sum('amount'))['value'] or Decimal(0)
-    return credits - purchases
+    from digital_shop.models import ConfirmedRefund
+    refunds = ConfirmedRefund.objects.filter(line__digital_order__supplier=supplier).aggregate(value=Sum('amount'))['value'] or Decimal(0)
+    return credits - purchases + refunds
 
 
 def _observation(message, parsed, *, late=False):
@@ -103,11 +107,10 @@ def _observation(message, parsed, *, late=False):
 def _order_for(message, parsed):
     numbers = parsed.get('numbers', [])
     ids = set(OrderReference.objects.filter(supplier=message.supplier, number__in=numbers).values_list('order_id', flat=True))
-    # Редактирование исходного сообщения может убрать или заменить номера.
-    # Сохранённая связь не позволяет воскресить исключённый заказ под новым ID.
+    # Версии одного сообщения принадлежат тому же заказу, даже если поставщик
+    # заменил номера. При пересечении с другой записью нужна явная проверка.
     ids.update(SupplierMessage.objects.filter(supplier=message.supplier, chat_id=message.chat_id,
-        message_id=message.message_id).filter(Q(order__ignored_at__isnull=False)
-        | Q(order__state=DigitalOrder.State.CANCELLED)).values_list('order_id', flat=True))
+        message_id=message.message_id, order__isnull=False).values_list('order_id', flat=True))
     reply = parsed.get('reply_to_message_id')
     if reply:
         replied = SupplierMessage.objects.filter(supplier=message.supplier, chat_id=message.chat_id,
@@ -135,7 +138,11 @@ def _order_for(message, parsed):
 def _goods_matches(order, parsed):
     count = parsed.get('group_count', 1)
     if count > 1:
-        return count == len(order.items) and len(order.references.all()) == count
+        references = set(order.references.values_list('number', flat=True))
+        numbered = [str(row.get('number') or '') for row in order.items if row.get('number')]
+        # Сервисная строка «Новый аккаунт» не имеет своего номера заказа и не
+        # увеличивает количество выданных комплектов. Все номера должны совпасть.
+        return count == len(references) == len(numbered) and set(numbered) == references
     return len(order.items) == 1 or set(parsed.get('numbers', [])) == set(order.references.values_list('number', flat=True))
 
 
@@ -149,6 +156,9 @@ def _apply(message, parsed):
         return None
     message.order = order
     message.save(update_fields=['order'])
+    if order.source == 'api_v2':
+        AuditEvent.objects.create(order=order, message=message, kind='api_message_linked')
+        return order
     if order.processing_stopped:
         return order
     if parsed['kind'] == 'checklist':
@@ -204,6 +214,10 @@ def accept_update(update, *, owner=None):
     def acknowledge():
         bot.next_update_id = update['update_id'] + 1
         bot.save(update_fields=['next_update_id', 'last_chat_id', 'bot_messages', 'human_messages', 'forwarded_messages'])
+    from digital_shop.telegram import ingest as ingest_shop
+    if ingest_shop(update):
+        acknowledge()
+        return None
     from .chat_balances import ingest_chat_update
     if ingest_chat_update(update):
         acknowledge()
@@ -339,6 +353,8 @@ def resolve_order(*, actor, order_id, revision, reason):
     from .services import require, _version
     actor = require(actor, 'digital_sales.create_digital_sales', 'sales.create_sale')
     order = DigitalOrder.objects.select_for_update().get(pk=order_id)
+    if order.source == 'api_v2':
+        raise ValidationError('Этот заказ проверяется в панели цифрового магазина.')
     _version(order, revision)
     if not str(reason or '').strip():
         raise ValidationError('Укажите причину проверки.')
@@ -360,6 +376,38 @@ def resolve_order(*, actor, order_id, revision, reason):
 
 @retry_database_lock
 @transaction.atomic
+def confirm_fulfillment(*, actor, order_id, revision):
+    """Подтверждение сотрудника без ожидания сообщения и без новой закупки API."""
+    from .services import require, _version, normalized_items
+    actor = require(actor, 'digital_sales.create_digital_sales', 'sales.create_sale')
+    source = DigitalOrder.objects.get(pk=order_id)
+    Supplier.objects.select_for_update().get(pk=source.supplier_id)
+    order = DigitalOrder.objects.select_for_update().get(pk=source.pk)
+    _version(order, revision)
+    if order.source == 'api_v2' or order.sale_id:
+        raise ValidationError('Подтверждение доступно только входящему заказу до создания продажи; API-заказ проверяется в магазине.')
+    if not order.checklist_received or order.review_reason:
+        raise ValidationError('Сначала подтвердите корректность чек-листа и устраните замечания.')
+    rows = normalized_items(order.items)
+    if sum((money(row['cost']) for row in rows), Decimal(0)) != order.cost:
+        raise ValidationError('Сумма состава не совпадает с итогом заказа.')
+    purchase = SupplierPurchase.objects.filter(order=order, superseded_by__isnull=True).first()
+    if not purchase or purchase.amount != order.cost:
+        raise ValidationError('Сначала подтвердите корректный расход поставщика по чек-листу.')
+    if order.messages.filter(attachment_state__in=['pending', 'error']).exists():
+        raise ValidationError('Сначала сохраните вложения или разрешите ошибку их получения.')
+    if order.goods_received:
+        return order
+    order.goods_received = True
+    order.save(update_fields=['goods_received', 'updated_at'])
+    AuditEvent.objects.create(order=order, actor=actor, kind='fulfillment_confirmed_manually',
+                              detail='Сотрудник подтвердил выполнение услуги без сообщения готовности в чате')
+    _refresh(order)
+    return order
+
+
+@retry_database_lock
+@transaction.atomic
 def link_orders(*, actor, source_id, target_id, revision, reason):
     """Явная привязка готовности/ручной продажи; закупочные снимки Sale не перезаписываются."""
     from .services import require, _version, record_id
@@ -371,6 +419,8 @@ def link_orders(*, actor, source_id, target_id, revision, reason):
     if len(rows) != 2:
         raise ValidationError('Цифровой заказ для связывания не найден.')
     source, target = rows[int(source_id)], rows[int(target_id)]
+    if source.source == 'api_v2' or target.source == 'api_v2':
+        raise ValidationError('Закупки магазина нельзя объединять с импортированными сообщениями.')
     _version(source, revision)
     if target.processing_stopped:
         raise ValidationError('Нельзя привязать сообщения к отменённому заказу.')
@@ -415,6 +465,8 @@ def correct_checklist(*, actor, order_id, revision, items, reason, goods_confirm
     from .services import require, normalized_items, _version
     actor = require(actor, 'digital_sales.create_digital_sales', 'sales.create_sale')
     source = DigitalOrder.objects.get(pk=order_id)
+    if source.source == 'api_v2':
+        raise ValidationError('Подтверждённые данные API-заказа нельзя заменить чек-листом.')
     Supplier.objects.select_for_update().get(pk=source.supplier_id)
     order = DigitalOrder.objects.select_for_update().get(pk=order_id)
     _version(order, revision)

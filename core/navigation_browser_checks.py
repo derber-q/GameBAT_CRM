@@ -19,6 +19,8 @@ class NavigationBrowserChecks(StaticLiveServerTestCase):
             'value': self.client.cookies[settings.SESSION_COOKIE_NAME].value, 'url': self.live_server_url}])
         self.context.route('**/crm/api/exchange-rates/', lambda route: route.fulfill(json={
             'available': True, 'rates': {'USDT/RUB': {'value': '84.50'}, 'USDT/AED': {'value': '3.67'}}}))
+        self.context.route('**/crm/integrations/avito/actions/count/**', lambda route: route.fulfill(json={
+            'count':0,'publish':0,'unpublish':0,'actions':[],'state_known':True,'initialized':True}))
         self.page = self.context.new_page()
         self.errors = []
         self.page.on('pageerror', lambda error: self.errors.append(str(error)))
@@ -175,10 +177,12 @@ class NavigationBrowserChecks(StaticLiveServerTestCase):
                         is_mobile=True, has_touch=True, device_scale_factor=2)
                     phone.add_cookies(self.context.cookies())
                     phone.route('**/crm/api/exchange-rates/', lambda route: route.fulfill(json={'rates': {}, 'available': False}))
+                    phone.route('**/crm/integrations/avito/actions/count/**', lambda route: route.fulfill(json={
+                        'count':0,'publish':0,'unpublish':0,'actions':[],'state_known':True,'initialized':True}))
                     page = phone.new_page()
-                    page.on('pageerror', lambda error: self.errors.append(str(error)))
+                    page.on('pageerror', lambda error: self.errors.append(f'{error}\n{error.stack}'))
                     # Обычная таблица пока шире телефона; шапка должна вписаться независимо от неё.
-                    page.goto(self.live_server_url + reverse('partners:list'))
+                    page.goto(self.live_server_url + reverse('partners:list'), wait_until='networkidle')
                     toggle = page.get_by_role('button', name='Открыть навигацию', exact=True)
                     expect(toggle).to_be_visible()
                     self.assertLessEqual(page.locator('.crm-topbar').bounding_box()['width'], 390)
@@ -191,9 +195,11 @@ class NavigationBrowserChecks(StaticLiveServerTestCase):
                     page.get_by_role('button', name='Подразделы: Склад', exact=True).tap()
                     page.get_by_role('link', name='Приход', exact=True).tap()
                     expect(page).to_have_url(self.live_server_url + reverse('supplies:list'))
+                    page.wait_for_load_state('networkidle')
                     toggle.tap()
                     page.get_by_role('button', name='Закрыть навигацию', exact=True).tap()
                     expect(page.locator('.navigation-drawer')).not_to_be_visible()
+                    page.wait_for_load_state('networkidle')
                     phone.close()
         finally:
             webkit.close()

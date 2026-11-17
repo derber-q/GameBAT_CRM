@@ -103,10 +103,21 @@ def claim(agent_id, instance):
     if active:
         job = active
     else:
+        from .models import SaleLabelPrintJob, AvitoShippingPrintJob
+        if SaleLabelPrintJob.objects.filter(agent=agent, print_backend='agent', state__in=AGENT_ACTIVE).exists():
+            from .sale_labels import agent_claim
+            return agent_claim(agent, instance)
+        if AvitoShippingPrintJob.objects.filter(agent=agent, print_backend='agent', state__in=AGENT_ACTIVE).exists():
+            from .avito_shipping import agent_claim
+            return agent_claim(agent, instance)
         job = MarketPrintJob.objects.select_for_update().filter(agent=agent,print_backend='agent',state='agent_waiting').order_by('pk').first()
         if job is None:
             from .avito_shipping import agent_claim
-            return agent_claim(agent, instance)
+            shipping = agent_claim(agent, instance)
+            if shipping['job'] is not None:
+                return shipping
+            from .sale_labels import agent_claim as claim_sale_label
+            return claim_sale_label(agent, instance)
         job.agent_claim, job.agent_claimed_at, job.state = uuid.uuid4(), timezone.now(), 'agent_claimed'
         job.save(update_fields=['agent_claim','agent_claimed_at','state','updated_at'])
         _audit(job, 'print_agent_claimed')
@@ -183,7 +194,8 @@ def snapshot():
             'version':agent.version,'last_error':agent.last_error,
             'problem_id':str(agent.incident) if connected and agent.incident else 'offline:'+str(agent.pk)+':'+str(agent.last_seen_at),
             'problem_started_at':agent.incident_started_at if connected else agent.last_seen_at,
-            'pending':agent.marketprintjob_set.exclude(state__in=['done','error']).count()})
+            'pending':sum(manager.exclude(state__in=['done','error']).count() for manager in (
+                agent.marketprintjob_set, agent.avitoshippingprintjob_set, agent.salelabelprintjob_set))})
     return agents
 
 

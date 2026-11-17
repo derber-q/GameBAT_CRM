@@ -6,6 +6,8 @@
 
 ## Документация
 
+- [Цифровой магазин API v2: корзины, резервы, конфиденциальность и включение](docs/digital_shop_v2.md).
+
 - [Цифровые цены API и PNG GameBAT](docs/digital_prices.md) · [включение 08.11.2026](docs/digital_prices_deployment_20261108.md).
 
 - [Local Agent: Windows, принтеры, полные копии и каталог загрузок](docs/local_agent.md).
@@ -19,8 +21,10 @@
 - [Telegram для оптовых покупателей: авторизация, Excel-заказы и штатные продажи](docs/wholesale_telegram_bot.md).
 - [Цифровые продажи, предоплаченные балансы и два Telegram-бота](docs/digital_sales_installation.md) · [отчёт проверок](docs/digital_sales_report_20261106.md).
 - [Печать из Docker и удалённого сервера через Windows-агент](docs/print_agent.md).
+- [Внутренний стикер продажи: номер, штрихкод и QR](docs/sale_labels.md).
 - [Ручные обновления GitHub: страница и отдельный серверный менеджер](docs/updates.md).
 - [Пользовательские сценарии](docs/user_guide.md).
+- [Отметки снижения цен в оптовом прайсе наличия](docs/wholesale_price_decreases.md).
 - [Результаты подготовки и проверки](docs/maintenance_20261031.md).
 - [Правила работы агента](AGENTS.md).
 

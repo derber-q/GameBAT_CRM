@@ -1,5 +1,4 @@
 """Розничный путь покупателя в отдельной SQLite; оплата в тесте задаётся явно."""
-import sqlite3
 from pathlib import Path
 from cryptography.fernet import Fernet
 from django.conf import settings
@@ -13,6 +12,7 @@ from cash.models import CashTransaction
 from .models import RetailSettings
 from .retail_security import retail_link
 from .security import recover_token
+from ._browser_fixtures import synthetic_cover
 
 @override_settings(RESOURCE_TOKEN_ENCRYPTION_KEY=Fernet.generate_key().decode())
 class RetailBrowserTests(StaticLiveServerTestCase):
@@ -21,8 +21,7 @@ class RetailBrowserTests(StaticLiveServerTestCase):
         RetailSettings.objects.update_or_create(pk=1,defaults={"warehouse":warehouse})
         self.token=recover_token(retail_link())
         platform=Platform.objects.create(name="Nintendo Switch 2")
-        with sqlite3.connect(f"file:{Path(settings.BASE_DIR)/'db.sqlite3'}?mode=ro",uri=True) as db:
-            samples=db.execute("SELECT name,title_image FROM catalog_cd WHERE title_image!='' ORDER BY id LIMIT 14").fetchall()
+        samples=[(f'Синтетическая игра {index:02d}',synthetic_cover(index)) for index in range(14)]
         self.products=[]
         for index,(name,photo) in enumerate(samples):
             product=CD.objects.create(name=name,platform=platform,title_image=photo if index else "",avito_price=4500+index,wholesale_price=1234,cost=500)

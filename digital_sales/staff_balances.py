@@ -4,7 +4,7 @@ import secrets
 from django.db import transaction
 from django.utils import timezone
 from telegram_bots.access import BotDenied, check_function_access
-from telegram_bots.menu import BUYER_BALANCE
+from telegram_bots.menu import BUYER_BALANCE, SUPPLIER_BALANCE
 from .chat_balances import balance_text
 from .models import Buyer, BuyerBalanceChat, BalanceChatPublication, DigitalBot, AuditEvent, StaffConversation
 
@@ -74,6 +74,17 @@ def request_balance(*, access, buyer_id, message_id, menu_key=None):
 
 def handle(access, message, callback):
     data = callback.get('data', '') if callback else ''
+    if data == SUPPLIER_BALANCE.code or (not callback and message.get('text') == SUPPLIER_BALANCE.title):
+        check_function_access(access, SUPPLIER_BALANCE.code)
+        from .models import Supplier
+        from .ingestion import expected_balance
+        at = timezone.now()
+        balances = [f'{supplier.name}\n{balance_text(expected_balance(supplier), at)}'
+                    for supplier in Supplier.objects.order_by('name', 'pk')]
+        if not balances:
+            return {'text': 'Цифровой поставщик пока не настроен в CRM.'}
+        return {'text': '💰 Баланс у поставщика\n\n' + '\n\n'.join(balances)
+                + '\n\nПо учёту CRM. Неподтверждённые пополнения не включены.'}
     opening = data == BUYER_BALANCE.code or (not callback and message.get('text') == BUYER_BALANCE.title)
     if not opening and not (isinstance(data, str) and data.startswith(PREFIX)):
         return None

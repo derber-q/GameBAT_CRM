@@ -20,7 +20,11 @@ def main():
     if os.name=='posix':
         multiprocessing.set_start_method('fork',force=True)
     from django.core.management import execute_from_command_line
-    for command in (['check'],['makemigrations','--check','--dry-run'],['test','--parallel','4','--noinput']):
+    # Django 5.2 со spawn открывает только memory-clone SQLite, а файловая
+    # БД нужна для настоящих проверок конкурентных транзакций. В Windows
+    # прогон остаётся последовательным; Linux проверяет тот же suite в 4 процесса.
+    parallel = '1' if os.name == 'nt' else '4'
+    for command in (['check'],['makemigrations','--check','--dry-run'],['test','--parallel',parallel,'--noinput']):
         execute_from_command_line(['manage.py',*command])
     if not args.postgres:
         for path in paths:

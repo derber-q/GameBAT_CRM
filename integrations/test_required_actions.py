@@ -65,6 +65,63 @@ class RequiredActionsTests(TestCase):
         self.assertContains(response, 'class="avito-action-publish"')
         self.assertContains(response, "Опубликуйте объявление")
 
+    @patch('integrations.services.get_avito_credential')
+    @patch('integrations.services.AvitoClient')
+    def test_regular_refresh_preserves_confirmed_linked_archive_action(self, client_class, credential):
+        credential.return_value = Mock(account_id='123')
+        client_class.return_value.list_items.return_value = {'resources': [{'id': 9999, 'status': 'active'}]}
+        self.stock(5)
+        self.status('old')
+        seen_at = self.listing.last_seen_at
+        refresh_remote_listings()
+        self.listing.refresh_from_db()
+        self.assertIsNone(self.listing.missing_since)
+        self.assertEqual(self.listing.last_seen_at, seen_at)
+        self.assertEqual(get_avito_required_actions()[0].action, RequiredAction.PUBLISH_MANUALLY)
+        self.assertEqual(get_avito_required_action_counts()['publish'], 1)
+        client_class.return_value.get_item_details.assert_not_called()
+        client_class.return_value.update_stock.assert_not_called()
+        client_class.return_value.update_price.assert_not_called()
+        # Отдельная проверка по ID по-прежнему может опровергнуть старый статус.
+        client_class.return_value.get_item_details.return_value = {'status': 'removed'}
+        refresh_remote_listings(check_linked_statuses=True)
+        self.assertEqual(get_avito_required_actions(), [])
+
+    @patch('integrations.services.get_avito_credential')
+    @patch('integrations.services.AvitoClient')
+    def test_regular_refresh_does_not_clear_unconfirmed_archive(self, client_class, credential):
+        credential.return_value = Mock(account_id='123')
+        client_class.return_value.list_items.return_value = {'resources': [{'id': 9999, 'status': 'active'}]}
+        self.stock(5)
+        self.status('old')
+        self.listing.missing_since = timezone.now()
+        self.listing.save(update_fields=['missing_since'])
+        refresh_remote_listings()
+        self.listing.refresh_from_db()
+        self.assertIsNotNone(self.listing.missing_since)
+        self.assertEqual(get_avito_required_actions(), [])
+
+    @patch('integrations.services.get_avito_credential')
+    @patch('integrations.services.AvitoClient')
+    def test_archive_action_is_stable_while_details_are_checked_and_hidden_on_failure(self, client_class, credential):
+        credential.return_value = Mock(account_id='123')
+        client = client_class.return_value
+        client.list_items.return_value = {'resources': [{'id': 9999, 'status': 'active'}]}
+        self.stock(5)
+        self.status('old')
+        def details(*args):
+            self.assertEqual(get_avito_required_action_counts()['publish'], 1)
+            return {'status': 'old'}
+        client.get_item_details.side_effect = details
+        refresh_remote_listings(check_linked_statuses=True)
+        self.assertEqual(get_avito_required_action_counts()['publish'], 1)
+        client.get_item_details.side_effect = AvitoAPIError('Not found', 'validation', 404)
+        with self.assertRaises(AvitoAPIError):
+            refresh_remote_listings(check_linked_statuses=True)
+        self.listing.refresh_from_db()
+        self.assertIsNotNone(self.listing.missing_since)
+        self.assertEqual(get_avito_required_actions(), [])
+
     def test_correct_states_and_unsupported_statuses(self):
         for quantity, status in [(5, "active"), (0, "old"), (5, "blocked"), (5, "rejected"),
                                  (5, "removed"), (5, "moderation"), (5, "unknown"), (0, "")]:
@@ -157,7 +214,7 @@ class RequiredActionsTests(TestCase):
         self.assertEqual(self.client.get(url).status_code, 200)
         response = self.client.get(reverse('integrations:avito'))
         self.assertContains(response, 'data-avito-counter')
-        self.assertContains(response, 'js/avito-notifications.js?v=20261031-1')
+        self.assertContains(response, 'js/avito-notifications.js?v=20261117-1')
         self.assertContains(response, 'css/market-notifications.css?v=20261031-1')
         self.assertContains(response, 'js/notification-sound-controls.js?v=20261031-1')
         self.assertNotContains(response, 'data-market-counter')

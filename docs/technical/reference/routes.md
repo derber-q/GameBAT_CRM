@@ -4,7 +4,7 @@
 
 Справочник исходников и метаданных схемы, без рабочих записей/ключей. Перегенерация: `.venv/Scripts/python.exe scripts/build_technical_reference.py`.
 
-Записей URL: **347**.
+Записей URL: **353**.
 
 Admin свёрнут в один вход. URL включает HTML, JSON, команды и файлы; не каждый маршрут является страницей. Проверки внутри сервиса/формы дополняют показанные декораторы.
 
@@ -138,7 +138,7 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 
 Обработчик: `digital_sales.views.configuration`.
 
-Исходник: `digital_sales/views.py:247`.
+Исходник: `digital_sales/views.py:251`.
 
 Декораторы: `permission_required_all('digital_sales.configure_digital_bot')`; `never_cache`; `require_http_methods(['GET', 'POST'])`.
 
@@ -172,7 +172,7 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 
 Обработчик: `digital_sales.views.reveal`.
 
-Исходник: `digital_sales/views.py:213`.
+Исходник: `digital_sales/views.py:217`.
 
 Декораторы: `sensitive_variables()`; `permission_required_all('digital_sales.view_digital_sales', 'digital_sales.view_digital_secrets')`; `never_cache`; `require_POST`.
 
@@ -184,9 +184,33 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 
 Обработчик: `digital_sales.views.download`.
 
-Исходник: `digital_sales/views.py:228`.
+Исходник: `digital_sales/views.py:232`.
 
 Декораторы: `sensitive_variables()`; `permission_required_all('digital_sales.view_digital_sales', 'digital_sales.view_digital_secrets')`; `never_cache`; `require_POST`.
+
+## `/crm/digital-shop/`
+
+Имя: `digital_shop:dashboard`.
+
+Обработчик: `digital_shop.views.dashboard`.
+
+Исходник: `digital_shop/views.py:20`.
+
+Декораторы: `never_cache`; `permission_required_all('digital_shop.manage_shop', 'digital_prices.view_cost')`; `require_http_methods(['GET', 'POST'])`.
+
+Прямые шаблоны: `digital_shop/dashboard.html`.
+
+## `/crm/digital-shop/orders/<uuid:pk>/`
+
+Имя: `digital_shop:order`.
+
+Обработчик: `digital_shop.views.order_detail`.
+
+Исходник: `digital_shop/views.py:102`.
+
+Декораторы: `never_cache`; `permission_required_all('digital_shop.manage_shop', 'digital_prices.view_cost')`; `sensitive_post_parameters('result')`; `require_http_methods(['GET', 'POST'])`.
+
+Прямые шаблоны: `digital_shop/order.html`.
 
 ## `/crm/backups/apps/`
 
@@ -344,7 +368,7 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 
 Обработчик: `sales.print_agent_views.document`.
 
-Исходник: `sales/print_agent_views.py:93`.
+Исходник: `sales/print_agent_views.py:96`.
 
 Декораторы: `agent_api('GET')`.
 
@@ -544,13 +568,23 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 
 Декораторы: `require_POST`; `superuser_required`.
 
+## `/crm/warehouse/barcode/lookup/`
+
+Имя: `catalog:barcode_lookup`.
+
+Обработчик: `catalog.views.barcode_lookup`.
+
+Исходник: `catalog/views.py:13`.
+
+Декораторы: `require_GET`; `never_cache`; `permission_required_any('warehouse.view_global_stock', 'warehouse.view_warehouse_stock', 'catalog.view_nomenclature', 'catalog.view_cd', 'catalog.view_tech', 'pricing.view_pricing')`.
+
 ## `/crm/warehouse/`
 
 Имя: `catalog:warehouse`.
 
 Обработчик: `catalog.views.warehouse`.
 
-Исходник: `catalog/views.py:7`.
+Исходник: `catalog/views.py:34`.
 
 ## `/crm/warehouse/<int:pk>/revision/`
 
@@ -1050,7 +1084,7 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 
 Обработчик: `digital_prices.views.catalog`.
 
-Исходник: `digital_prices/views.py:48`.
+Исходник: `digital_prices/views.py:46`.
 
 Декораторы: `never_cache`; `permission_required_any('digital_prices.view_catalog', 'digital_prices.download_prices')`.
 
@@ -1062,7 +1096,7 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 
 Обработчик: `digital_prices.views.sync`.
 
-Исходник: `digital_prices/views.py:153`.
+Исходник: `digital_prices/views.py:151`.
 
 Декораторы: `require_POST`; `permission_required_all('digital_prices.sync_catalog')`.
 
@@ -1072,7 +1106,7 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 
 Обработчик: `digital_prices.views.manual`.
 
-Исходник: `digital_prices/views.py:80`.
+Исходник: `digital_prices/views.py:78`.
 
 Декораторы: `never_cache`; `permission_required_all('digital_prices.edit_manual_prices')`; `require_http_methods(['GET', 'POST'])`.
 
@@ -1084,7 +1118,7 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 
 Обработчик: `digital_prices.views.manual_amounts`.
 
-Исходник: `digital_prices/views.py:135`.
+Исходник: `digital_prices/views.py:133`.
 
 Декораторы: `require_POST`; `never_cache`; `permission_required_any('digital_prices.edit_markup', 'digital_prices.edit_cost')`.
 
@@ -1094,7 +1128,7 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 
 Обработчик: `digital_prices.views.status`.
 
-Исходник: `digital_prices/views.py:106`.
+Исходник: `digital_prices/views.py:104`.
 
 Декораторы: `never_cache`; `permission_required_all('digital_prices.view_catalog')`.
 
@@ -1104,7 +1138,7 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 
 Обработчик: `digital_prices.views.configuration`.
 
-Исходник: `digital_prices/views.py:182`.
+Исходник: `digital_prices/views.py:180`.
 
 Декораторы: `never_cache`; `sensitive_post_parameters('api_key')`; `permission_required_all('digital_prices.configure_integration')`; `require_http_methods(['GET', 'POST'])`.
 
@@ -1116,7 +1150,7 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 
 Обработчик: `digital_prices.views.markup`.
 
-Исходник: `digital_prices/views.py:116`.
+Исходник: `digital_prices/views.py:114`.
 
 Декораторы: `require_POST`; `never_cache`; `permission_required_all('digital_prices.edit_markup')`.
 
@@ -1126,7 +1160,7 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 
 Обработчик: `digital_prices.views.layout`.
 
-Исходник: `digital_prices/views.py:166`.
+Исходник: `digital_prices/views.py:164`.
 
 Декораторы: `never_cache`; `permission_required_all('digital_prices.edit_layout')`; `require_http_methods(['GET', 'POST'])`.
 
@@ -1138,7 +1172,7 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 
 Обработчик: `digital_prices.views.generate`.
 
-Исходник: `digital_prices/views.py:200`.
+Исходник: `digital_prices/views.py:198`.
 
 Декораторы: `require_POST`; `permission_required_all('digital_prices.download_prices')`.
 
@@ -1148,7 +1182,7 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 
 Обработчик: `digital_prices.views.preview`.
 
-Исходник: `digital_prices/views.py:213`.
+Исходник: `digital_prices/views.py:211`.
 
 Декораторы: `never_cache`; `permission_required_all('digital_prices.download_prices')`.
 
@@ -1160,7 +1194,7 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 
 Обработчик: `digital_prices.views.png`.
 
-Исходник: `digital_prices/views.py:221`.
+Исходник: `digital_prices/views.py:219`.
 
 Декораторы: `never_cache`; `permission_required_all('digital_prices.download_prices')`.
 
@@ -1170,7 +1204,7 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 
 Обработчик: `digital_prices.views.download`.
 
-Исходник: `digital_prices/views.py:231`.
+Исходник: `digital_prices/views.py:229`.
 
 Декораторы: `never_cache`; `permission_required_all('digital_prices.download_prices')`.
 
@@ -1326,7 +1360,7 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 
 Обработчик: `pricing.views.supplier_price_update`.
 
-Исходник: `pricing/views.py:241`.
+Исходник: `pricing/views.py:242`.
 
 Декораторы: `require_POST`; `permission_required_any('pricing.change_supplier_prices')`.
 
@@ -1502,6 +1536,36 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 
 Декораторы: `require_GET`; `permission_required_any('price.export_procurement_price_list')`.
 
+## `/crm/sales/by-barcode/`
+
+Имя: `sales:scan`.
+
+Обработчик: `sales.sale_label_views.scan`.
+
+Исходник: `sales/sale_label_views.py:45`.
+
+Декораторы: `permission_required_any('sales.view_sale_detail')`; `require_GET`.
+
+## `/crm/sales/<int:pk>/label/print/`
+
+Имя: `sales:label_print`.
+
+Обработчик: `sales.sale_label_views.print_label`.
+
+Исходник: `sales/sale_label_views.py:21`.
+
+Декораторы: `never_cache`; `permission_required_any('sales.view_sale_detail')`; `require_POST`.
+
+## `/crm/sales/<int:pk>/label/print/<uuid:request_id>/`
+
+Имя: `sales:label_print_status`.
+
+Обработчик: `sales.sale_label_views.print_status`.
+
+Исходник: `sales/sale_label_views.py:37`.
+
+Декораторы: `never_cache`; `permission_required_any('sales.view_sale_detail')`; `require_GET`.
+
 ## `/crm/sales/avito-extension/`
 
 Имя: `sales:avito_bridge`.
@@ -1542,7 +1606,7 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 
 Обработчик: `sales.views.sale_list`.
 
-Исходник: `sales/views.py:166`.
+Исходник: `sales/views.py:167`.
 
 Декораторы: `permission_required_any('sales.view_sales')`.
 
@@ -1552,7 +1616,7 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 
 Обработчик: `sales.views.sale_list`.
 
-Исходник: `sales/views.py:166`.
+Исходник: `sales/views.py:167`.
 
 Декораторы: `permission_required_any('sales.view_sales')`.
 
@@ -1562,7 +1626,7 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 
 Обработчик: `sales.views.sale_completed_list`.
 
-Исходник: `sales/views.py:178`.
+Исходник: `sales/views.py:179`.
 
 Декораторы: `permission_required_all('sales.view_sales', 'sales.view_completed_sales')`.
 
@@ -1572,7 +1636,7 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 
 Обработчик: `sales.views.sale_cancelled_list`.
 
-Исходник: `sales/views.py:183`.
+Исходник: `sales/views.py:184`.
 
 Декораторы: `permission_required_any('sales.view_sales')`.
 
@@ -1614,7 +1678,7 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 
 Обработчик: `sales.views.sale_inline_status`.
 
-Исходник: `sales/views.py:203`.
+Исходник: `sales/views.py:204`.
 
 Декораторы: `require_POST`; `permission_required_any('sales.view_sales')`.
 
@@ -1694,7 +1758,7 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 
 Обработчик: `sales.views.sale_create`.
 
-Исходник: `sales/views.py:243`.
+Исходник: `sales/views.py:244`.
 
 Декораторы: `permission_required_any('sales.create_sale')`.
 
@@ -1706,7 +1770,7 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 
 Обработчик: `sales.views.sale_wholesale_import`.
 
-Исходник: `sales/views.py:316`.
+Исходник: `sales/views.py:317`.
 
 Декораторы: `permission_required_all('sales.create_sale', 'sales.import_wholesale_price')`.
 
@@ -1718,7 +1782,7 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 
 Обработчик: `sales.views.sale_detail`.
 
-Исходник: `sales/views.py:348`.
+Исходник: `sales/views.py:349`.
 
 Декораторы: `permission_required_any('sales.view_sale_detail')`.
 
@@ -1730,7 +1794,7 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 
 Обработчик: `sales.views.sale_invoice`.
 
-Исходник: `sales/views.py:429`.
+Исходник: `sales/views.py:430`.
 
 Декораторы: `require_GET`; `permission_required_any('sales.view_sale_detail')`.
 
@@ -1740,7 +1804,7 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 
 Обработчик: `sales.views.sale_edit`.
 
-Исходник: `sales/views.py:446`.
+Исходник: `sales/views.py:448`.
 
 Декораторы: `permission_required_any('sales.edit_unpaid_postpay_sale')`.
 
@@ -1752,7 +1816,7 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 
 Обработчик: `sales.views.sale_advance`.
 
-Исходник: `sales/views.py:502`.
+Исходник: `sales/views.py:504`.
 
 Декораторы: `require_POST`; `permission_required_any('sales.advance_order_status')`.
 
@@ -1762,7 +1826,7 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 
 Обработчик: `sales.views.sale_payment_method`.
 
-Исходник: `sales/views.py:515`.
+Исходник: `sales/views.py:517`.
 
 Декораторы: `require_POST`; `permission_required_any('sales.mark_sale_paid')`.
 
@@ -1772,7 +1836,7 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 
 Обработчик: `sales.views.sale_mark_paid`.
 
-Исходник: `sales/views.py:528`.
+Исходник: `sales/views.py:530`.
 
 Декораторы: `require_POST`; `permission_required_any('sales.mark_sale_paid')`.
 
@@ -1782,7 +1846,7 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 
 Обработчик: `sales.views.sale_note_update`.
 
-Исходник: `sales/views.py:555`.
+Исходник: `sales/views.py:557`.
 
 Декораторы: `require_POST`; `permission_required_any('sales.change_sale')`.
 
@@ -1792,7 +1856,7 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 
 Обработчик: `sales.views.sale_cancel`.
 
-Исходник: `sales/views.py:570`.
+Исходник: `sales/views.py:572`.
 
 Декораторы: `require_POST`; `permission_required_any('sales.cancel_sale')`.
 
@@ -3116,7 +3180,7 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 
 Обработчик: `integrations.views.listing_rebind`.
 
-Исходник: `integrations/views.py:343`.
+Исходник: `integrations/views.py:344`.
 
 Декораторы: `permission_required_any('integrations.rebind_avito_listing')`.
 
@@ -3128,7 +3192,7 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 
 Обработчик: `integrations.views.listing_unbind`.
 
-Исходник: `integrations/views.py:362`.
+Исходник: `integrations/views.py:365`.
 
 Декораторы: `permission_required_any('integrations.rebind_avito_listing')`; `require_POST`.
 
@@ -3138,7 +3202,7 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 
 Обработчик: `integrations.views.product_profile_save`.
 
-Исходник: `integrations/views.py:395`.
+Исходник: `integrations/views.py:398`.
 
 Декораторы: `require_POST`; `permission_required_any('integrations.manage_avito_product')`.
 
@@ -3148,7 +3212,7 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 
 Обработчик: `integrations.views.product_photo_add`.
 
-Исходник: `integrations/views.py:412`.
+Исходник: `integrations/views.py:415`.
 
 Декораторы: `require_POST`; `permission_required_any('integrations.manage_avito_product')`.
 
@@ -3158,7 +3222,7 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 
 Обработчик: `integrations.views.product_photo_delete`.
 
-Исходник: `integrations/views.py:430`.
+Исходник: `integrations/views.py:433`.
 
 Декораторы: `require_POST`; `permission_required_any('integrations.manage_avito_product')`.
 
@@ -3168,7 +3232,7 @@ Admin свёрнут в один вход. URL включает HTML, JSON, ко
 
 Обработчик: `integrations.views.product_photo_move`.
 
-Исходник: `integrations/views.py:444`.
+Исходник: `integrations/views.py:447`.
 
 Декораторы: `require_POST`; `permission_required_any('integrations.manage_avito_product')`.
 

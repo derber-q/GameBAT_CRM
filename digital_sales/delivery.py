@@ -30,7 +30,7 @@ def deliver_one(client, *, bot_id, owner):
                   {'observation_id': row.observation_id} if row.observation_id else None)
         previous = Notification.objects.filter(**target, access=row.access, state='done',
                     telegram_message_id__isnull=False).order_by('-pk').first() if target else None
-        if row.observation_id and row.event_key.startswith(f'balance:{row.observation_id}:resend:'):
+        if row.observation_id and row.event_key.startswith((f'balance:{row.observation_id}:resend:', f'balance:{row.observation_id}:reminder:')):
             previous = None  # Явный повтор владельца должен появиться новым сообщением в конце чата.
         payload = (card(row.order) if row.order_id else balance_card(row.observation)
                    if row.observation_id else {'text': row.text})

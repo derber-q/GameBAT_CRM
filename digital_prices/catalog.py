@@ -45,8 +45,8 @@ def product_data(row, user, public=None):
 def manual_data(entry, user, public=None):
     public = public or manual_row(entry)
     data = {'id': entry.pk, 'name': public.name, 'label': public.label, 'category': entry.get_kind_display(),
-        'availability': 'Тариф из Google Sheets' if entry.sheet_reference else 'Ручной тариф',
-        'review': bool(entry.sheet_issue), 'revision': getattr(entry, 'profile_revision', entry.revision),
+        'availability': 'Нет в наличии' if entry.sheet_issue == 'source_missing' else 'Тариф из Google Sheets' if entry.sheet_reference else 'Ручной тариф',
+        'review': bool(entry.sheet_issue and entry.sheet_issue != 'source_missing'), 'revision': getattr(entry, 'profile_revision', entry.revision),
         'updated': max(filter(None,(entry.edited_at,entry.sheet_checked_at)),default=None),
         'sheet_issue': bool(entry.sheet_issue), 'sheet_reference': entry.sheet_reference,
         'price': public.price, 'kind': 'manual', 'manual_source': True, 'form_id': f'manual-price-{entry.pk}',

@@ -4,7 +4,7 @@
 
 Справочник исходников и метаданных схемы, без рабочих записей/ключей. Перегенерация: `.venv/Scripts/python.exe scripts/build_technical_reference.py`.
 
-Конкретных собственных моделей: **144**.
+Конкретных собственных моделей: **186**.
 
 Метаданные моделей не показывают значения записей. `blank/null/editable` не заменяют ограничения формы, permissions и проверки сервиса. `on_delete=CASCADE` не означает разрешённое пользовательское удаление документа.
 
@@ -162,6 +162,7 @@ Permissions: []. Стандартные: ('add', 'change', 'delete', 'view').
 | `cost` | DecimalField; null=False; blank=False; editable=True; max_digits=20; decimal_places=2 | Средняя себестоимость |
 | `avito_price` | DecimalField; null=True; blank=True; editable=True; max_digits=20; decimal_places=2 | Цена Avito |
 | `wholesale_price` | DecimalField; null=True; blank=True; editable=True; max_digits=20; decimal_places=2 | Оптовая цена |
+| `hide_from_wholesale_price` | BooleanField; null=False; blank=False; editable=True | Скрыть из оптового прайса |
 | `wholesale_site_enabled` | BooleanField; null=False; blank=False; editable=True | Публиковать на оптовой витрине |
 | `exclude_from_supplier_template` | BooleanField; null=False; blank=False; editable=True | Не отображать в шаблоне для поставщиков |
 | `yandex_market_price` | DecimalField; null=True; blank=True; editable=True; max_digits=20; decimal_places=2 | Цена Яндекс Маркет |
@@ -212,6 +213,7 @@ Permissions: [('view_nomenclature', 'Номенклатура: просмотр'
 | `cost` | DecimalField; null=False; blank=False; editable=True; max_digits=20; decimal_places=2 | Средняя себестоимость |
 | `avito_price` | DecimalField; null=True; blank=True; editable=True; max_digits=20; decimal_places=2 | Цена Avito |
 | `wholesale_price` | DecimalField; null=True; blank=True; editable=True; max_digits=20; decimal_places=2 | Оптовая цена |
+| `hide_from_wholesale_price` | BooleanField; null=False; blank=False; editable=True | Скрыть из оптового прайса |
 | `wholesale_site_enabled` | BooleanField; null=False; blank=False; editable=True | Публиковать на оптовой витрине |
 | `exclude_from_supplier_template` | BooleanField; null=False; blank=False; editable=True | Не отображать в шаблоне для поставщиков |
 | `yandex_market_price` | DecimalField; null=True; blank=True; editable=True; max_digits=20; decimal_places=2 | Цена Яндекс Маркет |
@@ -1411,6 +1413,37 @@ AvitoShippingPrintJob(id, request_id, order, actor, file, document_digest, state
 Permissions: []. Стандартные: ('add', 'change', 'delete', 'view').
 
 Ограничения: `[]`; unique_together: `[]`.
+
+## `sales.SaleLabelPrintJob` — печать внутреннего стикера продажи
+
+SaleLabelPrintJob(id, request_id, sale, actor, file, document_digest, state, print_backend, printer_name, agent, agent_claim, agent_claimed_at, printer_job_id, spooled_at, printed_at, last_error, created_at, updated_at)
+
+Таблица `sales_salelabelprintjob`; порядок `[]`.
+
+| Поле | Тип/параметры | Назначение/связь |
+| --- | --- | --- |
+| `id` | BigAutoField; null=False; blank=True; editable=True | ID |
+| `request_id` | UUIDField; null=False; blank=False; editable=True; max_length=32 | request id |
+| `sale` | ForeignKey; null=False; blank=False; editable=True | sale → sales.Sale; on_delete=PROTECT |
+| `actor` | ForeignKey; null=False; blank=False; editable=True | actor → accounts.User; on_delete=PROTECT |
+| `file` | FileField; null=False; blank=False; editable=True; max_length=100 | file |
+| `document_digest` | CharField; null=False; blank=False; editable=True; max_length=64 | document digest |
+| `state` | CharField; null=False; blank=False; editable=True; max_length=24 | state |
+| `print_backend` | CharField; null=False; blank=False; editable=True; max_length=12 | print backend |
+| `printer_name` | CharField; null=False; blank=False; editable=True; max_length=200 | printer name |
+| `agent` | ForeignKey; null=True; blank=False; editable=True | agent → sales.PrintAgent; on_delete=PROTECT |
+| `agent_claim` | UUIDField; null=True; blank=False; editable=True; max_length=32 | agent claim |
+| `agent_claimed_at` | DateTimeField; null=True; blank=False; editable=True | agent claimed at |
+| `printer_job_id` | PositiveIntegerField; null=True; blank=False; editable=True | printer job id |
+| `spooled_at` | DateTimeField; null=True; blank=False; editable=True | spooled at |
+| `printed_at` | DateTimeField; null=True; blank=False; editable=True | printed at |
+| `last_error` | CharField; null=False; blank=True; editable=True; max_length=200 | last error |
+| `created_at` | DateTimeField; null=False; blank=True; editable=False | created at |
+| `updated_at` | DateTimeField; null=False; blank=True; editable=False | updated at |
+
+Permissions: []. Стандартные: ('add', 'change', 'delete', 'view').
+
+Ограничения: `[]`; unique_together: `()`.
 
 ## `cash.CashRegister` — касса
 
@@ -2770,6 +2803,957 @@ Permissions: []. Стандартные: ('add', 'change', 'delete', 'view').
 Permissions: []. Стандартные: ('add', 'change', 'delete', 'view').
 
 Ограничения: `[<UniqueConstraint: fields=('job', 'product_kind') name='telegram_one_document_kind'>, <CheckConstraint: condition=(AND: ('product_kind__in', ['cd', 'tech'])) name='telegram_document_kind'>]`; unique_together: `()`.
+
+## `digital_sales.Buyer` — buyer
+
+Buyer(id, name, partner, contact, comment, created_at, updated_at)
+
+Таблица `digital_sales_buyer`; порядок `['name', 'pk']`.
+
+| Поле | Тип/параметры | Назначение/связь |
+| --- | --- | --- |
+| `id` | BigAutoField; null=False; blank=True; editable=True | ID |
+| `name` | CharField; null=False; blank=False; editable=True; max_length=160 | Покупатель |
+| `partner` | ForeignKey; null=True; blank=True; editable=True | partner → partners.Partner; on_delete=PROTECT |
+| `contact` | CharField; null=False; blank=True; editable=True; max_length=160 | Контакт |
+| `comment` | TextField; null=False; blank=True; editable=True | Комментарий |
+| `created_at` | DateTimeField; null=False; blank=True; editable=False | created at |
+| `updated_at` | DateTimeField; null=False; blank=True; editable=False | updated at |
+
+Permissions: []. Стандартные: ('add', 'change', 'delete', 'view').
+
+Ограничения: `[]`; unique_together: `()`.
+
+## `digital_sales.Supplier` — supplier
+
+Supplier(id, name, chat_ids, sender_ids, created_at)
+
+Таблица `digital_sales_supplier`; порядок `[]`.
+
+| Поле | Тип/параметры | Назначение/связь |
+| --- | --- | --- |
+| `id` | BigAutoField; null=False; blank=True; editable=True | ID |
+| `name` | CharField; null=False; blank=False; editable=True; max_length=160 | Поставщик |
+| `chat_ids` | JSONField; null=False; blank=False; editable=True | Разрешённые chat ID |
+| `sender_ids` | JSONField; null=False; blank=False; editable=True | Разрешённые ID отправителей |
+| `created_at` | DateTimeField; null=False; blank=True; editable=False | created at |
+
+Permissions: []. Стандартные: ('add', 'change', 'delete', 'view').
+
+Ограничения: `[]`; unique_together: `[]`.
+
+## `digital_sales.DigitalBot` — digital bot
+
+Собственный offset/аренда: не конкурирует с получателем бота сотрудников.
+
+Таблица `digital_sales_digitalbot`; порядок `[]`.
+
+| Поле | Тип/параметры | Назначение/связь |
+| --- | --- | --- |
+| `singleton` | PositiveSmallIntegerField; null=False; blank=False; editable=False | singleton |
+| `enabled` | BooleanField; null=False; blank=False; editable=True | Включён |
+| `username` | CharField; null=False; blank=False; editable=True; max_length=64 | username |
+| `next_update_id` | BigIntegerField; null=False; blank=False; editable=True | next update id |
+| `lease_owner` | UUIDField; null=True; blank=True; editable=True; max_length=32 | lease owner |
+| `lease_until` | DateTimeField; null=True; blank=True; editable=True | lease until |
+| `last_poll_at` | DateTimeField; null=True; blank=True; editable=True | last poll at |
+| `last_success_at` | DateTimeField; null=True; blank=True; editable=True | last success at |
+| `error_category` | CharField; null=False; blank=True; editable=True; max_length=40 | error category |
+| `bot_messages` | PositiveIntegerField; null=False; blank=False; editable=True | bot messages |
+| `human_messages` | PositiveIntegerField; null=False; blank=False; editable=True | human messages |
+| `forwarded_messages` | PositiveIntegerField; null=False; blank=False; editable=True | forwarded messages |
+| `last_chat_id` | BigIntegerField; null=True; blank=True; editable=True | last chat id |
+
+Permissions: []. Стандартные: ('add', 'change', 'delete', 'view').
+
+Ограничения: `[<CheckConstraint: condition=(AND: ('singleton', 1)) name='digital_single_bot'>]`; unique_together: `()`.
+
+## `digital_sales.DigitalOrder` — digital order
+
+DigitalOrder(id, supplier, buyer, is_retail, sale, source, state, items, cost, price, checklist_received, goods_received, review_reason, revision, comment, source_url, edited_by, confirmed_by, confirmed_at, ignored_at, ignored_by, creation_key, created_at, updated_at)
+
+Таблица `digital_sales_digitalorder`; порядок `['-created_at', '-pk']`.
+
+| Поле | Тип/параметры | Назначение/связь |
+| --- | --- | --- |
+| `id` | BigAutoField; null=False; blank=True; editable=True | ID |
+| `supplier` | ForeignKey; null=False; blank=False; editable=True | supplier → digital_sales.Supplier; on_delete=PROTECT |
+| `buyer` | ForeignKey; null=True; blank=True; editable=True | Покупатель → digital_sales.Buyer; on_delete=PROTECT |
+| `is_retail` | BooleanField; null=False; blank=False; editable=True | Розничный покупатель без баланса |
+| `sale` | OneToOneField; null=True; blank=True; editable=True | sale → sales.Sale; on_delete=PROTECT |
+| `source` | CharField; null=False; blank=False; editable=True; max_length=16 | source; choices: telegram → Telegram; manual → Создана вручную; api_v2 → Магазин API v2 |
+| `state` | CharField; null=False; blank=False; editable=True; max_length=16 | state; choices: checklist → Ожидает чек-лист; goods → Ожидает готовности; review → Требует проверки; ready → Ожидает оформления; sale → Продажа создана; completed → Продажа завершена; cancelled → Продажа отменена |
+| `items` | JSONField; null=False; blank=False; editable=True | items |
+| `cost` | DecimalField; null=False; blank=False; editable=True; max_digits=20; decimal_places=2 | cost |
+| `price` | DecimalField; null=True; blank=True; editable=True; max_digits=20; decimal_places=2 | Общая цена продажи |
+| `checklist_received` | BooleanField; null=False; blank=False; editable=True | checklist received |
+| `goods_received` | BooleanField; null=False; blank=False; editable=True | goods received |
+| `review_reason` | CharField; null=False; blank=True; editable=True; max_length=300 | review reason |
+| `revision` | PositiveIntegerField; null=False; blank=False; editable=True | revision |
+| `comment` | TextField; null=False; blank=True; editable=True | Комментарий |
+| `source_url` | CharField; null=False; blank=True; editable=True; max_length=200 | Источник |
+| `edited_by` | ForeignKey; null=True; blank=True; editable=True | edited by → accounts.User; on_delete=PROTECT |
+| `confirmed_by` | ForeignKey; null=True; blank=True; editable=True | confirmed by → accounts.User; on_delete=PROTECT |
+| `confirmed_at` | DateTimeField; null=True; blank=True; editable=True | confirmed at |
+| `ignored_at` | DateTimeField; null=True; blank=True; editable=True | ignored at |
+| `ignored_by` | ForeignKey; null=True; blank=True; editable=True | ignored by → accounts.User; on_delete=PROTECT |
+| `creation_key` | UUIDField; null=False; blank=False; editable=False; max_length=32 | creation key |
+| `created_at` | DateTimeField; null=False; blank=True; editable=False | created at |
+| `updated_at` | DateTimeField; null=False; blank=True; editable=False | updated at |
+
+Permissions: [('view_digital_sales', 'Просмотр цифровых продаж'), ('create_digital_sales', 'Создание цифровых продаж'), ('telegram_digital_sales', 'Оформление цифровых продаж через Telegram'), ('complete_digital_sales', 'Завершение цифровых продаж'), ('cancel_digital_sales', 'Отмена цифровых продаж'), ('manage_digital_buyers', 'Управление цифровыми покупателями'), ('topup_digital_balances', 'Пополнение цифровых балансов'), ('adjust_digital_balances', 'Корректировка цифровых балансов'), ('view_digital_secrets', 'Просмотр защищённых данных цифровых товаров'), ('view_digital_reconciliation', 'Просмотр сверки цифрового поставщика'), ('configure_digital_bot', 'Настройка цифрового бота')]. Стандартные: ('add', 'change', 'delete', 'view').
+
+Ограничения: `[<CheckConstraint: condition=(AND: ('cost__gte', 0), (OR: ('price__isnull', True), ('price__gt', 0))) name='digital_order_money'>, <CheckConstraint: condition=(OR: (NOT (AND: ('is_retail', True))), ('buyer__isnull', True)) name='digital_retail_no_wallet'>]`; unique_together: `()`.
+
+## `digital_sales.OrderReference` — order reference
+
+OrderReference(id, supplier, order, number)
+
+Таблица `digital_sales_orderreference`; порядок `[]`.
+
+| Поле | Тип/параметры | Назначение/связь |
+| --- | --- | --- |
+| `id` | BigAutoField; null=False; blank=True; editable=True | ID |
+| `supplier` | ForeignKey; null=False; blank=False; editable=True | supplier → digital_sales.Supplier; on_delete=PROTECT |
+| `order` | ForeignKey; null=False; blank=False; editable=True | order → digital_sales.DigitalOrder; on_delete=PROTECT |
+| `number` | CharField; null=False; blank=False; editable=True; max_length=40 | number |
+
+Permissions: []. Стандартные: ('add', 'change', 'delete', 'view').
+
+Ограничения: `[<UniqueConstraint: fields=('supplier', 'number') name='digital_supplier_order_number'>]`; unique_together: `()`.
+
+## `digital_sales.BalanceMovement` — balance movement
+
+Один адресат, signed delta; сторно связано с исходной неизменяемой записью.
+
+Таблица `digital_sales_balancemovement`; порядок `['-pk']`.
+
+| Поле | Тип/параметры | Назначение/связь |
+| --- | --- | --- |
+| `id` | BigAutoField; null=False; blank=True; editable=True | ID |
+| `buyer` | ForeignKey; null=True; blank=True; editable=True | buyer → digital_sales.Buyer; on_delete=PROTECT |
+| `supplier` | ForeignKey; null=True; blank=True; editable=True | supplier → digital_sales.Supplier; on_delete=PROTECT |
+| `sale` | ForeignKey; null=True; blank=True; editable=True | sale → sales.Sale; on_delete=PROTECT |
+| `delta` | DecimalField; null=False; blank=False; editable=True; max_digits=20; decimal_places=2 | delta |
+| `kind` | CharField; null=False; blank=False; editable=True; max_length=16 | kind; choices: opening → Начальный остаток; topup → Пополнение; sale → Списание за продажу; reversal → Сторно; adjustment → Корректировка |
+| `operation_key` | UUIDField; null=False; blank=False; editable=True; max_length=32 | operation key |
+| `reversal_of` | OneToOneField; null=True; blank=True; editable=True | reversal of → digital_sales.BalanceMovement; on_delete=PROTECT |
+| `reason` | CharField; null=False; blank=False; editable=True; max_length=500 | reason |
+| `actor` | ForeignKey; null=True; blank=True; editable=True | actor → accounts.User; on_delete=PROTECT |
+| `created_at` | DateTimeField; null=False; blank=True; editable=False | created at |
+
+Permissions: []. Стандартные: ('add', 'change', 'delete', 'view').
+
+Ограничения: `[<CheckConstraint: condition=(OR: (AND: ('buyer__isnull', False), ('supplier__isnull', True)), (AND: ('buyer__isnull', True), ('supplier__isnull', False))) name='digital_movement_one_owner'>, <CheckConstraint: condition=(NOT (AND: ('delta', 0))) name='digital_movement_nonzero'>, <UniqueConstraint: fields=('sale', 'buyer') name='digital_buyer_sale_once' condition=(AND: ('kind', 'sale'))>, <UniqueConstraint: fields=('sale', 'supplier') name='digital_supplier_sale_once' condition=(AND: ('kind', 'sale'))>]`; unique_together: `()`.
+
+## `digital_sales.SupplierMessage` — supplier message
+
+SupplierMessage(id, supplier, order, chat_id, message_id, edit_version, sender_id, occurred_at, received_at, forwarded, kind, fingerprint, encrypted_payload, parsed, attachment_state)
+
+Таблица `digital_sales_suppliermessage`; порядок `[]`.
+
+| Поле | Тип/параметры | Назначение/связь |
+| --- | --- | --- |
+| `id` | BigAutoField; null=False; blank=True; editable=True | ID |
+| `supplier` | ForeignKey; null=False; blank=False; editable=True | supplier → digital_sales.Supplier; on_delete=PROTECT |
+| `order` | ForeignKey; null=True; blank=True; editable=True | order → digital_sales.DigitalOrder; on_delete=PROTECT |
+| `chat_id` | BigIntegerField; null=False; blank=False; editable=True | chat id |
+| `message_id` | BigIntegerField; null=False; blank=False; editable=True | message id |
+| `edit_version` | BigIntegerField; null=False; blank=False; editable=True | edit version |
+| `sender_id` | BigIntegerField; null=True; blank=False; editable=True | sender id |
+| `occurred_at` | DateTimeField; null=False; blank=False; editable=True | occurred at |
+| `received_at` | DateTimeField; null=False; blank=True; editable=False | received at |
+| `forwarded` | BooleanField; null=False; blank=False; editable=True | forwarded |
+| `kind` | CharField; null=False; blank=False; editable=True; max_length=16 | kind |
+| `fingerprint` | CharField; null=False; blank=False; editable=True; max_length=64 | fingerprint |
+| `encrypted_payload` | TextField; null=False; blank=False; editable=True | encrypted payload |
+| `parsed` | JSONField; null=False; blank=False; editable=True | parsed |
+| `attachment_state` | CharField; null=False; blank=False; editable=True; max_length=16 | attachment state |
+
+Permissions: []. Стандартные: ('add', 'change', 'delete', 'view').
+
+Ограничения: `[<UniqueConstraint: fields=('chat_id', 'message_id', 'edit_version') name='digital_message_version'>]`; unique_together: `()`.
+
+## `digital_sales.SupplierPurchase` — supplier purchase
+
+SupplierPurchase(id, order, message, amount, occurred_at, superseded_by)
+
+Таблица `digital_sales_supplierpurchase`; порядок `[]`.
+
+| Поле | Тип/параметры | Назначение/связь |
+| --- | --- | --- |
+| `id` | BigAutoField; null=False; blank=True; editable=True | ID |
+| `order` | OneToOneField; null=False; blank=False; editable=True | order → digital_sales.DigitalOrder; on_delete=PROTECT |
+| `message` | ForeignKey; null=True; blank=False; editable=True | message → digital_sales.SupplierMessage; on_delete=PROTECT |
+| `amount` | DecimalField; null=False; blank=False; editable=True; max_digits=20; decimal_places=2 | amount |
+| `occurred_at` | DateTimeField; null=False; blank=False; editable=True | occurred at |
+| `superseded_by` | ForeignKey; null=True; blank=True; editable=True | superseded by → digital_sales.SupplierPurchase; on_delete=PROTECT |
+
+Permissions: []. Стандартные: ('add', 'change', 'delete', 'view').
+
+Ограничения: `[]`; unique_together: `[]`.
+
+## `digital_sales.BalanceObservation` — balance observation
+
+BalanceObservation(id, supplier, message, balance, expected, difference, uncertain, resolved_at, resolution, credits_snapshot, purchases_snapshot, topup_movement)
+
+Таблица `digital_sales_balanceobservation`; порядок `[]`.
+
+| Поле | Тип/параметры | Назначение/связь |
+| --- | --- | --- |
+| `id` | BigAutoField; null=False; blank=True; editable=True | ID |
+| `supplier` | ForeignKey; null=False; blank=False; editable=True | supplier → digital_sales.Supplier; on_delete=PROTECT |
+| `message` | OneToOneField; null=False; blank=False; editable=True | message → digital_sales.SupplierMessage; on_delete=PROTECT |
+| `balance` | DecimalField; null=False; blank=False; editable=True; max_digits=20; decimal_places=2 | balance |
+| `expected` | DecimalField; null=True; blank=False; editable=True; max_digits=20; decimal_places=2 | expected |
+| `difference` | DecimalField; null=True; blank=False; editable=True; max_digits=20; decimal_places=2 | difference |
+| `uncertain` | BooleanField; null=False; blank=False; editable=True | uncertain |
+| `resolved_at` | DateTimeField; null=True; blank=True; editable=True | resolved at |
+| `resolution` | CharField; null=False; blank=True; editable=True; max_length=500 | resolution |
+| `credits_snapshot` | DecimalField; null=True; blank=True; editable=True; max_digits=20; decimal_places=2 | credits snapshot |
+| `purchases_snapshot` | DecimalField; null=True; blank=True; editable=True; max_digits=20; decimal_places=2 | purchases snapshot |
+| `topup_movement` | OneToOneField; null=True; blank=True; editable=True | topup movement → digital_sales.BalanceMovement; on_delete=PROTECT |
+
+Permissions: []. Стандартные: ('add', 'change', 'delete', 'view').
+
+Ограничения: `[]`; unique_together: `[]`.
+
+## `digital_sales.AuditEvent` — audit event
+
+AuditEvent(id, order, message, actor, kind, detail, created_at)
+
+Таблица `digital_sales_auditevent`; порядок `[]`.
+
+| Поле | Тип/параметры | Назначение/связь |
+| --- | --- | --- |
+| `id` | BigAutoField; null=False; blank=True; editable=True | ID |
+| `order` | ForeignKey; null=True; blank=True; editable=True | order → digital_sales.DigitalOrder; on_delete=PROTECT |
+| `message` | ForeignKey; null=True; blank=True; editable=True | message → digital_sales.SupplierMessage; on_delete=PROTECT |
+| `actor` | ForeignKey; null=True; blank=True; editable=True | actor → accounts.User; on_delete=PROTECT |
+| `kind` | CharField; null=False; blank=False; editable=True; max_length=40 | kind |
+| `detail` | CharField; null=False; blank=True; editable=True; max_length=500 | detail |
+| `created_at` | DateTimeField; null=False; blank=True; editable=False | created at |
+
+Permissions: []. Стандартные: ('add', 'change', 'delete', 'view').
+
+Ограничения: `[]`; unique_together: `[]`.
+
+## `digital_sales.Notification` — notification
+
+Outbox не содержит паролей; сетевой результат отделён от бизнес-транзакции.
+
+Таблица `digital_sales_notification`; порядок `[]`.
+
+| Поле | Тип/параметры | Назначение/связь |
+| --- | --- | --- |
+| `id` | BigAutoField; null=False; blank=True; editable=True | ID |
+| `order` | ForeignKey; null=True; blank=True; editable=True | order → digital_sales.DigitalOrder; on_delete=PROTECT |
+| `observation` | ForeignKey; null=True; blank=True; editable=True | observation → digital_sales.BalanceObservation; on_delete=PROTECT |
+| `access` | ForeignKey; null=False; blank=False; editable=True | access → telegram_bots.StaffBotAccess; on_delete=PROTECT |
+| `event_key` | CharField; null=False; blank=False; editable=True; max_length=100 | event key |
+| `text` | TextField; null=False; blank=False; editable=True | text |
+| `state` | CharField; null=False; blank=False; editable=True; max_length=16 | state |
+| `attempts` | PositiveSmallIntegerField; null=False; blank=False; editable=True | attempts |
+| `next_attempt_at` | DateTimeField; null=True; blank=True; editable=True | next attempt at |
+| `telegram_message_id` | BigIntegerField; null=True; blank=True; editable=True | telegram message id |
+| `error_category` | CharField; null=False; blank=True; editable=True; max_length=40 | error category |
+| `created_at` | DateTimeField; null=False; blank=True; editable=False | created at |
+
+Permissions: []. Стандартные: ('add', 'change', 'delete', 'view').
+
+Ограничения: `[<UniqueConstraint: fields=('access', 'event_key') name='digital_notification_once'>]`; unique_together: `()`.
+
+## `digital_sales.StaffConversation` — staff conversation
+
+StaffConversation(id, access, order, revision, field, expires_at)
+
+Таблица `digital_sales_staffconversation`; порядок `[]`.
+
+| Поле | Тип/параметры | Назначение/связь |
+| --- | --- | --- |
+| `id` | BigAutoField; null=False; blank=True; editable=True | ID |
+| `access` | OneToOneField; null=False; blank=False; editable=True | access → telegram_bots.StaffBotAccess; on_delete=CASCADE |
+| `order` | ForeignKey; null=False; blank=False; editable=True | order → digital_sales.DigitalOrder; on_delete=PROTECT |
+| `revision` | PositiveIntegerField; null=False; blank=False; editable=True | revision |
+| `field` | CharField; null=False; blank=False; editable=True; max_length=16 | field |
+| `expires_at` | DateTimeField; null=False; blank=False; editable=True | expires at |
+
+Permissions: []. Стандартные: ('add', 'change', 'delete', 'view').
+
+Ограничения: `[]`; unique_together: `[]`.
+
+## `digital_sales.BuyerBalanceChat` — buyer balance chat
+
+Только явно выбранная группа получает баланс одного цифрового покупателя.
+
+Таблица `digital_sales_buyerbalancechat`; порядок `[]`.
+
+| Поле | Тип/параметры | Назначение/связь |
+| --- | --- | --- |
+| `chat_id` | BigIntegerField; null=False; blank=False; editable=True | chat id |
+| `title` | CharField; null=False; blank=False; editable=True; max_length=255 | title |
+| `buyer` | OneToOneField; null=True; blank=True; editable=True | buyer → digital_sales.Buyer; on_delete=PROTECT |
+| `can_pin` | BooleanField; null=False; blank=False; editable=True | can pin |
+| `can_delete` | BooleanField; null=False; blank=False; editable=True | can delete |
+| `message_id` | BigIntegerField; null=True; blank=True; editable=True | message id |
+| `message_at` | DateTimeField; null=True; blank=True; editable=True | message at |
+| `updated_at` | DateTimeField; null=False; blank=True; editable=False | updated at |
+
+Permissions: []. Стандартные: ('add', 'change', 'delete', 'view').
+
+Ограничения: `[<CheckConstraint: condition=(AND: ('chat_id__lt', 0)) name='digital_balance_group_only'>]`; unique_together: `()`.
+
+## `digital_sales.BalanceChatCommand` — balance chat command
+
+BalanceChatCommand(id, update_id, chat, sender_id, buyer_id_requested, state, error_category)
+
+Таблица `digital_sales_balancechatcommand`; порядок `[]`.
+
+| Поле | Тип/параметры | Назначение/связь |
+| --- | --- | --- |
+| `id` | BigAutoField; null=False; blank=True; editable=True | ID |
+| `update_id` | BigIntegerField; null=False; blank=False; editable=True | update id |
+| `chat` | ForeignKey; null=False; blank=False; editable=True | chat → digital_sales.BuyerBalanceChat; on_delete=PROTECT |
+| `sender_id` | BigIntegerField; null=False; blank=False; editable=True | sender id |
+| `buyer_id_requested` | PositiveBigIntegerField; null=False; blank=False; editable=True | buyer id requested |
+| `state` | CharField; null=False; blank=False; editable=True; max_length=16 | state |
+| `error_category` | CharField; null=False; blank=True; editable=True; max_length=40 | error category |
+
+Permissions: []. Стандартные: ('add', 'change', 'delete', 'view').
+
+Ограничения: `[]`; unique_together: `[]`.
+
+## `digital_sales.BalanceChatPublication` — balance chat publication
+
+Сеть вне учёта; отдельное сообщение на событие, старые ID сохранены для истории.
+
+Таблица `digital_sales_balancechatpublication`; порядок `[]`.
+
+| Поле | Тип/параметры | Назначение/связь |
+| --- | --- | --- |
+| `id` | BigAutoField; null=False; blank=True; editable=True | ID |
+| `chat` | ForeignKey; null=False; blank=False; editable=True | chat → digital_sales.BuyerBalanceChat; on_delete=PROTECT |
+| `buyer` | ForeignKey; null=False; blank=False; editable=True | buyer → digital_sales.Buyer; on_delete=PROTECT |
+| `event_key` | CharField; null=False; blank=False; editable=True; max_length=120 | event key |
+| `state` | CharField; null=False; blank=False; editable=True; max_length=16 | state |
+| `stage` | CharField; null=False; blank=False; editable=True; max_length=16 | stage |
+| `text` | TextField; null=False; blank=True; editable=True | text |
+| `message_id` | BigIntegerField; null=True; blank=True; editable=True | message id |
+| `copy_message_id` | BigIntegerField; null=True; blank=True; editable=True | copy message id |
+| `generated_at` | DateTimeField; null=True; blank=True; editable=True | generated at |
+| `error_category` | CharField; null=False; blank=True; editable=True; max_length=40 | error category |
+| `attempts` | PositiveSmallIntegerField; null=False; blank=False; editable=True | attempts |
+| `next_attempt_at` | DateTimeField; null=True; blank=True; editable=True | next attempt at |
+| `created_at` | DateTimeField; null=False; blank=True; editable=False | created at |
+
+Permissions: []. Стандартные: ('add', 'change', 'delete', 'view').
+
+Ограничения: `[]`; unique_together: `[]`.
+
+## `digital_prices.Integration` — integration
+
+Integration(id, enabled, encrypted_key, daily_enabled, daily_at, timezone_name, revision, last_success_at, next_at, error_category, manual_sheet_enabled, manual_sheet_url, manual_sheet_last_success_at, manual_sheet_error_category)
+
+Таблица `digital_prices_integration`; порядок `[]`.
+
+| Поле | Тип/параметры | Назначение/связь |
+| --- | --- | --- |
+| `id` | PositiveSmallIntegerField; null=False; blank=False; editable=False | id |
+| `enabled` | BooleanField; null=False; blank=False; editable=True | enabled |
+| `encrypted_key` | TextField; null=False; blank=True; editable=True | encrypted key |
+| `daily_enabled` | BooleanField; null=False; blank=False; editable=True | daily enabled |
+| `daily_at` | TimeField; null=True; blank=True; editable=True | daily at |
+| `timezone_name` | CharField; null=False; blank=False; editable=True; max_length=64 | timezone name |
+| `revision` | PositiveIntegerField; null=False; blank=False; editable=True | revision |
+| `last_success_at` | DateTimeField; null=True; blank=True; editable=True | last success at |
+| `next_at` | DateTimeField; null=True; blank=True; editable=True | next at |
+| `error_category` | CharField; null=False; blank=True; editable=True; max_length=40 | error category |
+| `manual_sheet_enabled` | BooleanField; null=False; blank=False; editable=True | manual sheet enabled |
+| `manual_sheet_url` | CharField; null=False; blank=True; editable=True; max_length=500 | manual sheet url |
+| `manual_sheet_last_success_at` | DateTimeField; null=True; blank=True; editable=True | manual sheet last success at |
+| `manual_sheet_error_category` | CharField; null=False; blank=True; editable=True; max_length=40 | manual sheet error category |
+
+Permissions: []. Стандартные: ('add', 'change', 'delete', 'view').
+
+Ограничения: `[]`; unique_together: `[]`.
+
+## `digital_prices.CatalogState` — catalog state
+
+CatalogState(id, revision, source_at)
+
+Таблица `digital_prices_catalogstate`; порядок `[]`.
+
+| Поле | Тип/параметры | Назначение/связь |
+| --- | --- | --- |
+| `id` | PositiveSmallIntegerField; null=False; blank=False; editable=False | id |
+| `revision` | PositiveBigIntegerField; null=False; blank=False; editable=True | revision |
+| `source_at` | DateTimeField; null=True; blank=True; editable=True | source at |
+
+Permissions: []. Стандартные: ('add', 'change', 'delete', 'view').
+
+Ограничения: `[]`; unique_together: `[]`.
+
+## `digital_prices.ProviderGate` — provider gate
+
+Общее окно запросов всех процессов; ключ и ответы здесь не хранятся.
+
+Таблица `digital_prices_providergate`; порядок `[]`.
+
+| Поле | Тип/параметры | Назначение/связь |
+| --- | --- | --- |
+| `id` | PositiveSmallIntegerField; null=False; blank=False; editable=False | id |
+| `revision` | PositiveBigIntegerField; null=False; blank=False; editable=True | revision |
+| `requests_at` | JSONField; null=False; blank=False; editable=True | requests at |
+| `blocked_until` | DateTimeField; null=True; blank=False; editable=True | blocked until |
+| `urgent_until` | DateTimeField; null=True; blank=False; editable=True | urgent until |
+
+Permissions: []. Стандартные: ('add', 'change', 'delete', 'view').
+
+Ограничения: `[]`; unique_together: `[]`.
+
+## `digital_prices.Product` — product
+
+Product(id, external_id, legacy_external_id, api_version, fulfillment, requirements, quantity_limits, mapping_issue, superseded_by, source_name, source_type, platform, region, attributes, purchase_cost, currency, markup, rule, rule_manual, display_name, category, category_manual, section, position, availability, requires_review, first_seen_at, last_seen_at, confirmed_at, revision, edited_by, edited_at)
+
+Таблица `digital_prices_product`; порядок `['section', 'position', 'category', 'display_name', 'source_name', 'pk']`.
+
+| Поле | Тип/параметры | Назначение/связь |
+| --- | --- | --- |
+| `id` | BigAutoField; null=False; blank=True; editable=True | ID |
+| `external_id` | CharField; null=False; blank=False; editable=True; max_length=128 | external id |
+| `legacy_external_id` | CharField; null=False; blank=True; editable=True; max_length=128 | legacy external id |
+| `api_version` | PositiveSmallIntegerField; null=False; blank=False; editable=True | api version |
+| `fulfillment` | CharField; null=False; blank=True; editable=True; max_length=12 | fulfillment |
+| `requirements` | JSONField; null=False; blank=True; editable=True | requirements |
+| `quantity_limits` | JSONField; null=False; blank=True; editable=True | quantity limits |
+| `mapping_issue` | CharField; null=False; blank=True; editable=True; max_length=40 | mapping issue |
+| `superseded_by` | ForeignKey; null=True; blank=True; editable=True | superseded by → digital_prices.Product; on_delete=PROTECT |
+| `source_name` | CharField; null=False; blank=False; editable=True; max_length=500 | source name |
+| `source_type` | CharField; null=False; blank=False; editable=True; max_length=40 | source type |
+| `platform` | CharField; null=False; blank=True; editable=True; max_length=60 | platform |
+| `region` | CharField; null=False; blank=True; editable=True; max_length=80 | region |
+| `attributes` | JSONField; null=False; blank=True; editable=True | attributes |
+| `purchase_cost` | DecimalField; null=True; blank=True; editable=True; max_digits=20; decimal_places=2 | purchase cost |
+| `currency` | CharField; null=False; blank=False; editable=True; max_length=8 | currency |
+| `markup` | DecimalField; null=True; blank=True; editable=True; max_digits=20; decimal_places=2 | markup |
+| `rule` | CharField; null=False; blank=False; editable=True; max_length=24 | rule; choices: ps_plus_subscription → PlayStation Plus · вверх до 50 ₽; xbox_subscription → Подписка Xbox · вверх до 50 ₽; other → Остальное · вверх до 10 ₽ |
+| `rule_manual` | BooleanField; null=False; blank=False; editable=True | rule manual |
+| `display_name` | CharField; null=False; blank=True; editable=True; max_length=500 | display name |
+| `category` | CharField; null=False; blank=True; editable=True; max_length=120 | category |
+| `category_manual` | BooleanField; null=False; blank=False; editable=True | category manual |
+| `section` | CharField; null=False; blank=False; editable=True; max_length=12 | section; choices: services → Подписки и услуги; codes → Цифровые коды |
+| `position` | IntegerField; null=False; blank=False; editable=True | position |
+| `availability` | CharField; null=False; blank=False; editable=True; max_length=10 | availability; choices: yes → Доступен; no → Нет в наличии; unknown → Наличие уточняется |
+| `requires_review` | BooleanField; null=False; blank=False; editable=True | requires review |
+| `first_seen_at` | DateTimeField; null=False; blank=True; editable=False | first seen at |
+| `last_seen_at` | DateTimeField; null=False; blank=False; editable=True | last seen at |
+| `confirmed_at` | DateTimeField; null=False; blank=False; editable=True | confirmed at |
+| `revision` | PositiveIntegerField; null=False; blank=False; editable=True | revision |
+| `edited_by` | ForeignKey; null=True; blank=False; editable=True | edited by → accounts.User; on_delete=PROTECT |
+| `edited_at` | DateTimeField; null=True; blank=True; editable=True | edited at |
+
+Permissions: [('view_catalog', 'Просмотр цифрового каталога'), ('view_cost', 'Просмотр себестоимости и наценок'), ('edit_markup', 'Изменение фиксированных наценок'), ('edit_cost', 'Изменение ручной себестоимости цифровых товаров'), ('sync_catalog', 'Обновление цифрового каталога'), ('download_prices', 'Скачивание клиентских PNG-прайсов'), ('edit_layout', 'Категории, оформление и округление'), ('configure_integration', 'Настройка интеграции цифрового каталога')]. Стандартные: ('add', 'change', 'delete', 'view').
+
+Ограничения: `[<CheckConstraint: condition=(OR: ('markup__isnull', True), ('markup__gte', 0)) name='digital_price_markup_positive'>, <CheckConstraint: condition=(OR: ('purchase_cost__isnull', True), ('purchase_cost__gte', 0)) name='digital_price_cost_positive'>]`; unique_together: `()`.
+
+## `digital_prices.SyncJob` — sync job
+
+SyncJob(id, state, source, requested_by, attempts, run_after, owner, lease_until, error_category, created_at, finished_at, item_count, summary, last_attempt_at, active)
+
+Таблица `digital_prices_syncjob`; порядок `[]`.
+
+| Поле | Тип/параметры | Назначение/связь |
+| --- | --- | --- |
+| `id` | UUIDField; null=False; blank=False; editable=False; max_length=32 | id |
+| `state` | CharField; null=False; blank=False; editable=True; max_length=12 | state |
+| `source` | CharField; null=False; blank=False; editable=True; max_length=12 | source |
+| `requested_by` | ForeignKey; null=True; blank=False; editable=True | requested by → accounts.User; on_delete=PROTECT |
+| `attempts` | PositiveSmallIntegerField; null=False; blank=False; editable=True | attempts |
+| `run_after` | DateTimeField; null=False; blank=False; editable=True | run after |
+| `owner` | UUIDField; null=True; blank=False; editable=True; max_length=32 | owner |
+| `lease_until` | DateTimeField; null=True; blank=False; editable=True | lease until |
+| `error_category` | CharField; null=False; blank=True; editable=True; max_length=40 | error category |
+| `created_at` | DateTimeField; null=False; blank=True; editable=False | created at |
+| `finished_at` | DateTimeField; null=True; blank=False; editable=True | finished at |
+| `item_count` | PositiveIntegerField; null=False; blank=False; editable=True | item count |
+| `summary` | JSONField; null=False; blank=True; editable=True | summary |
+| `last_attempt_at` | DateTimeField; null=True; blank=True; editable=True | last attempt at |
+| `active` | BooleanField; null=False; blank=False; editable=True | active |
+
+Permissions: []. Стандартные: ('add', 'change', 'delete', 'view').
+
+Ограничения: `[<UniqueConstraint: fields=('active',) name='digital_one_active_catalog_sync' condition=(AND: ('active', True))>]`; unique_together: `()`.
+
+## `digital_prices.ManualPriceEntry` — manual price entry
+
+Ручная закупка и наценка: суммы RUB и проценты хранятся раздельно.
+
+Таблица `digital_prices_manualpriceentry`; порядок `['kind', 'region', 'position', 'pk']`.
+
+| Поле | Тип/параметры | Назначение/связь |
+| --- | --- | --- |
+| `id` | BigAutoField; null=False; blank=True; editable=True | ID |
+| `kind` | CharField; null=False; blank=False; editable=True; max_length=16 | kind; choices: game_tariff → Игры по странам; steam_tariff → Пополнение Steam |
+| `source_archived` | BooleanField; null=False; blank=False; editable=True | Прежний диапазон поставщика |
+| `region` | CharField; null=False; blank=True; editable=True; max_length=40 | region |
+| `label` | CharField; null=False; blank=False; editable=True; max_length=180 | label |
+| `value` | DecimalField; null=True; blank=True; editable=True; max_digits=20; decimal_places=4 | value |
+| `manual_cost` | DecimalField; null=True; blank=True; editable=True; max_digits=20; decimal_places=2 | manual cost |
+| `markup` | DecimalField; null=True; blank=True; editable=True; max_digits=20; decimal_places=2 | markup |
+| `pricing_mode` | CharField; null=False; blank=False; editable=True; max_length=12 | pricing mode; choices: rub → ₽; percent → %; coefficient → Коэффициент |
+| `cost_percent` | DecimalField; null=True; blank=True; editable=True; max_digits=8; decimal_places=2 | cost percent |
+| `markup_percent` | DecimalField; null=True; blank=True; editable=True; max_digits=8; decimal_places=2 | markup percent |
+| `cost_coefficient` | DecimalField; null=True; blank=True; editable=True; max_digits=20; decimal_places=4 | cost coefficient |
+| `markup_coefficient` | DecimalField; null=True; blank=True; editable=True; max_digits=20; decimal_places=4 | markup coefficient |
+| `sheet_reference` | CharField; null=False; blank=True; editable=True; max_length=160 | sheet reference |
+| `sheet_checked_at` | DateTimeField; null=True; blank=True; editable=True | sheet checked at |
+| `sheet_issue` | CharField; null=False; blank=True; editable=True; max_length=40 | sheet issue |
+| `unit` | CharField; null=False; blank=False; editable=True; max_length=12 | unit; choices: rub → Рубли; percent → Проценты; coefficient → Коэффициент |
+| `position` | IntegerField; null=False; blank=False; editable=True | position |
+| `revision` | PositiveIntegerField; null=False; blank=False; editable=True | revision |
+| `edited_by` | ForeignKey; null=True; blank=False; editable=True | edited by → accounts.User; on_delete=PROTECT |
+| `edited_at` | DateTimeField; null=True; blank=True; editable=True | edited at |
+
+Permissions: [('edit_manual_prices', 'Изменение ручных клиентских тарифов')]. Стандартные: ('add', 'change', 'delete', 'view').
+
+Ограничения: `[<CheckConstraint: condition=(OR: ('value__isnull', True), ('value__gte', 0)) name='digital_manual_value_nonnegative'>, <CheckConstraint: condition=(OR: ('manual_cost__isnull', True), ('manual_cost__gte', 0)) name='digital_tariff_cost_positive'>, <CheckConstraint: condition=(OR: ('markup__isnull', True), ('markup__gte', 0)) name='digital_tariff_markup_positive'>, <CheckConstraint: condition=(OR: ('cost_percent__isnull', True), ('cost_percent__gte', 0)) name='digital_tariff_percent_cost_positive'>, <CheckConstraint: condition=(OR: ('markup_percent__isnull', True), ('markup_percent__gte', 0)) name='digital_tariff_percent_markup_positive'>, <CheckConstraint: condition=(OR: ('cost_coefficient__isnull', True), ('cost_coefficient__gte', 0)) name='digital_tariff_coef_cost_positive'>, <CheckConstraint: condition=(OR: ('markup_coefficient__isnull', True), ('markup_coefficient__gte', 0)) name='digital_tariff_coef_markup_positive'>]`; unique_together: `()`.
+
+## `digital_prices.BuyerMarkup` — buyer markup
+
+Отдельная наценка покупателя; себестоимость всегда берётся из каталога.
+
+Таблица `digital_prices_buyermarkup`; порядок `[]`.
+
+| Поле | Тип/параметры | Назначение/связь |
+| --- | --- | --- |
+| `id` | BigAutoField; null=False; blank=True; editable=True | ID |
+| `buyer` | ForeignKey; null=False; blank=False; editable=True | buyer → digital_sales.Buyer; on_delete=PROTECT |
+| `product` | ForeignKey; null=True; blank=True; editable=True | product → digital_prices.Product; on_delete=PROTECT |
+| `manual_entry` | ForeignKey; null=True; blank=True; editable=True | manual entry → digital_prices.ManualPriceEntry; on_delete=PROTECT |
+| `markup` | DecimalField; null=True; blank=True; editable=True; max_digits=20; decimal_places=2 | markup |
+| `markup_percent` | DecimalField; null=True; blank=True; editable=True; max_digits=8; decimal_places=2 | markup percent |
+| `markup_coefficient` | DecimalField; null=True; blank=True; editable=True; max_digits=20; decimal_places=4 | markup coefficient |
+| `revision` | PositiveIntegerField; null=False; blank=False; editable=True | revision |
+| `edited_by` | ForeignKey; null=False; blank=False; editable=True | edited by → accounts.User; on_delete=PROTECT |
+| `edited_at` | DateTimeField; null=False; blank=True; editable=False | edited at |
+
+Permissions: []. Стандартные: ('add', 'change', 'delete', 'view').
+
+Ограничения: `[<CheckConstraint: condition=(OR: (AND: ('manual_entry__isnull', True), ('product__isnull', False)), (AND: ('manual_entry__isnull', False), ('product__isnull', True))) name='digital_buyer_markup_one_target'>, <UniqueConstraint: fields=('buyer', 'product') name='digital_buyer_product_once'>, <UniqueConstraint: fields=('buyer', 'manual_entry') name='digital_buyer_manual_once'>, <CheckConstraint: condition=(OR: ('markup__isnull', True), ('markup__gte', 0)) name='digital_buyer_markup_positive'>, <CheckConstraint: condition=(OR: ('markup_percent__isnull', True), ('markup_percent__gte', 0)) name='digital_buyer_percent_positive'>, <CheckConstraint: condition=(OR: ('markup_coefficient__isnull', True), ('markup_coefficient__gte', 0)) name='digital_buyer_coef_positive'>]`; unique_together: `()`.
+
+## `digital_prices.AuditEvent` — audit event
+
+AuditEvent(id, product, actor, kind, detail, created_at)
+
+Таблица `digital_prices_auditevent`; порядок `[]`.
+
+| Поле | Тип/параметры | Назначение/связь |
+| --- | --- | --- |
+| `id` | BigAutoField; null=False; blank=True; editable=True | ID |
+| `product` | ForeignKey; null=True; blank=False; editable=True | product → digital_prices.Product; on_delete=PROTECT |
+| `actor` | ForeignKey; null=True; blank=False; editable=True | actor → accounts.User; on_delete=PROTECT |
+| `kind` | CharField; null=False; blank=False; editable=True; max_length=32 | kind |
+| `detail` | JSONField; null=False; blank=False; editable=True | detail |
+| `created_at` | DateTimeField; null=False; blank=True; editable=False | created at |
+
+Permissions: []. Стандартные: ('add', 'change', 'delete', 'view').
+
+Ограничения: `[]`; unique_together: `[]`.
+
+## `digital_prices.PriceBundle` — price bundle
+
+PriceBundle(id, actor, buyer, buyer_name_snapshot, revision, created_at, source_at, public_snapshot)
+
+Таблица `digital_prices_pricebundle`; порядок `[]`.
+
+| Поле | Тип/параметры | Назначение/связь |
+| --- | --- | --- |
+| `id` | UUIDField; null=False; blank=False; editable=False; max_length=32 | id |
+| `actor` | ForeignKey; null=False; blank=False; editable=True | actor → accounts.User; on_delete=PROTECT |
+| `buyer` | ForeignKey; null=True; blank=True; editable=True | buyer → digital_sales.Buyer; on_delete=PROTECT |
+| `buyer_name_snapshot` | CharField; null=False; blank=True; editable=True; max_length=160 | buyer name snapshot |
+| `revision` | PositiveBigIntegerField; null=False; blank=False; editable=True | revision |
+| `created_at` | DateTimeField; null=False; blank=True; editable=False | created at |
+| `source_at` | DateTimeField; null=True; blank=False; editable=True | source at |
+| `public_snapshot` | JSONField; null=False; blank=False; editable=True | public snapshot |
+
+Permissions: []. Стандартные: ('add', 'change', 'delete', 'view').
+
+Ограничения: `[]`; unique_together: `[]`.
+
+## `digital_prices.PricePage` — price page
+
+PricePage(id, bundle, index, filename, png, row_count, width, height)
+
+Таблица `digital_prices_pricepage`; порядок `['index']`.
+
+| Поле | Тип/параметры | Назначение/связь |
+| --- | --- | --- |
+| `id` | BigAutoField; null=False; blank=True; editable=True | ID |
+| `bundle` | ForeignKey; null=False; blank=False; editable=True | bundle → digital_prices.PriceBundle; on_delete=CASCADE |
+| `index` | PositiveIntegerField; null=False; blank=False; editable=True | index |
+| `filename` | CharField; null=False; blank=False; editable=True; max_length=100 | filename |
+| `png` | BinaryField; null=False; blank=False; editable=False | png |
+| `row_count` | PositiveIntegerField; null=False; blank=False; editable=True | row count |
+| `width` | PositiveIntegerField; null=False; blank=False; editable=True | width |
+| `height` | PositiveIntegerField; null=False; blank=False; editable=True | height |
+
+Permissions: []. Стандартные: ('add', 'change', 'delete', 'view').
+
+Ограничения: `[<UniqueConstraint: fields=('bundle', 'index') name='digital_bundle_page_once'>]`; unique_together: `()`.
+
+## `digital_prices.BotBundle` — bot bundle
+
+BotBundle(job, bundle)
+
+Таблица `digital_prices_botbundle`; порядок `[]`.
+
+| Поле | Тип/параметры | Назначение/связь |
+| --- | --- | --- |
+| `job` | OneToOneField; null=False; blank=False; editable=True | job → telegram_bots.StaffBotJob; on_delete=CASCADE |
+| `bundle` | ForeignKey; null=False; blank=False; editable=True | bundle → digital_prices.PriceBundle; on_delete=PROTECT |
+
+Permissions: []. Стандартные: ('add', 'change', 'delete', 'view').
+
+Ограничения: `[]`; unique_together: `[]`.
+
+## `digital_prices.BuyerPriceRequest` — buyer price request
+
+Выбранный в боте покупатель фиксируется до запуска формирования документов.
+
+Таблица `digital_prices_buyerpricerequest`; порядок `[]`.
+
+| Поле | Тип/параметры | Назначение/связь |
+| --- | --- | --- |
+| `job` | OneToOneField; null=False; blank=False; editable=True | job → telegram_bots.StaffBotJob; on_delete=CASCADE |
+| `buyer` | ForeignKey; null=False; blank=False; editable=True | buyer → digital_sales.Buyer; on_delete=PROTECT |
+
+Permissions: []. Стандартные: ('add', 'change', 'delete', 'view').
+
+Ограничения: `[]`; unique_together: `[]`.
+
+## `digital_prices.PageDelivery` — page delivery
+
+PageDelivery(id, job, page, state, message_id, error_category)
+
+Таблица `digital_prices_pagedelivery`; порядок `[]`.
+
+| Поле | Тип/параметры | Назначение/связь |
+| --- | --- | --- |
+| `id` | BigAutoField; null=False; blank=True; editable=True | ID |
+| `job` | ForeignKey; null=False; blank=False; editable=True | job → telegram_bots.StaffBotJob; on_delete=CASCADE |
+| `page` | ForeignKey; null=False; blank=False; editable=True | page → digital_prices.PricePage; on_delete=PROTECT |
+| `state` | CharField; null=False; blank=False; editable=True; max_length=12 | state |
+| `message_id` | BigIntegerField; null=True; blank=False; editable=True | message id |
+| `error_category` | CharField; null=False; blank=True; editable=True; max_length=40 | error category |
+
+Permissions: []. Стандартные: ('add', 'change', 'delete', 'view').
+
+Ограничения: `[<UniqueConstraint: fields=('job', 'page') name='digital_page_delivery_once'>]`; unique_together: `()`.
+
+## `digital_prices.BuyerPriceDispatch` — buyer price dispatch
+
+Один комплект покупателю на успешное обновление; сеть выполняется отдельно.
+
+Таблица `digital_prices_buyerpricedispatch`; порядок `[]`.
+
+| Поле | Тип/параметры | Назначение/связь |
+| --- | --- | --- |
+| `id` | BigAutoField; null=False; blank=True; editable=True | ID |
+| `sync_job` | ForeignKey; null=False; blank=False; editable=True | sync job → digital_prices.SyncJob; on_delete=PROTECT |
+| `buyer` | ForeignKey; null=False; blank=False; editable=True | buyer → digital_sales.Buyer; on_delete=PROTECT |
+| `chat` | ForeignKey; null=False; blank=False; editable=True | chat → digital_sales.BuyerBalanceChat; on_delete=PROTECT |
+| `actor` | ForeignKey; null=False; blank=False; editable=True | actor → accounts.User; on_delete=PROTECT |
+| `bundle` | ForeignKey; null=True; blank=False; editable=True | bundle → digital_prices.PriceBundle; on_delete=PROTECT |
+| `state` | CharField; null=False; blank=False; editable=True; max_length=12 | state |
+| `owner` | UUIDField; null=True; blank=False; editable=True; max_length=32 | owner |
+| `attempts` | PositiveSmallIntegerField; null=False; blank=False; editable=True | attempts |
+| `next_attempt_at` | DateTimeField; null=True; blank=False; editable=True | next attempt at |
+| `error_category` | CharField; null=False; blank=True; editable=True; max_length=40 | error category |
+| `created_at` | DateTimeField; null=False; blank=True; editable=False | created at |
+| `finished_at` | DateTimeField; null=True; blank=False; editable=True | finished at |
+
+Permissions: []. Стандартные: ('add', 'change', 'delete', 'view').
+
+Ограничения: `[<UniqueConstraint: fields=('sync_job', 'buyer') name='digital_buyer_price_dispatch_once'>]`; unique_together: `()`.
+
+## `digital_prices.BuyerPriceDispatchPage` — buyer price dispatch page
+
+Доставка страницы и её закреп: done → pinned → unpinned, без повтора фото.
+
+Таблица `digital_prices_buyerpricedispatchpage`; порядок `[]`.
+
+| Поле | Тип/параметры | Назначение/связь |
+| --- | --- | --- |
+| `id` | BigAutoField; null=False; blank=True; editable=True | ID |
+| `dispatch` | ForeignKey; null=False; blank=False; editable=True | dispatch → digital_prices.BuyerPriceDispatch; on_delete=PROTECT |
+| `page` | ForeignKey; null=False; blank=False; editable=True | page → digital_prices.PricePage; on_delete=PROTECT |
+| `caption` | CharField; null=False; blank=False; editable=True; max_length=1024 | caption |
+| `state` | CharField; null=False; blank=False; editable=True; max_length=12 | state |
+| `message_id` | BigIntegerField; null=True; blank=False; editable=True | message id |
+| `error_category` | CharField; null=False; blank=True; editable=True; max_length=40 | error category |
+
+Permissions: []. Стандартные: ('add', 'change', 'delete', 'view').
+
+Ограничения: `[<UniqueConstraint: fields=('dispatch', 'page') name='digital_buyer_dispatch_page_once'>]`; unique_together: `()`.
+
+## `digital_shop.ShopConfig` — shop config
+
+ShopConfig(id, enabled, purchases_enabled, supplier, actor, revision, write_revision, last_poll_at, list_poll_at, list_page, last_success_at, error_category, observed_balance, observed_at)
+
+Таблица `digital_shop_shopconfig`; порядок `[]`.
+
+| Поле | Тип/параметры | Назначение/связь |
+| --- | --- | --- |
+| `id` | PositiveSmallIntegerField; null=False; blank=False; editable=False | id |
+| `enabled` | BooleanField; null=False; blank=False; editable=True | enabled |
+| `purchases_enabled` | BooleanField; null=False; blank=False; editable=True | purchases enabled |
+| `supplier` | ForeignKey; null=True; blank=False; editable=True | supplier → digital_sales.Supplier; on_delete=PROTECT |
+| `actor` | ForeignKey; null=True; blank=False; editable=True | actor → accounts.User; on_delete=PROTECT |
+| `revision` | PositiveBigIntegerField; null=False; blank=False; editable=True | revision |
+| `write_revision` | PositiveBigIntegerField; null=False; blank=False; editable=True | write revision |
+| `last_poll_at` | DateTimeField; null=True; blank=False; editable=True | last poll at |
+| `list_poll_at` | DateTimeField; null=True; blank=False; editable=True | list poll at |
+| `list_page` | PositiveIntegerField; null=False; blank=False; editable=True | list page |
+| `last_success_at` | DateTimeField; null=True; blank=False; editable=True | last success at |
+| `error_category` | CharField; null=False; blank=True; editable=True; max_length=40 | error category |
+| `observed_balance` | DecimalField; null=True; blank=False; editable=True; max_digits=20; decimal_places=2 | observed balance |
+| `observed_at` | DateTimeField; null=True; blank=False; editable=True | observed at |
+
+Permissions: [('manage_shop', 'Настройка и сверка цифрового магазина')]. Стандартные: ('add', 'change', 'delete', 'view').
+
+Ограничения: `[]`; unique_together: `()`.
+
+## `digital_shop.ShopChat` — shop chat
+
+ShopChat(binding, enabled)
+
+Таблица `digital_shop_shopchat`; порядок `[]`.
+
+| Поле | Тип/параметры | Назначение/связь |
+| --- | --- | --- |
+| `binding` | OneToOneField; null=False; blank=False; editable=True | binding → digital_sales.BuyerBalanceChat; on_delete=PROTECT |
+| `enabled` | BooleanField; null=False; blank=False; editable=True | enabled |
+
+Permissions: []. Стандартные: ('add', 'change', 'delete', 'view').
+
+Ограничения: `[]`; unique_together: `[]`.
+
+## `digital_shop.Cart` — cart
+
+Cart(id, buyer, chat, telegram_user_id, revision, state, menu_message_id, search_query, search_product_ids, search_platform, search_region, input_kind, input_product, input_mode, input_account, prompt_message_id, encrypted_credentials, quote_id, quote_expires_at, quote_revision, quoted_total, client_total, catalog_revision, price_snapshot, credential_groups, quote_body, updated_at)
+
+Таблица `digital_shop_cart`; порядок `[]`.
+
+| Поле | Тип/параметры | Назначение/связь |
+| --- | --- | --- |
+| `id` | UUIDField; null=False; blank=False; editable=False; max_length=32 | id |
+| `buyer` | ForeignKey; null=False; blank=False; editable=True | buyer → digital_sales.Buyer; on_delete=PROTECT |
+| `chat` | ForeignKey; null=False; blank=False; editable=True | chat → digital_sales.BuyerBalanceChat; on_delete=PROTECT |
+| `telegram_user_id` | BigIntegerField; null=False; blank=False; editable=True | telegram user id |
+| `revision` | PositiveIntegerField; null=False; blank=False; editable=True | revision |
+| `state` | CharField; null=False; blank=False; editable=True; max_length=20 | state |
+| `menu_message_id` | BigIntegerField; null=True; blank=False; editable=True | menu message id |
+| `search_query` | CharField; null=False; blank=True; editable=True; max_length=150 | search query |
+| `search_product_ids` | JSONField; null=False; blank=False; editable=True | search product ids |
+| `search_platform` | CharField; null=False; blank=False; editable=True; max_length=20 | search platform |
+| `search_region` | CharField; null=False; blank=True; editable=True; max_length=80 | search region |
+| `input_kind` | CharField; null=False; blank=True; editable=True; max_length=20 | input kind |
+| `input_product` | ForeignKey; null=True; blank=False; editable=True | input product → digital_prices.Product; on_delete=PROTECT |
+| `input_mode` | CharField; null=False; blank=True; editable=True; max_length=12 | input mode |
+| `input_account` | CharField; null=False; blank=True; editable=True; max_length=32 | input account |
+| `prompt_message_id` | BigIntegerField; null=True; blank=False; editable=True | prompt message id |
+| `encrypted_credentials` | TextField; null=False; blank=True; editable=True | encrypted credentials |
+| `quote_id` | CharField; null=False; blank=True; editable=True; max_length=128 | quote id |
+| `quote_expires_at` | DateTimeField; null=True; blank=False; editable=True | quote expires at |
+| `quote_revision` | PositiveIntegerField; null=True; blank=False; editable=True | quote revision |
+| `quoted_total` | DecimalField; null=True; blank=False; editable=True; max_digits=20; decimal_places=2 | quoted total |
+| `client_total` | DecimalField; null=True; blank=False; editable=True; max_digits=20; decimal_places=2 | client total |
+| `catalog_revision` | PositiveBigIntegerField; null=False; blank=False; editable=True | catalog revision |
+| `price_snapshot` | JSONField; null=False; blank=False; editable=True | price snapshot |
+| `credential_groups` | JSONField; null=False; blank=False; editable=True | credential groups |
+| `quote_body` | JSONField; null=False; blank=False; editable=True | quote body |
+| `updated_at` | DateTimeField; null=False; blank=True; editable=False | updated at |
+
+Permissions: []. Стандартные: ('add', 'change', 'delete', 'view').
+
+Ограничения: `[<UniqueConstraint: fields=('buyer', 'chat') name='shop_group_active_cart' condition=(NOT (AND: ('state', 'closed')))>]`; unique_together: `()`.
+
+## `digital_shop.CartLine` — cart line
+
+CartLine(id, cart, product, quantity, account_key, account_mode, parameters)
+
+Таблица `digital_shop_cartline`; порядок `[]`.
+
+| Поле | Тип/параметры | Назначение/связь |
+| --- | --- | --- |
+| `id` | BigAutoField; null=False; blank=True; editable=True | ID |
+| `cart` | ForeignKey; null=False; blank=False; editable=True | cart → digital_shop.Cart; on_delete=PROTECT |
+| `product` | ForeignKey; null=False; blank=False; editable=True | product → digital_prices.Product; on_delete=PROTECT |
+| `quantity` | PositiveSmallIntegerField; null=False; blank=False; editable=True | quantity |
+| `account_key` | CharField; null=False; blank=True; editable=True; max_length=32 | account key |
+| `account_mode` | CharField; null=False; blank=True; editable=True; max_length=12 | account mode |
+| `parameters` | JSONField; null=False; blank=False; editable=True | parameters |
+
+Permissions: []. Стандартные: ('add', 'change', 'delete', 'view').
+
+Ограничения: `[]`; unique_together: `[]`.
+
+## `digital_shop.PurchaseIntent` — purchase intent
+
+PurchaseIntent(id, cart, client_order_id, encrypted_body, body_hash, external_order_id, state, owner, lease_until, next_at, attempts, error_category, encrypted_response, poll_fingerprint, created_at, finished_at)
+
+Таблица `digital_shop_purchaseintent`; порядок `[]`.
+
+| Поле | Тип/параметры | Назначение/связь |
+| --- | --- | --- |
+| `id` | UUIDField; null=False; blank=False; editable=False; max_length=32 | id |
+| `cart` | OneToOneField; null=False; blank=False; editable=True | cart → digital_shop.Cart; on_delete=PROTECT |
+| `client_order_id` | CharField; null=False; blank=False; editable=True; max_length=64 | client order id |
+| `encrypted_body` | TextField; null=False; blank=False; editable=True | encrypted body |
+| `body_hash` | CharField; null=False; blank=False; editable=True; max_length=64 | body hash |
+| `external_order_id` | CharField; null=False; blank=True; editable=True; max_length=128 | external order id |
+| `state` | CharField; null=False; blank=False; editable=True; max_length=20 | state |
+| `owner` | UUIDField; null=True; blank=False; editable=True; max_length=32 | owner |
+| `lease_until` | DateTimeField; null=True; blank=False; editable=True | lease until |
+| `next_at` | DateTimeField; null=False; blank=False; editable=True | next at |
+| `attempts` | PositiveIntegerField; null=False; blank=False; editable=True | attempts |
+| `error_category` | CharField; null=False; blank=True; editable=True; max_length=40 | error category |
+| `encrypted_response` | TextField; null=False; blank=True; editable=True | encrypted response |
+| `poll_fingerprint` | CharField; null=False; blank=True; editable=True; max_length=64 | poll fingerprint |
+| `created_at` | DateTimeField; null=False; blank=True; editable=False | created at |
+| `finished_at` | DateTimeField; null=True; blank=False; editable=True | finished at |
+
+Permissions: []. Стандартные: ('add', 'change', 'delete', 'view').
+
+Ограничения: `[]`; unique_together: `[]`.
+
+## `digital_shop.BalanceHold` — balance hold
+
+BalanceHold(id, intent, buyer, amount, remaining, state, created_at)
+
+Таблица `digital_shop_balancehold`; порядок `[]`.
+
+| Поле | Тип/параметры | Назначение/связь |
+| --- | --- | --- |
+| `id` | BigAutoField; null=False; blank=True; editable=True | ID |
+| `intent` | OneToOneField; null=False; blank=False; editable=True | intent → digital_shop.PurchaseIntent; on_delete=PROTECT |
+| `buyer` | ForeignKey; null=False; blank=False; editable=True | buyer → digital_sales.Buyer; on_delete=PROTECT |
+| `amount` | DecimalField; null=False; blank=False; editable=True; max_digits=20; decimal_places=2 | amount |
+| `remaining` | DecimalField; null=False; blank=False; editable=True; max_digits=20; decimal_places=2 | remaining |
+| `state` | CharField; null=False; blank=False; editable=True; max_length=12 | state |
+| `created_at` | DateTimeField; null=False; blank=True; editable=False | created at |
+
+Permissions: []. Стандартные: ('add', 'change', 'delete', 'view').
+
+Ограничения: `[<CheckConstraint: condition=(AND: ('remaining__gte', 0), ('amount__gt', 0), ('remaining__lte', F(amount))) name='shop_hold_bounds'>]`; unique_together: `()`.
+
+## `digital_shop.PurchaseLine` — purchase line
+
+PurchaseLine(id, intent, cart_line, line_id, purchase_id, status, cost, confirmed_cost, client_price, snapshot, digital_order, supplier_movement, encrypted_result, settled_at)
+
+Таблица `digital_shop_purchaseline`; порядок `[]`.
+
+| Поле | Тип/параметры | Назначение/связь |
+| --- | --- | --- |
+| `id` | BigAutoField; null=False; blank=True; editable=True | ID |
+| `intent` | ForeignKey; null=False; blank=False; editable=True | intent → digital_shop.PurchaseIntent; on_delete=PROTECT |
+| `cart_line` | OneToOneField; null=False; blank=False; editable=True | cart line → digital_shop.CartLine; on_delete=PROTECT |
+| `line_id` | CharField; null=False; blank=False; editable=True; max_length=32 | line id |
+| `purchase_id` | CharField; null=False; blank=True; editable=True; max_length=40 | purchase id |
+| `status` | CharField; null=False; blank=False; editable=True; max_length=20 | status |
+| `cost` | DecimalField; null=False; blank=False; editable=True; max_digits=20; decimal_places=2 | cost |
+| `confirmed_cost` | DecimalField; null=True; blank=False; editable=True; max_digits=20; decimal_places=2 | confirmed cost |
+| `client_price` | DecimalField; null=False; blank=False; editable=True; max_digits=20; decimal_places=2 | client price |
+| `snapshot` | JSONField; null=False; blank=False; editable=True | snapshot |
+| `digital_order` | OneToOneField; null=True; blank=False; editable=True | digital order → digital_sales.DigitalOrder; on_delete=PROTECT |
+| `supplier_movement` | OneToOneField; null=True; blank=False; editable=True | supplier movement → digital_sales.BalanceMovement; on_delete=PROTECT |
+| `encrypted_result` | TextField; null=False; blank=True; editable=True | encrypted result |
+| `settled_at` | DateTimeField; null=True; blank=False; editable=True | settled at |
+
+Permissions: []. Стандартные: ('add', 'change', 'delete', 'view').
+
+Ограничения: `[<UniqueConstraint: fields=('intent', 'line_id') name='shop_intent_line_once'>]`; unique_together: `()`.
+
+## `digital_shop.ResultDelivery` — result delivery
+
+ResultDelivery(id, line, buyer, chat_id, state, encrypted_text, message_id, progress_index, message_ids, created_at, sent_at)
+
+Таблица `digital_shop_resultdelivery`; порядок `[]`.
+
+| Поле | Тип/параметры | Назначение/связь |
+| --- | --- | --- |
+| `id` | BigAutoField; null=False; blank=True; editable=True | ID |
+| `line` | OneToOneField; null=False; blank=False; editable=True | line → digital_shop.PurchaseLine; on_delete=PROTECT |
+| `buyer` | ForeignKey; null=False; blank=False; editable=True | buyer → digital_sales.Buyer; on_delete=PROTECT |
+| `chat_id` | BigIntegerField; null=False; blank=False; editable=True | chat id |
+| `state` | CharField; null=False; blank=False; editable=True; max_length=16 | state |
+| `encrypted_text` | TextField; null=False; blank=False; editable=True | encrypted text |
+| `message_id` | BigIntegerField; null=True; blank=False; editable=True | message id |
+| `progress_index` | PositiveSmallIntegerField; null=False; blank=False; editable=True | progress index |
+| `message_ids` | JSONField; null=False; blank=False; editable=True | message ids |
+| `created_at` | DateTimeField; null=False; blank=True; editable=False | created at |
+| `sent_at` | DateTimeField; null=True; blank=False; editable=True | sent at |
+
+Permissions: []. Стандартные: ('add', 'change', 'delete', 'view').
+
+Ограничения: `[]`; unique_together: `[]`.
+
+## `digital_shop.ConfirmedRefund` — confirmed refund
+
+ConfirmedRefund(id, line, movement, amount, actor, reason, created_at)
+
+Таблица `digital_shop_confirmedrefund`; порядок `[]`.
+
+| Поле | Тип/параметры | Назначение/связь |
+| --- | --- | --- |
+| `id` | BigAutoField; null=False; blank=True; editable=True | ID |
+| `line` | OneToOneField; null=False; blank=False; editable=True | line → digital_shop.PurchaseLine; on_delete=PROTECT |
+| `movement` | OneToOneField; null=True; blank=False; editable=True | movement → digital_sales.BalanceMovement; on_delete=PROTECT |
+| `amount` | DecimalField; null=False; blank=False; editable=True; max_digits=20; decimal_places=2 | amount |
+| `actor` | ForeignKey; null=False; blank=False; editable=True | actor → accounts.User; on_delete=PROTECT |
+| `reason` | CharField; null=False; blank=False; editable=True; max_length=500 | reason |
+| `created_at` | DateTimeField; null=False; blank=True; editable=False | created at |
+
+Permissions: []. Стандартные: ('add', 'change', 'delete', 'view').
+
+Ограничения: `[]`; unique_together: `[]`.
+
+## `digital_shop.ChatEvent` — chat event
+
+ChatEvent(update_id, encrypted_payload, state, created_at)
+
+Таблица `digital_shop_chatevent`; порядок `[]`.
+
+| Поле | Тип/параметры | Назначение/связь |
+| --- | --- | --- |
+| `update_id` | BigIntegerField; null=False; blank=False; editable=True | update id |
+| `encrypted_payload` | TextField; null=False; blank=False; editable=True | encrypted payload |
+| `state` | CharField; null=False; blank=False; editable=True; max_length=16 | state |
+| `created_at` | DateTimeField; null=False; blank=True; editable=False | created at |
+
+Permissions: []. Стандартные: ('add', 'change', 'delete', 'view').
+
+Ограничения: `[]`; unique_together: `[]`.
+
+## `digital_shop.AuditEvent` — audit event
+
+AuditEvent(id, kind, intent, actor, detail, created_at)
+
+Таблица `digital_shop_auditevent`; порядок `[]`.
+
+| Поле | Тип/параметры | Назначение/связь |
+| --- | --- | --- |
+| `id` | BigAutoField; null=False; blank=True; editable=True | ID |
+| `kind` | CharField; null=False; blank=False; editable=True; max_length=40 | kind |
+| `intent` | ForeignKey; null=True; blank=False; editable=True | intent → digital_shop.PurchaseIntent; on_delete=PROTECT |
+| `actor` | ForeignKey; null=True; blank=False; editable=True | actor → accounts.User; on_delete=PROTECT |
+| `detail` | JSONField; null=False; blank=False; editable=True | detail |
+| `created_at` | DateTimeField; null=False; blank=True; editable=False | created at |
+
+Permissions: []. Стандартные: ('add', 'change', 'delete', 'view').
+
+Ограничения: `[]`; unique_together: `[]`.
 
 ## `yandex_market.Integration` — integration
 

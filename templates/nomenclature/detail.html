@@ -19,6 +19,7 @@
   {% csrf_token %}
   {{ form.version }}
   {{ form.cost_confirmed }}
+  {% if not form.hide_from_wholesale_price.field.disabled %}<input type="hidden" name="wholesale_visibility_present" value="1">{% endif %}
   {% if form.non_field_errors %}<div class="alert alert-error">{{ form.non_field_errors }}</div>{% endif %}
   {% for section in form_sections %}
     <section class="panel product-form-section">

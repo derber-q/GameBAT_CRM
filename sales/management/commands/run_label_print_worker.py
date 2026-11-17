@@ -27,6 +27,8 @@ class Command(BaseCommand):
                         process_print_jobs(stop=stop)
                         from sales.avito_shipping import process_jobs
                         process_jobs(stop=stop)
+                        from sales.sale_labels import process_jobs as process_sale_labels
+                        process_sale_labels(stop=stop)
                         if heartbeat:
                             heartbeat.progress()
                     except OperationalError:

@@ -5,13 +5,15 @@ from .models import StaffBot, StaffBotJob
 
 
 ERROR_LABELS = {
-    'unauthorized': 'Telegram отклонил токен. Проверьте настройки и выключите/включите бота.',
-    'wrong_bot': 'Токен относится к другому боту. Проверьте username.',
-    'webhook': 'У бота настроен webhook. Сначала согласуйте отключение старого получателя.',
-    'conflict': 'Обнаружен другой получатель обновлений. Остановите его перед включением этого.',
+    'unauthorized': 'Telegram отклонил токен. Проверки повторяются автоматически; проверьте сам токен.',
+    'wrong_bot': 'Токен относится к другому боту. После исправления username/токена подключение восстановится автоматически.',
+    'webhook': 'У бота настроен webhook. Проверки продолжаются; после отключения другого получателя бот подключится сам.',
+    'conflict': 'Обнаружен другой получатель обновлений. После его остановки бот подключится автоматически.',
     'timeout': 'Telegram не ответил вовремя.', 'network': 'Соединение с Telegram недоступно.',
     'rate_limited': 'Telegram ограничил частоту запросов.',
-    'executor': 'Исполнитель документов остановился. Выключите и включите бота.',
+    'executor': 'Исполнитель документов остановился. Контроллер восстанавливает работу.',
+    'refused': 'Telegram временно отклонил запрос. Бот повторяет проверку связи автоматически.',
+    'invalid_response': 'Ответ Telegram не удалось проверить. Бот автоматически повторяет запрос.',
 }
 
 
@@ -23,7 +25,7 @@ def queue_snapshot():
             return data
         data['last_task_success_at'] = StaffBotJob.objects.filter(bot=bot, state='done').aggregate(at=Max('finished_at'))['at']
         data['task_error'] = ERROR_LABELS.get(bot.error_category, 'Ошибка Telegram. Проверьте настройки.' if bot.error_category else '')
-        if bot.error_category in ('timeout', 'network', 'rate_limited'):
+        if bot.error_category in ('timeout', 'network', 'rate_limited', 'refused', 'invalid_response'):
             data['next_action'] = 'Восстановление связи с Telegram'
         job = StaffBotJob.objects.filter(bot=bot, state__in=['queued', 'generating', 'sending']).first()
         if job:

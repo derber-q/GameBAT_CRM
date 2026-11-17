@@ -175,6 +175,10 @@ class ProductBase(models.Model):
     wholesale_price = models.DecimalField(
         "Оптовая цена", max_digits=20, decimal_places=2, null=True, blank=True, validators=[MinValueValidator(0)]
     )
+    hide_from_wholesale_price = models.BooleanField(
+        "Скрыть из оптового прайса", default=False,
+        help_text="Не включать товар в оптовый прайс наличия независимо от цены и остатка.",
+    )
     wholesale_site_enabled = models.BooleanField("Публиковать на оптовой витрине", default=True, db_index=True)
     exclude_from_supplier_template = models.BooleanField(
         "Не отображать в шаблоне для поставщиков", default=False,

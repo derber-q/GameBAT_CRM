@@ -663,18 +663,20 @@
         fixedPriceType: form.dataset.fixedPriceType,
         onSelect: (result, metadata = {}) => {
           if (tripEditable && result?.type === 'system') {
+            if (metadata.exactBarcode) void window.GameBAT.playBarcodeFeedback?.(false);
             type.value = ''; id.value = ''; search.value = '';
             window.alert('Добавьте товар из номенклатуры.'); return;
           }
           if (result?.type === "system") {
-            if (!allowMode(result.system_kind || result.id, row)) { type.value = ""; id.value = ""; search.value = ""; return; }
+            if (!allowMode(result.system_kind || result.id, row)) { type.value = ""; id.value = ""; search.value = ""; if (metadata.exactBarcode) void window.GameBAT.playBarcodeFeedback?.(false); return; }
             row.remove();
             [...body.querySelectorAll("tr")].filter(candidate => !rowMode(candidate)).forEach(candidate => candidate.remove());
             const special = addCustomLine({system_kind: result.system_kind || result.id});
             special?.querySelector('input[name="custom_unit_cost"]')?.focus();
+            if (metadata.exactBarcode) void window.GameBAT.playBarcodeFeedback?.(true);
             return;
           }
-          if (result && !allowMode("normal", row)) { type.value = ""; id.value = ""; search.value = ""; return; }
+          if (result && !allowMode("normal", row)) { type.value = ""; id.value = ""; search.value = ""; if (metadata.exactBarcode) void window.GameBAT.playBarcodeFeedback?.(false); return; }
           fullName.textContent = result?.label || "";
           codesCell.textContent = result?.cusa_ppsa_code || "—";
           itemId.value = "";
@@ -704,6 +706,7 @@
               barcodeFeedback.textContent = `Добавлено: ${result.label}`;
             }
             focusBarcodeQuantity(quantity);
+            void window.GameBAT.playBarcodeFeedback?.(true);
           }
         },
       });
@@ -770,6 +773,7 @@
       }
       const selectedWarehouse = warehouseInput ? warehouseInput.value : form.dataset.warehouseId;
       if (!selectedWarehouse) {
+        void window.GameBAT.playBarcodeFeedback?.(false);
         barcodeFeedback.textContent = "Сначала выберите склад.";
         barcodeFeedback.classList.add("error-text");
         return;
@@ -803,7 +807,9 @@
         barcodeInput.value = "";
         barcodeFeedback.textContent = `Добавлено: ${result.label}`;
         focusBarcodeQuantity(quantity);
+        void window.GameBAT.playBarcodeFeedback?.(true);
       } catch (error) {
+        void window.GameBAT.playBarcodeFeedback?.(false);
         barcodeFeedback.textContent = error.message;
         barcodeFeedback.classList.add("error-text");
       }

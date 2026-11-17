@@ -170,8 +170,8 @@ class InternalPageSmokeTests(TestCase):
     def test_sound_icon_respects_notification_permissions_in_crm_and_admin(self):
         self.assertContains(self.client.get(reverse('admin:index')), 'data-notification-sound-enable', count=1)
         for app, codename, endpoint, engine in [
-            ('sales', 'view_sales', 'sales:incomplete', 'market-notifications.js?v=20261031-1'),
-            ('integrations', 'view_avito_integration', 'integrations:avito', 'avito-alert-sound.js?v=20261031-1'),
+            ('sales', 'view_sales', 'sales:incomplete', 'market-notifications.js?v=20261116-1'),
+            ('integrations', 'view_avito_integration', 'integrations:avito', 'avito-alert-sound.js?v=20261116-1'),
         ]:
             with self.subTest(permission=codename):
                 worker = User.objects.create_user('sound-' + codename)
@@ -184,7 +184,7 @@ class InternalPageSmokeTests(TestCase):
         self.client.force_login(User.objects.create_user('no-notification-sound'))
         response = self.client.get(reverse('accounts:password_change'))
         self.assertContains(response, 'data-notification-sound-enable', count=1)
-        self.assertContains(response, 'js/worker-monitoring.js?v=20261031-2')
+        self.assertContains(response, 'js/worker-monitoring.js?v=20261117-1')
         self.assertNotContains(response, 'js/market-notifications.js')
         self.assertNotContains(response, 'js/avito-alert-sound.js')
 

@@ -48,7 +48,12 @@ class ArrivalLayoutBrowserChecks(ArrivalFinalizationFixture, StaticLiveServerTes
             expect(rows.last.locator('[name="corrected_cost"]')).to_have_value('2456.01')
             expect(page.locator('[data-trip-price-key]')).to_have_count(0)
             page.set_viewport_size({'width':390,'height':844})
-            self.assertLessEqual(page.evaluate('document.documentElement.scrollWidth'),390)
+            page.evaluate('() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+            self.assertLessEqual(page.evaluate('document.documentElement.scrollWidth'),390,
+                page.locator('body *').evaluate_all('''nodes => nodes.map(node => ({
+                    tag:node.tagName, cls:node.className, text:node.textContent.slice(0,80),
+                    right:node.getBoundingClientRect().right, width:node.getBoundingClientRect().width
+                })).filter(node => node.right > 391 && node.width > 0).slice(0,20)'''))
             expect(rows.last.locator('[name="corrected_cost"]')).to_be_visible()
             page.screenshot(path=str(output/'compact-mobile.png'),full_page=True)
             page.get_by_role('button',name='Подтвердить финализацию рейса',exact=True).click()

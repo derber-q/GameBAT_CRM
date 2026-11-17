@@ -94,10 +94,10 @@ class ProductOrderingTests(TestCase):
         values = [row[0] for row in sheet.iter_rows(min_row=HEADER_ROW + 1, values_only=True)]
         expected = [p.name for p in self.ordered + self.cds]
         self.assertEqual([value for value in values if value in expected], expected)
-        self.assertIn("Tech · Sony · Игровая консоль", values)
-        self.assertIn("Tech · Nintendo · Портативная консоль", values)
-        self.assertIn("Tech · Портативные консоли · Anbernic", values)
-        self.assertIn("Tech · Прочие товары", values)
+        self.assertIn("🎮 Tech · Sony · Игровая консоль", values)
+        self.assertIn("🎮 Tech · Nintendo · Портативная консоль", values)
+        self.assertIn("🎮 Tech · Портативные консоли · Anbernic", values)
+        self.assertIn("📦 Tech · Прочие товары", values)
 
     def test_procurement_editor_uses_pricing_order_without_game_series(self):
         from partners.models import Supplier

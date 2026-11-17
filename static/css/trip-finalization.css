@@ -36,6 +36,12 @@
 }
 
 @media (max-width: 760px) {
+  .trip-order-page .finalization-toolbar > * { min-width: 0; }
+  .trip-order-page .finalization-bulk-actions .field { max-width: 100%; }
+  .trip-order-page .finalization-quick-actions .button,
+  .trip-order-page .finalization-submit-bar .button { max-width: 100%; white-space: normal; }
+  .trip-order-page .finalization-help,
+  .trip-order-page [data-bulk-cost-status] { overflow-wrap: anywhere; }
   .trip-finalization-table colgroup, .trip-finalization-table thead { display: none; }
   .trip-finalization-table, .trip-finalization-table tbody { display: block; }
   .trip-finalization-group { display: block; }

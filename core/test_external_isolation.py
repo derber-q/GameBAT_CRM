@@ -95,8 +95,9 @@ class ExternalIsolationTests(TestCase):
             code,instance=adapter.launches[0]
             row=adapter.rows[0]
             process=WorkerProcess.objects.create(instance=instance,pid=row['pid'],birth=row['birth'],
-                services=[code],ready=True,heartbeat_at=now+timedelta(seconds=1))
+                services=[code],ready=True,heartbeat_at=now+timedelta(seconds=1),
+                progress_at=now+timedelta(seconds=1), verified_at=now+timedelta(seconds=1))
             supervise_once(adapter,now=now+timedelta(seconds=1))
-            process.heartbeat_at=now+timedelta(seconds=62); process.save()
+            process.heartbeat_at=process.progress_at=process.verified_at=now+timedelta(seconds=62); process.save()
             supervise_once(adapter,now=now+timedelta(seconds=62))
         self.assertEqual(WorkerService.objects.get(pk='avito').status,'running')

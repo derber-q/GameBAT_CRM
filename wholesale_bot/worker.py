@@ -1,5 +1,5 @@
 """Долговечный inbox/outbox обслуживается одним независимым polling-процессом."""
-from django.db import close_old_connections, connections, transaction, OperationalError
+from django.db import close_old_connections, connections, OperationalError
 from django.utils import timezone
 from core.external_policy import require_live_operation
 from telegram_bots.client import TelegramError
@@ -78,10 +78,7 @@ def run_polling(stop, *, client_factory=WholesaleClient, once=False, health=None
                 if health:
                     health.progress(verified=False, error=exc.category)
                 if exc.category in ('unauthorized', 'wrong_bot', 'webhook', 'conflict'):
-                    while not once and expected_status() == 'required' and not stop.wait(15):
-                        if health:
-                            health.progress(verified=False, error=exc.category)
-                    return
+                    return  # Повторная проверка выполнится общим автономным циклом.
                 if not once:
                     stop.wait(10)
             except OperationalError:

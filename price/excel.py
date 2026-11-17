@@ -27,6 +27,7 @@ from warehouse.models import CDWarehouseStock, TechWarehouseStock, Warehouse
 from core.excel_layout import wrapped_text_height
 
 from .models import PriceDocumentSettings, ProcurementPriceList
+from .price_changes import recent_wholesale_price_decreases
 
 logger = logging.getLogger("gamebat.business")
 TEMPLATE_VERSION = "1"
@@ -159,6 +160,8 @@ def _tech_rows(warehouse, *, price_field):
     stocks = TechWarehouseStock.objects.filter(
         warehouse=warehouse, quantity__gt=0, tech__is_archived=False,
     ).select_related("tech__brand", "tech__product_type")
+    if price_field == 'wholesale_price':
+        stocks = stocks.filter(tech__hide_from_wholesale_price=False)
     rows, skipped = [], 0
     for stock in stocks:
         product = stock.tech
@@ -180,6 +183,8 @@ def _cd_rows(warehouse, *, price_field):
     stocks = CDWarehouseStock.objects.filter(
         warehouse=warehouse, quantity__gt=0, cd__is_archived=False,
     ).select_related("cd__platform")
+    if price_field == 'wholesale_price':
+        stocks = stocks.filter(cd__hide_from_wholesale_price=False)
     entries, skipped = [], 0
     for stock in stocks:
         product = stock.cd
@@ -226,18 +231,41 @@ def _group_fill(title):
     return GROUP_FILL
 
 
-def _style_group_rows(sheet, rows, *, columns):
+def _style_group_rows(sheet, rows, *, columns, fill_color=None, text_color=BLUE):
     thin = Side(style="thin", color="8A9AA8")
     strong = Side(style="medium", color="334660")
     for row_number in rows:
         title = str(sheet.cell(row_number, 1).value or "")
-        fill = _group_fill(title)
+        fill = fill_color or _group_fill(title)
         for column in range(1, columns + 1):
             cell = sheet.cell(row_number, column)
             cell.fill = PatternFill("solid", fgColor=fill)
             cell.border = Border(top=strong, bottom=thin)
             cell.protection = Protection(locked=True)
-        sheet.cell(row_number, 1).font = Font(bold=True, color=BLUE, size=11)
+        sheet.cell(row_number, 1).font = Font(bold=True, color=text_color, size=11)
+
+
+def _wholesale_section_label(title):
+    """Компактный тематический значок без изменения группировки и высоты строк."""
+    normalized = _norm(title)
+    if normalized.startswith('cd '):
+        return '🎮 ' + title
+    icons = (
+        ('🥽', ('vr', 'ar-шлем')),
+        ('🎧', ('гарнитур', 'наушник')),
+        ('🔋', ('заряд', 'аккумулятор', 'батаре')),
+        ('💿', ('привод', 'дисковод')),
+        ('💾', ('microsd', 'накопител', 'ssd', 'hdd', 'памят')),
+        ('🛡️', ('защитн',)),
+        ('🧳', ('чехол', 'сумк', 'кейс')),
+        ('❄️', ('охлажд',)),
+        ('🔌', ('переходник', 'адаптер', 'кабел')),
+        ('📺', ('стриминг',)),
+        ('🔧', ('аксессуар', 'запасн', 'подставк')),
+        ('🎮', ('геймпад', 'консол', 'sony', 'nintendo')),
+    )
+    icon = next((icon for icon, words in icons if any(word in normalized for word in words)), '📦')
+    return icon + ' ' + title
 
 
 def generate_retail_price_xlsx(*, warehouse_id, actor):
@@ -290,9 +318,14 @@ def generate_wholesale_price_xlsx(*, warehouse_id, actor, partner_id=None, partn
     product_rows = []
     new_product_rows = []
     generated_at = timezone.now()
+    decreases = recent_wholesale_price_decreases(
+        ((kind, product) for _title, products in groups for kind, product, _quantity, _price in products),
+        at=generated_at,
+    )
+    decreased_price_rows = {}
     for group_title, products in groups:
         group_rows.append(excel_row)
-        sheet.cell(excel_row, 1, safe_text(group_title))
+        sheet.cell(excel_row, 1, safe_text(_wholesale_section_label(group_title)))
         excel_row += 1
         for kind, product, quantity, price in products:
             product_rows.append(excel_row)
@@ -301,6 +334,8 @@ def generate_wholesale_price_xlsx(*, warehouse_id, actor, partner_id=None, partn
             sheet.cell(excel_row, 3, quantity)
             sheet.cell(excel_row, 4, 0)
             metadata.append((excel_row, kind, product.pk, safe_text(product.sku)))
+            if (kind, product.pk) in decreases:
+                decreased_price_rows[excel_row] = decreases[kind, product.pk]
             if product.created_at and product.created_at <= generated_at and product.newness_until and generated_at < product.newness_until:
                 new_product_rows.append(excel_row)
             excel_row += 1
@@ -323,10 +358,22 @@ def generate_wholesale_price_xlsx(*, warehouse_id, actor, partner_id=None, partn
         editable_columns=(4,),
         editable_end_row=end,
     )
-    _style_group_rows(sheet, group_rows, columns=4)
+    _style_group_rows(sheet, group_rows, columns=4, fill_color=BLUE, text_color=WHITE)
     for row in new_product_rows:
-        for column in range(1, 5):
-            sheet.cell(row, column).fill = PatternFill('solid', fgColor='E2F0D9')
+        sheet.cell(row, 1).fill = PatternFill('solid', fgColor='E2F0D9')
+    # Наносим после общих стилей и новинок, сохраняя числовую цену для импорта.
+    for row in decreased_price_rows:
+        name_cell = sheet.cell(row, 1)
+        name_cell.value = '📉 ' + name_cell.value
+        cell = sheet.cell(row, 2)
+        cell.fill = PatternFill('solid', fgColor='FFF2CC')
+        cell.number_format = '"↓ "' + MONEY_FORMAT
+        cell.font = Font(bold=True, color='7F6000')
+    sheet.merge_cells('A7:D7')
+    sheet['A7'] = '📉 / ↓ — снижение цены. 🌟 — новинка.'
+    sheet['A7'].font = Font(color=BLUE, size=10)
+    sheet['A7'].alignment = Alignment(wrap_text=True, vertical='center')
+    sheet.row_dimensions[7].height = 28
     _meta_sheet(workbook, document_type="resource_wholesale", values={
         "warehouse_id": warehouse.pk, "generated_at": timezone.now().isoformat(), "main_sheet": MAIN_SHEET,
         **customer_values,
@@ -535,8 +582,7 @@ def generate_procurement_customer_xlsx(*, price_list_id, actor, product_kind=Non
     )
     _style_group_rows(sheet, group_rows, columns=5)
     for row in new_product_rows:
-        for column in range(1, 6):
-            sheet.cell(row, column).fill = PatternFill('solid', fgColor='E2F0D9')
+        sheet.cell(row, 1).fill = PatternFill('solid', fgColor='E2F0D9')
     for row in group_rows:
         sheet.merge_cells(start_row=row, start_column=1, end_row=row, end_column=5)
         sheet.cell(row, 1).alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)

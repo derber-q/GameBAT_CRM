@@ -27,6 +27,10 @@ def api_row(**values):
 
 
 class ArithmeticTests(SimpleTestCase):
+    def setUp(self):
+        self.enterContext(patch('digital_prices.provider.require_live_operation'))
+        self.enterContext(patch('digital_prices.provider.slot', return_value=0))
+        self.enterContext(patch('digital_prices.provider.block'))
     def test_png_document_keeps_png_mime_and_private_recipient(self):
         from telegram_bots.client import TelegramClient
         content = b'\x89PNG\r\n\x1a\n' + b'fixture'
@@ -87,21 +91,21 @@ class ArithmeticTests(SimpleTestCase):
             response = Mock(status_code=200, content=b'{}', headers={})
             response.json.return_value = {'items': rows, 'page': page, 'has_more': more}
             responses.append(response)
-        session.get.side_effect = responses
+        session.request.side_effect = responses
         with patch('digital_prices.api.require_live_operation'):
             client = CatalogClient('synthetic-key', session=session, sleeper=sleeper)
             rows = client.fetch()
         self.assertEqual(len(rows), 2)
         self.assertIsNone(rows[1].cost)
-        sleeper.assert_called_once_with(3.2)
-        self.assertEqual(session.get.call_count, 2)
-        self.assertFalse(session.get.call_args.kwargs['allow_redirects'])
+        sleeper.assert_not_called()  # Временное окно проверяется общей таблицей, не локальной паузой.
+        self.assertEqual(session.request.call_count, 2)
+        self.assertFalse(session.request.call_args.kwargs['allow_redirects'])
 
     def test_duplicate_ids_and_http_errors_are_sanitized(self):
         for code, expected in [(401, 'authentication'), (403, 'authentication'), (429, 'rate_limited'), (503, 'upstream')]:
             response = Mock(status_code=code, content=b'not-public', headers={'Retry-After': '75'})
             session = Mock()
-            session.get.return_value = response
+            session.request.return_value = response
             with patch('digital_prices.api.require_live_operation'), self.assertRaises(APIError) as caught:
                 CatalogClient('synthetic-secret', session=session).fetch()
             self.assertEqual(caught.exception.category, expected)
@@ -109,7 +113,7 @@ class ArithmeticTests(SimpleTestCase):
         response = Mock(status_code=200, content=b'{}', headers={})
         response.json.return_value = {'items': [api_row(), api_row()], 'page': 1, 'has_more': False}
         session = Mock()
-        session.get.return_value = response
+        session.request.return_value = response
         with patch('digital_prices.api.require_live_operation'), self.assertRaises(APIError):
             CatalogClient('synthetic-secret', session=session).fetch()
 
@@ -118,10 +122,40 @@ class ArithmeticTests(SimpleTestCase):
         session = Mock()
         with override_settings(GAMEBAT_ENV='local_test'), self.assertRaises(ValidationError):
             CatalogClient('not-a-real-key', session=session)
-        session.get.assert_not_called()
+        session.request.assert_not_called()
 
 
 class CatalogTests(TestCase):
+    def test_disappeared_sheet_tariff_is_unavailable_preserves_fees_and_recovers(self):
+        from .sheet_source import SheetCost
+        from .public import manual_row
+        kept = ManualPriceEntry.objects.create(kind='game_tariff', region='turkey', label='1-99',
+            pricing_mode='coefficient', cost_coefficient=Decimal('2.1'), markup_coefficient=Decimal('.2'))
+        missing = ManualPriceEntry.objects.create(kind='game_tariff', region='india', label='1000',
+            manual_cost=Decimal('100'), markup=Decimal('50'))
+        config=Integration.objects.get(pk=1)
+        config.manual_sheet_enabled=True
+        config.save()
+        key=('game_tariff','tr','1-99')
+        costs={key:SheetCost(*key,'coefficient',Decimal('2.99'),'Прайс!B25')}
+        self.import_rows([api_row(price='510')],sheet_costs=costs)
+        kept.refresh_from_db();missing.refresh_from_db();config.refresh_from_db()
+        self.assertEqual(kept.cost_coefficient,Decimal('2.99'))
+        self.assertEqual(missing.manual_cost,Decimal('100'))
+        self.assertEqual(missing.markup,Decimal('50'))
+        self.assertEqual(missing.sheet_issue,'source_missing')
+        self.assertEqual(manual_row(missing).availability,'no')
+        self.assertEqual(manual_row(missing).price,'Нет в наличии')
+        self.assertEqual(config.manual_sheet_error_category,'')
+        key=('game_tariff','in','1000')
+        costs[key]=SheetCost(*key,'rub',Decimal('125'),'Прайс!H25')
+        self.import_rows([api_row(price='520')],sheet_costs=costs)
+        missing.refresh_from_db()
+        self.assertEqual(missing.sheet_issue,'')
+        self.assertEqual(missing.manual_cost,Decimal('125'))
+        self.assertEqual(missing.markup,Decimal('50'))
+        self.assertEqual(manual_row(missing).availability,'yes')
+
     def setUp(self):
         # Эта группа проверяет собственный синтетический каталог, без начальных
         # пустых ручных строк из миграции. Рабочие данные здесь не используются.
@@ -155,6 +189,7 @@ class CatalogTests(TestCase):
         self.assertEqual(entry.markup,Decimal('50'))
         self.assertEqual(entry.pricing_mode,'percent')
         self.assertEqual(entry.cost_percent,Decimal('6'))
+        self.assertIsNone(entry.edited_by_id)
         source[key]=SheetCost(*key,'rub',None,'Прайс!H25')
         self.import_rows([api_row(price='510')],sheet_costs=source)
         entry.refresh_from_db()

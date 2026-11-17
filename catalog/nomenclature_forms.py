@@ -157,6 +157,12 @@ class ProductCardFormMixin(ProductOptionsForm):
             # Старые открытые формы не содержат новых опций. Их отсутствие
             # сохраняет настройки; новая форма отмечает явное снятие checkbox.
             compatible = submitted.copy()
+            if 'hide_from_wholesale_price' not in compatible:
+                if 'wholesale_visibility_present' in compatible:
+                    # Отсутствующий checkbox в новой форме означает явное снятие.
+                    self.submitted_fields.add('hide_from_wholesale_price')
+                else:
+                    compatible['hide_from_wholesale_price'] = instance.hide_from_wholesale_price
             if 'newness_months' not in compatible:
                 months = instance.newness_months
                 compatible['newness_months'] = str(months) if months in (0, 1, 3, 5) else 'custom'
@@ -294,7 +300,7 @@ class ProductCardFormMixin(ProductOptionsForm):
         cleaned_data = super().clean()
         if not self.is_bound:
             return cleaned_data
-        accepted_keys = self.allowed_fields | {"version", "cost_confirmed", "csrfmiddlewaretoken", 'product_options_present'}
+        accepted_keys = self.allowed_fields | {"version", "cost_confirmed", "csrfmiddlewaretoken", 'product_options_present', 'wholesale_visibility_present'}
         self.forbidden_fields = sorted(self.submitted_fields - accepted_keys)
         if self.forbidden_fields:
             labels = []
@@ -340,8 +346,10 @@ class TechCardForm(ProductCardFormMixin):
 class ProductCreateFormMixin(ProductOptionsForm):
     """Форма создаёт только карточку — без остатков, себестоимости и цен."""
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, *args, user=None, **kwargs):
+        super().__init__(*args, user=user, **kwargs)
+        if not user or not (user.is_superuser or user.has_perm('pricing.change_wholesale_price')):
+            self.fields['hide_from_wholesale_price'].disabled = True
         self.fields["sku"].required = False
         self.fields["weight_grams"].label = "Вес с упаковкой, г"
         for field_name in ("description", "comment"):
@@ -354,7 +362,7 @@ class CDCreateForm(ProductCreateFormMixin, forms.ModelForm):
         fields = (
             "platform", "game_series", "name", "description", "sku", "cusa_ppsa_code",
             "weight_grams", "length_cm", "width_cm", "height_cm", "comment", "exclude_from_supplier_template",
-            'newness_months',
+            'newness_months', 'hide_from_wholesale_price',
         )
 
 
@@ -368,7 +376,7 @@ class TechCreateForm(ProductCreateFormMixin, forms.ModelForm):
         fields = (
             "brand", "product_type", "name", "description", "sku",
             "weight_grams", "length_cm", "width_cm", "height_cm", "comment", "exclude_from_supplier_template",
-            'newness_months',
+            'newness_months', 'hide_from_wholesale_price',
         )
 
 

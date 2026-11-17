@@ -1,5 +1,5 @@
 <section class="panel product-filter-panel">
-  <form method="get" role="search" class="product-filter-form{% if show_in_stock_filter %} product-filter-form-with-stock-toggle{% endif %}" data-product-filters data-global-barcode-search>
+  <form method="get" role="search" class="product-filter-form{% if show_in_stock_filter %} product-filter-form-with-stock-toggle{% endif %}" data-product-filters data-global-barcode-search data-barcode-lookup-url="{% url 'catalog:barcode_lookup' %}">
     <div class="field product-search-field">
       <label for="product-search">Поиск товара</label>
       <input id="product-search" type="search" name="search" value="{{ filter_state.search }}" placeholder="Поиск по ID, названию, артикулу, CUSA/PPSA или штрихкоду" data-global-barcode-search-input>

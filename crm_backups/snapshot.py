@@ -45,7 +45,12 @@ def inventory(root, check):
 
 
 def _walk_files(root,check):
-    """Обход от проверенного корня без следования по ссылкам и повторных stat."""
+    """Обход от проверенного корня без следования по ссылкам.
+
+    Windows DirEntry.stat использует сокращённые данные FindFirstFile:
+    st_nlink/inode/device могут быть нулевыми даже для обычного файла.
+    Полный stat нужен и для проверки жёстких ссылок, и для согласованных stamps.
+    """
     root=Path(root)
     if root.resolve()!=root.absolute() or not root.is_dir() or root.is_symlink() or root.is_junction():
         raise ValueError('Небезопасный каталог снимка.')
@@ -56,7 +61,7 @@ def _walk_files(root,check):
         with os.scandir(directory) as entries:
             for entry in entries:
                 check()
-                info=entry.stat(follow_symlinks=False)
+                info = os.stat(entry.path, follow_symlinks=False) if os.name == 'nt' else entry.stat(follow_symlinks=False)
                 if stat.S_ISLNK(info.st_mode) or (os.name=='nt' and Path(entry.path).is_junction()):
                     raise ValueError('Ссылка в файлах снимка.')
                 if stat.S_ISDIR(info.st_mode):
@@ -187,7 +192,7 @@ def create_bundle(*, database, media, secrets_loader, metadata, public_key, dest
                     reader.backup(output, pages=256, progress=lambda *_: check(), sleep=0.01)
                 snapshot.chmod(0o600)
                 with closing(sqlite3.connect(snapshot)) as captured:
-                    for table in ('sales_marketprintjob','sales_avitoshippingprintjob'):
+                    for table in ('sales_marketprintjob','sales_avitoshippingprintjob','sales_salelabelprintjob'):
                         if not captured.execute('SELECT 1 FROM sqlite_master WHERE name=?',(table,)).fetchone():continue
                         fields={row[1] for row in captured.execute(f'PRAGMA table_info({table})')}
                         active="state IN ('agent_claimed','agent_printing','agent_spooled','printing')"

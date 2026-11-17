@@ -44,12 +44,19 @@ def update_product_prices(*, actor, product_type, product_id, changes, record_au
         product = product_model.objects.active().select_for_update().get(pk=product_id)
     except (product_model.DoesNotExist, TypeError, ValueError) as exc:
         raise ValidationError("Товар не найден.") from exc
-    allowed = set(PRICING_FIELDS)
+    allowed = set(PRICING_FIELDS) | {'hide_from_wholesale_price'}
     updates = {}
     for field, value in changes.items():
         if field not in allowed:
             raise ValidationError("Неизвестный тип цены.")
-        updates[field] = _price(value, nullable=True, precision=Decimal("0.01"))
+        if field == 'hide_from_wholesale_price':
+            if not actor.has_perm('pricing.change_wholesale_price'):
+                raise ValidationError('Нет права изменять видимость товара в оптовом прайсе.')
+            if value not in (True, False, '1', '0'):
+                raise ValidationError('Укажите корректное состояние флага оптового прайса.')
+            updates[field] = value in (True, '1')
+        else:
+            updates[field] = _price(value, nullable=True, precision=Decimal("0.01"))
     if not updates:
         raise ValidationError("Не выбраны цены для изменения.")
     before = product_snapshot(product, updates)

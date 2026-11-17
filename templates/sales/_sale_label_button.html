@@ -1,0 +1,4 @@
+<form method="post" action="{% url 'sales:label_print' sale.pk %}" data-sale-label-print>
+  {% csrf_token %}<button class="button button-secondary" type="submit">Печать стикера</button>
+  <span class="muted" role="status" aria-live="polite" data-sale-label-status></span>
+</form>

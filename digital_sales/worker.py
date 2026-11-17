@@ -105,32 +105,45 @@ def run_polling(owner, stop, *, client_factory=SupplierClient, once=False, healt
             return
         from .chat_balances import process_command, publish_one, recover_publications
         from digital_prices.dispatch import recover_dispatches, publish_one as publish_price
-        failures, blocked = 0, False
+        from digital_shop.telegram import process_one as process_shop_message
+        from digital_shop.execution import process_one as process_purchase, publish_result, recover_results, poll_orders
+        from digital_shop.models import ChatEvent, PurchaseIntent
+        recover_results()
+        for event in ChatEvent.objects.filter(state='processing'):
+            event.state, event.encrypted_payload = 'uncertain', ''
+            event.save(update_fields=['state', 'encrypted_payload'])
+        from digital_shop.models import Cart
+        for cart in Cart.objects.filter(state='quote_pending'):
+            cart.state = 'credentials'
+            cart.save(update_fields=['state'])
+        failures = 0
         while not stop.is_set() and expected_status() == 'required':
             close_old_connections()
             lease(owner)
-            if blocked:
-                if health:
-                    health.progress(verified=False, error=DigitalBot.objects.get(pk=1).error_category)
-                if once:
-                    break
-                stop.wait(15)
-                continue
             try:
                 # Один исполнитель: незавершённый этап прошлого цикла мог остаться
                 # после ошибки БД уже после сетевой отправки. Не отправляем его вслепую.
                 recover_publications()
                 recover_dispatches()
                 bot = DigitalBot.objects.get(pk=1)
+                process_shop_message(client, renew=lambda: lease(owner))
+                lease(owner)
+                poll_orders(renew=lambda: lease(owner))
+                lease(owner)
+                process_purchase(renew=lambda: lease(owner))
+                lease(owner)
+                publish_result(client)
                 process_command(client, me.get('id'))
                 publish_one(client, owner=owner, bot_id=me.get('id'))
                 publish_price(client, owner=owner, bot_id=me.get('id'), renew=lambda: lease(owner))
                 from .models import BalanceChatCommand, BalanceChatPublication
                 from digital_prices.models import BuyerPriceDispatch
                 busy = (BalanceChatCommand.objects.filter(state='queued').exists() or BalanceChatPublication.objects.filter(state='queued').exists()
-                        or BuyerPriceDispatch.objects.filter(state__in=('queued', 'pinning')).exists())
+                        or BuyerPriceDispatch.objects.filter(state__in=('queued', 'pinning')).exists()
+                        or ChatEvent.objects.filter(state='queued').exists()
+                        or PurchaseIntent.objects.filter(state__in=['queued', 'uncertain', 'processing', 'submitting']).exists())
                 updates = client.call('getUpdates', {'offset': bot.next_update_id, 'timeout': 1 if busy else 20, 'limit': 30,
-                                                     'allowed_updates': ['message', 'edited_message', 'my_chat_member']})
+                                                     'allowed_updates': ['message', 'edited_message', 'my_chat_member', 'callback_query']})
                 if not isinstance(updates, list):
                     raise TelegramError('invalid_response')
                 for update in updates:
@@ -155,9 +168,9 @@ def run_polling(owner, stop, *, client_factory=SupplierClient, once=False, healt
                     health.progress(verified=False, error=bot.error_category)
                 failures = min(failures + 1, 6)
                 # Продолжаем пассивный приём после временного сбоя сети, сохраняя offset.
-                transient = bot.error_category in ('timeout', 'network', 'rate_limited')
-                blocked = bot.error_category in ('wrong_bot', 'unauthorized', 'conflict', 'webhook', 'configuration') or (failures >= 3 and not transient)
-                if not once and not blocked:
+                if bot.error_category in ('wrong_bot', 'unauthorized', 'conflict', 'webhook', 'configuration'):
+                    return  # Автономный цикл повторит проверку личности и перечитает токен.
+                if not once:
                     stop.wait(min(60, 5 * 2**failures))
             except OperationalError:
                 if health:
@@ -172,10 +185,8 @@ def run_polling(owner, stop, *, client_factory=SupplierClient, once=False, healt
         bot.save(update_fields=['error_category'])
         if health:
             health.progress(verified=False, error=exc.category)
-        while not once and expected_status() == 'required' and not stop.wait(15):
-            lease(owner)
-            if health:
-                health.progress(verified=False, error=exc.category)
+        # Не ждём вмешательства в вечном blocked-цикле: после освобождения
+        # аренды командный цикл повторит подключение, без повторной закупки.
     finally:
         client.close()
         lease(owner, release=True)

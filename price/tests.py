@@ -56,6 +56,33 @@ def find_sheet_row(sheet, value, *, column=1):
 
 
 class PriceExcelTests(TestCase):
+    def test_hidden_products_are_excluded_only_from_wholesale_including_metadata(self):
+        stock = self.tech.warehouse_stocks.get(warehouse=self.moscow)
+        stock.quantity = 2
+        stock.save(update_fields=['quantity'])
+        for product in (self.cd, self.tech):
+            product.hide_from_wholesale_price = True
+            product.save(update_fields=['hide_from_wholesale_price'])
+        content = generate_wholesale_price_xlsx(warehouse_id=self.moscow.pk, actor=self.user)
+        workbook = load_workbook(BytesIO(content))
+        for sheet_name in (MAIN_SHEET, META_SHEET):
+            cells = {str(cell.value) for row in workbook[sheet_name] for cell in row}
+            self.assertNotIn(self.cd.name, cells)
+            self.assertNotIn(self.tech.name, cells)
+            self.assertNotIn(self.cd.sku, cells)
+            self.assertNotIn(self.tech.sku, cells)
+        workbook.close()
+        retail, _ = generate_retail_price_xlsx(warehouse_id=self.moscow.pk, actor=self.user)
+        workbook = load_workbook(BytesIO(retail))
+        find_sheet_row(workbook[MAIN_SHEET], self.cd.name)
+        find_sheet_row(workbook[MAIN_SHEET], self.tech.name)
+        workbook.close()
+        self.cd.hide_from_wholesale_price = False
+        self.cd.save(update_fields=['hide_from_wholesale_price'])
+        workbook = load_workbook(BytesIO(generate_wholesale_price_xlsx(warehouse_id=self.moscow.pk, actor=self.user)))
+        find_sheet_row(workbook[MAIN_SHEET], self.cd.name)
+        workbook.close()
+
     def setUp(self):
         self.user = User.objects.create_superuser("admin", password="StrongAdmin!123")
         self.moscow = Warehouse.objects.create(name="Москва")
@@ -148,19 +175,25 @@ class PriceExcelTests(TestCase):
         wholesale = generate_wholesale_price_xlsx(
             warehouse_id=self.moscow.pk, actor=self.user
         , partner_name='Тестовый заказчик')
-        for content in (retail, wholesale):
+        wholesale_expected = [
+            "🎮 Tech · Sony · Консоли", self.tech.name,
+            "🔧 Tech · Sony · Аксессуары", "Gamepad",
+            "🎮 CD · Платформа: Nintendo Switch", "Zelda",
+            "🎮 CD · Платформа: PS5", self.cd.name,
+        ]
+        for content, labels in ((retail, expected), (wholesale, wholesale_expected)):
             workbook = load_workbook(BytesIO(content), data_only=False)
             sheet = workbook[MAIN_SHEET]
             values = [
                 sheet.cell(row, 1).value
                 for row in range(HEADER_ROW + 1, sheet.max_row + 1)
             ]
-            self.assertEqual([value for value in values if value in expected], expected)
+            self.assertEqual([value for value in values if value in labels], labels)
             workbook.close()
 
         workbook = load_workbook(BytesIO(wholesale), data_only=False)
         sheet = workbook[MAIN_SHEET]
-        group_row = find_sheet_row(sheet, "CD · Платформа: Nintendo Switch")
+        group_row = find_sheet_row(sheet, "🎮 CD · Платформа: Nintendo Switch")
         product_row = find_sheet_row(sheet, "Zelda")
         self.assertTrue(sheet.cell(group_row, 4).protection.locked)
         self.assertFalse(sheet.cell(product_row, 4).protection.locked)

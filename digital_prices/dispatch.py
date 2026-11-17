@@ -93,7 +93,18 @@ def _public_only(bundle):
     """Не пускаем внутренние поля и служебные подписи в клиентский рендер."""
     import json
     import re
+    snapshot = bundle.public_snapshot
+    allowed = {'revision', 'generated_at', 'source_at', 'stale', 'rows', 'page_titles'}
+    row_fields = {'name', 'category', 'section', 'region', 'price', 'availability',
+                  'family', 'subgroup', 'label', 'region_label', 'order'}
+    if (not isinstance(snapshot, dict) or set(snapshot) - allowed or not isinstance(snapshot.get('rows'), (list, tuple))
+            or any(not isinstance(row, dict) or set(row) - row_fields for row in snapshot['rows'])):
+        raise TelegramError('private_content')
     text = json.dumps(bundle.public_snapshot, ensure_ascii=False)
+    import unicodedata
+    text = unicodedata.normalize('NFKC', text)
+    if re.search(r'pan[\W_]*yan|yan[\W_]*store|пан[\W_]*ян|ян[\W_]*стор|(?:pv2|ov2|qv2)_[\w-]+|https?://|www\.', text, re.I):
+        raise TelegramError('private_content')
     if re.search(r'pan\s*yan|yan\s*store|себестоим|наценк|purchase_cost|markup|manual_cost|cost_percent|cost_coefficient', text, re.I):
         raise TelegramError('private_content')
 

@@ -150,6 +150,28 @@ class NomenclatureSecurityTests(NomenclatureDataMixin, TestCase):
 
 
 class ProductCardPermissionTests(NomenclatureDataMixin, TestCase):
+    def test_wholesale_visibility_permission_marker_and_legacy_form(self):
+        self.worker.user_permissions.add(permission('change_wholesale_price', 'pricing'))
+        self.worker = User.objects.get(pk=self.worker.pk)
+        for hidden in (True, False):
+            self.cd.refresh_from_db()
+            data = {'version': product_version(self.cd), 'name': self.cd.name,
+                    'wholesale_visibility_present': '1'}
+            if hidden:
+                data['hide_from_wholesale_price'] = '1'
+            result = update_product_card(actor=self.worker, product_kind='cd', product_id=self.cd.pk, data=data)
+            self.assertTrue(result.saved, result.form.errors)
+            self.cd.refresh_from_db()
+            self.assertIs(self.cd.hide_from_wholesale_price, hidden)
+        self.cd.hide_from_wholesale_price = True
+        self.cd.save(update_fields=['hide_from_wholesale_price'])
+        result = update_product_card(actor=self.worker, product_kind='cd', product_id=self.cd.pk, data={
+            'version': product_version(self.cd), 'name': 'Имя из старой формы',
+        })
+        self.assertTrue(result.saved, result.form.errors)
+        self.cd.refresh_from_db()
+        self.assertTrue(self.cd.hide_from_wholesale_price)
+
     def setUp(self):
         self.create_products()
         self.worker = User.objects.create_user("editor", password="StrongWorker!123")

@@ -1,5 +1,4 @@
 """Серверные permissions, DTO строк и защищённые PNG вместо публичных media URL."""
-from datetime import timedelta
 from io import BytesIO
 import zipfile
 from django.contrib import messages
@@ -8,15 +7,13 @@ from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.db.models import Count, Q
-from django.utils import timezone
 from django.views.decorators.cache import never_cache
 from django.views.decorators.debug import sensitive_post_parameters
 from django.views.decorators.http import require_POST, require_http_methods
 from core.decorators import permission_required_all, permission_required_any
 from .models import Product, Integration, SyncJob, PriceBundle, PricePage, CatalogState, ManualPriceEntry, BuyerPriceDispatch
 from .forms import ConfigurationForm, LayoutForm, ManualPriceForm, ManualPriceFormSet
-from .services import edit_product, selling_price, enqueue_sync, save_configuration
-from .public import safe_text
+from .services import edit_product, enqueue_sync, save_configuration
 from .bundles import generate_bundle
 from .catalog import catalog_slides, product_data, manual_data
 from .buyer_pricing import selected_buyer, edit_buyer_markup
@@ -39,6 +36,7 @@ SHEET_ERRORS = {'sheet_access':'Нет доступа к таблице. Пре�
     'sheet_price_format':'Цена в таблице имеет неподдерживаемый формат.',
     'sheet_response':'Ответ таблицы требует проверки.', 'sheet_empty':'В таблице нет тарифов.',
     'sheet_internal':'Не удалось прочитать таблицу тарифов.'}
+ERRORS.update({key: value + ' Прежние цены сохранены.' for key,value in SHEET_ERRORS.items()})
 
 
 def row_data(row, user):

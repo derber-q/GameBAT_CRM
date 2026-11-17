@@ -35,6 +35,9 @@ def card(order):
         [{'text': 'Указать цену продажи', 'callback_data': f'dg:{order.pk}:{order.revision}:price'}],
     ]
     if not order.sale_id:
+        if order.source != 'api_v2' and order.checklist_received and not order.goods_received and not order.review_reason:
+            buttons.append([{'text': 'Услуга выполнена — подтвердить вручную',
+                             'callback_data': f'dg:{order.pk}:{order.revision}:goods'}])
         if order.is_retail:
             text += '\nПодтверждение сразу завершит продажу и отметит оплату картой.'
         elif order.buyer_id:
@@ -145,6 +148,9 @@ def handle(access, user, message, callback):
             confirm_order(actor=user, order_id=order.pk, revision=parts[2], complete_immediately=True)
             order.refresh_from_db()
             return card(order)
+        if action == 'goods':
+            from .ingestion import confirm_fulfillment
+            return card(confirm_fulfillment(actor=user, order_id=order.pk, revision=parts[2]))
         raise ValidationError('Неизвестное действие цифрового заказа.')
     except ValidationError as exc:
         if 'order' in locals():

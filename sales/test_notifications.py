@@ -41,6 +41,7 @@ class MarketAttentionTests(TestCase):
         attention = order.staff_attention
         self.assertIsNone(attention.acknowledged_at)
         self.assertEqual(self.snapshot().json()['count'], 1)
+        self.assertEqual(self.snapshot().json()['repeat_seconds'], 180)
         before = self.snapshot().json()['orders'][0]['started_at']
         import_order(self.integration, payload)
         self.assertEqual(MarketOrderAttention.objects.count(), 1)

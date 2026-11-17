@@ -1,11 +1,12 @@
-/* ReSOURCE: Бейдж и звук новых необходимых действий Avito, без повторного сигнала на неизменившийся список. */
+/* ReSOURCE: Бейдж и получение актуального списка действий для звука и повторных напоминаний Avito. */
 (() => {
   'use strict';
   const counters = [...document.querySelectorAll('[data-avito-counter]')];
   if (!counters.length) return;
   let busy = false;
   async function refresh() {
-    if (busy || document.hidden) return;
+    // Напоминания нужны и когда сотрудник работает в другой вкладке.
+    if (busy) return;
     busy = true;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10000);
@@ -34,7 +35,9 @@
   }
   window.addEventListener('focus', refresh);
   window.addEventListener('online', refresh);
-  document.addEventListener('visibilitychange', refresh);
+  // При закрытии страницы WebKit уже блокирует сеть. Фоновый опрос остаётся
+  // по таймеру, а немедленное обновление нужно только при возвращении во вкладку.
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) void refresh(); });
   setInterval(refresh, 15000);
   void refresh();
 })();

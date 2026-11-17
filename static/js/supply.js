@@ -85,6 +85,7 @@
     const search = document.createElement("input");
     search.type = "text";
     search.name = "product_search";
+    search.dataset.productSearch = "true";
     search.placeholder = "Начните вводить название товара...";
     search.autocomplete = "off";
     search.required = true;
@@ -435,7 +436,10 @@
       endpoint: form.dataset.autocompleteUrl,
       warehouseInput: warehouse,
       searchContext: form.dataset.searchContext,
-      onSelect: selectProduct,
+      onSelect: (result, metadata = {}) => {
+        selectProduct(result, metadata);
+        if (result && metadata.exactBarcode) void window.GameBAT.playBarcodeFeedback?.(true);
+      },
     });
     if (value.product_id && !fixedComposition) {
       const initialProduct = {
@@ -477,7 +481,9 @@
       if (!row) row = addProductLine({ label: matches[0].label });
       row.selectSupplyProduct(matches[0]);
       barcodeFeedback.textContent = `Добавлено: ${matches[0].label}`;
+      void window.GameBAT.playBarcodeFeedback?.(true);
     } catch (error) {
+      void window.GameBAT.playBarcodeFeedback?.(false);
       barcodeFeedback.textContent = error.message;
       barcodeFeedback.classList.add("error-text");
     }

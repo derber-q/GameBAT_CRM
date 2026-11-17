@@ -1,16 +1,27 @@
 """Long polling и исполнитель используют разные соединения; мониторинг — существующий."""
 from datetime import timedelta
+import logging
 import threading
 from django.db import close_old_connections, connections, OperationalError, transaction
 from django.utils import timezone
 from core.db_retry import retry_database_lock
 from core.external_policy import require_live_operation
 from integrations.worker_runtime import AlreadyRunning
+from integrations.worker_health import BLOCKED_ERRORS
 from .client import TelegramClient, TelegramError
 from .configuration import read_token, expected_status
 from .handlers import accept_update
 from .jobs import claim_job, run_job, recover_interrupted, notify_recovered_jobs
-from .models import StaffBot
+from .models import StaffBot, StaffBotUpdate
+
+logger = logging.getLogger('gamebat.business')
+
+
+def log_telegram_error(bot_id, phase, error, *, update_id=None):
+    """Только технические поля: никаких токенов, URL, чатов, реквизитов и текста ответа API."""
+    logger.warning('telegram_staff_request_failed bot_id=%s phase=%s method=%s http_status=%s '
+                   'category=%s uncertain=%s update_id=%s', bot_id, phase, error.method,
+                   error.status_code, error.category, error.uncertain, update_id)
 
 
 @retry_database_lock
@@ -138,7 +149,8 @@ def _initialize_connection(client, bot_id, owner, stop, *, once=False, health=No
             connection_state(bot_id, exc.category)
             if health:
                 health.progress(verified=False, error=exc.category)
-            if once or exc.category not in ('timeout', 'network', 'rate_limited'):
+            log_telegram_error(bot_id, 'initialize', exc)
+            if once or exc.category in BLOCKED_ERRORS:
                 raise
             failures = min(failures + 1, 6)
             stop.wait(min(60, 5 * 2**failures))
@@ -166,25 +178,22 @@ def run_polling(bot_id, owner, stop, *, client_factory=TelegramClient, once=Fals
         # Никаких deleteWebhook: существующий webhook требует решения администратора.
         if not _initialize_connection(client, bot_id, owner, stop, once=once, health=health):
             return
-        notify_recovered_jobs(recovered, client)
+        try:
+            notify_recovered_jobs(recovered, client)
+        except TelegramError as exc:
+            # Не повторяем неизвестную отправку, но продолжаем приём команд.
+            log_telegram_error(bot_id, 'recovery_notice', exc)
         executor = threading.Thread(target=job_loop, args=(bot_id, executor_stop, owner, client_factory, health), name='telegram-documents')
         executor.start()
-        failures, blocked = 0, False
+        failures = 0
         while not stop.is_set() and expected_status() == 'required':
             close_old_connections()
             lease(bot_id, owner)
-            if executor and not executor.is_alive() and not blocked:
+            if executor and not executor.is_alive():
                 connection_state(bot_id, 'executor')
                 if health:
                     health.progress(verified=False, error='executor')
                 return  # Штатный supervisor запустит новый единственный исполнитель.
-            if blocked:
-                if health:
-                    health.progress(verified=False, error=StaffBot.objects.get(pk=bot_id).error_category)
-                if once:
-                    break
-                stop.wait(15)
-                continue
             try:
                 bot = StaffBot.objects.get(pk=bot_id)
                 updates = client.call('getUpdates', {'offset': bot.next_update_id, 'timeout': 20,
@@ -195,22 +204,44 @@ def run_polling(bot_id, owner, stop, *, client_factory=TelegramClient, once=Fals
                     if stop.is_set() or expected_status() != 'required':
                         break
                     lease(bot_id, owner)
-                    dispatch_reply(client, accept_update(bot_id, update))
+                    reply = accept_update(bot_id, update)
+                    try:
+                        dispatch_reply(client, reply)
+                    except TelegramError as exc:
+                        # Квитанция/бизнес-действие уже сохранены. Отказ ответа
+                        # одному получателю не блокирует всех и не повторяет действие.
+                        log_telegram_error(bot_id, 'reply', exc, update_id=update.get('update_id'))
+                        receipt = StaffBotUpdate.objects.filter(bot_id=bot_id, update_id=update.get('update_id')).first()
+                        if receipt:
+                            receipt.result = 'reply_uncertain' if exc.uncertain else 'reply_failed'
+                            receipt.save(update_fields=['result'])
+                    else:
+                        if reply:
+                            # Напоминание ставится после ответа, чтобы новая карточка
+                            # с кнопкой оказывалась внизу личного чата сотрудника.
+                            try:
+                                from digital_sales.reconciliation import remind_pending_topups
+                                remind_pending_topups(bot_id=bot_id, chat_id=reply['chat_id'], update_id=update['update_id'])
+                            except Exception as exc:
+                                logger.warning('Не удалось подготовить напоминание о пополнении: bot_id=%s error=%s',
+                                               bot_id, type(exc).__name__)
                 connection_state(bot_id)
                 if health:
                     health.progress()
                 failures = 0
             except TelegramError as exc:
+                log_telegram_error(bot_id, 'poll', exc)
                 connection_state(bot_id, exc.category)
                 if health:
                     health.progress(verified=False, error=exc.category)
                 failures = min(failures + 1, 6)
                 # Временный сбой polling не останавливает доставку outbox.
                 # Неопределённые отправки защищены от повторов в delivery/jobs.
-                transient = exc.category in ('timeout', 'network', 'rate_limited')
-                blocked = exc.category in ['unauthorized', 'conflict', 'wrong_bot', 'webhook'] or (failures >= 3 and not transient)
-                if blocked:
+                # Конфликт завершает только текущее соединение. Автономный
+                # цикл повторит безопасную инициализацию после паузы.
+                if exc.category in BLOCKED_ERRORS:
                     executor_stop.set()
+                    return
                 elif not once:
                     stop.wait(min(60, 5 * 2**failures))
             except OperationalError:
@@ -226,11 +257,8 @@ def run_polling(bot_id, owner, stop, *, client_factory=TelegramClient, once=Fals
         connection_state(bot_id, exc.category)
         if health:
             health.progress(verified=False, error=exc.category)
-        # Процесс жив, но готовность отсутствует: токен/webhook требует исправления.
-        while not once and not stop.wait(15) and expected_status() == 'required':
-            lease(bot_id, owner)
-            if health:
-                health.progress(verified=False, error=exc.category)
+        log_telegram_error(bot_id, 'reconnect', exc)
+        # После finally общий автономный цикл повторит проверку с новым клиентом.
     finally:
         executor_stop.set()
         if executor:

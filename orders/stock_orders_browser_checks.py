@@ -30,7 +30,7 @@ class StockOrdersBrowserChecks(StaticLiveServerTestCase):
         supplier = Supplier.objects.create(name="Поставщик A", letter="A", priority=1,
             highlight_color="#37A7BA", legal_entity="A", phone_1="1")
         cd = CD.objects.create(platform=Platform.objects.create(name="PS5"), name="Игра для наличия",
-                               sku="000-STOCK", weight_grams=100)
+                               sku="000-STOCK", weight_grams=100, cusa_ppsa_code='PPSA-00001')
         SupplierCDPrice.objects.create(supplier=supplier, cd=cd, price=100)
         price = create_procurement_price_list(actor=user, exchange_rate_usdt_aed=4, exchange_rate_usdt_rub=80,
             delivery_general_usdt_per_kg=0, delivery_devices_usdt_per_kg=0,
@@ -49,7 +49,7 @@ class StockOrdersBrowserChecks(StaticLiveServerTestCase):
                     "value": self.client.cookies[settings.SESSION_COOKIE_NAME].value, "url": self.live_server_url}])
                 context.route("**/crm/api/exchange-rates/", lambda route: route.fulfill(json={"rates": {}, "available": False}))
                 page = context.new_page()
-                page.goto(self.live_server_url + reverse("price:imports"))
+                page.goto(self.live_server_url + reverse("price:procurement_detail", args=(price.pk,)))
                 with page.expect_download() as download:
                     page.get_by_role("link", name="Скачать прайс для заказа на склад", exact=True).click()
                 book = load_workbook(BytesIO(Path(download.value.path()).read_bytes()))
@@ -76,15 +76,27 @@ class StockOrdersBrowserChecks(StaticLiveServerTestCase):
                 self.assertEqual(trip.lines.get().quantity, 4)
                 page.goto(self.live_server_url + reverse("orders:detail", args=(stock.pk,)))
                 page.screenshot(path=str(output / f"stock-order-{width}.png"), full_page=True)
-                page.get_by_role("button", name="Подтвердить закупку", exact=True).click()
-                page.get_by_role("button", name="Начать приёмку", exact=True).click()
-                page.get_by_role("link", name="Скорректировать количество", exact=True).click()
-                page.locator('input[name="prepayment_quantity"]').fill("2")
-                page.locator('[name="comment"]').fill("Приехало две единицы")
-                page.get_by_role("button", name="Сохранить корректировку", exact=True).click()
-                page.locator('select[name="warehouse"]').select_option(str(warehouse.pk))
-                page.get_by_role("button", name="Оформить приход", exact=True).click()
+                from .arrival import confirm_arrival, reduce_received
+                from .arrival_documents import create_arrival_sale, create_arrival_supply
+                from .arrival_finalization import finalization_rows, finalize_arrival
+                arrival=confirm_arrival(actor=user,batch_id=trip.pk,expected_revision=trip.revision,
+                    usdt_rub=80,usdt_aed=4,actual_delivery=150)
+                source_row=arrival.rows.get(order=stock)
+                reduce_received(actor=user,arrival_id=arrival.pk,order_id=stock.pk,
+                    quantities={source_row.pk:2},expected_revision=arrival.revision)
+                for order in (stock,customer):
+                    arrival.refresh_from_db()
+                    create=create_arrival_supply if order.is_stock_order else create_arrival_sale
+                    create(actor=user,arrival_id=arrival.pk,order_id=order.pk,
+                        expected_revision=arrival.revision,warehouse_id=warehouse.pk)
+                arrival.refresh_from_db()
+                finalize_arrival(actor=user,arrival_id=arrival.pk,expected_revision=arrival.revision,
+                    raw_rows=[dict(product_type=r.product_type,product_id=r.product_id,
+                        baseline_quantity=r.global_quantity,baseline_cost=str(r.current_cost),
+                        corrected_cost=str(r.current_cost),change_source='unchanged') for r in finalization_rows(arrival)])
                 stock.refresh_from_db()
+                page.goto(self.live_server_url+reverse('supplies:detail',args=(stock.supply_id,)))
+                page.get_by_role('button',name='Проверить цены и принять приход',exact=True).click()
                 expect(page).to_have_url(self.live_server_url + reverse("supplies:price_review", args=(stock.supply_id,)))
                 page.get_by_role("button", name="Подтвердить цены и поставить на баланс", exact=True).click()
                 expect(page).to_have_url(self.live_server_url + reverse("supplies:detail", args=(stock.supply_id,)))

@@ -45,6 +45,7 @@ class SheetStructureTests(TestCase):
         expanded = ManualPriceEntry.objects.get(pk=self.rows[4].pk)
         self.assertEqual(expanded.label, '2000+')
         self.assertEqual(expanded.markup_coefficient, Decimal('0.2'))
+        self.assertIsNone(expanded.edited_by_id)
         self.own.refresh_from_db()
         self.assertEqual(self.own.manual_entry_id, expanded.pk)
         self.assertEqual(self.own.markup_coefficient, Decimal('0.3'))
@@ -76,12 +77,12 @@ class SheetStructureTests(TestCase):
 class ProductTimeoutTests(SimpleTestCase):
     def test_product_request_has_bounded_longer_timeout_and_no_implicit_retry(self):
         session = Mock()
-        session.get.side_effect = requests.ReadTimeout('synthetic')
-        with patch('digital_prices.api.require_live_operation'):
+        session.request.side_effect = requests.ReadTimeout('synthetic')
+        with patch('digital_prices.api.require_live_operation'), patch('digital_prices.provider.require_live_operation'), patch('digital_prices.provider.slot', return_value=0):
             client = CatalogClient('synthetic-secret', session=session)
             with self.assertRaises(APIError) as caught:
                 client.fetch()
         self.assertEqual(caught.exception.category, 'network_timeout')
-        self.assertEqual(session.get.call_count, 1)
-        self.assertEqual(session.get.call_args.kwargs['timeout'], PRODUCT_TIMEOUT)
+        self.assertEqual(session.request.call_count, 1)
+        self.assertEqual(session.request.call_args.kwargs['timeout'], PRODUCT_TIMEOUT)
         self.assertLess(sum(PRODUCT_TIMEOUT), 120)

@@ -5,6 +5,7 @@ from integrations.worker_heartbeat import monitored_worker
 from integrations.worker_runtime import graceful_shutdown, AlreadyRunning
 from wholesale_bot.worker import run_polling
 from wholesale_bot.configuration import expected_status
+from telegram_bots.recovery import run_autonomous
 
 
 class Command(BaseCommand):
@@ -20,7 +21,8 @@ class Command(BaseCommand):
             return
         try:
             with graceful_shutdown() as stop, monitored_worker(['telegram_opt'], options['worker_instance']) as health:
-                run_polling(stop, once=options['once'], health=health)
+                run_autonomous(lambda: run_polling(stop, once=options['once'], health=health),
+                    service='telegram_opt', stop=stop, expected=expected_status, health=health, once=options['once'])
         except AlreadyRunning:
             self.stdout.write('Оптовый бот уже обслуживается.')
         except ValidationError:

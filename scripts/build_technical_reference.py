@@ -19,7 +19,7 @@ sys.path.insert(0, str(ROOT))
 OUTPUT = ROOT / 'docs' / 'technical' / 'reference'
 APPS = {'core', 'accounts', 'catalog', 'partners', 'warehouse', 'supplies', 'consignment',
         'pricing', 'sales', 'cash', 'creditors', 'price', 'orders', 'integrations',
-        'yandex_market', 'resource_storefront', 'telegram_bots'}
+        'yandex_market', 'resource_storefront', 'telegram_bots', 'digital_prices', 'digital_sales', 'digital_shop'}
 NOTICE = ('<!-- Сгенерировано scripts/build_technical_reference.py; не редактировать вручную. -->\n'
           '\nСправочник исходников и метаданных схемы, без рабочих записей/ключей. '
           'Перегенерация: `.venv/Scripts/python.exe scripts/build_technical_reference.py`.\n\n')
@@ -113,7 +113,12 @@ def routes_reference():
                 else:
                     walk(item.url_patterns, path, ns)
             else:
-                entries.append(('/' + path, namespace + (item.name or ''), unwrap(item.callback)))
+                callback = unwrap(item.callback)
+                # DEBUG добавляет локальную раздачу статики; это не маршрут CRM
+                # и не должно менять справочник между CI и рабочим окружением.
+                if callback.__module__ == 'django.views.static' and callback.__name__ == 'serve':
+                    continue
+                entries.append(('/' + path, namespace + (item.name or ''), callback))
     walk(get_resolver().url_patterns)
     for path, name, callback in entries:
         result.append(f'## `{path}`\n\nИмя: `{name}`.\n\n')

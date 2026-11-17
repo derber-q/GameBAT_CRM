@@ -56,7 +56,7 @@ class PaymentMethodsTests(TestCase):
         return self.warehouse.cash_register.balance, self.warehouse.safe.balance
 
     def test_forms_offer_payment_methods_including_partner_debt(self):
-        expected = {"cash", "cash_postpay", "bank_account", "bank_transfer_postpay", "partner_debt"}
+        expected = {"cash", "cash_postpay", "bank_account", "bank_transfer_postpay", "partner_debt", "prepayment_account"}
         self.assertEqual({key for key, _ in SaleCreateForm().fields["payment_method"].choices}, expected)
         self.assertEqual({key for key, _ in SaleStatisticsFilterForm().fields["payment_methods"].choices}, expected | {'bank_card'})
 

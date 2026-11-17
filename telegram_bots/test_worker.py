@@ -172,7 +172,7 @@ class StaffWorkerTests(TransactionTestCase):
                 self.assertEqual(self.bot.error_category, '')
                 self.assertIsNone(self.bot.lease_owner)
 
-    def test_supervisor_retries_three_times_and_manual_recovery_is_independent(self):
+    def test_supervisor_keeps_retrying_after_three_failures_and_manual_recovery_is_independent(self):
         adapter = FakeProcesses()
         adapter.fail = True
         WorkerController.objects.create(mode='managed')
@@ -184,9 +184,9 @@ class StaffWorkerTests(TransactionTestCase):
             for seconds in [0, 60, 120, 240]:
                 supervise_once(adapter, now=now + timedelta(seconds=seconds))
             service = WorkerService.objects.get(code='telegram_staff')
-            self.assertEqual(service.failures, 3)
-            self.assertTrue(service.auto_paused)
-            self.assertEqual(len(adapter.launches), 3)
+            self.assertEqual(service.failures, 4)
+            self.assertFalse(service.auto_paused)
+            self.assertEqual(len(adapter.launches), 4)
             admin = User.objects.create_superuser('telegram-recovery')
             request_recovery(admin, ['telegram_staff'], uuid.uuid4())
             adapter.fail = False

@@ -3,6 +3,7 @@
 {% block content %}
 <div class="page-heading"><div><p class="eyebrow">Контрагенты</p><h1>Баланс цифровых продаж</h1></div><div class="digital-actions">
 {% if perms.digital_sales.create_digital_sales and perms.sales.create_sale %}<a class="button" href="{% url 'digital_sales:manual' %}">Создать цифровую продажу</a>{% endif %}
+{% if perms.digital_shop.manage_shop and perms.digital_prices.view_cost %}<a class="button button-secondary" href="{% url 'digital_shop:dashboard' %}">Магазин в группах</a>{% endif %}
 {% if perms.digital_sales.manage_digital_buyers %}<a class="button button-secondary" href="{% url 'digital_sales:buyer_create' %}">Новый покупатель</a>{% endif %}
 {% if perms.digital_sales.topup_digital_balances or perms.digital_sales.adjust_digital_balances %}<a class="button button-secondary" href="{% url 'digital_sales:balance' %}">Пополнить / скорректировать</a>{% endif %}
 {% if perms.digital_sales.configure_digital_bot %}<a class="button button-secondary" href="{% url 'digital_sales:configuration' %}">Настройка бота</a>{% endif %}</div></div>

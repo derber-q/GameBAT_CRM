@@ -115,17 +115,33 @@ def apply_catalog(offers, *, job_id, owner, configuration_revision=None,
         raise APIError('configuration_changed')
     state = CatalogState.objects.select_for_update().get(pk=1)
     now, identities, added = timezone.now(), {offer.identity for offer in offers}, 0
+    from .v2_mapping import plan
+    matched, ambiguous, missing_legacy = plan(offers, list(Product.objects.select_for_update().all()))
+    AuditEvent.objects.create(kind='v2_mapping', detail={'matched': {key: row.pk for key, row in matched.items()},
+        'ambiguous': ambiguous, 'missing': missing_legacy})
     for offer in offers:
         row = Product.objects.select_for_update().filter(external_id=offer.identity).first()
+        if row is None and offer.identity in matched:
+            row = matched[offer.identity]
+            row.legacy_external_id, row.external_id = row.external_id, offer.identity
         if row is None:
             row = Product(external_id=offer.identity, markup=None)
             added += 1
         row.source_name, row.source_type = offer.name, offer.kind
         row.platform, row.region, row.attributes = offer.platform, offer.region, offer.attributes
-        row.purchase_cost, row.currency = offer.cost, offer.currency
+        # Отсутствие новой цены не обнуляет последний подтверждённый снимок.
+        if offer.cost is not None:
+            row.purchase_cost = offer.cost
+        row.currency = offer.currency
+        row.api_version = offer.attributes.get('api_version', 0)
+        row.fulfillment = offer.attributes.get('fulfillment', '')
+        row.requirements = offer.attributes.get('requirements', {})
+        row.quantity_limits = offer.attributes.get('limits', {})
+        row.mapping_issue = 'ambiguous' if offer.identity in ambiguous else ''
         row.availability = 'yes' if offer.available is True else 'no' if offer.available is False else 'unknown'
         row.requires_review = (offer.currency != 'RUB' or offer.cost is None and offer.kind != 'steam_topup'
                                or offer.available is None or offer.kind not in CATEGORIES)
+        row.requires_review = row.requires_review or bool(row.mapping_issue)
         if not row.rule_manual:
             family, plan, _ = characteristics(offer.kind, offer.name, offer.attributes)
             row.rule = (Product.Rule.XBOX if offer.kind == 'xbox' else Product.Rule.PS_PLUS
@@ -155,15 +171,24 @@ def apply_catalog(offers, *, job_id, owner, configuration_revision=None,
         else:
             manual_rows = [row for row in manual_rows if not row.source_archived]
         keys={row.pk:(row.kind,region_code(row.region),normalized_label(row.label)) for row in manual_rows}
-        if not sheet_error and sheet_costs is not None and (not manual_rows or any(key not in sheet_costs for key in keys.values())):
+        if not sheet_error and sheet_costs is not None and (not manual_rows or not set(keys.values()).intersection(sheet_costs)):
             sheet_error='sheet_mapping'
         if not sheet_error and sheet_costs is not None:
-            changed,missing,skipped=0,0,0
+            changed,missing,skipped,absent=0,0,0,0
             for row in manual_rows:
                 if manual_revisions is not None and manual_revisions.get(row.pk)!=row.revision:
                     skipped+=1
                     continue  # Сотрудник изменил строку во время сетевого чтения; не затираем его ввод.
-                offer=sheet_costs[keys[row.pk]]
+                offer=sheet_costs.get(keys[row.pk])
+                if offer is None:
+                    absent += 1
+                    # Старая закупка и индивидуальные наценки остаются в БД;
+                    # отсутствующую в источнике строку нельзя выдавать как свежую.
+                    if row.sheet_issue != 'source_missing':
+                        row.sheet_issue = 'source_missing'
+                        row.revision += 1
+                        row.save(update_fields=['sheet_issue','revision'])
+                    continue
                 field={'rub':'manual_cost','percent':'cost_percent','coefficient':'cost_coefficient'}[offer.mode]
                 fields=['sheet_reference','sheet_checked_at','sheet_issue']
                 old_issue=row.sheet_issue
@@ -178,11 +203,14 @@ def apply_catalog(offers, *, job_id, owner, configuration_revision=None,
                 if len(fields)>3 or old_issue!=row.sheet_issue:
                     row.revision+=1
                     fields.append('revision')
-                row.full_clean()
+                # Автосинхронизация не выдаёт себя за ручного редактора:
+                # у исходных/seed-тарифов edited_by закономерно отсутствует.
+                row.full_clean(exclude=['edited_by'] if row.edited_by_id is None else None)
                 row.save(update_fields=fields)
             config.manual_sheet_last_success_at=now
             sheet_error='sheet_local_changes' if skipped else 'sheet_prices_missing' if missing else ''
-            sheet_summary={'updated':changed,'missing':missing,'skipped':skipped,'matched':len(manual_rows)}
+            sheet_summary={'updated':changed,'missing':missing,'skipped':skipped,'matched':len(manual_rows)-absent,
+                           'source_missing':absent}
             AuditEvent.objects.create(kind='sheet_costs_applied',detail={'job':str(job.pk),**sheet_summary})
         config.manual_sheet_error_category=sheet_error
     config.save(update_fields=['last_success_at','error_category','manual_sheet_last_success_at','manual_sheet_error_category'])
@@ -324,6 +352,8 @@ def process_one(*, client_factory=CatalogClient, sheet_client_factory=SheetClien
                 sheet_client=sheet_client_factory(sheet_url)
                 sheet_costs=sheet_client.fetch_costs()
             except SheetSourceError as exc:
+                if exc.category in ('sheet_network','sheet_rate_limited','sheet_unavailable'):
+                    raise APIError(exc.category, 120 if exc.category == 'sheet_rate_limited' else 60) from None
                 sheet_error=exc.category
             except Exception:
                 sheet_error='sheet_internal'

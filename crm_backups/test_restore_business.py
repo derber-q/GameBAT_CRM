@@ -27,6 +27,9 @@ from .snapshot import create_bundle,restore_bundle,digest
 
 
 class CRMRestoreBusinessTests(TransactionTestCase):
+    # Проверяется перенос настоящего алгоритма паролей, даже если общий suite
+    # ускорен тестовым MD5, которого нет в настройках восстанавливаемой CRM.
+    @override_settings(PASSWORD_HASHERS=['django.contrib.auth.hashers.PBKDF2PasswordHasher'])
     def test_restore_real_crm_sales_inventory_cash_users_media_and_credentials(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp);media=root/'media';media.mkdir()

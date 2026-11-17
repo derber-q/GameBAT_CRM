@@ -14,7 +14,7 @@ function environment(kind, initialItems = [], paymentControls = false, priceCont
     set value(value) { this.currentValue = String(value); }
     constructor(tag = 'div') {
       this.tagName = tag.toUpperCase(); this.children = []; this.dataset = {};
-      this.attributes = {}; this.handlers = {}; this.value = ''; this.className = '';
+      this.attributes = {}; this.handlers = {}; this.value = ''; this.className = ''; this.style = {};
       this.classList = {
         contains: name => this.className.split(' ').includes(name),
         add: (...names) => { this.className = [...new Set([...this.className.split(' '), ...names])].join(' '); },

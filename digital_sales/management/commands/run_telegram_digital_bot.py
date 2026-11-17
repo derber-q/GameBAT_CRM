@@ -5,6 +5,7 @@ from integrations.worker_heartbeat import monitored_worker
 from integrations.worker_runtime import AlreadyRunning, graceful_shutdown
 from digital_sales.configuration import expected_status
 from digital_sales.worker import run_polling
+from telegram_bots.recovery import run_autonomous
 
 
 class Command(BaseCommand):
@@ -21,7 +22,8 @@ class Command(BaseCommand):
         owner = options['worker_instance'] or uuid.uuid4()
         try:
             with graceful_shutdown() as stop, monitored_worker(['telegram_digital'], owner) as health:
-                run_polling(owner, stop, once=options['once'], health=health)
+                run_autonomous(lambda: run_polling(owner, stop, once=options['once'], health=health),
+                    service='telegram_digital', stop=stop, expected=expected_status, health=health, once=options['once'])
         except AlreadyRunning:
             self.stdout.write('Цифровой бот уже обслуживается.')
         except (ValidationError, ImproperlyConfigured):

@@ -1,6 +1,5 @@
 """Изолированные браузерные проверки. Запускать явно: manage.py test resource_storefront.browser_checks."""
 import json
-import sqlite3
 from pathlib import Path
 
 from cryptography.fernet import Fernet
@@ -13,6 +12,7 @@ from catalog.models import CD, Tech, Platform, Brand, ProductType
 from warehouse.models import Warehouse, CDWarehouseStock, TechWarehouseStock
 from .models import StorefrontSettings, WholesaleContact
 from .security import issue_link
+from ._browser_fixtures import synthetic_cover
 
 
 @override_settings(RESOURCE_TOKEN_ENCRYPTION_KEY=Fernet.generate_key().decode())
@@ -23,13 +23,9 @@ class MobileBrowserTests(StaticLiveServerTestCase):
         warehouse, _ = Warehouse.objects.get_or_create(name="Проверка мобильной витрины")
         StorefrontSettings.objects.update_or_create(pk=1, defaults={"warehouse": warehouse})
         platform = Platform.objects.create(name="PS5 проверка")
-        # Копируются только названия и пути фото для реалистичного тестового наполнения.
-        # Все остатки, контакты и продажи создаются исключительно в тестовой БД.
-        with sqlite3.connect(f"file:{Path(settings.BASE_DIR) / 'db.sqlite3'}?mode=ro", uri=True) as source:
-            samples = source.execute("SELECT name, title_image FROM catalog_cd WHERE is_archived=0 ORDER BY id LIMIT 30").fetchall()
         self.products = []
         for index in range(30):
-            name, photo = samples[index % len(samples)] if samples else (f"Игра длинного названия — специальное издание {index}", "")
+            name, photo = f"Игра длинного названия — специальное издание {index}", synthetic_cover(index)
             product = CD.objects.create(name=name, title_image=photo if index % 3 else "", platform=platform, wholesale_price=1000 + index, cost=500)
             CDWarehouseStock.objects.create(warehouse=warehouse, cd=product, quantity=50)
             self.products.append(product)

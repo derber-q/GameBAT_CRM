@@ -194,6 +194,39 @@ def enqueue_observation(observation, *, event='received'):
                 defaults={'observation': observation, 'text': 'Сверка баланса поставщика'})
 
 
+@retry_database_lock
+@transaction.atomic
+def remind_pending_topups(*, bot_id, chat_id, update_id):
+    """Новая карточка в личном CRM-боте после ответа; деньги здесь не проводятся."""
+    from telegram_bots.models import StaffBotAccess
+    from .notifications import eligible
+    access = StaffBotAccess.objects.select_for_update().select_related('user', 'bot').filter(
+        bot_id=bot_id, telegram_user_id=chat_id, allowed=True, revoked_at__isnull=True).first()
+    if not access or not eligible(access) or not access.user.has_perms([
+        'digital_sales.view_digital_reconciliation', 'digital_sales.topup_digital_balances',
+    ]):
+        return 0
+    count = 0
+    observations = BalanceObservation.objects.filter(resolved_at__isnull=True, topup_movement__isnull=True,
+        message__kind='balance').select_related('message', 'supplier').order_by('message__occurred_at', 'pk')
+    for observation in observations:
+        receipt = receipt_details(observation)
+        if not receipt or not receipt.get('topup_amount') or not standalone(observation):
+            continue
+        # Старые версии квитанции и уже учтённые суммы не возвращают кнопку.
+        if not card(observation).get('reply_markup'):
+            continue
+        key = f'balance:{observation.pk}:reminder:{update_id}'
+        for older in Notification.objects.filter(access=access, observation=observation, state='queued',
+                event_key__startswith=f'balance:{observation.pk}:reminder:').exclude(event_key=key):
+            older.state = 'revoked'
+            older.save(update_fields=['state'])
+        _, created = Notification.objects.get_or_create(access=access, event_key=key,
+            defaults={'observation':observation, 'text':'Напоминание о неподтверждённом пополнении'})
+        count += int(created)
+    return count
+
+
 def handle(access, user, callback):
     data = callback.get('data') if callback else None
     if not isinstance(data, str) or not data.startswith('dbal:'):

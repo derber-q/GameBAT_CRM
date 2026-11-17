@@ -234,7 +234,12 @@ def refresh_remote_listings(*, check_linked_statuses=False):
             },
         )
     missing = AvitoRemoteListing.objects.exclude(avito_item_id__in=found)
-    missing.filter(missing_since__isnull=True).update(missing_since=now)
+    unconfirmed = missing.filter(missing_since__isnull=True)
+    # Подтверждённые old штатно отсутствуют в активном списке. Не отменяем
+    # подтверждение из-за одного этого факта или пока их проверка ещё идёт.
+    # Неизвестные и пропавшие active по-прежнему блокируют исходящий обмен.
+    unconfirmed = unconfirmed.exclude(connection__isnull=False, status__iexact='old')
+    unconfirmed.update(missing_since=now)
     credential = get_avito_credential()
     if credential and credential.account_id:
         # Absence from the paginated list is not proof of deletion: archived
@@ -249,6 +254,9 @@ def refresh_remote_listings(*, check_linked_statuses=False):
             try:
                 details = client.get_item_details(credential.account_id, listing.avito_item_id)
             except AvitoAPIError as exc:
+                if check_linked_statuses and listing.missing_since is None:
+                    listing.missing_since = now
+                    listing.save(update_fields=('missing_since',))
                 if exc.status == 404:
                     if check_linked_statuses and AvitoListingConnection.objects.filter(remote_listing=listing).exists():
                         raise AvitoAPIError(
@@ -267,6 +275,8 @@ def refresh_remote_listings(*, check_linked_statuses=False):
                     listing.url = str(details["url"])[:1000]
                 listing.save(update_fields=("status", "missing_since", "last_seen_at", "url"))
             elif check_linked_statuses:
+                listing.missing_since = now
+                listing.save(update_fields=('missing_since',))
                 raise AvitoAPIError(f"Avito не вернул статус объявления №{listing.avito_item_id}.", "temporary")
     elif check_linked_statuses and missing.filter(connection__isnull=False).exists():
         raise AvitoAPIError("Не указан аккаунт Avito для проверки статусов связанных объявлений.", "auth")
@@ -313,7 +323,9 @@ def _remote_snapshot(listing):
     }
 
 
-def bind_listing(*, listing, product, product_kind, actor=None):
+def bind_listing(*, listing, product, product_kind, actor=None, sell_on_avito=None):
+    if sell_on_avito is not None and not isinstance(sell_on_avito, bool):
+        raise ValidationError('Укажите корректное состояние продажи на Avito.')
     snapshot = _remote_snapshot(listing)  # HTTP до открытия DB transaction.
     try:
         with transaction.atomic():
@@ -325,11 +337,13 @@ def bind_listing(*, listing, product, product_kind, actor=None):
             if AvitoListingConnection.objects.filter(profile=profile).exists():
                 raise ValidationError("Выбранный товар уже связан с другим объявлением.")
             listing.status = snapshot["status"]
-            listing.save(update_fields=("status",))
+            listing.missing_since = None
+            listing.last_seen_at = timezone.now()
+            listing.save(update_fields=("status", "missing_since", "last_seen_at"))
             profile.listing_title = snapshot["title"]
             profile.category_name = snapshot["category_name"]
             profile.attributes = snapshot["details"]
-            profile.sell_on_avito = _remote_listing_is_active(snapshot["status"])
+            profile.sell_on_avito = _remote_listing_is_active(snapshot["status"]) if sell_on_avito is None else sell_on_avito
             profile.sync_status = AvitoProductProfile.SyncStatus.IDLE
             profile.last_error = (
                 "Avito Item API не предоставляет контент и фотографии объявления для импорта; "
@@ -342,7 +356,8 @@ def bind_listing(*, listing, product, product_kind, actor=None):
             connection = AvitoListingConnection.objects.create(profile=profile, remote_listing=listing)
             _audit(
                 "listing_bound", actor=actor, profile=profile,
-                details={"avito_item_id": listing.avito_item_id, "remote_price_imported": price_imported},
+                details={"avito_item_id": listing.avito_item_id, "remote_price_imported": price_imported,
+                         "sell_on_avito": profile.sell_on_avito, "sell_intent_explicit": sell_on_avito is not None},
             )
             enqueue_profile_sync_after_commit(profile.pk)
             return connection
@@ -372,7 +387,9 @@ def import_connection_price_if_empty(*, connection, actor=None):
         return imported, product.avito_price
 
 
-def rebind_listing(*, connection, product, product_kind, actor=None):
+def rebind_listing(*, connection, product, product_kind, actor=None, sell_on_avito=None):
+    if sell_on_avito is not None and not isinstance(sell_on_avito, bool):
+        raise ValidationError('Укажите корректное состояние продажи на Avito.')
     snapshot = _remote_snapshot(connection.remote_listing)  # HTTP до lock/transaction.
     try:
         with transaction.atomic():
@@ -387,7 +404,9 @@ def rebind_listing(*, connection, product, product_kind, actor=None):
             if AvitoListingConnection.objects.filter(profile=target).exists():
                 raise ValidationError("Выбранный товар уже связан с другим объявлением.")
             connection.remote_listing.status = snapshot["status"]
-            connection.remote_listing.save(update_fields=("status",))
+            connection.remote_listing.missing_since = None
+            connection.remote_listing.last_seen_at = timezone.now()
+            connection.remote_listing.save(update_fields=("status", "missing_since", "last_seen_at"))
             old_profile.sell_on_avito = False
             old_profile.listing_title = ""
             old_profile.listing_description = ""
@@ -403,7 +422,7 @@ def rebind_listing(*, connection, product, product_kind, actor=None):
             target.listing_title = snapshot["title"]
             target.category_name = snapshot["category_name"]
             target.attributes = snapshot["details"]
-            target.sell_on_avito = _remote_listing_is_active(snapshot["status"])
+            target.sell_on_avito = _remote_listing_is_active(snapshot["status"]) if sell_on_avito is None else sell_on_avito
             target.sync_status = AvitoProductProfile.SyncStatus.IDLE
             target.last_error = "Avito Item API предоставил только доступные метаданные объявления."
             target.full_clean()
@@ -417,6 +436,8 @@ def rebind_listing(*, connection, product, product_kind, actor=None):
                 details={
                     "avito_item_id": connection.remote_listing.avito_item_id,
                     "old_product_id": old_profile.product_id,
+                    "sell_on_avito": target.sell_on_avito,
+                    "sell_intent_explicit": sell_on_avito is not None,
                     "remote_price_imported": price_imported,
                 },
             )

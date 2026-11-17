@@ -330,11 +330,12 @@ def listing_bind(request, pk):
     if request.method == "POST" and form.is_valid():
         kind, product = form.cleaned_data["product_ref"]
         try:
-            connection = bind_listing(listing=listing, product=product, product_kind=kind, actor=request.user)
+            connection = bind_listing(listing=listing, product=product, product_kind=kind, actor=request.user,
+                                      sell_on_avito=form.cleaned_data['sell_on_avito'] if 'sell_intent_present' in request.POST else None)
         except (ValidationError, AvitoAPIError) as exc:
             form.add_error(None, _error_text(exc))
         else:
-            flag_status = "включён" if connection.profile.sell_on_avito else "выключен: объявление неактивно"
+            flag_status = "включён" if connection.profile.sell_on_avito else "выключен"
             messages.success(request, f"Объявление связано с товаром. Флаг продажи на Avito {flag_status}.")
             return redirect("integrations:connections")
     return render(request, "integrations/bind.html", {"listing": listing, "form": form, "query": query})
@@ -350,11 +351,13 @@ def listing_rebind(request, pk):
     if request.method == "POST" and form.is_valid():
         kind, product = form.cleaned_data["product_ref"]
         try:
-            rebind_listing(connection=connection, product=product, product_kind=kind, actor=request.user)
+            connection = rebind_listing(connection=connection, product=product, product_kind=kind, actor=request.user,
+                                        sell_on_avito=form.cleaned_data['sell_on_avito'] if 'sell_intent_present' in request.POST else None)
         except (ValidationError, AvitoAPIError) as exc:
             form.add_error(None, _error_text(exc))
         else:
-            messages.success(request, "Объявление перепривязано. Его Avito ID сохранён.")
+            flag_status = 'включён' if connection.profile.sell_on_avito else 'выключен'
+            messages.success(request, f"Объявление перепривязано. Его Avito ID сохранён. Флаг продажи на Avito {flag_status}.")
             return redirect("integrations:connections")
     return render(request, "integrations/rebind.html", {"connection": connection, "form": form, "query": query})
 

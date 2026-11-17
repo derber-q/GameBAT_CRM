@@ -83,7 +83,10 @@ def claim(request,agent_id,instance,data):
 
 @agent_api('POST')
 def result(request,agent_id,instance,data,request_id):
-    from .models import AvitoShippingPrintJob
+    from .models import AvitoShippingPrintJob, SaleLabelPrintJob
+    if SaleLabelPrintJob.objects.filter(request_id=request_id).exists():
+        from .sale_labels import agent_result
+        return JsonResponse(agent_result(agent_id,instance,request_id,data))
     if AvitoShippingPrintJob.objects.filter(request_id=request_id).exists():
         from .avito_shipping import agent_result
         return JsonResponse(agent_result(agent_id,instance,request_id,data))
@@ -92,7 +95,13 @@ def result(request,agent_id,instance,data,request_id):
 
 @agent_api('GET')
 def document(request,agent_id,instance,data,request_id):
-    from .models import AvitoShippingPrintJob
+    from .models import AvitoShippingPrintJob, SaleLabelPrintJob
+    if SaleLabelPrintJob.objects.filter(request_id=request_id).exists():
+        from .sale_labels import agent_owned
+        job=agent_owned(agent_id,instance,request_id)
+        if job.state not in service.AGENT_ACTIVE:
+            raise service.AgentError('document_unavailable')
+        return FileResponse(job.file.open('rb'),content_type='application/pdf',filename=f'label-{job.request_id}.pdf')
     if AvitoShippingPrintJob.objects.filter(request_id=request_id).exists():
         from .avito_shipping import agent_owned
         job=agent_owned(agent_id,instance,request_id)

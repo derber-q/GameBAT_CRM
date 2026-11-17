@@ -125,6 +125,9 @@ def request_print(*, order, actor, request_id):
     _check_actor(actor)
     if order.fake:
         raise ValidationError('Это тестовый заказ Маркета.')
+    from .models import SaleLabelPrintJob
+    if SaleLabelPrintJob.objects.filter(request_id=_uuid(request_id)).exists():
+        raise ValidationError('Ключ принадлежит другому заданию печати.')
     with transaction.atomic():
         OrderMetadata.objects.select_for_update().get(pk=order.pk)
         existing = MarketPrintJob.objects.filter(request_id=_uuid(request_id)).first()

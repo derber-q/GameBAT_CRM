@@ -116,12 +116,16 @@ class AvitoCounterBrowserChecks(StaticLiveServerTestCase):
             link = section.get_by_role('link', name=self.listing.title, exact=True)
             expect(link).to_have_attribute('href', self.listing.url)
             expect(link).to_have_attribute('target', '_blank')
+            # Первый опрос при переходе должен завершиться до следующего focus:
+            # скрипт намеренно не запускает второй запрос поверх уже выполняющегося.
+            page.wait_for_load_state('networkidle')
             def resolve_actions():
                 CDWarehouseStock.objects.filter(cd=self.cd).update(quantity=3)
                 AvitoRemoteListing.objects.filter(pk=listing.pk).update(status='active')
             run(resolve_actions)
             page.evaluate("window.dispatchEvent(new Event('focus'))")
             expect(badge).to_have_text('0')
+            page.wait_for_load_state('networkidle')
             expect(section.get_by_role('heading')).to_have_text('Необходимые действия: 0')
             expect(counter).not_to_have_class('market-alert-counter avito-alert-counter has-pending')
             page.goto(self.live_server_url + reverse('admin:index'))
@@ -134,6 +138,7 @@ class AvitoCounterBrowserChecks(StaticLiveServerTestCase):
             expect(badge).to_have_text('1')
             expect(counter).to_have_css('background-color', 'rgb(255, 241, 201)')
             page.locator('#header').screenshot(path=str(output / 'admin.png'))
+            page.wait_for_load_state('networkidle')
             context.route('**/avito/actions/count/*', lambda route: route.fulfill(status=503, json={'error': 'offline'}))
             page.evaluate("window.dispatchEvent(new Event('focus'))")
             expect(counter).to_have_attribute('title', 'Avito: показаны последние данные. Не удалось обновить счётчик.')

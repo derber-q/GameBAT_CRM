@@ -6,6 +6,7 @@
   const status = root.querySelector('[data-avito-sound-status]');
   let audio, fallbackState;
   const enabledKey = 'resource.avito.sound.v1', stateKey = 'resource.avito.actions.v1';
+  const REPEAT_MS = 5 * 60 * 1000;
   let enabled = false, enabling = false, blocked = false, latest = null;
   const reportSound = window.GameBAT.notificationSound.register('avito', enableSound);
   function publishSoundState() {
@@ -63,13 +64,19 @@
         const previous = read(stateKey), current = latest;
         if (previous && previous.at > current.at) return;
         const added = previous && current.keys.some(key => !previous.keys.includes(key));
-        if (added && read(enabledKey) && !blocked) {
+        // Дедлайн общий для вкладок и сохраняется при перезагрузке. Первый
+        // снимок задаёт исходное состояние, но сам по себе не включает звук.
+        let lastAlertAt = previous?.lastAlertAt ?? previous?.at ?? current.at;
+        const repeatDue = current.keys.length > 0 && current.at - lastAlertAt >= REPEAT_MS;
+        if ((added || repeatDue) && read(enabledKey) && !blocked) {
           await play();
-          status.textContent = 'Avito: появились новые необходимые действия.';
+          lastAlertAt = current.at;
+          status.textContent = added ? 'Avito: появились новые необходимые действия.'
+            : 'Avito: необходимые действия ещё не выполнены. Повтор через 5 минут.';
           enabled = true;
           publishSoundState();
         }
-        save(current);
+        save({...current, lastAlertAt: current.keys.length ? lastAlertAt : null});
       });
     } catch (_) {failed();}
   }
@@ -83,12 +90,12 @@
       await locked(() => {
         localStorage.setItem(enabledKey, 'true');
         const previous = read(stateKey);
-        if (latest && (!previous || latest.at >= previous.at)) save(latest);
+        if (latest && (!previous || latest.at >= previous.at)) save({...latest, lastAlertAt: latest.at});
       });
       blocked = false;
       enabled = true;
       status.classList.remove('error-text');
-      status.textContent = 'Звук Avito включён. Новые действия будут озвучены автоматически.';
+      status.textContent = 'Звук Avito включён. Напоминания повторяются каждые 5 минут, пока есть необходимые действия.';
     } catch (_) {failed();}
     finally {enabling = false; publishSoundState();}
   }

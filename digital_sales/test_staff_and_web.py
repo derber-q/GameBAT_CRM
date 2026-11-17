@@ -23,6 +23,46 @@ from .services import manual_sale, move_balance, confirm_order, complete_sale
 
 
 class StaffAndWebTests(TestCase):
+    def test_supplier_balance_button_uses_reconciliation_without_changing_money(self):
+        from telegram_bots.menu import SUPPLIER_BALANCE, main_menu
+        from .models import SupplierPurchase, BalanceMovement
+        move_balance(actor=self.user,supplier_id=self.supplier.pk,amount='100',kind='opening',reason='Тест')
+        SupplierPurchase.objects.create(order=self.order,amount='10',occurred_at=timezone.now())
+        before=BalanceMovement.objects.count()
+        self.assertIn(SUPPLIER_BALANCE.code,str(main_menu(self.user)))
+        result=staff_update(self.bot.pk,self.update(800,data=SUPPLIER_BALANCE.code))
+        self.assertIn('+90,00',result['text'])
+        self.assertIn(self.supplier.name,result['text'])
+        self.assertEqual(BalanceMovement.objects.count(),before)
+        plain=get_user_model().objects.create_user('no-supplier-reconciliation')
+        self.assertNotIn(SUPPLIER_BALANCE.code,str(main_menu(plain)))
+
+    def test_web_can_confirm_fulfillment_without_supplier_message_or_new_sale(self):
+        from .models import SupplierPurchase, BalanceMovement
+        self.order.goods_received=False
+        self.order.state='goods'
+        self.order.save(update_fields=['goods_received','state'])
+        SupplierPurchase.objects.create(order=self.order,amount='10',occurred_at=timezone.now())
+        before=BalanceMovement.objects.count()
+        response=self.client.post(reverse('digital_sales:action',args=[self.order.pk]),{
+            'action':'confirm_goods','revision':self.order.revision})
+        self.assertEqual(response.status_code,302)
+        self.order.refresh_from_db()
+        self.assertTrue(self.order.goods_received)
+        self.assertEqual(self.order.state,'ready')
+        self.assertIsNone(self.order.sale_id)
+        self.assertEqual(BalanceMovement.objects.count(),before)
+        self.assertEqual(SupplierPurchase.objects.filter(order=self.order).count(),1)
+
+    def test_web_can_cancel_incoming_duplicate_before_sale_creation(self):
+        response=self.client.post(reverse('digital_sales:action',args=[self.order.pk]),{
+            'action':'cancel','revision':self.order.revision})
+        self.assertEqual(response.status_code,302)
+        self.order.refresh_from_db()
+        self.assertTrue(self.order.processing_stopped)
+        self.assertEqual(self.order.state,'cancelled')
+        self.assertIsNone(self.order.sale_id)
+
     def setUp(self):
         SystemProduct.objects.get_or_create(kind='DIGITAL_PRODUCT')
         self.enterContext(patch('digital_sales.crypto.cipher', return_value=Fernet(Fernet.generate_key())))
@@ -60,10 +100,11 @@ class StaffAndWebTests(TestCase):
                           for button in row}, {'digital_sales', 'menu'})
 
     def test_explicit_balance_resend_sends_new_message_instead_of_edit(self):
+        from .crypto import encrypt
         from .models import BalanceObservation
         source = SupplierMessage.objects.create(supplier=self.supplier, chat_id=-99, message_id=500,
             occurred_at=timezone.now(), kind='balance', fingerprint='synthetic-resend',
-            encrypted_payload='not-used', parsed={})
+            encrypted_payload=encrypt({'text':'Баланс: 100 руб.'}), parsed={})
         observation = BalanceObservation.objects.create(supplier=self.supplier, message=source,
             balance='100', expected='0', difference='100', credits_snapshot='0', purchases_snapshot='0')
         Notification.objects.create(access=self.access, observation=observation,

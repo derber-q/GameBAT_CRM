@@ -2,7 +2,7 @@
 {% load static %}
 {% block body_class %}sale-entry-page{% endblock %}
 {% block title %}Новая продажа · ReSOURCE{% endblock %}
-{% block extra_head %}<script src="{% static 'js/stock-lines.js' %}?v=20261112-3" defer></script>{% endblock %}
+{% block extra_head %}<script src="{% static 'js/stock-lines.js' %}?v=20261116-scan-1" defer></script>{% endblock %}
 {% block content %}
 {% if avito_order %}<div class="alert alert-info"><strong>Avito №{{ avito_order.external_id }} · {{ avito_order.carrier }}</strong><p>Проверьте весь состав и количество: список Avito не показывает число штук каждого товара. Автоподбор использует только точное совпадение заголовка привязанного объявления; отсутствующие товары добавьте из базы.</p><p>{{ avito_order.titles|join:"; " }}</p><p>Сумма на странице Avito: {{ avito_order.displayed_amount|default_if_none:"не указана" }} ₽. Цены товаров берутся из CRM; проверьте скидки и комиссию перед сохранением.</p></div>{% endif %}
 <div class="page-heading"><div><p class="eyebrow">{% if trip_draft %}Прямая отгрузка · Заказ №{{ trip_order.pk }}{% else %}Списание с конкретного склада{% endif %}</p><h1>Новая продажа</h1><p class="muted">Цена каждой позиции сохранится в истории продажи.</p></div><div class="heading-actions">{% if can_import_wholesale %}<a class="button" href="{% url 'sales:import_wholesale' %}">Загрузить оптовый прайс</a>{% endif %}{% if can_view_sales %}<a class="button button-secondary" href="{% url 'sales:list' %}">Назад</a>{% endif %}</div></div>

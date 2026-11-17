@@ -1,5 +1,6 @@
 """Повтор начальной проверки Telegram: только чтение API, без повторов отправки."""
 from .client import TelegramError
+from integrations.worker_health import BLOCKED_ERRORS
 
 
 def initialize_connection(client, username, stop, *, once=False, renew=None, health=None, keep_running=None):
@@ -18,7 +19,9 @@ def initialize_connection(client, username, stop, *, once=False, renew=None, hea
         except TelegramError as exc:
             if health:
                 health.progress(verified=False, error=exc.category)
-            if once or exc.category not in ('timeout', 'network', 'rate_limited'):
+            # Отказы безопасных getMe/getWebhookInfo, включая HTTP 5xx,
+            # не превращают временный сбой Telegram в постоянную остановку.
+            if once or exc.category in BLOCKED_ERRORS:
                 raise
             failures = min(failures + 1, 6)
             stop.wait(min(60, 5 * 2**failures))

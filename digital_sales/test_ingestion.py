@@ -14,6 +14,26 @@ import uuid
 
 
 class IngestionTests(TestCase):
+    def test_account_creation_fee_is_not_an_extra_delivered_bundle(self):
+        rows = '● Новый аккаунт · 45 руб\n● PS Deluxe · 100 руб | #7617\n● PS Ea Play · 200 руб | #7618'
+        order = accept_update(self.event(checklist(rows, '345', '1000')))
+        result = accept_update(self.event('✅ Ваш заказ #7617+1 готов!', reply_to_message={'message_id':1}))
+        self.assertEqual(result.pk, order.pk)
+        self.assertEqual(result.state, 'ready')
+        self.assertTrue(result.goods_received)
+        self.assertEqual(SupplierPurchase.objects.filter(order=order).count(), 1)
+        self.assertEqual(result.cost, Decimal('345'))
+
+    def test_edit_with_replaced_references_does_not_create_another_order(self):
+        original = self.event(checklist())
+        order = accept_update(original)
+        edited = dict(original['message'],text=checklist().replace('#6099','#9999'),edit_date=int(timezone.now().timestamp())+20)
+        result = accept_update({'update_id':2,'edited_message':edited})
+        self.assertEqual(result.pk, order.pk)
+        self.assertEqual(DigitalOrder.objects.count(),1)
+        self.assertEqual(SupplierPurchase.objects.count(),1)
+        self.assertTrue(result.review_reason)
+
     def setUp(self):
         from catalog.models import SystemProduct
         SystemProduct.objects.get_or_create(kind='DIGITAL_PRODUCT')

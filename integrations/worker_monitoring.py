@@ -10,7 +10,8 @@ from core.db_retry import retry_database_lock
 
 from .worker_models import WorkerController, WorkerService, WorkerProcess, WorkerCommand, WorkerEvent, SERVICE_CHOICES
 from .worker_policy import expected_services
-from .worker_runtime import SERVICES, STALE_SECONDS, START_SECONDS, STABLE_SECONDS, RETRY_SECONDS, MAX_FAILURES
+from .worker_runtime import (SERVICES, STALE_SECONDS, START_SECONDS, STABLE_SECONDS, RETRY_SECONDS, MAX_FAILURES,
+                             TELEGRAM_SERVICES, TELEGRAM_RETRY_SECONDS, STARTUP_GRACE_SECONDS)
 from .worker_health import process_health
 
 logger = logging.getLogger('gamebat.business')
@@ -86,11 +87,13 @@ def request_recovery(actor, services, request_id):
 
 def _failed(service, command, reason, now):
     manual = command is not None
-    service.failures = min(MAX_FAILURES, service.failures + 1)
-    service.auto_paused = manual or service.failures >= MAX_FAILURES
+    continuous = service.code in TELEGRAM_SERVICES
+    service.failures = min(len(TELEGRAM_RETRY_SECONDS) if continuous else MAX_FAILURES, service.failures + 1)
+    service.auto_paused = False if continuous else manual or service.failures >= MAX_FAILURES
     service.error = reason
     service.launch_instance = service.launch_started_at = service.stable_since = None
-    service.next_attempt_at = now + timedelta(seconds=RETRY_SECONDS[min(service.failures - 1, 2)])
+    delays = TELEGRAM_RETRY_SECONDS if continuous else RETRY_SECONDS
+    service.next_attempt_at = now + timedelta(seconds=delays[min(service.failures - 1, len(delays) - 1)])
     service.status = 'paused' if service.auto_paused else 'stopped'
     _finish(command, 'error', reason, now)
     event(service, 'launch_failed', reason, command)
@@ -128,6 +131,11 @@ def supervise_once(adapter, *, now=None, instance=None):
         now = timezone.now()
     for code in SERVICES:
         service, _ = WorkerService.objects.get_or_create(code=code)
+        continuous = code in TELEGRAM_SERVICES
+        if continuous and service.auto_paused:
+            # auto_paused — прежний автоматический предел падений, не ручное
+            # выключение бота. Политика expected по-прежнему имеет приоритет.
+            service.auto_paused = False
         before = (service.expected, service.status, service.error)
         service.expected, service.observed_at = policy.get(code, 'unconfigured'), now
         command = WorkerCommand.objects.filter(service=code, state__in=['queued', 'running']).first()
@@ -173,7 +181,7 @@ def supervise_once(adapter, *, now=None, instance=None):
             if health_status == 'blocked':
                 _finish(command, 'error', health_error, now)
             if (health_error in ('stalled', 'executor_stalled') and before[2] not in ('stalled', 'executor_stalled') and not service.auto_paused
-                    and service.failures < MAX_FAILURES and hasattr(adapter, 'stop_verified')):
+                    and (continuous or service.failures < MAX_FAILURES) and hasattr(adapter, 'stop_verified')):
                 own = next((row for row in matches if row['pid'] == observed.pid and
                             row['birth'] == observed.birth and row['instance'] == str(observed.instance)), None)
                 try:
@@ -208,8 +216,8 @@ def supervise_once(adapter, *, now=None, instance=None):
                     continue
                 _failed(service, command, 'exited', now)
                 command = None
-            service.status = 'paused' if service.auto_paused or service.failures >= MAX_FAILURES else 'stopped'
-            if command or (not service.auto_paused and service.failures < MAX_FAILURES and
+            service.status = 'paused' if not continuous and (service.auto_paused or service.failures >= MAX_FAILURES) else 'stopped'
+            if command or ((continuous or not service.auto_paused and service.failures < MAX_FAILURES) and
                            (not service.next_attempt_at or now >= service.next_attempt_at)):
                 # Между общим снимком и запуском мог появиться общий/старый worker.
                 try:
@@ -260,6 +268,11 @@ def monitoring_snapshot(*, now=None, with_history=False, include_queues=True):
         # Проверяем прочитанные отметки относительно окончания чтения, как supervisor.
         now = timezone.now()
     controller_ok = bool(controller and _fresh(controller.heartbeat_at, now) and not controller.error)
+    # Только новая загрузка CRM даёт тихое окно. Время хранится на сервере:
+    # обновление страницы не начинает отсчёт заново и не прячет старую ошибку.
+    boot_at = WorkerEvent.objects.filter(kind='boot_check').order_by('-created_at').values_list('created_at', flat=True).first()
+    booting = bool(boot_at and timedelta(0) <= now - boot_at < timedelta(seconds=STARTUP_GRACE_SECONDS))
+    controller_starting = bool(managed and not controller_ok and booting and not controller.error)
     services, incidents = [], []
     for code, name in SERVICE_CHOICES:
         row = known.get(code)
@@ -272,32 +285,44 @@ def monitoring_snapshot(*, now=None, with_history=False, include_queues=True):
         health_status, health_error = process_health(process, code, now)
         if expected == 'required' and status == 'running' and health_status != 'running':
             status = health_status
-        alarm = expected == 'required' and status != 'running'
+        error_code = health_error if process else row.error if row else ''
+        starting = bool(expected == 'required' and status != 'running' and booting
+                        and not (row and row.failures) and error_code in ('', 'checking')
+                        and (status in ('recovering', 'stopped') or controller_starting))
+        alarm = expected == 'required' and status != 'running' and not starting
         if alarm and row and row.incident:
-            incidents.append({'id': str(row.incident), 'started_at': row.incident_started_at})
+            # Если прежний инцидент пережил рестарт, новая неудача запуска
+            # должна дать первый сигнал после тихого окна, а не ждать старый цикл.
+            old_incident = bool(boot_at and row.incident_started_at and row.incident_started_at < boot_at)
+            incidents.append({'id': f'{row.incident}:{boot_at.isoformat()}' if old_incident else str(row.incident),
+                              'started_at': boot_at if old_incident else row.incident_started_at})
         queue = queue_snapshot(code, now=now, enabled=expected == 'required') if include_queues else {}
         services.append({'code': code, 'name': name, 'expected': expected,
             'expected_label': EXPECTED_LABELS[expected], 'status': status, 'status_label': STATUS_LABELS[status],
-            'alarm': alarm, 'incident': str(row.incident) if row and row.incident else None,
+            'alarm': alarm, 'starting': starting, 'incident': str(row.incident) if row and row.incident else None,
             'heartbeat_at': row.heartbeat_at if row else None, 'last_started_at': row.last_started_at if row else None,
             'progress_at': process.progress_at if process else None,
             'verified_at': process.verified_at if process else None,
             'executor_at': process.executor_at if process else None,
-            'failures': row.failures if row else 0, 'paused': bool(row and (row.auto_paused or row.failures >= MAX_FAILURES)),
+            'failures': row.failures if row else 0, 'continuous_recovery': code in TELEGRAM_SERVICES,
+            'paused': bool(row and (row.auto_paused or code not in TELEGRAM_SERVICES and row.failures >= MAX_FAILURES)),
             'error': ERROR_LABELS.get((health_error if process else row.error if row else '') if expected == 'required' else '',
                                     'Работа обработчика не подтверждена.' if health_error and expected == 'required' else ''),
             'can_start': expected == 'required' and status in ('stopped', 'paused'), **queue})
-    controller_alarm = managed and not controller_ok
+    controller_alarm = managed and not controller_ok and not controller_starting
     if controller_alarm:
         incidents.append({'id': f'controller:{controller.incident}:{controller.heartbeat_at}',
                           'started_at': controller.incident_started_at or controller.heartbeat_at})
     data = {'services': services, 'observed_at': controller.heartbeat_at if controller else None,
             'server_time': now, 'mode': 'managed' if managed else 'site_only',
             'controller_ok': controller_ok, 'controller_alarm': controller_alarm,
+            'starting': controller_starting or any(row['starting'] for row in services),
+            'startup_started_at': boot_at, 'startup_grace_seconds': STARTUP_GRACE_SECONDS,
             'controller_label': 'Контроллер недоступен' if controller_alarm else
                 'Контроль включён' if managed else 'Только сайт: автоматический запуск отключён',
             'alarm': controller_alarm or any(row['alarm'] for row in services), 'incidents': incidents,
             'running_count': sum(row['status'] == 'running' for row in services),
+            'starting_count': sum(row['starting'] for row in services),
             'stopped_count': sum(row['alarm'] for row in services),
             'disabled_count': sum(row['expected'] != 'required' for row in services)}
     if with_history:

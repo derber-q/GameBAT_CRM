@@ -8,9 +8,13 @@ from . import market_views
 from . import notification_views
 from . import partner_views
 from . import avito_order_views
+from . import sale_label_views
 
 app_name = "sales"
 urlpatterns = [
+    path('by-barcode/', sale_label_views.scan, name='scan'),
+    path('<int:pk>/label/print/', sale_label_views.print_label, name='label_print'),
+    path('<int:pk>/label/print/<uuid:request_id>/', sale_label_views.print_status, name='label_print_status'),
     path('avito-extension/', avito_order_views.bridge, name='avito_bridge'),
     path('avito-orders/<int:pk>/create/', avito_order_views.create, name='avito_create'),
     path('partner-settlement/preview/', partner_views.settlement_preview, name='settlement_preview'),

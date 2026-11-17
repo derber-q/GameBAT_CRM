@@ -6,6 +6,7 @@
 <link rel="stylesheet" href="{% static 'css/sale-market.css' %}?v=20261101-1">
 <script src="{% static 'js/sale-market-print.js' %}?v=20261101-1" defer></script>
 <script src="{% static 'js/sale-market-actions.js' %}?v=20261031-1" defer></script>
+<script src="{% static 'js/sale-label-print.js' %}?v=20261114-1" defer></script>
 {% endblock %}
 {% block content %}
 {% include 'orders/_operation_source.html' with operation=sale.trip_operation %}
@@ -16,6 +17,7 @@
     <p class="muted">{{ sale.created_at|date:"d.m.Y H:i" }} · {% if sale.created_by %}{{ sale.created_by.full_name|default:sale.created_by.username }}{% else %}{{ sale.storefront_source_label|default:"Сайт" }}{% endif %}</p>
   </div>
   <div class="heading-actions">
+    {% include 'sales/_sale_label_button.html' %}
     <a class="button button-secondary" href="{% url 'sales:invoice' sale.pk %}">Скачать накладную Excel</a>
     {% if sale.is_postpay_editable and perms.sales.edit_unpaid_postpay_sale or sale.is_postpay_editable and user.is_superuser %}<a class="button button-secondary" href="{% url 'sales:edit' sale.pk %}">Изменить состав</a>{% endif %}
     {% if can_cancel %}<button class="button button-danger" type="button" data-dialog-open="sale-cancel-dialog">Отменить продажу</button>{% endif %}

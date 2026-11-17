@@ -40,6 +40,12 @@ def notification_allowed(row):
             return False
         if row.observation_id:
             from .reconciliation import standalone
+            if ':reminder:' in row.event_key:
+                from .models import BalanceObservation
+                from .reconciliation import card
+                current = BalanceObservation.objects.select_related('message', 'supplier', 'topup_movement').get(pk=row.observation_id)
+                if current.resolved_at or current.topup_movement_id or not card(current).get('reply_markup'):
+                    return False
             return standalone(row.observation)
         if row.event_key.startswith('balance:'):
             # Старый outbox мог содержать ещё не отправленные предупреждения из

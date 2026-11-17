@@ -7,8 +7,10 @@ from core.external_policy import require_live_operation
 
 
 class TelegramError(Exception):
-    def __init__(self, category, *, uncertain=False):
+    def __init__(self, category, *, uncertain=False, method='', status_code=None):
         self.category, self.uncertain = category, uncertain
+        self.method = method
+        self.status_code = status_code if type(status_code) is int else None
         super().__init__('Telegram: ' + category)
 
 
@@ -24,16 +26,16 @@ class TelegramClient:
         require_live_operation('telegram_api')
         if method not in self.METHODS:
             raise ValueError('Недопустимый метод Telegram')
-        sending = method in ('sendDocument', 'sendPhoto')
+        sending = method in ('sendDocument', 'sendPhoto', 'sendMessage')
         try:
             response = self._session.post(f'https://api.telegram.org/bot{self._token}/{method}',
                 json=data if files is None else None, data=data if files else None, files=files,
                 timeout=(5, 65 if sending else 30 if method == 'getUpdates' else 12), allow_redirects=False)
             payload = response.json()
         except requests.Timeout:
-            raise TelegramError('timeout', uncertain=sending) from None
+            raise TelegramError('timeout', uncertain=sending, method=method) from None
         except (requests.RequestException, ValueError):
-            raise TelegramError('network', uncertain=sending) from None
+            raise TelegramError('network', uncertain=sending, method=method) from None
         if not isinstance(payload, dict) or not payload.get('ok'):
             if (method == 'unpinChatMessage' and isinstance(payload, dict) and payload.get('error_code') == 400
                     and any(reason in str(payload.get('description', '')).lower()
@@ -43,15 +45,16 @@ class TelegramClient:
             if (editing and isinstance(payload, dict) and payload.get('error_code') == 400
                     and any(reason in str(payload.get('description', '')).lower()
                             for reason in ('message to edit not found', "message can't be edited"))):
-                raise TelegramError('message_missing') from None
+                raise TelegramError('message_missing', method=method, status_code=response.status_code) from None
             if (editing and isinstance(payload, dict)
                     and payload.get('error_code') == 400 and 'message is not modified' in str(payload.get('description', '')).lower()):
                 return {'message_id': data['message_id']}
             code = payload.get('error_code', response.status_code) if isinstance(payload, dict) else response.status_code
             category = {401: 'unauthorized', 403: 'forbidden', 409: 'conflict', 429: 'rate_limited'}.get(code, 'refused')
-            raise TelegramError(category, uncertain=sending and (not isinstance(code, int) or code >= 500))
+            raise TelegramError(category, uncertain=sending and (not isinstance(code, int) or code >= 500),
+                                method=method, status_code=response.status_code)
         if not 200 <= response.status_code < 300 or 'result' not in payload:
-            raise TelegramError('invalid_response', uncertain=sending)
+            raise TelegramError('invalid_response', uncertain=sending, method=method, status_code=response.status_code)
         return payload['result']
 
     def message(self, chat_id, text, reply_markup=None):

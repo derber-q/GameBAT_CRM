@@ -60,6 +60,7 @@ INSTALLED_APPS = [
     "telegram_bots.apps.TelegramBotsConfig",
     "digital_sales.apps.DigitalSalesConfig",
     "digital_prices.apps.DigitalPricesConfig",
+    "digital_shop.apps.DigitalShopConfig",
     "wholesale_bot.apps.WholesaleBotConfig",
     "yandex_market.apps.YandexMarketConfig",
     "resource_storefront.apps.ResourceStorefrontConfig",

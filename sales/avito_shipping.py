@@ -63,8 +63,8 @@ def request_label(*, actor, data):
     require_live_operation('avito_shipping_print')
     check_actor(actor)
     key = uuid.UUID(data['request_id'])
-    from .models import MarketPrintJob
-    if MarketPrintJob.objects.filter(request_id=key).exists():
+    from .models import MarketPrintJob, SaleLabelPrintJob
+    if MarketPrintJob.objects.filter(request_id=key).exists() or SaleLabelPrintJob.objects.filter(request_id=key).exists():
         raise ValidationError('Ключ уже принадлежит другому заданию печати.')
     order = prepare_order(data['order'], actor)
     existing = AvitoShippingPrintJob.objects.filter(request_id=key).first()
@@ -113,26 +113,28 @@ def request_label(*, actor, data):
     return job
 
 
-def process_jobs(stop=None):
+def process_jobs(stop=None, *, model=None, check_permission=None, title_prefix='Avito shipment '):
+    model = model or AvitoShippingPrintJob
+    check_permission = check_permission or check_actor
     require_live_operation('avito_shipping_worker')
     if getattr(settings,'LABEL_PRINT_BACKEND','native') != 'native':
         return
     from .label_printing import print_pdf, print_job_completed, release_print_job
     now = timezone.now()
     # Маркер printing выставлен до Windows: после сбоя нельзя печатать повторно.
-    for job in AvitoShippingPrintJob.objects.filter(print_backend='native', state__in=['printing','spooled']):
+    for job in model.objects.filter(print_backend='native', state__in=['printing','spooled']):
         if job.updated_at < now-timedelta(minutes=3):
             job.state, job.last_error = 'uncertain', 'Печать не подтверждена. Проверьте стикер; автоматического повтора нет.'
             job.save(update_fields=['state','last_error','updated_at'])
-    for pk in list(AvitoShippingPrintJob.objects.filter(print_backend='native', state__in=['pending','spooled']).values_list('pk',flat=True)[:30]):
+    for pk in list(model.objects.filter(print_backend='native', state__in=['pending','spooled']).values_list('pk',flat=True)[:30]):
         if stop is not None and stop.is_set():
             return
         with transaction.atomic():
-            job = AvitoShippingPrintJob.objects.select_for_update().get(pk=pk)
+            job = model.objects.select_for_update().get(pk=pk)
             if job.state not in ('pending','spooled'):
                 continue
             try:
-                check_actor(job.actor)
+                check_permission(job.actor)
             except PermissionDenied:
                 job.state,job.last_error='error','У сотрудника больше нет прав на печать.'
                 job.save(update_fields=['state','last_error','updated_at'])
@@ -143,7 +145,7 @@ def process_jobs(stop=None):
                 submit=True
             else:
                 submit=False
-        title = 'Avito shipment '+str(job.request_id)
+        title = title_prefix + str(job.request_id)
         try:
             if submit:
                 with job.file.open('rb') as file:
@@ -163,10 +165,12 @@ def process_jobs(stop=None):
             job.save(update_fields=['state','last_error','updated_at'])
 
 
-def agent_claim(agent, instance):
+def agent_claim(agent, instance, *, model=None, check_permission=None, title_prefix='Avito shipment '):
+    model = model or AvitoShippingPrintJob
+    check_permission = check_permission or check_actor
     from .print_agents import _session, AGENT_ACTIVE
     _session(agent, instance)
-    jobs = AvitoShippingPrintJob.objects.select_for_update().filter(agent=agent,print_backend='agent')
+    jobs = model.objects.select_for_update().filter(agent=agent,print_backend='agent')
     for old in jobs.filter(state__in=AGENT_ACTIVE):
         if old.agent_claimed_at < timezone.now()-timedelta(minutes=3):
             old.state,old.last_error='uncertain','Агент не подтвердил печать. Проверьте стикер.'
@@ -174,33 +178,35 @@ def agent_claim(agent, instance):
     job=jobs.filter(state__in=AGENT_ACTIVE).order_by('pk').first() or jobs.filter(state='agent_waiting').order_by('pk').first()
     if not job:
         return {'job':None}
-    check_actor(job.actor)
+    check_permission(job.actor)
     if job.state=='agent_waiting':
         job.state,job.agent_claim,job.agent_claimed_at='agent_claimed',uuid.uuid4(),timezone.now()
         job.save(update_fields=['state','agent_claim','agent_claimed_at','updated_at'])
     return {'job':{'id':str(job.request_id),'claim':str(job.agent_claim),'sha256':job.document_digest,
-                   'state':job.state,'title':'Avito shipment '+str(job.request_id)}}
+                   'state':job.state,'title':title_prefix+str(job.request_id)}}
 
 
-def agent_owned(agent_id, instance, request_id, lock=False):
+def agent_owned(agent_id, instance, request_id, lock=False, *, model=None, check_permission=None):
+    model = model or AvitoShippingPrintJob
+    check_permission = check_permission or check_actor
     from .print_agents import _session, AgentError
     from .models import PrintAgent
     agent=PrintAgent.objects.get(pk=agent_id,enabled=True)
     _session(agent,instance)
-    qs=AvitoShippingPrintJob.objects.select_for_update() if lock else AvitoShippingPrintJob.objects
+    qs=model.objects.select_for_update() if lock else model.objects
     job=qs.filter(request_id=request_id,agent=agent,print_backend='agent').first()
     if not job:
         raise AgentError('job_not_found',404)
-    check_actor(job.actor)
+    check_permission(job.actor)
     return job
 
 
 @transaction.atomic
-def agent_result(agent_id, instance, request_id, data):
+def agent_result(agent_id, instance, request_id, data, *, model=None, check_permission=None):
     from .models import PrintAgent
     from .print_agents import AgentError, AGENT_ACTIVE
     PrintAgent.objects.select_for_update().get(pk=agent_id,enabled=True)
-    job=agent_owned(agent_id,instance,request_id,lock=True)
+    job=agent_owned(agent_id,instance,request_id,lock=True,model=model,check_permission=check_permission)
     if data.get('claim')!=str(job.agent_claim) or data.get('sha256')!=job.document_digest:
         raise AgentError('claim_mismatch')
     state=data.get('state')

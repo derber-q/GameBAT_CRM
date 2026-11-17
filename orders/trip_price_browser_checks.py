@@ -31,7 +31,7 @@ class TripPriceBrowserChecks(StaticLiveServerTestCase):
         self.client.force_login(user)
         supplier = Supplier.objects.create(name='Поставщик B', letter='B', priority=1,
             legal_entity='B', phone_1='1', highlight_color='#37A7BA')
-        product = CD.objects.create(platform=Platform.objects.create(name='PS5'), name='Игра для проверки цены', sku='000PRICE')
+        product = CD.objects.create(platform=Platform.objects.create(name='PS5'), name='Игра для проверки цены', sku='000PRICE', cusa_ppsa_code='PPSA-00001')
         SupplierCDPrice.objects.create(supplier=supplier, cd=product, price=100)
         price = create_procurement_price_list(actor=user, exchange_rate_usdt_aed=4, exchange_rate_usdt_rub=100,
             delivery_general_usdt_per_kg=0, delivery_devices_usdt_per_kg=0,
@@ -126,10 +126,25 @@ class TripPriceBrowserChecks(StaticLiveServerTestCase):
             expect(page.locator('[data-procurement-profit]')).to_contain_text('-10319')
             run(lambda: change_price('110'))
             def supply():
-                advance_order_status(actor=user, order_id=orders[2].pk, next_status='confirmed')
-                advance_order_status(actor=user, order_id=orders[2].pk, next_status='receiving')
-                result = receive_stock_order(actor=user, order_id=orders[2].pk, warehouse_id=warehouse.pk)
-                return result.supply_id, result.supply.cd_items.get().purchase_unit_cost
+                from .arrival import confirm_arrival
+                from .arrival_documents import create_arrival_sale, create_arrival_supply
+                from .arrival_finalization import finalization_rows, finalize_arrival, prepare_supply_price_review
+                trip.refresh_from_db()
+                arrival = confirm_arrival(actor=user, batch_id=trip.pk, expected_revision=trip.revision,
+                    usdt_rub=100, usdt_aed=4, actual_delivery=170)
+                for order in orders:
+                    arrival.refresh_from_db()
+                    create = create_arrival_supply if order.is_stock_order else create_arrival_sale
+                    create(actor=user, arrival_id=arrival.pk, order_id=order.pk,
+                        expected_revision=arrival.revision, warehouse_id=warehouse.pk)
+                arrival.refresh_from_db()
+                finalize_arrival(actor=user, arrival_id=arrival.pk, expected_revision=arrival.revision,
+                    raw_rows=[dict(product_type=r.product_type,product_id=r.product_id,
+                        baseline_quantity=r.global_quantity,baseline_cost=str(r.current_cost),
+                        corrected_cost=str(r.current_cost),change_source='unchanged') for r in finalization_rows(arrival)])
+                orders[2].refresh_from_db()
+                prepare_supply_price_review(actor=user,supply_id=orders[2].supply_id)
+                return orders[2].supply_id, orders[2].supply.cd_items.get().purchase_unit_cost
             supply_id, supply_cost = run(supply)
             self.assertEqual(supply_cost, Decimal('2767'))
             page.goto(self.live_server_url + reverse('orders:trip_detail', args=(trip.pk,)))

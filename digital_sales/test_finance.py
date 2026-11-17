@@ -3,6 +3,7 @@ from decimal import Decimal
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError, PermissionDenied
 from django.test import TestCase
+from sales.models import Sale
 from sales.services import cancel_sale, mark_sale_paid, create_sale
 from sales.statistics_service import build_sales_statistics_report as build_report
 from .models import Buyer, Supplier, BalanceMovement, DigitalOrder

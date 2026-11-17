@@ -4,7 +4,7 @@
 
 Справочник исходников и метаданных схемы, без рабочих записей/ключей. Перегенерация: `.venv/Scripts/python.exe scripts/build_technical_reference.py`.
 
-## HTML-шаблоны (199)
+## HTML-шаблоны (203)
 
 ### `resource_storefront/templates/resource_storefront/_card.html`
 
@@ -130,7 +130,7 @@
 
 Части: `core/_test_environment_banner.html`, `integrations/_worker_alert.html`, `sales/_notification_assets.html`, `sales/_notification_counter.html`, `sales/_notification_panel.html`, `sales/_notification_sound_button.html`.
 
-Именованные действия: `accounts:logout`, `accounts:password_change`, `accounts:staff_by_group`, `accounts:user_list`, `admin:index`, `cash:register`, `catalog:warehouse`, `consignment:list`, `consignment:platform`, `core:exchange_rates`, `core:home`, `creditors:list`, `crm_backups:applications`, `crm_backups:dashboard`, `crm_backups:devices`, `digital_sales:dashboard`, `integrations:api_keys`, `integrations:avito`, `integrations:updates`, `integrations:workers`, `nomenclature:cd_list`, `nomenclature:create`, `nomenclature:list`, `nomenclature:tech_list`, `orders:list`, `partners:list`, `partners:partner_list`, `price:imports`, `price:index`, `price:site_links`, `pricing:avito_check`, `pricing:cd_list`, `pricing:digital_prices:catalog`, `pricing:list`, `pricing:tech_list`, `resource_storefront:manage`, `sales:cancelled`, `sales:completed`, `sales:create`, `sales:incomplete`, `sales:settlement_preview`, `statistics:index`, `supplies:list`, `telegram_bots:connection`, `telegram_bots:dashboard`, `warehouse:detail`, `warehouse:transfer_list`, `yandex_market:dashboard`.
+Именованные действия: `accounts:logout`, `accounts:password_change`, `accounts:staff_by_group`, `accounts:user_list`, `admin:index`, `cash:register`, `catalog:warehouse`, `consignment:list`, `consignment:platform`, `core:exchange_rates`, `core:home`, `creditors:list`, `crm_backups:applications`, `crm_backups:dashboard`, `crm_backups:devices`, `digital_sales:dashboard`, `integrations:api_keys`, `integrations:avito`, `integrations:updates`, `integrations:workers`, `nomenclature:cd_list`, `nomenclature:create`, `nomenclature:list`, `nomenclature:tech_list`, `orders:list`, `partners:list`, `partners:partner_list`, `price:imports`, `price:index`, `price:site_links`, `pricing:avito_check`, `pricing:cd_list`, `pricing:digital_prices:catalog`, `pricing:list`, `pricing:tech_list`, `resource_storefront:manage`, `sales:cancelled`, `sales:completed`, `sales:create`, `sales:incomplete`, `sales:scan`, `sales:settlement_preview`, `statistics:index`, `supplies:list`, `telegram_bots:connection`, `telegram_bots:dashboard`, `warehouse:detail`, `warehouse:transfer_list`, `yandex_market:dashboard`.
 
 ### `templates/cash/operation.html`
 
@@ -146,7 +146,7 @@
 
 ### `templates/catalog/_product_filters.html`
 
-Именованные действия: `warehouse:storage_location_autocomplete`.
+Именованные действия: `catalog:barcode_lookup`, `warehouse:storage_location_autocomplete`.
 
 ### `templates/catalog/warehouse.html`
 
@@ -338,7 +338,7 @@
 
 Части: `digital_sales/_pagination.html`.
 
-Именованные действия: `digital_sales:balance`, `digital_sales:buyer_create`, `digital_sales:buyer_edit`, `digital_sales:configuration`, `digital_sales:manual`, `digital_sales:order`, `sales:detail`.
+Именованные действия: `digital_sales:balance`, `digital_sales:buyer_create`, `digital_sales:buyer_edit`, `digital_sales:configuration`, `digital_sales:manual`, `digital_sales:order`, `digital_shop:dashboard`, `sales:detail`.
 
 ### `templates/digital_sales/form.html`
 
@@ -350,7 +350,7 @@
 
 Базовый шаблон: `digital_sales/base.html`.
 
-Части: `digital_sales/_pagination.html`.
+Части: `digital_sales/_pagination.html`, `sales/_sale_label_button.html`.
 
 Именованные действия: `digital_sales:action`, `digital_sales:buyer_create`, `digital_sales:dashboard`, `digital_sales:reveal`.
 
@@ -359,6 +359,22 @@
 Базовый шаблон: `digital_sales/base.html`.
 
 Именованные действия: `digital_sales:dashboard`, `digital_sales:download`, `digital_sales:order`.
+
+### `templates/digital_shop/_reconciliation.html`
+
+### `templates/digital_shop/dashboard.html`
+
+Базовый шаблон: `digital_sales/base.html`.
+
+Части: `digital_shop/_reconciliation.html`.
+
+Именованные действия: `digital_sales:dashboard`, `digital_shop:order`, `pricing:digital_prices:catalog`, `sales:detail`.
+
+### `templates/digital_shop/order.html`
+
+Базовый шаблон: `digital_sales/base.html`.
+
+Именованные действия: `digital_shop:dashboard`, `sales:detail`.
 
 ### `templates/integrations/_pagination.html`
 
@@ -814,6 +830,10 @@
 
 ### `templates/sales/_prepayment_choice.html`
 
+### `templates/sales/_sale_label_button.html`
+
+Именованные действия: `sales:label_print`.
+
 ### `templates/sales/avito_bridge.html`
 
 Базовый шаблон: `base.html`.
@@ -830,7 +850,7 @@
 
 Базовый шаблон: `base.html`.
 
-Части: `orders/_operation_source.html`, `sales/_market_cancel_dialog.html`, `sales/_market_controls.html`, `sales/_payment_partner_field.html`, `sales/_prepayment_choice.html`.
+Части: `orders/_operation_source.html`, `sales/_market_cancel_dialog.html`, `sales/_market_controls.html`, `sales/_payment_partner_field.html`, `sales/_prepayment_choice.html`, `sales/_sale_label_button.html`.
 
 Именованные действия: `sales:advance`, `sales:cancel`, `sales:edit`, `sales:invoice`, `sales:list`, `sales:mark_paid`, `sales:note_update`, `sales:payment_method`.
 
@@ -1080,7 +1100,7 @@
 
 ### `yandex_market/templates/yandex_market/object_list_widget.html`
 
-## JavaScript и CSS (99)
+## JavaScript и CSS (101)
 
 ### `browser_extensions/avito_check/background.js`
 
@@ -1264,7 +1284,7 @@ ReSOURCE: Автоматическая проверка рынка, резуль
 
 ### `static/js/avito-notifications.js`
 
-ReSOURCE: Бейдж и звук новых необходимых действий Avito, без повторного сигнала на неизменившийся список.
+ReSOURCE: Бейдж и получение актуального списка действий для звука и повторных напоминаний Avito.
 
 ### `static/js/avito-required-actions.js`
 
@@ -1273,6 +1293,10 @@ ReSOURCE: Локальные действия списка объявлений 
 ### `static/js/avito-sync-progress.js`
 
 ReSOURCE: Опрос прогресса задания Avito; постановка в очередь не равна завершённой синхронизации.
+
+### `static/js/barcode-feedback.js`
+
+ReSOURCE: Короткий отклик сканера. Ошибка звука не отменяет результат складской формы.
 
 ### `static/js/barcode-formset.js`
 
@@ -1382,6 +1406,10 @@ ReSOURCE: Превью защищённых изображений товара 
 
 ReSOURCE: Управление полями карточки, новинкой и исключениями поставщика с серверными permissions.
 
+### `static/js/sale-label-print.js`
+
+ReSOURCE: внутренняя этикетка продажи через прежний агент, без диалога браузера.
+
 ### `static/js/sale-market-actions.js`
 
 ReSOURCE: Прямые действия Яндекс-заказа; отмена требует подтверждения, готовность проверяет сервер.
@@ -1474,7 +1502,7 @@ ReSOURCE: Каталог, корзина и оформление оптовой/
 
 ReSOURCE: Оформление дизайн-токенов витрин. Стили не заменяют серверные учётные проверки.
 
-## Тесты Python/CJS и браузерные проверки (280)
+## Тесты Python/CJS и браузерные проверки (295)
 
 ### `GameBAT_CRM/test_guard.py`
 
@@ -1500,6 +1528,10 @@ Python/C-кода. Отдельная инфраструктурная сеть 
 ### `catalog/newness_browser_settings.py`
 
 Отдельная SQLite только для явного запуска браузерных проверок карточек.
+
+### `catalog/test_barcode_lookup.py`
+
+Точное чтение реестра для звукового отклика поиска без утечки цен.
 
 ### `catalog/test_game_series.py`
 
@@ -1577,6 +1609,8 @@ Python/C-кода. Отдельная инфраструктурная сеть 
 
 Общая кнопка звука: включение каналов, отказ autoplay и компактная шапка.
 
+### `core/test_barcode_feedback_js.cjs`
+
 ### `core/test_barcode_focus_js.cjs`
 
 ### `core/test_coinbase.py`
@@ -1600,6 +1634,8 @@ Python/C-кода. Отдельная инфраструктурная сеть 
 Проверки запуска LAN без изменения сетевых настроек и рабочих процессов.
 
 ### `core/test_rapira.py`
+
+### `core/test_sale_barcode_js.cjs`
 
 ### `core/test_updates.py`
 
@@ -1720,6 +1756,10 @@ ZIP проверяется и публикуется явно; файловые 
 
 Смена диапазонов сохраняет строки, наценки, ссылки покупателей и защищает старые вкладки.
 
+### `digital_prices/test_v2_mapping.py`
+
+Переход сохраняет PK/наценки и не связывает по похожему имени.
+
 ### `digital_prices/tests.py`
 
 Синтетические проверки. Рабочие ключи, сеть, склад и финансовые операции не нужны.
@@ -1762,6 +1802,22 @@ ZIP проверяется и публикуется явно; файловые 
 
 ### `digital_sales/test_worker.py`
 
+### `digital_shop/test_checkout.py`
+
+Финансовые сценарии для отдельной тестовой БД; сеть и ключи всегда фиктивные.
+
+### `digital_shop/test_concurrency.py`
+
+Два подтверждения общей корзины; только на изолированной тестовой SQLite.
+
+### `digital_shop/test_contracts.py`
+
+Контракты для будущего запуска. Все секреты синтетические, транспорт подменён.
+
+### `digital_shop/test_recovery.py`
+
+Восстановление после неопределённого POST и выдачи. Реальные API не используются.
+
 ### `integrations/notification_browser_checks.py`
 
 Два счётчика в шапке, переход к действиям и обновление без вызовов Avito.
@@ -1773,6 +1829,8 @@ ZIP проверяется и публикуется явно; файловые 
 ### `integrations/test_avito_check.py`
 
 ### `integrations/test_avito_notifications_js.cjs`
+
+### `integrations/test_avito_sound_repeat.cjs`
 
 ### `integrations/test_google_sheets.py`
 
@@ -1789,6 +1847,8 @@ ZIP проверяется и публикуется явно; файловые 
 ### `integrations/test_worker_health.py`
 
 Регрессии ложного зелёного статуса; внешние API и рабочие процессы подменяются.
+
+### `integrations/test_worker_icon_js.cjs`
 
 ### `integrations/test_worker_monitoring.py`
 
@@ -2075,6 +2135,10 @@ Chromium: редакция, справочник, отличие количес�
 
 ### `price/test_postpayment_surcharges.py`
 
+### `price/test_price_decreases.py`
+
+Отметки снижения цен не меняют числовой Excel и его обратный импорт.
+
 ### `price/test_procurement_delivery.py`
 
 ### `price/test_procurement_manual_prices.py`
@@ -2082,6 +2146,10 @@ Chromium: редакция, справочник, отличие количес�
 Ручная AED относится к версии и поставщику, исходные предложения неизменны.
 
 ### `price/test_procurement_memory.py`
+
+### `price/test_procurement_ordering.py`
+
+Редактор прайса сначала показывает позиции, требующие заполнения наценки.
 
 ### `price/test_procurement_pricing.py`
 
@@ -2279,6 +2347,10 @@ MV3 Chromium с подменённым Avito: форма, связь прода�
 
 Протокол печати проверяется на искусственных заказах и PDF, без оборудования/API.
 
+### `sales/test_sale_labels.py`
+
+Будущие проверки с фиктивным принтером: стикер не проводит и не оплачивает продажу.
+
 ### `sales/test_sales_status_js.cjs`
 
 ### `sales/test_statistics.py`
@@ -2296,6 +2368,10 @@ MV3 Chromium с подменённым Avito: форма, связь прода�
 ### `scripts/test_repository_hygiene.py`
 
 Интеграционные проверки защиты Git на отдельных временных репозиториях.
+
+### `scripts/test_technical_reference.py`
+
+Справочник маршрутов одинаков для локального DEBUG и CI.
 
 ### `supplies/pending_browser_checks.py`
 
@@ -2334,6 +2410,10 @@ MV3 Chromium с подменённым Avito: форма, связь прода�
 ### `telegram_bots/test_worker.py`
 
 Polling и конкуренция на отдельной тестовой БД, без настоящего Telegram.
+
+### `telegram_bots/test_worker_recovery.py`
+
+Регрессии остановки polling: фиктивные API, без сети, потоков и рабочей БД.
 
 ### `telegram_bots/tests.py`
 
@@ -2375,7 +2455,7 @@ PDF готовится отдельно от печати и хранится д
 
 Проверки на изолированной БД и подменённом API; рабочие ключи не используются.
 
-## Миграции (204)
+## Миграции (214)
 
 ### `accounts/migrations/0001_initial.py`
 
@@ -2575,6 +2655,10 @@ PDF готовится отдельно от печати и хранится д
 
 Зависимости: `[('catalog', '0031_initialize_system_products'), ('partners', '0002_supplier_priority'), migrations.swappable_dependency(settings.AUTH_USER_MODEL)]`.
 
+### `catalog/migrations/0033_hide_from_wholesale_price.py`
+
+Зависимости: `[('catalog', '0032_supplier_selection_newness_rounding')]`.
+
 ### `consignment/migrations/0001_initial.py`
 
 Зависимости: `[('catalog', '0001_initial'), ('partners', '0001_initial')]`.
@@ -2715,6 +2799,10 @@ PDF готовится отдельно от печати и хранится д
 
 Зависимости: `[('digital_prices', '0011_archived_source_tariffs'), ('digital_sales', '0007_customer_sale_receipt'), migrations.swappable_dependency(settings.AUTH_USER_MODEL)]`.
 
+### `digital_prices/migrations/0013_providergate_product_api_version_product_fulfillment_and_more.py`
+
+Зависимости: `[('digital_prices', '0012_buyerpricedispatch_buyerpricedispatchpage_and_more')]`.
+
 ### `digital_sales/migrations/0001_initial.py`
 
 Зависимости: `[('partners', '0005_partner_telegram'), ('sales', '0035_avito_browser_orders'), ('telegram_bots', '0002_staffbotjobdocument_staffbotjob_function_and_more'), migrations.swappable_dependency(settings.AUTH_USER_MODEL)]`.
@@ -2742,6 +2830,38 @@ PDF готовится отдельно от печати и хранится д
 ### `digital_sales/migrations/0007_customer_sale_receipt.py`
 
 Зависимости: `[('digital_sales', '0006_ignored_incoming_orders')]`.
+
+### `digital_sales/migrations/0008_alter_digitalorder_source.py`
+
+Зависимости: `[('digital_sales', '0007_customer_sale_receipt')]`.
+
+### `digital_shop/migrations/0001_initial.py`
+
+Зависимости: `[('digital_prices', '0013_providergate_product_api_version_product_fulfillment_and_more'), ('digital_sales', '0008_alter_digitalorder_source'), migrations.swappable_dependency(settings.AUTH_USER_MODEL)]`.
+
+### `digital_shop/migrations/0002_shopconfig_write_revision.py`
+
+Зависимости: `[('digital_shop', '0001_initial')]`.
+
+### `digital_shop/migrations/0003_purchaseintent_poll_fingerprint_shopconfig_list_page_and_more.py`
+
+Зависимости: `[('digital_shop', '0002_shopconfig_write_revision')]`.
+
+### `digital_shop/migrations/0004_cart_search_region.py`
+
+Зависимости: `[('digital_shop', '0003_purchaseintent_poll_fingerprint_shopconfig_list_page_and_more')]`.
+
+### `digital_shop/migrations/0005_resultdelivery_message_ids_and_more.py`
+
+Зависимости: `[('digital_shop', '0004_cart_search_region')]`.
+
+### `digital_shop/migrations/0006_shared_group_cart.py`
+
+Объединение только неподтверждённых черновиков; закупки и деньги сохраняются.
+
+Зависимости: `[('digital_shop', '0005_resultdelivery_message_ids_and_more')]`.
+
+Преобразования данных: `merge_drafts`. Не удалять только по возрасту файла.
 
 ### `integrations/migrations/0001_initial.py`
 
@@ -3143,6 +3263,10 @@ PDF готовится отдельно от печати и хранится д
 
 Зависимости: `[('partners', '0005_partner_telegram'), ('resource_storefront', '0006_wholesalecontact_partner'), ('sales', '0038_wholesale_partner_advance'), ('warehouse', '0006_warehouse_revision'), migrations.swappable_dependency(settings.AUTH_USER_MODEL)]`.
 
+### `sales/migrations/0040_sale_label_print_job.py`
+
+Зависимости: `[('sales', '0039_prepayment_account'), migrations.swappable_dependency(settings.AUTH_USER_MODEL)]`.
+
 ### `supplies/migrations/0001_initial.py`
 
 Зависимости: `[('catalog', '0001_initial'), ('partners', '0001_initial'), migrations.swappable_dependency(settings.AUTH_USER_MODEL)]`.
@@ -3265,7 +3389,7 @@ PDF готовится отдельно от печати и хранится д
 
 Зависимости: `[('yandex_market', '0006_offerconnection_exchange_defaults')]`.
 
-## Management commands (33)
+## Management commands (34)
 
 ### `cash/management/commands/verify_cash.py`
 
@@ -3324,6 +3448,10 @@ PDF готовится отдельно от печати и хранится д
 ### `crm_backups/management/commands/run_backup_worker.py`
 
 Независимый исполнитель, не блокирующий мониторинг/печать при упаковке.
+
+### `digital_prices/management/commands/plan_digital_v2.py`
+
+Только чтение API и отчёт сопоставления; не меняет каталог, наценки или деньги.
 
 ### `digital_sales/management/commands/configure_digital_sales.py`
 

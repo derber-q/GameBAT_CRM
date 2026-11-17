@@ -109,6 +109,7 @@
           if (!quantity.value) quantity.value = "1";
           showBarcodeFeedback(`Добавлено: ${result.label}`);
           amount.focus();
+          void window.GameBAT.playBarcodeFeedback?.(true);
         }
       },
     });
@@ -160,6 +161,7 @@
       return;
     }
     if (!warehouse?.value) {
+      void window.GameBAT.playBarcodeFeedback?.(false);
       showBarcodeFeedback("Сначала выберите склад.", true);
       return;
     }
@@ -195,7 +197,9 @@
       putBarcodeResultIntoTransfer(result);
       if (barcodeInput) barcodeInput.value = "";
       showBarcodeFeedback(`Добавлено: ${result.label}`);
+      void window.GameBAT.playBarcodeFeedback?.(true);
     } catch (error) {
+      void window.GameBAT.playBarcodeFeedback?.(false);
       showBarcodeFeedback(error.message, true);
     }
   }
